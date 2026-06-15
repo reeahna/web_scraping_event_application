@@ -34,6 +34,12 @@ class EventbriteScraper(BaseScraper):
     name = "Eventbrite"
     base_url = "https://www.eventbrite.com/d/in--bloomington/all-events/"
 
+    def __init__(self, base_url: str | None = None, city: str | None = None):
+        if base_url is not None:
+            self.base_url = base_url
+        if city is not None:
+            self.city = city
+
     def _clean(self, text: str) -> str:
         return " ".join(str(text).split()).strip()
 
@@ -232,6 +238,7 @@ class EventbriteScraper(BaseScraper):
                 address=address,
                 image_url=image_url,
                 category=category,
+                city=self.city,
             )
 
         og_title = soup.find("meta", property="og:title")
@@ -257,6 +264,7 @@ class EventbriteScraper(BaseScraper):
             image_url=image_url,
             date=self._detect_multiple_dates(soup),
             category=self._extract_category({}, soup) or listing_category,
+            city=self.city,
         )
 
     async def scrape(self) -> list[Event]:

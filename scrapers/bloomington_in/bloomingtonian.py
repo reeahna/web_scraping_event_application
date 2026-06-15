@@ -71,28 +71,17 @@ class BloomingtonianScraper(BaseScraper):
 
     def _strip_dateline_prefix(self, text: str) -> str:
         text = self._clean_text(text)
-
-        # Common intro boilerplate on this site
         text = re.sub(r"^Written from [^.]+\.?\s*", "", text, flags=re.IGNORECASE)
         text = re.sub(r"^BLOOMINGTON,\s*Ind\.\s*—\s*", "", text, flags=re.IGNORECASE)
-
         return self._clean_text(text)
 
     def _derive_event_title(self, chunk: str, article_title: str) -> str:
-        """
-        Try to turn a sentence like:
-          'Greg Mendez with Scarlet Rae at 9 p.m. June 15'
-        into:
-          'Greg Mendez with Scarlet Rae'
-        """
         text = self._clean_text(chunk)
 
-        # Remove the date itself and anything after it.
         m = self.DATE_RE.search(text)
         if m:
             text = text[:m.start()].strip()
 
-        # Remove trailing time phrases.
         text = re.sub(
             r"\b(?:at\s+)?\d{1,2}(?::\d{2})?\s*(?:a\.m\.|p\.m\.)\.?$",
             "",
@@ -100,7 +89,6 @@ class BloomingtonianScraper(BaseScraper):
             flags=re.IGNORECASE,
         ).strip()
 
-        # Remove common lead-in verbs / announcement phrasing.
         text = re.split(
             r"\b(?:will join|will perform|are scheduled to perform|is scheduled to perform|"
             r"are scheduled|is scheduled|will be|to perform|announced that|announces|announced)\b",
@@ -109,7 +97,6 @@ class BloomingtonianScraper(BaseScraper):
             flags=re.IGNORECASE,
         )[0].strip()
 
-        # Clean off punctuation and stray separators.
         text = text.strip(" ,;:-—")
 
         if len(text) < 3:
@@ -118,10 +105,6 @@ class BloomingtonianScraper(BaseScraper):
         return text
 
     def _extract_event_dates(self, detail_html: str | None, published_date: str | None) -> list[tuple[str, str]]:
-        """
-        Return a list of (date, title_fragment) pairs from the article body.
-        Each match becomes its own event.
-        """
         if not detail_html:
             return []
 
@@ -139,8 +122,6 @@ class BloomingtonianScraper(BaseScraper):
 
             raw = self._strip_dateline_prefix(raw)
 
-            # Split long paragraphs on semicolons because the site often packs
-            # multiple event announcements into one paragraph.
             chunks = [c.strip() for c in re.split(r"[;\n]+", raw) if c.strip()]
 
             for chunk in chunks:
@@ -209,38 +190,31 @@ class BloomingtonianScraper(BaseScraper):
 
                 if extracted_dates:
                     for idx, (event_date, title_fragment) in enumerate(extracted_dates, start=1):
-                        # Synthetic unique URL so each extracted event can be stored separately.
                         synthetic_url = f"{article_url}#event-{idx}"
-
                         title = title_fragment if title_fragment else article_title
-                        if not title:
-                            title = article_title
 
-                        events.append(
-                            Event(
-                                title=title,
-                                url=synthetic_url,
-                                source=self.name,
-                                description=description[:500] if description else None,
-                                date=event_date,
-                                image_url=image_url,
-                                category="Local Events",
-                            )
-                        )
-                        page_added += 1
-                else:
-                    # Fallback: keep the post as one item if no event date was found.
-                    events.append(
-                        Event(
-                            title=article_title,
-                            url=article_url,
+                        events.append(Event(
+                            title=title,
+                            url=synthetic_url,
                             source=self.name,
                             description=description[:500] if description else None,
-                            date=published_date,
+                            date=event_date,
                             image_url=image_url,
-                            category="Local Events",
-                        )
-                    )
+                            category="Community",
+                            city=self.city,
+                        ))
+                        page_added += 1
+                else:
+                    events.append(Event(
+                        title=article_title,
+                        url=article_url,
+                        source=self.name,
+                        description=description[:500] if description else None,
+                        date=published_date,
+                        image_url=image_url,
+                        category="Community",
+                        city=self.city,
+                    ))
                     page_added += 1
 
             if page_added == 0:

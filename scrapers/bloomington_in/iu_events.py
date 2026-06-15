@@ -141,6 +141,7 @@ class IUEventsScraper(BaseScraper):
             address=address,
             image_url=image_url,
             category=category or "IU Bloomington",
+            city=self.city,
         )
 
     async def scrape(self) -> list[Event]:

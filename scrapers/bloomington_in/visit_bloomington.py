@@ -136,9 +136,9 @@ class VisitBloomingtonScraper(BaseScraper):
         venue = self._extract_venue(doc)
         image_url = self._extract_image_url(doc)
 
-        city = doc.get("city") or "Bloomington"
+        city_field = doc.get("city") or "Bloomington"
         region = doc.get("region") or "IN"
-        address = f"{city}, {region}".strip(", ")
+        address = f"{city_field}, {region}".strip(", ")
 
         return Event(
             title=title,
@@ -149,14 +149,14 @@ class VisitBloomingtonScraper(BaseScraper):
             venue=venue,
             address=address,
             image_url=image_url,
-            category="Visit Bloomington",
+            category="Community",
+            city=self.city,
         )
 
     async def scrape(self) -> list[Event]:
         events: list[Event] = []
         seen_urls: set[str] = set()
 
-        # Fetch the page once so we can optionally extract the token.
         page_html = await self.fetch(self.base_url)
         token = self._extract_token(page_html)
 
@@ -185,7 +185,6 @@ class VisitBloomingtonScraper(BaseScraper):
                 except Exception as e:
                     logger.error(f"[{self.name}] API request failed: {e}")
                     break
-                   
 
                 docs_container = data.get("docs", {})
                 docs = docs_container.get("docs", [])

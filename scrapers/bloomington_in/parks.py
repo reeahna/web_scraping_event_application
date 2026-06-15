@@ -89,6 +89,7 @@ class BloomingtonParksScraper(BaseScraper):
                             venue=venue,
                             address="Bloomington, IN",
                             category="Parks & Rec",
+                            city=self.city,
                         ))
                         continue
 
@@ -109,6 +110,7 @@ class BloomingtonParksScraper(BaseScraper):
                         venue=venue,
                         address="Bloomington, IN",
                         category="Parks & Rec",
+                        city=self.city,
                     ))
 
         return events
