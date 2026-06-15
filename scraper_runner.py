@@ -8,6 +8,7 @@ from scrapers.bloomington_in.parks import BloomingtonParksScraper
 from scrapers.bloomington_in.eventbrite import EventbriteScraper
 from scrapers.bloomington_in.bloomingtonian import BloomingtonianScraper
 from scrapers.bloomington_in.visit_bloomington import VisitBloomingtonScraper
+from scrapers.bethlehem_pa.discover_lehigh_valley import BethlehemScraper
 
 logger = logging.getLogger(__name__)
 
@@ -23,8 +24,13 @@ CITIES: dict[str, dict] = {
             IUEventsScraper(),
             BloomingtonParksScraper(),
             EventbriteScraper(),
-            BloomingtonianScraper(),
             VisitBloomingtonScraper(),
+        ],
+    },
+    "bethlehem-pa": {
+        "name": "Bethlehem, PA",
+        "scrapers": [
+            BethlehemScraper(),
         ],
     },
 }
