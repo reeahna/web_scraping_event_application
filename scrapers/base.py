@@ -23,11 +23,13 @@ class Event:
     image_url: Optional[str] = None
     category: Optional[str] = None
     end_date: Optional[str] = None
+    city: Optional[str] = None
 
 
 class BaseScraper(ABC):
     name: str = "unnamed"
     base_url: str = ""
+    city: str = "Bloomington Area, IN"
 
     HEADERS = {
         "User-Agent": (

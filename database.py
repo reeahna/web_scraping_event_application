@@ -1,4 +1,5 @@
 import csv
+import re
 import sqlite3
 from typing import Optional
 import os
@@ -28,13 +29,17 @@ def init_db():
                 image_url TEXT,
                 source TEXT,
                 category TEXT,
+                city TEXT DEFAULT 'Bloomington, IN',
                 scraped_at TEXT DEFAULT (datetime('now'))
             )
         """)
-        conn.execute("ALTER TABLE events ADD COLUMN end_date TEXT" if not any(
-            row[1] == "end_date"
-            for row in conn.execute("PRAGMA table_info(events)").fetchall()
-        ) else "SELECT 1")
+        existing = {row[1] for row in conn.execute("PRAGMA table_info(events)").fetchall()}
+        for col, defn in [
+            ("end_date", "TEXT"),
+            ("city", "TEXT DEFAULT 'Bloomington, IN'"),
+        ]:
+            if col not in existing:
+                conn.execute(f"ALTER TABLE events ADD COLUMN {col} {defn}")
         conn.commit()
 
 
@@ -50,11 +55,12 @@ def upsert_event(
     address: Optional[str] = None,
     image_url: Optional[str] = None,
     category: Optional[str] = None,
+    city: Optional[str] = None,
 ):
     with get_conn() as conn:
         conn.execute("""
-            INSERT INTO events (title, description, date, end_date, time, venue, address, url, image_url, source, category, scraped_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
+            INSERT INTO events (title, description, date, end_date, time, venue, address, url, image_url, source, category, city, scraped_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
             ON CONFLICT(url) DO UPDATE SET
                 title=excluded.title,
                 description=excluded.description,
@@ -65,8 +71,9 @@ def upsert_event(
                 address=excluded.address,
                 image_url=excluded.image_url,
                 category=excluded.category,
+                city=excluded.city,
                 scraped_at=excluded.scraped_at
-        """, (title, description, date, end_date, time, venue, address, url, image_url, source, category))
+        """, (title, description, date, end_date, time, venue, address, url, image_url, source, category, city))
         conn.commit()
 
 
@@ -82,18 +89,37 @@ def export_csv(path: str = "events.csv") -> None:
         writer.writerows(dicts)
 
 
-def get_all_events() -> list[dict]:
+def get_all_events(city: Optional[str] = None) -> list[dict]:
+    where = """
+        (date IS NULL OR date = 'Multiple Dates' OR date >= date('now')
+        OR (end_date IS NOT NULL AND end_date >= date('now')))
+    """
+    params: list = []
+    if city:
+        where += " AND city = ?"
+        params.append(city)
+    with get_conn() as conn:
+        rows = conn.execute(f"""
+            SELECT * FROM events WHERE {where}
+            ORDER BY CASE WHEN date IS NULL THEN 1 ELSE 0 END, date ASC, scraped_at DESC
+        """, params).fetchall()
+    return [dict(row) for row in rows]
+
+
+def get_cities() -> list[dict]:
     with get_conn() as conn:
         rows = conn.execute("""
-            SELECT * FROM events
-            WHERE
-                date IS NULL
-                OR date = 'Multiple Dates'
-                OR date >= date('now')
+            SELECT city, COUNT(*) as count FROM events
+            WHERE date IS NULL OR date = 'Multiple Dates' OR date >= date('now')
                 OR (end_date IS NOT NULL AND end_date >= date('now'))
-            ORDER BY
-                CASE WHEN date IS NULL THEN 1 ELSE 0 END,
-                date ASC,
-                scraped_at DESC
+            GROUP BY city ORDER BY city
         """).fetchall()
-    return [dict(row) for row in rows]
+    def _slug(name: str | None) -> str:
+        if not name:
+            return ""
+        return re.sub(r'[^a-z0-9]+', '-', name.lower()).strip('-')
+
+    return [
+        {"name": row["city"], "count": row["count"], "slug": _slug(row["city"])}
+        for row in rows if row["city"]
+    ]

@@ -4,15 +4,15 @@ import asyncio
 if sys.platform.startswith("win"):
     asyncio.set_event_loop_policy(asyncio.WindowsProactorEventLoopPolicy())
 
-from fastapi import FastAPI, Request
+from fastapi import FastAPI, Request, HTTPException
 from fastapi.responses import HTMLResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.interval import IntervalTrigger
 from contextlib import asynccontextmanager
-from database import init_db, get_all_events
-from scraper_runner import run_all_scrapers
+from database import init_db, get_all_events, get_cities
+from scraper_runner import run_all_scrapers, run_city_scrapers, CITIES
 import logging
 
 logging.basicConfig(level=logging.INFO)
@@ -23,9 +23,8 @@ scheduler = AsyncIOScheduler()
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # Startup
     init_db()
-    await run_all_scrapers()  # Run once immediately on start
+    await run_all_scrapers()
 
     scheduler.add_job(
         run_all_scrapers,
@@ -39,7 +38,6 @@ async def lifespan(app: FastAPI):
 
     yield
 
-    # Shutdown
     scheduler.shutdown()
 
 
@@ -49,17 +47,40 @@ templates = Jinja2Templates(directory="templates")
 
 
 @app.get("/", response_class=HTMLResponse)
-async def index(request: Request):
-    events = get_all_events()
-    return templates.TemplateResponse("index.html", {"request": request, "events": events})
+async def home(request: Request):
+    cities = get_cities()
+    return templates.TemplateResponse("home.html", {"request": request, "cities": cities})
+
+
+@app.get("/city/{slug}", response_class=HTMLResponse)
+async def city_page(request: Request, slug: str):
+    city_info = CITIES.get(slug)
+    if not city_info:
+        raise HTTPException(status_code=404, detail="City not found")
+    city_name = city_info["name"]
+    events = get_all_events(city=city_name)
+    return templates.TemplateResponse(
+        "index.html",
+        {"request": request, "events": events, "city_name": city_name, "city_slug": slug},
+    )
 
 
 @app.get("/api/events")
-async def api_events():
-    return get_all_events()
+async def api_events(city: str | None = None):
+    return get_all_events(city=city)
+
+
+@app.post("/api/refresh/{slug}")
+async def refresh_city(slug: str):
+    city_info = CITIES.get(slug)
+    if not city_info:
+        raise HTTPException(status_code=404, detail="City not found")
+    count = await run_city_scrapers(slug)
+    events = get_all_events(city=city_info["name"])
+    return {"status": "ok", "count": len(events)}
 
 
 @app.post("/api/refresh")
-async def refresh():
+async def refresh_all():
     await run_all_scrapers()
     return {"status": "ok", "count": len(get_all_events())}

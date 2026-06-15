@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>City Events</title>
+  <title>{{ city_name }} Events</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link href="https://fonts.googleapis.com/css2?family=DM+Serif+Display:ital@0;1&family=DM+Sans:wght@400;500;600&display=swap" rel="stylesheet">
   <style>
@@ -410,7 +410,10 @@
 <body>
 
 <header>
-  <div class="logo">city<span>events</span></div>
+  <div style="display:flex;align-items:center;gap:16px;">
+    <a href="/" style="font-size:0.85rem;color:var(--muted);text-decoration:none;white-space:nowrap;" onmouseover="this.style.color='var(--accent)'" onmouseout="this.style.color='var(--muted)'">← All Cities</a>
+    <div class="logo">{{ city_name }}</div>
+  </div>
   <div class="header-actions">
     <input class="search-input" id="searchInput" type="search" placeholder="Search events..." oninput="applyFilters()" />
     <select class="filter-select" id="sourceFilter" onchange="applyFilters()">
@@ -689,12 +692,14 @@
     setTimeout(() => t.classList.remove('show'), 2500);
   }
 
+  const CITY_SLUG = "{{ city_slug }}";
+
   async function refresh() {
     const btn = document.getElementById('refreshBtn');
     btn.disabled = true;
     btn.textContent = 'Scraping...';
     try {
-      const res = await fetch('/api/refresh', { method: 'POST' });
+      const res = await fetch(`/api/refresh/${CITY_SLUG}`, { method: 'POST' });
       const data = await res.json();
       showToast(`Done — ${data.count} events loaded`);
       setTimeout(() => location.reload(), 1000);

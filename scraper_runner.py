@@ -1,14 +1,35 @@
 import asyncio
 import logging
+import re
 
 from database import upsert_event, export_csv, get_conn
-from scrapers.eventbrite import EventbriteScraper
-from scrapers.bloomington_parks import BloomingtonParksScraper
-from scrapers.iu_events import IUEventsScraper
+from scrapers.bloomington_in.iu_events import IUEventsScraper
+from scrapers.bloomington_in.parks import BloomingtonParksScraper
+from scrapers.bloomington_in.eventbrite import EventbriteScraper
+from scrapers.bloomington_in.bloomingtonian import BloomingtonianScraper
+from scrapers.bloomington_in.visit_bloomington import VisitBloomingtonScraper
 
 logger = logging.getLogger(__name__)
 
-_iu_scraper_ref = IUEventsScraper()
+
+def city_to_slug(name: str) -> str:
+    return re.sub(r'[^a-z0-9]+', '-', name.lower()).strip('-')
+
+
+CITIES: dict[str, dict] = {
+    "bloomington-in": {
+        "name": "Bloomington Area, IN",
+        "scrapers": [
+            IUEventsScraper(),
+            BloomingtonParksScraper(),
+            EventbriteScraper(),
+            BloomingtonianScraper(),
+            VisitBloomingtonScraper(),
+        ],
+    },
+}
+
+_iu_scraper_ref = CITIES["bloomington-in"]["scrapers"][0]
 
 
 def _purge_internal_iu_events() -> None:
@@ -30,26 +51,26 @@ def _purge_internal_iu_events() -> None:
             logger.info(f"Purged {len(to_delete)} internal IU events from DB")
 
 
-SCRAPERS = [
-    IUEventsScraper(),
-    BloomingtonParksScraper(),
-    EventbriteScraper(),
-]
+async def run_city_scrapers(city_slug: str) -> int:
+    city_info = CITIES.get(city_slug)
+    if not city_info:
+        logger.error(f"Unknown city slug: {city_slug}")
+        return 0
 
+    city_name = city_info["name"]
+    scrapers = city_info["scrapers"]
+    logger.info(f"Scraping {city_name}...")
 
-async def run_all_scrapers():
-    logger.info("Starting scrape run...")
     results = await asyncio.gather(
-        *[scraper.scrape() for scraper in SCRAPERS],
+        *[s.scrape() for s in scrapers],
         return_exceptions=True,
     )
 
     total = 0
-    for scraper, result in zip(SCRAPERS, results):
+    for scraper, result in zip(scrapers, results):
         if isinstance(result, Exception):
             logger.error(f"[{scraper.name}] Scraper crashed: {result}")
             continue
-
         for event in result:
             upsert_event(
                 title=event.title,
@@ -63,10 +84,19 @@ async def run_all_scrapers():
                 address=event.address,
                 image_url=event.image_url,
                 category=event.category,
+                city=event.city or city_name,
             )
         total += len(result)
         logger.info(f"[{scraper.name}] Saved {len(result)} events")
 
+    return total
+
+
+async def run_all_scrapers() -> None:
+    logger.info("Starting scrape run...")
+    total = 0
+    for city_slug in CITIES:
+        total += await run_city_scrapers(city_slug)
     logger.info(f"Scrape run complete. Total events saved: {total}")
     _purge_internal_iu_events()
     export_csv()
