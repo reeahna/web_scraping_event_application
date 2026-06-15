@@ -32,6 +32,7 @@ async def lifespan(app: FastAPI):
         trigger=IntervalTrigger(minutes=5),
         id="scrape_events",
         replace_existing=True,
+        max_instances=1,
     )
     scheduler.start()
     logger.info("Scheduler started — scraping every 5 minutes")

@@ -1,19 +1,7 @@
-"""
-scrapers/bloomington_parks.py
-
-Scrapes community events from the City of Bloomington Parks & Recreation page.
-This is a static HTML page — no JavaScript rendering needed.
-URL: https://bloomington.in.gov/parks/events
-"""
-
 import re
+from datetime import datetime
 from bs4 import BeautifulSoup
 from scrapers.base import BaseScraper, Event
-
-try:
-    from scrapers.base import BaseScraper, Event
-except ImportError:  # pragma: no cover - supports flat project layout
-    from base import BaseScraper, Event
 
 
 class BloomingtonParksScraper(BaseScraper):
@@ -31,7 +19,7 @@ class BloomingtonParksScraper(BaseScraper):
 
     def _parse_date(self, month_heading: str, date_text: str) -> str | None:
         year_match = re.search(r"\b(\d{4})\b", month_heading)
-        year = year_match.group(1) if year_match else "2026"
+        year = year_match.group(1) if year_match else str(datetime.now().year)
 
         date_match = re.search(
             r"\b(january|february|march|april|may|june|july|august|september|october|november|december|"
@@ -100,7 +88,7 @@ class BloomingtonParksScraper(BaseScraper):
                             date=None,
                             venue=venue,
                             address="Bloomington, IN",
-                            category="Community",
+                            category="Parks & Rec",
                         ))
                         continue
 
@@ -120,7 +108,7 @@ class BloomingtonParksScraper(BaseScraper):
                         date=date,
                         venue=venue,
                         address="Bloomington, IN",
-                        category="Parks & Recreation",
+                        category="Parks & Rec",
                     ))
 
         return events

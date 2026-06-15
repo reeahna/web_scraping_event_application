@@ -8,14 +8,14 @@
   <link href="https://fonts.googleapis.com/css2?family=DM+Serif+Display:ital@0;1&family=DM+Sans:wght@400;500;600&display=swap" rel="stylesheet">
   <style>
     :root {
-      --bg: #0f0f11;
-      --surface: #1a1a1f;
-      --border: #2a2a32;
-      --accent: #e8ff5a;
-      --accent-dim: rgba(232,255,90,0.12);
-      --text: #f0f0f2;
-      --muted: #888896;
-      --card-hover: #1f1f26;
+      --bg: #f5f5f7;
+      --surface: #ffffff;
+      --border: #e0e0e6;
+      --accent: #4f46e5;
+      --accent-dim: rgba(79,70,229,0.08);
+      --text: #111118;
+      --muted: #6b6b80;
+      --card-hover: #fafafa;
       --radius: 12px;
     }
 
@@ -33,19 +33,19 @@
       position: sticky;
       top: 0;
       z-index: 100;
-      background: rgba(15,15,17,0.85);
+      background: rgba(245,245,247,0.9);
       backdrop-filter: blur(12px);
       border-bottom: 1px solid var(--border);
-      padding: 14px 20px;
+      padding: 22px 32px;
       display: flex;
       align-items: center;
       justify-content: space-between;
-      gap: 12px;
+      gap: 16px;
     }
 
     .logo {
       font-family: 'DM Serif Display', serif;
-      font-size: 1.4rem;
+      font-size: 2.2rem;
       color: var(--accent);
       white-space: nowrap;
     }
@@ -55,27 +55,43 @@
     .header-actions {
       display: flex;
       align-items: center;
-      gap: 10px;
+      gap: 12px;
     }
+
+    .search-input {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      color: var(--text);
+      padding: 9px 14px;
+      border-radius: 8px;
+      font-size: 0.9rem;
+      font-family: inherit;
+      width: 220px;
+      transition: border-color 0.15s;
+      outline: none;
+    }
+
+    .search-input::placeholder { color: var(--muted); }
+    .search-input:focus { border-color: var(--accent); }
 
     .filter-select {
       background: var(--surface);
       border: 1px solid var(--border);
       color: var(--text);
-      padding: 6px 10px;
+      padding: 9px 14px;
       border-radius: 8px;
-      font-size: 0.8rem;
+      font-size: 0.9rem;
       font-family: inherit;
       cursor: pointer;
     }
 
     .refresh-btn {
       background: var(--accent);
-      color: #0f0f11;
+      color: #ffffff;
       border: none;
-      padding: 7px 14px;
+      padding: 9px 20px;
       border-radius: 8px;
-      font-size: 0.8rem;
+      font-size: 0.9rem;
       font-weight: 600;
       cursor: pointer;
       font-family: inherit;
@@ -86,18 +102,180 @@
     .refresh-btn:hover { opacity: 0.85; }
     .refresh-btn:disabled { opacity: 0.5; cursor: not-allowed; }
 
-    /* Main */
-    main {
-      max-width: 680px;
+    /* Page layout */
+    .page-layout {
+      max-width: 1080px;
       margin: 0 auto;
-      padding: 24px 16px 80px;
+      padding: 28px 24px 80px;
+      display: flex;
+      gap: 32px;
+      align-items: flex-start;
     }
+
+    /* Sidebar */
+    .sidebar {
+      width: 210px;
+      flex-shrink: 0;
+      position: sticky;
+      top: 96px;
+      display: flex;
+      flex-direction: column;
+      gap: 28px;
+    }
+
+    .sidebar-heading {
+      font-size: 0.7rem;
+      font-weight: 600;
+      letter-spacing: 0.1em;
+      text-transform: uppercase;
+      color: var(--muted);
+      margin-bottom: 10px;
+      padding-left: 2px;
+    }
+
+    /* Calendar */
+    .cal-nav {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 10px;
+    }
+
+    .cal-nav-btn {
+      background: none;
+      border: none;
+      cursor: pointer;
+      color: var(--muted);
+      font-size: 1rem;
+      padding: 2px 6px;
+      border-radius: 6px;
+      line-height: 1;
+      transition: background 0.15s, color 0.15s;
+    }
+
+    .cal-nav-btn:hover { background: var(--border); color: var(--text); }
+
+    .cal-month-label {
+      font-size: 0.85rem;
+      font-weight: 600;
+      color: var(--text);
+    }
+
+    .cal-grid {
+      display: grid;
+      grid-template-columns: repeat(7, 1fr);
+      gap: 2px;
+    }
+
+    .cal-dow {
+      text-align: center;
+      font-size: 0.65rem;
+      font-weight: 600;
+      color: var(--muted);
+      padding: 4px 0;
+      text-transform: uppercase;
+    }
+
+    .cal-day {
+      position: relative;
+      text-align: center;
+      font-size: 0.78rem;
+      padding: 5px 0;
+      border-radius: 6px;
+      cursor: pointer;
+      color: var(--muted);
+      transition: background 0.12s, color 0.12s;
+      user-select: none;
+    }
+
+    .cal-day:hover:not(.cal-empty) { background: var(--border); color: var(--text); }
+    .cal-day.cal-empty { cursor: default; }
+
+    .cal-day.has-events { color: var(--text); }
+
+    .cal-day .dot {
+      position: absolute;
+      bottom: 2px;
+      left: 50%;
+      transform: translateX(-50%);
+      width: 4px;
+      height: 4px;
+      border-radius: 50%;
+      background: var(--accent);
+      opacity: 0.5;
+    }
+
+    .cal-day.today {
+      font-weight: 700;
+      color: var(--accent);
+    }
+
+    .cal-day.in-range {
+      background: var(--accent-dim);
+      color: var(--text);
+      border-radius: 0;
+    }
+
+    .cal-day.range-start, .cal-day.range-end {
+      background: var(--accent);
+      color: #fff;
+      font-weight: 600;
+      border-radius: 6px;
+    }
+
+    .cal-day.range-start.range-end { border-radius: 6px; }
+
+    .cal-clear {
+      margin-top: 8px;
+      font-size: 0.72rem;
+      color: var(--accent);
+      cursor: pointer;
+      text-align: center;
+      display: none;
+    }
+
+    .cal-clear:hover { text-decoration: underline; }
+
+    /* Categories */
+    .category-list {
+      list-style: none;
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+    }
+
+    .category-item {
+      padding: 7px 10px;
+      border-radius: 8px;
+      font-size: 0.85rem;
+      color: var(--muted);
+      cursor: pointer;
+      transition: background 0.15s, color 0.15s;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      user-select: none;
+    }
+
+    .category-item:hover { background: var(--border); color: var(--text); }
+
+    .category-item.active {
+      background: var(--accent-dim);
+      color: var(--accent);
+      font-weight: 600;
+    }
+
+    .category-count { font-size: 0.72rem; color: var(--muted); }
+    .category-item.active .category-count { color: var(--accent); opacity: 0.7; }
+
+    /* Main content */
+    .content { flex: 1; min-width: 0; }
 
     .stats-bar {
       display: flex;
       align-items: center;
       justify-content: space-between;
-      margin-bottom: 20px;
+      margin-bottom: 16px;
       font-size: 0.8rem;
       color: var(--muted);
     }
@@ -105,11 +283,7 @@
     .stats-bar strong { color: var(--text); }
 
     /* Event cards */
-    .events-list {
-      display: flex;
-      flex-direction: column;
-      gap: 12px;
-    }
+    .events-list { display: flex; flex-direction: column; gap: 12px; }
 
     .event-card {
       background: var(--surface);
@@ -122,25 +296,19 @@
       display: block;
     }
 
-    .event-card:hover {
-      border-color: var(--accent);
-      background: var(--card-hover);
-    }
+    .event-card:hover { border-color: var(--accent); background: var(--card-hover); }
 
-    .card-inner {
-      display: flex;
-      gap: 0;
-    }
+    .card-inner { display: flex; }
 
     .card-image {
-      width: 100px;
+      width: 110px;
       min-height: 100px;
       object-fit: cover;
       flex-shrink: 0;
     }
 
     .card-image-placeholder {
-      width: 100px;
+      width: 110px;
       min-height: 100px;
       background: var(--border);
       flex-shrink: 0;
@@ -150,11 +318,7 @@
       font-size: 1.8rem;
     }
 
-    .card-body {
-      padding: 14px;
-      flex: 1;
-      min-width: 0;
-    }
+    .card-body { padding: 14px; flex: 1; min-width: 0; }
 
     .card-source {
       font-size: 0.7rem;
@@ -176,33 +340,44 @@
       -webkit-box-orient: vertical;
     }
 
-    .card-meta {
-      display: flex;
-      flex-wrap: wrap;
-      gap: 6px;
-      font-size: 0.75rem;
-      color: var(--muted);
+    .card-category {
+      display: inline-block;
+      font-size: 0.68rem;
+      font-weight: 600;
+      letter-spacing: 0.05em;
+      text-transform: uppercase;
+      color: var(--accent);
+      background: var(--accent-dim);
+      padding: 2px 8px;
+      border-radius: 999px;
+      margin-bottom: 6px;
     }
 
-    .meta-item {
-      display: flex;
-      align-items: center;
-      gap: 3px;
+    .card-meta { display: flex; flex-wrap: wrap; gap: 6px; font-size: 0.75rem; color: var(--muted); }
+    .meta-item { display: flex; align-items: center; gap: 3px; }
+
+    /* Pagination */
+    .pagination { display: flex; align-items: center; justify-content: center; gap: 8px; margin-top: 28px; }
+
+    .page-btn {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      color: var(--text);
+      padding: 6px 14px;
+      border-radius: 8px;
+      font-size: 0.8rem;
+      font-family: inherit;
+      cursor: pointer;
+      transition: border-color 0.15s;
     }
+
+    .page-btn:hover:not(:disabled) { border-color: var(--accent); color: var(--accent); }
+    .page-btn:disabled { opacity: 0.35; cursor: not-allowed; }
+    .page-info { font-size: 0.8rem; color: var(--muted); white-space: nowrap; }
 
     /* Empty state */
-    .empty {
-      text-align: center;
-      padding: 60px 20px;
-      color: var(--muted);
-    }
-
-    .empty h2 {
-      font-family: 'DM Serif Display', serif;
-      font-size: 1.4rem;
-      color: var(--text);
-      margin-bottom: 8px;
-    }
+    .empty { text-align: center; padding: 60px 20px; color: var(--muted); }
+    .empty h2 { font-family: 'DM Serif Display', serif; font-size: 1.4rem; color: var(--text); margin-bottom: 8px; }
 
     /* Toast */
     .toast {
@@ -211,7 +386,7 @@
       left: 50%;
       transform: translateX(-50%) translateY(100px);
       background: var(--accent);
-      color: #0f0f11;
+      color: #ffffff;
       padding: 10px 20px;
       border-radius: 999px;
       font-size: 0.85rem;
@@ -221,8 +396,14 @@
       white-space: nowrap;
     }
 
-    .toast.show {
-      transform: translateX(-50%) translateY(0);
+    .toast.show { transform: translateX(-50%) translateY(0); }
+
+    @media (max-width: 640px) {
+      .page-layout { flex-direction: column; gap: 20px; padding: 16px 16px 60px; }
+      .sidebar { width: 100%; position: static; }
+      .category-list { flex-direction: row; flex-wrap: wrap; }
+      .category-item { padding: 5px 12px; border-radius: 999px; border: 1px solid var(--border); }
+      .category-item.active { border-color: var(--accent); }
     }
   </style>
 </head>
@@ -231,7 +412,8 @@
 <header>
   <div class="logo">city<span>events</span></div>
   <div class="header-actions">
-    <select class="filter-select" id="sourceFilter" onchange="filterEvents()">
+    <input class="search-input" id="searchInput" type="search" placeholder="Search events..." oninput="applyFilters()" />
+    <select class="filter-select" id="sourceFilter" onchange="applyFilters()">
       <option value="">All sources</option>
       {% set sources = events | map(attribute='source') | unique | list %}
       {% for source in sources %}
@@ -242,53 +424,264 @@
   </div>
 </header>
 
-<main>
-  <div class="stats-bar">
-    <span><strong id="eventCount">{{ events | length }}</strong> events</span>
-    <span id="lastUpdated">Updated just now</span>
-  </div>
+<div class="page-layout">
+  <aside class="sidebar">
 
-  <div class="events-list" id="eventsList">
-    {% if events %}
-      {% for event in events %}
-      <a class="event-card" href="{{ event.url }}" target="_blank" rel="noopener"
-         data-source="{{ event.source }}">
-        <div class="card-inner">
-          {% if event.image_url %}
-            <img class="card-image" src="{{ event.image_url }}" alt="" loading="lazy" />
-          {% else %}
-            <div class="card-image-placeholder">🎟</div>
-          {% endif %}
-          <div class="card-body">
-            <div class="card-source">{{ event.source }}</div>
-            <div class="card-title">{{ event.title }}</div>
-            <div class="card-meta">
-              {% if event.date %}
-              <span class="meta-item">📅 {{ event.date }}</span>
+    <!-- Calendar -->
+    <div class="sidebar-section">
+      <div class="sidebar-heading">Date</div>
+      <div class="cal-nav">
+        <button class="cal-nav-btn" onclick="shiftMonth(-1)">&#8249;</button>
+        <span class="cal-month-label" id="calMonthLabel"></span>
+        <button class="cal-nav-btn" onclick="shiftMonth(1)">&#8250;</button>
+      </div>
+      <div class="cal-grid" id="calGrid"></div>
+      <div class="cal-clear" id="calClear" onclick="clearDateRange()">Clear dates</div>
+    </div>
+
+    <!-- Categories -->
+    {% set categories = events | map(attribute='category') | select | unique | list %}
+    {% if categories %}
+    <div class="sidebar-section">
+      <div class="sidebar-heading">Categories</div>
+      <ul class="category-list">
+        {% for category in categories | sort %}
+          {% set count = events | selectattr('category', 'equalto', category) | list | length %}
+          <li class="category-item" data-category="{{ category }}" onclick="toggleCategory(this)">
+            <span>{{ category }}</span>
+            <span class="category-count">{{ count }}</span>
+          </li>
+        {% endfor %}
+      </ul>
+    </div>
+    {% endif %}
+
+  </aside>
+
+  <div class="content">
+    <div class="stats-bar">
+      <span><strong id="eventCount">{{ events | length }}</strong> events</span>
+      <span id="lastUpdated">Updated just now</span>
+    </div>
+
+    <div class="events-list" id="eventsList">
+      {% if events %}
+        {% for event in events %}
+        <a class="event-card" href="{{ event.url }}" target="_blank" rel="noopener"
+           data-source="{{ event.source }}"
+           data-category="{{ event.category or '' }}"
+           data-date="{{ event.date or '' }}"
+           data-end-date="{{ event.end_date or '' }}"
+           data-title="{{ event.title | lower }}"
+           data-venue="{{ (event.venue or '') | lower }}">
+          <div class="card-inner">
+            {% if event.image_url %}
+              <img class="card-image" src="{{ event.image_url }}" alt="" loading="lazy" />
+            {% else %}
+              <div class="card-image-placeholder">🎟</div>
+            {% endif %}
+            <div class="card-body">
+              <div class="card-source">{{ event.source }}</div>
+              <div class="card-title">{{ event.title }}</div>
+              {% if event.category %}
+              <div class="card-category">{{ event.category }}</div>
               {% endif %}
-              {% if event.time %}
-              <span class="meta-item">🕐 {{ event.time }}</span>
-              {% endif %}
-              {% if event.venue %}
-              <span class="meta-item">📍 {{ event.venue }}</span>
-              {% endif %}
+              <div class="card-meta">
+                {% if event.date and event.end_date and event.end_date != event.date %}
+                <span class="meta-item">📅 {{ event.date }} – {{ event.end_date }}</span>
+                {% elif event.date %}
+                <span class="meta-item">📅 {{ event.date }}</span>
+                {% endif %}
+                {% if event.time %}
+                <span class="meta-item">🕐 {{ event.time }}</span>
+                {% endif %}
+                {% if event.venue %}
+                <span class="meta-item">📍 {{ event.venue }}</span>
+                {% endif %}
+              </div>
             </div>
           </div>
+        </a>
+        {% endfor %}
+      {% else %}
+        <div class="empty">
+          <h2>No events yet</h2>
+          <p>Hit Refresh to kick off the first scrape.</p>
         </div>
-      </a>
-      {% endfor %}
-    {% else %}
-      <div class="empty">
-        <h2>No events yet</h2>
-        <p>Hit Refresh to kick off the first scrape.</p>
-      </div>
-    {% endif %}
+      {% endif %}
+    </div>
+
+    <div class="pagination" id="pagination"></div>
   </div>
-</main>
+</div>
 
 <div class="toast" id="toast"></div>
 
 <script>
+  const PAGE_SIZE = 30;
+  let currentPage = 1;
+
+  // --- Calendar state ---
+  const today = new Date();
+  let calYear = today.getFullYear();
+  let calMonth = today.getMonth(); // 0-indexed
+  let rangeStart = null; // "YYYY-MM-DD"
+  let rangeEnd = null;
+
+  // Collect all event dates for dot rendering
+  const eventDates = new Set(
+    [...document.querySelectorAll('.event-card')]
+      .map(c => c.dataset.date)
+      .filter(Boolean)
+  );
+
+  function toDateStr(y, m, d) {
+    return `${y}-${String(m + 1).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
+  }
+
+  function buildCalendar() {
+    const monthNames = ['January','February','March','April','May','June',
+                        'July','August','September','October','November','December'];
+    document.getElementById('calMonthLabel').textContent = `${monthNames[calMonth]} ${calYear}`;
+
+    const firstDay = new Date(calYear, calMonth, 1).getDay(); // 0=Sun
+    const daysInMonth = new Date(calYear, calMonth + 1, 0).getDate();
+    const todayStr = toDateStr(today.getFullYear(), today.getMonth(), today.getDate());
+
+    const dow = ['Su','Mo','Tu','We','Th','Fr','Sa'];
+    let html = dow.map(d => `<div class="cal-dow">${d}</div>`).join('');
+
+    for (let i = 0; i < firstDay; i++) html += `<div class="cal-day cal-empty"></div>`;
+
+    for (let d = 1; d <= daysInMonth; d++) {
+      const ds = toDateStr(calYear, calMonth, d);
+      const isToday = ds === todayStr;
+      const hasEvt = eventDates.has(ds);
+
+      let cls = 'cal-day';
+      if (hasEvt) cls += ' has-events';
+      if (isToday) cls += ' today';
+
+      const [rs, re] = normalizedRange();
+      if (rs && re) {
+        if (ds > rs && ds < re) cls += ' in-range';
+      }
+      if (ds === rs) cls += ' range-start';
+      if (ds === re) cls += ' range-end';
+      if (rs && rs === re && ds === rs) cls = cls.replace('in-range', '');
+
+      html += `<div class="${cls}" data-date="${ds}" onclick="selectDate('${ds}')">
+        ${d}${hasEvt ? '<span class="dot"></span>' : ''}
+      </div>`;
+    }
+
+    document.getElementById('calGrid').innerHTML = html;
+
+    const hasRange = rangeStart || rangeEnd;
+    document.getElementById('calClear').style.display = hasRange ? 'block' : 'none';
+  }
+
+  function normalizedRange() {
+    if (!rangeStart) return [null, null];
+    if (!rangeEnd) return [rangeStart, rangeStart];
+    return rangeStart <= rangeEnd ? [rangeStart, rangeEnd] : [rangeEnd, rangeStart];
+  }
+
+  function selectDate(ds) {
+    if (!rangeStart || (rangeStart && rangeEnd)) {
+      rangeStart = ds;
+      rangeEnd = null;
+    } else {
+      rangeEnd = ds;
+    }
+    buildCalendar();
+    applyFilters();
+  }
+
+  function clearDateRange() {
+    rangeStart = null;
+    rangeEnd = null;
+    buildCalendar();
+    applyFilters();
+  }
+
+  function shiftMonth(delta) {
+    calMonth += delta;
+    if (calMonth < 0) { calMonth = 11; calYear--; }
+    if (calMonth > 11) { calMonth = 0; calYear++; }
+    buildCalendar();
+  }
+
+  // --- Filtering & pagination ---
+  function getMatchingCards() {
+    const source = document.getElementById('sourceFilter').value;
+    const query = document.getElementById('searchInput').value.trim().toLowerCase();
+    const activeCategories = [...document.querySelectorAll('.category-item.active')]
+      .map(c => c.dataset.category);
+    const [rs, re] = normalizedRange();
+
+    return [...document.querySelectorAll('.event-card')].filter(card => {
+      const matchSource = !source || card.dataset.source === source;
+      const matchCategory = activeCategories.length === 0 || activeCategories.includes(card.dataset.category);
+      const matchSearch = !query || card.dataset.title.includes(query) || card.dataset.venue.includes(query);
+      let matchDate = true;
+      if (rs) {
+        const startD = card.dataset.date;
+        const endD = card.dataset.endDate || startD;
+        if (!startD || startD === 'Multiple Dates') {
+          matchDate = !startD ? false : true;
+        } else {
+          // event overlaps with selected range if eventStart <= re AND eventEnd >= rs
+          matchDate = startD <= re && endD >= rs;
+        }
+      }
+      return matchSource && matchCategory && matchSearch && matchDate;
+    });
+  }
+
+  function renderPage() {
+    const matching = getMatchingCards();
+    const total = matching.length;
+    const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
+
+    currentPage = Math.min(currentPage, totalPages);
+    const start = (currentPage - 1) * PAGE_SIZE;
+
+    document.querySelectorAll('.event-card').forEach(c => c.style.display = 'none');
+    matching.slice(start, start + PAGE_SIZE).forEach(c => c.style.display = 'block');
+
+    document.getElementById('eventCount').textContent = total;
+    renderPagination(totalPages);
+  }
+
+  function renderPagination(totalPages) {
+    const el = document.getElementById('pagination');
+    if (totalPages <= 1) { el.innerHTML = ''; return; }
+    el.innerHTML = `
+      <button class="page-btn" onclick="goToPage(${currentPage - 1})" ${currentPage === 1 ? 'disabled' : ''}>&#8592; Prev</button>
+      <span class="page-info">Page ${currentPage} of ${totalPages}</span>
+      <button class="page-btn" onclick="goToPage(${currentPage + 1})" ${currentPage === totalPages ? 'disabled' : ''}>Next &#8594;</button>
+    `;
+  }
+
+  function goToPage(page) {
+    currentPage = page;
+    renderPage();
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  }
+
+  function toggleCategory(item) {
+    item.classList.toggle('active');
+    currentPage = 1;
+    renderPage();
+  }
+
+  function applyFilters() {
+    currentPage = 1;
+    renderPage();
+  }
+
+  // --- Toast & refresh ---
   function showToast(msg) {
     const t = document.getElementById('toast');
     t.textContent = msg;
@@ -313,17 +706,8 @@
     }
   }
 
-  function filterEvents() {
-    const source = document.getElementById('sourceFilter').value;
-    const cards = document.querySelectorAll('.event-card');
-    let visible = 0;
-    cards.forEach(card => {
-      const match = !source || card.dataset.source === source;
-      card.style.display = match ? 'block' : 'none';
-      if (match) visible++;
-    });
-    document.getElementById('eventCount').textContent = visible;
-  }
+  buildCalendar();
+  renderPage();
 </script>
 </body>
 </html>

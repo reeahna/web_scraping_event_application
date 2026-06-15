@@ -22,6 +22,7 @@ class Event:
     address: Optional[str] = None
     image_url: Optional[str] = None
     category: Optional[str] = None
+    end_date: Optional[str] = None
 
 
 class BaseScraper(ABC):
