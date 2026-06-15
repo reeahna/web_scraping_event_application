@@ -34,11 +34,27 @@ class EventbriteScraper(BaseScraper):
     name = "Eventbrite"
     base_url = "https://www.eventbrite.com/d/in--bloomington/all-events/"
 
+    # Towns in/adjacent to Monroe County, IN that count as "Bloomington area"
+    _ALLOWED_LOCALITIES = {"Bloomington", "Ellettsville", "Stinesville", "Unionville", "Stanford"}
+
     def __init__(self, base_url: str | None = None, city: str | None = None):
         if base_url is not None:
             self.base_url = base_url
         if city is not None:
             self.city = city
+
+    def _is_local_location(self, location: dict) -> bool:
+        """Return False if the event has an address outside the Bloomington, IN area."""
+        if not location:
+            return True
+        address_obj = location.get("address")
+        if not isinstance(address_obj, dict):
+            return True
+        locality = (address_obj.get("addressLocality") or "").strip()
+        region = (address_obj.get("addressRegion") or "").strip()
+        if not locality:
+            return True
+        return locality in self._ALLOWED_LOCALITIES and region in {"IN", "Indiana"}
 
     def _clean(self, text: str) -> str:
         return " ".join(str(text).split()).strip()
@@ -215,6 +231,8 @@ class EventbriteScraper(BaseScraper):
                 date = self._detect_multiple_dates(soup)
 
             location = item.get("location") or {}
+            if not self._is_local_location(location):
+                return None
             venue, address = self._extract_address(location)
             image_url = self._extract_image_url(item, soup)
 

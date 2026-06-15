@@ -106,6 +106,20 @@ def get_all_events(city: Optional[str] = None) -> list[dict]:
     return [dict(row) for row in rows]
 
 
+def get_event_count(city: Optional[str] = None) -> int:
+    where = """
+        (date IS NULL OR date = 'Multiple Dates' OR date >= date('now')
+        OR (end_date IS NOT NULL AND end_date >= date('now')))
+    """
+    params: list = []
+    if city:
+        where += " AND city = ?"
+        params.append(city)
+    with get_conn() as conn:
+        row = conn.execute(f"SELECT COUNT(*) FROM events WHERE {where}", params).fetchone()
+    return row[0]
+
+
 def get_cities() -> list[dict]:
     with get_conn() as conn:
         rows = conn.execute("""

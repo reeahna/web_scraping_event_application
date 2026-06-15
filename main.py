@@ -11,7 +11,7 @@ from fastapi.templating import Jinja2Templates
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.interval import IntervalTrigger
 from contextlib import asynccontextmanager
-from database import init_db, get_all_events, get_cities
+from database import init_db, get_all_events, get_event_count
 from scraper_runner import run_all_scrapers, run_city_scrapers, CITIES
 import logging
 
@@ -48,7 +48,10 @@ templates = Jinja2Templates(directory="templates")
 
 @app.get("/", response_class=HTMLResponse)
 async def home(request: Request):
-    cities = get_cities()
+    cities = [
+        {"slug": slug, "name": info["name"], "count": get_event_count(city=info["name"])}
+        for slug, info in CITIES.items()
+    ]
     return templates.TemplateResponse("home.html", {"request": request, "cities": cities})
 
 
