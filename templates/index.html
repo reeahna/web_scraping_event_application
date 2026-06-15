@@ -1,0 +1,329 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>City Events</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=DM+Serif+Display:ital@0;1&family=DM+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --bg: #0f0f11;
+      --surface: #1a1a1f;
+      --border: #2a2a32;
+      --accent: #e8ff5a;
+      --accent-dim: rgba(232,255,90,0.12);
+      --text: #f0f0f2;
+      --muted: #888896;
+      --card-hover: #1f1f26;
+      --radius: 12px;
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: 'DM Sans', sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      min-height: 100vh;
+    }
+
+    /* Header */
+    header {
+      position: sticky;
+      top: 0;
+      z-index: 100;
+      background: rgba(15,15,17,0.85);
+      backdrop-filter: blur(12px);
+      border-bottom: 1px solid var(--border);
+      padding: 14px 20px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+    }
+
+    .logo {
+      font-family: 'DM Serif Display', serif;
+      font-size: 1.4rem;
+      color: var(--accent);
+      white-space: nowrap;
+    }
+
+    .logo span { color: var(--text); }
+
+    .header-actions {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .filter-select {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      color: var(--text);
+      padding: 6px 10px;
+      border-radius: 8px;
+      font-size: 0.8rem;
+      font-family: inherit;
+      cursor: pointer;
+    }
+
+    .refresh-btn {
+      background: var(--accent);
+      color: #0f0f11;
+      border: none;
+      padding: 7px 14px;
+      border-radius: 8px;
+      font-size: 0.8rem;
+      font-weight: 600;
+      cursor: pointer;
+      font-family: inherit;
+      transition: opacity 0.2s;
+      white-space: nowrap;
+    }
+
+    .refresh-btn:hover { opacity: 0.85; }
+    .refresh-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+
+    /* Main */
+    main {
+      max-width: 680px;
+      margin: 0 auto;
+      padding: 24px 16px 80px;
+    }
+
+    .stats-bar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 20px;
+      font-size: 0.8rem;
+      color: var(--muted);
+    }
+
+    .stats-bar strong { color: var(--text); }
+
+    /* Event cards */
+    .events-list {
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+
+    .event-card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      overflow: hidden;
+      transition: border-color 0.2s, background 0.2s;
+      text-decoration: none;
+      color: inherit;
+      display: block;
+    }
+
+    .event-card:hover {
+      border-color: var(--accent);
+      background: var(--card-hover);
+    }
+
+    .card-inner {
+      display: flex;
+      gap: 0;
+    }
+
+    .card-image {
+      width: 100px;
+      min-height: 100px;
+      object-fit: cover;
+      flex-shrink: 0;
+    }
+
+    .card-image-placeholder {
+      width: 100px;
+      min-height: 100px;
+      background: var(--border);
+      flex-shrink: 0;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 1.8rem;
+    }
+
+    .card-body {
+      padding: 14px;
+      flex: 1;
+      min-width: 0;
+    }
+
+    .card-source {
+      font-size: 0.7rem;
+      font-weight: 600;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      color: var(--accent);
+      margin-bottom: 4px;
+    }
+
+    .card-title {
+      font-size: 0.95rem;
+      font-weight: 600;
+      line-height: 1.3;
+      margin-bottom: 6px;
+      overflow: hidden;
+      display: -webkit-box;
+      -webkit-line-clamp: 2;
+      -webkit-box-orient: vertical;
+    }
+
+    .card-meta {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+      font-size: 0.75rem;
+      color: var(--muted);
+    }
+
+    .meta-item {
+      display: flex;
+      align-items: center;
+      gap: 3px;
+    }
+
+    /* Empty state */
+    .empty {
+      text-align: center;
+      padding: 60px 20px;
+      color: var(--muted);
+    }
+
+    .empty h2 {
+      font-family: 'DM Serif Display', serif;
+      font-size: 1.4rem;
+      color: var(--text);
+      margin-bottom: 8px;
+    }
+
+    /* Toast */
+    .toast {
+      position: fixed;
+      bottom: 24px;
+      left: 50%;
+      transform: translateX(-50%) translateY(100px);
+      background: var(--accent);
+      color: #0f0f11;
+      padding: 10px 20px;
+      border-radius: 999px;
+      font-size: 0.85rem;
+      font-weight: 600;
+      transition: transform 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
+      z-index: 200;
+      white-space: nowrap;
+    }
+
+    .toast.show {
+      transform: translateX(-50%) translateY(0);
+    }
+  </style>
+</head>
+<body>
+
+<header>
+  <div class="logo">city<span>events</span></div>
+  <div class="header-actions">
+    <select class="filter-select" id="sourceFilter" onchange="filterEvents()">
+      <option value="">All sources</option>
+      {% set sources = events | map(attribute='source') | unique | list %}
+      {% for source in sources %}
+        <option value="{{ source }}">{{ source }}</option>
+      {% endfor %}
+    </select>
+    <button class="refresh-btn" id="refreshBtn" onclick="refresh()">Refresh</button>
+  </div>
+</header>
+
+<main>
+  <div class="stats-bar">
+    <span><strong id="eventCount">{{ events | length }}</strong> events</span>
+    <span id="lastUpdated">Updated just now</span>
+  </div>
+
+  <div class="events-list" id="eventsList">
+    {% if events %}
+      {% for event in events %}
+      <a class="event-card" href="{{ event.url }}" target="_blank" rel="noopener"
+         data-source="{{ event.source }}">
+        <div class="card-inner">
+          {% if event.image_url %}
+            <img class="card-image" src="{{ event.image_url }}" alt="" loading="lazy" />
+          {% else %}
+            <div class="card-image-placeholder">🎟</div>
+          {% endif %}
+          <div class="card-body">
+            <div class="card-source">{{ event.source }}</div>
+            <div class="card-title">{{ event.title }}</div>
+            <div class="card-meta">
+              {% if event.date %}
+              <span class="meta-item">📅 {{ event.date }}</span>
+              {% endif %}
+              {% if event.time %}
+              <span class="meta-item">🕐 {{ event.time }}</span>
+              {% endif %}
+              {% if event.venue %}
+              <span class="meta-item">📍 {{ event.venue }}</span>
+              {% endif %}
+            </div>
+          </div>
+        </div>
+      </a>
+      {% endfor %}
+    {% else %}
+      <div class="empty">
+        <h2>No events yet</h2>
+        <p>Hit Refresh to kick off the first scrape.</p>
+      </div>
+    {% endif %}
+  </div>
+</main>
+
+<div class="toast" id="toast"></div>
+
+<script>
+  function showToast(msg) {
+    const t = document.getElementById('toast');
+    t.textContent = msg;
+    t.classList.add('show');
+    setTimeout(() => t.classList.remove('show'), 2500);
+  }
+
+  async function refresh() {
+    const btn = document.getElementById('refreshBtn');
+    btn.disabled = true;
+    btn.textContent = 'Scraping...';
+    try {
+      const res = await fetch('/api/refresh', { method: 'POST' });
+      const data = await res.json();
+      showToast(`Done — ${data.count} events loaded`);
+      setTimeout(() => location.reload(), 1000);
+    } catch {
+      showToast('Refresh failed');
+    } finally {
+      btn.disabled = false;
+      btn.textContent = 'Refresh';
+    }
+  }
+
+  function filterEvents() {
+    const source = document.getElementById('sourceFilter').value;
+    const cards = document.querySelectorAll('.event-card');
+    let visible = 0;
+    cards.forEach(card => {
+      const match = !source || card.dataset.source === source;
+      card.style.display = match ? 'block' : 'none';
+      if (match) visible++;
+    });
+    document.getElementById('eventCount').textContent = visible;
+  }
+</script>
+</body>
+</html>
