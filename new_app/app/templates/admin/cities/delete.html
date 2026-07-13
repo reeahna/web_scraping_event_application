@@ -1,0 +1,77 @@
+{% extends "admin_base.html" %}
+
+{% block title %}Delete {{ city.name }}{% endblock %}
+
+{% block admin_content %}
+<h1>Delete {{ city.name }}</h1>
+<p class="audit-meta">Slug: <code>{{ city.slug }}</code></p>
+
+{% if error %}
+<p class="form-error">{{ error }}</p>
+{% endif %}
+
+<ul class="impact-list">
+  <li>
+    Events: {{ impact.total_events }} total, {{ impact.archived_events }} archived,
+    <span class="{{ 'impact-blocked' if impact.blocked_by_events else 'impact-ok' }}">
+      {{ impact.unarchived_events }} not yet archived
+    </span>
+  </li>
+  <li>
+    Websites: {{ impact.total_websites }} total, {{ impact.archived_websites }} archived,
+    <span class="{{ 'impact-blocked' if impact.blocked_by_websites else 'impact-ok' }}">
+      {{ impact.unarchived_websites }} not yet archived
+    </span>
+  </li>
+</ul>
+
+{% if not impact.can_delete %}
+<p class="impact-blocked">
+  This city cannot be permanently deleted yet — archive (or delete) all remaining events and
+  websites first.
+</p>
+
+<div class="form-actions">
+  {% if impact.blocked_by_events %}
+  <form method="post" action="/admin/cities/{{ city.id }}/archive-events" class="inline-form"
+        onsubmit="return confirm('Archive all {{ impact.unarchived_events }} remaining event(s) for {{ city.name }}?');">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}" />
+    <button type="submit">Archive remaining events</button>
+  </form>
+  {% endif %}
+
+  {% if impact.archived_events > 0 %}
+  <form method="post" action="/admin/cities/{{ city.id }}/delete-events" class="inline-form"
+        onsubmit="return confirm('Permanently delete all {{ impact.archived_events }} archived event(s)? This cannot be undone.');">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}" />
+    <button type="submit" class="btn-danger">Permanently delete archived events</button>
+  </form>
+  {% endif %}
+
+  {% if impact.blocked_by_websites %}
+  <form method="post" action="/admin/cities/{{ city.id }}/archive-websites" class="inline-form"
+        onsubmit="return confirm('Archive all {{ impact.unarchived_websites }} remaining website(s) for {{ city.name }}?');">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}" />
+    <button type="submit">Archive remaining websites</button>
+  </form>
+  {% endif %}
+</div>
+
+{% else %}
+<p class="impact-ok">
+  All events and websites are archived or removed — this city is eligible for permanent deletion.
+</p>
+
+<form method="post" action="/admin/cities/{{ city.id }}/delete" class="admin-form"
+      onsubmit="return confirm('This permanently deletes {{ city.name }} and cannot be undone. Continue?');">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token }}" />
+  <label for="confirm_slug">Type the city's slug (<code>{{ city.slug }}</code>) to confirm permanent deletion</label>
+  <input type="text" id="confirm_slug" name="confirm_slug" required autocomplete="off" />
+  <div class="form-actions">
+    <button type="submit" class="btn-danger">Permanently delete city</button>
+  </div>
+</form>
+{% endif %}
+
+<p><a href="/admin/cities/{{ city.id }}">&laquo; Back to city</a></p>
+{% endblock %}

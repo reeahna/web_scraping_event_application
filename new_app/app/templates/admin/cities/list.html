@@ -1,0 +1,40 @@
+{% extends "admin_base.html" %}
+{% from "admin/_macros.html" import pagination, status_badge %}
+
+{% block title %}Cities{% endblock %}
+
+{% block admin_content %}
+<h1>Cities</h1>
+
+<form method="get" action="/admin/cities" class="filter-bar">
+  <input type="search" name="q" placeholder="Search by name or slug…" value="{{ q }}" />
+  <select name="status">
+    <option value="all" {% if status == "all" %}selected{% endif %}>All</option>
+    <option value="active" {% if status == "active" %}selected{% endif %}>Active</option>
+    <option value="inactive" {% if status == "inactive" %}selected{% endif %}>Inactive</option>
+  </select>
+  <button type="submit">Search</button>
+  <a href="/admin/cities/new">+ New city</a>
+</form>
+
+{{ pagination(page, per_page, total, base_url) }}
+
+<table>
+  <thead>
+    <tr><th>Name</th><th>Slug</th><th>Region</th><th>Timezone</th><th>Status</th></tr>
+  </thead>
+  <tbody>
+  {% for city in cities %}
+    <tr>
+      <td><a href="/admin/cities/{{ city.id }}">{{ city.name }}</a></td>
+      <td><code>{{ city.slug }}</code></td>
+      <td>{{ [city.state_or_region, city.country] | select | join(", ") }}</td>
+      <td>{{ city.timezone }}</td>
+      <td>{{ status_badge(city.is_active) }}</td>
+    </tr>
+  {% else %}
+    <tr><td colspan="5">No cities found.</td></tr>
+  {% endfor %}
+  </tbody>
+</table>
+{% endblock %}

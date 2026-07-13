@@ -1,0 +1,58 @@
+{% extends "admin_base.html" %}
+{% from "admin/_macros.html" import field_error %}
+
+{% block title %}{{ "Edit City" if mode == "edit" else "New City" }}{% endblock %}
+
+{% block admin_content %}
+<h1>{{ "Edit " + city.name if mode == "edit" and city else "New City" }}</h1>
+
+<form method="post" action="{{ ('/admin/cities/' ~ city.id) if mode == 'edit' else '/admin/cities' }}" class="admin-form">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token }}" />
+
+  <label for="name">Name</label>
+  <input type="text" id="name" name="name" value="{{ form.name or '' }}" required />
+  {{ field_error(errors, "name") }}
+
+  <label for="slug">Slug</label>
+  <input type="text" id="slug" name="slug" value="{{ form.slug or '' }}" required
+         pattern="[a-z0-9]+(-[a-z0-9]+)*" placeholder="e.g. bloomington-in" />
+  {{ field_error(errors, "slug") }}
+
+  <label for="state_or_region">State / region</label>
+  <input type="text" id="state_or_region" name="state_or_region" value="{{ form.state_or_region or '' }}" />
+  {{ field_error(errors, "state_or_region") }}
+
+  <label for="country">Country</label>
+  <input type="text" id="country" name="country" value="{{ form.country or '' }}" />
+  {{ field_error(errors, "country") }}
+
+  <label for="timezone">Timezone (IANA)</label>
+  <input type="text" id="timezone" name="timezone" value="{{ form.timezone or 'UTC' }}"
+         placeholder="e.g. America/Indiana/Indianapolis" required />
+  {{ field_error(errors, "timezone") }}
+
+  <label for="default_latitude">Default latitude</label>
+  <input type="text" id="default_latitude" name="default_latitude" value="{{ form.default_latitude or '' }}" />
+  {{ field_error(errors, "default_latitude") }}
+
+  <label for="default_longitude">Default longitude</label>
+  <input type="text" id="default_longitude" name="default_longitude" value="{{ form.default_longitude or '' }}" />
+  {{ field_error(errors, "default_longitude") }}
+
+  <label for="boundary_config">Geographic boundary (optional JSON)</label>
+  <textarea id="boundary_config" name="boundary_config" rows="3">{{ form.boundary_config or '' }}</textarea>
+  {{ field_error(errors, "boundary_config") }}
+
+  <label class="checkbox-label">
+    <input type="checkbox" name="is_active" {% if form.is_active %}checked{% endif %} />
+    Active
+  </label>
+
+  <div class="form-actions">
+    <button type="submit">{{ "Save" if mode == "edit" else "Create city" }}</button>
+    <a href="{{ ('/admin/cities/' ~ city.id) if mode == 'edit' and city else '/admin/cities' }}">
+      <button type="button" class="btn-secondary">Cancel</button>
+    </a>
+  </div>
+</form>
+{% endblock %}

@@ -1,0 +1,93 @@
+{% extends "admin_base.html" %}
+{% from "admin/_macros.html" import status_badge %}
+
+{% block title %}{{ city.name }}{% endblock %}
+
+{% block admin_content %}
+<h1>{{ city.name }} {{ status_badge(city.is_active) }}</h1>
+
+<p class="audit-meta">
+  Created {{ city.created_at }} · Updated {{ city.updated_at }}
+</p>
+
+<table>
+  <tbody>
+    <tr><th>Slug</th><td><code>{{ city.slug }}</code></td></tr>
+    <tr><th>Region</th><td>{{ city.state_or_region or "—" }}</td></tr>
+    <tr><th>Country</th><td>{{ city.country or "—" }}</td></tr>
+    <tr><th>Timezone</th><td>{{ city.timezone }}</td></tr>
+    <tr><th>Default coordinates</th>
+      <td>
+        {% if city.default_latitude is not none and city.default_longitude is not none %}
+          {{ city.default_latitude }}, {{ city.default_longitude }}
+        {% else %}—{% endif %}
+      </td>
+    </tr>
+    <tr><th>Boundary configured</th><td>{{ "Yes" if city.boundary_config else "No" }}</td></tr>
+    <tr><th>Events</th><td>{{ event_count }}</td></tr>
+    <tr><th>Websites</th><td>{{ website_count }}</td></tr>
+  </tbody>
+</table>
+
+<div class="form-actions">
+  {% if can_update %}
+  <a href="/admin/cities/{{ city.id }}/edit"><button type="button">Edit</button></a>
+  {% endif %}
+
+  {% if can_activate %}
+    {% if city.is_active %}
+    <form method="post" action="/admin/cities/{{ city.id }}/deactivate" class="inline-form"
+          onsubmit="return confirm('Deactivate {{ city.name }}? It will stop appearing in the public feed.');">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}" />
+      <button type="submit" class="btn-secondary">Deactivate</button>
+    </form>
+    {% else %}
+    <form method="post" action="/admin/cities/{{ city.id }}/activate" class="inline-form"
+          onsubmit="return confirm('Activate {{ city.name }}?');">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}" />
+      <button type="submit">Activate</button>
+    </form>
+    {% endif %}
+  {% endif %}
+
+  {% if can_delete %}
+  <a href="/admin/cities/{{ city.id }}/delete"><button type="button" class="btn-danger">Delete…</button></a>
+  {% endif %}
+</div>
+
+<h2>Recent events ({{ event_count }} total)</h2>
+{% if recent_events %}
+<table>
+  <thead><tr><th>Title</th><th>Status</th><th>Archived</th></tr></thead>
+  <tbody>
+  {% for event in recent_events %}
+    <tr>
+      <td>{{ event.title }}</td>
+      <td>{{ status_badge(event.is_active) }}</td>
+      <td>{{ "Yes" if event.archived_at else "No" }}</td>
+    </tr>
+  {% endfor %}
+  </tbody>
+</table>
+{% else %}
+<p>No events for this city yet.</p>
+{% endif %}
+
+<h2>Related websites ({{ website_count }} total)</h2>
+{% if recent_websites %}
+<table>
+  <thead><tr><th>Name</th><th>Status</th><th>Archived</th></tr></thead>
+  <tbody>
+  {% for site in recent_websites %}
+    <tr>
+      <td>{{ site.name }}</td>
+      <td>{{ status_badge(site.is_active) }}</td>
+      <td>{{ "Yes" if site.archived_at else "No" }}</td>
+    </tr>
+  {% endfor %}
+  </tbody>
+</table>
+{% else %}
+<p>No websites for this city yet.</p>
+{% endif %}
+{% endblock %}

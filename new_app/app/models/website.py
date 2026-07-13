@@ -1,6 +1,7 @@
+from datetime import datetime
 from typing import TYPE_CHECKING
 
-from sqlalchemy import Boolean, ForeignKey, String
+from sqlalchemy import Boolean, DateTime, ForeignKey, String
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.database import Base
@@ -24,6 +25,8 @@ class Website(Base, TimestampMixin):
     )
     requires_js: Mapped[bool] = mapped_column(Boolean, default=False)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
+    # Prerequisite (along with events) for safely deleting the website's city.
+    archived_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), default=None)
 
     city: Mapped["City | None"] = relationship(back_populates="websites")
     events: Mapped[list["Event"]] = relationship(back_populates="website")

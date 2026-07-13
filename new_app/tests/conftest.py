@@ -19,9 +19,12 @@ from app.core.security import hash_password  # noqa: E402
 from app.core.seed import seed_defaults  # noqa: E402
 from app.database import Base, SessionLocal, engine  # noqa: E402
 from app.main import app as fastapi_app  # noqa: E402
+from app.models.city import City  # noqa: E402
+from app.models.event import Event  # noqa: E402
 from app.models.role import Role  # noqa: E402
 from app.models.user import User  # noqa: E402
 from app.models.user_role import UserRole  # noqa: E402
+from app.models.website import Website  # noqa: E402
 
 settings = get_settings()
 
@@ -90,6 +93,72 @@ def make_super_admin(make_user):
         return make_user(email=email, password=password, role_name=SUPER_ADMINISTRATOR)
 
     return _make
+
+
+@pytest.fixture
+def make_city(db_session):
+    def _make_city(
+        name: str = "Test City",
+        slug: str = "test-city",
+        timezone: str = "UTC",
+        is_active: bool = True,
+    ) -> City:
+        city = City(name=name, slug=slug, timezone=timezone, is_active=is_active)
+        db_session.add(city)
+        db_session.commit()
+        db_session.refresh(city)
+        return city
+
+    return _make_city
+
+
+@pytest.fixture
+def make_event(db_session):
+    def _make_event(
+        city: City,
+        title: str = "Test Event",
+        canonical_url: str = "https://example.com/event",
+        archived: bool = False,
+    ) -> Event:
+        from datetime import UTC, datetime
+
+        event = Event(
+            title=title,
+            canonical_url=canonical_url,
+            source="Test Source",
+            city_id=city.id,
+            archived_at=datetime.now(UTC) if archived else None,
+        )
+        db_session.add(event)
+        db_session.commit()
+        db_session.refresh(event)
+        return event
+
+    return _make_event
+
+
+@pytest.fixture
+def make_website(db_session):
+    def _make_website(
+        city: City,
+        name: str = "Test Site",
+        base_url: str = "https://example.com",
+        archived: bool = False,
+    ) -> Website:
+        from datetime import UTC, datetime
+
+        website = Website(
+            name=name,
+            base_url=base_url,
+            city_id=city.id,
+            archived_at=datetime.now(UTC) if archived else None,
+        )
+        db_session.add(website)
+        db_session.commit()
+        db_session.refresh(website)
+        return website
+
+    return _make_website
 
 
 @pytest.fixture

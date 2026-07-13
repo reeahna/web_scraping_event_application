@@ -9,17 +9,21 @@ from app.core.permissions import SUPER_ADMINISTRATOR
 from app.core.templating import render
 from app.dependencies import ClientIp, CorrelationId, CurrentUser, DbSession
 from app.models.audit_log import AuditLog
+from app.models.city import City
+from app.models.event import Event
 from app.models.permission import Permission
 from app.models.role import Role
 from app.models.role_permission import RolePermission
 from app.models.user import User
 from app.models.user_role import UserRole
+from app.models.website import Website
 from app.services.audit import record_audit
 from app.services.rbac import (
     assert_not_last_super_admin,
     count_active_super_admins,
     get_effective_permissions,
     require_permission,
+    user_has_permission,
 )
 
 router = APIRouter(prefix="/admin", tags=["admin"])
@@ -35,10 +39,27 @@ ManageRoles = Annotated[User, Depends(require_permission("roles.manage"))]
 @router.get("", response_class=HTMLResponse)
 def dashboard(request: Request, current_user: CurrentUser, db: DbSession):
     permissions = sorted(get_effective_permissions(db, current_user))
+
+    metrics = {
+        "active_cities": db.query(City).filter(City.is_active.is_(True)).count(),
+        "inactive_cities": db.query(City).filter(City.is_active.is_(False)).count(),
+        "websites": db.query(Website).count(),
+        "events": db.query(Event).count(),
+    }
+
+    recent_audit = None
+    if user_has_permission(db, current_user, "roles.manage"):
+        recent_audit = db.query(AuditLog).order_by(AuditLog.created_at.desc()).limit(10).all()
+
     return render(
         request,
         "admin/dashboard.html",
-        {"current_user": current_user, "permissions": permissions},
+        {
+            "current_user": current_user,
+            "permissions": permissions,
+            "metrics": metrics,
+            "recent_audit": recent_audit,
+        },
     )
 
 

@@ -14,7 +14,7 @@ from app.core.exceptions import (
 )
 from app.core.logging import configure_logging, get_logger
 from app.core.middleware import CorrelationIdMiddleware
-from app.routers import admin, auth, health, home
+from app.routers import admin, auth, cities, health, home
 
 settings = get_settings()
 configure_logging(settings.log_level)
@@ -43,3 +43,4 @@ app.include_router(home.router)
 app.include_router(health.router)
 app.include_router(auth.router)
 app.include_router(admin.router)
+app.include_router(cities.router)

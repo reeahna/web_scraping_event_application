@@ -1,6 +1,6 @@
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
-from sqlalchemy import Boolean, Float, String
+from sqlalchemy import JSON, Boolean, Float, String
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.database import Base
@@ -19,8 +19,14 @@ class City(Base, TimestampMixin):
     slug: Mapped[str] = mapped_column(String(255), unique=True, index=True)
     state_or_region: Mapped[str | None] = mapped_column(String(100), default=None)
     country: Mapped[str | None] = mapped_column(String(100), default=None)
-    latitude: Mapped[float | None] = mapped_column(Float, default=None)
-    longitude: Mapped[float | None] = mapped_column(Float, default=None)
+    timezone: Mapped[str] = mapped_column(String(64), default="UTC")
+    # "Default" because individual events carry their own precise lat/lng —
+    # these are just for map-centering and similar city-level defaults.
+    default_latitude: Mapped[float | None] = mapped_column(Float, default=None)
+    default_longitude: Mapped[float | None] = mapped_column(Float, default=None)
+    # Free-form (e.g. GeoJSON) boundary definition; structure not enforced yet —
+    # deliberately left generic until a future phase defines how boundaries are used.
+    boundary_config: Mapped[dict[str, Any] | None] = mapped_column(JSON, default=None)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
 
     websites: Mapped[list["Website"]] = relationship(back_populates="city")

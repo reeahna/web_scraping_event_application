@@ -44,6 +44,9 @@ class Event(Base, TimestampMixin):
 
     scraped_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), default=None)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
+    # Distinct from is_active: archiving is a deliberate curatorial step (a
+    # prerequisite for deleting the event's city), not just a visibility toggle.
+    archived_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), default=None)
 
     city_id: Mapped[int | None] = mapped_column(
         ForeignKey("cities.id", ondelete="SET NULL"), default=None

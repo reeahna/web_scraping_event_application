@@ -24,6 +24,7 @@ PERMISSIONS: dict[str, str] = {
     "sites.test": "Test-run a website/source",
     "sites.approve": "Approve a website/source",
     "sites.activate": "Activate or deactivate websites/sources",
+    "sites.archive": "Archive websites/sources (e.g. before deleting their city)",
     "sites.delete": "Delete websites/sources",
     # Scraper-first model: events are populated by scrapers, not typed in by
     # hand, so there is deliberately no general "events.create"/"events.update".
