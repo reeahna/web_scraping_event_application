@@ -1,17 +1,25 @@
-from app.core.permissions import VIEWER
+from app.core.permissions import REGISTERED_USER
 
 
-def test_viewer_denied_roles_management_page(client, make_user, login):
-    make_user(email="viewer@example.com", password="pw-viewer12345", role_name=VIEWER)
-    login("viewer@example.com", "pw-viewer12345")
+def test_registered_user_denied_roles_management_page(client, make_user, login):
+    make_user(
+        email="registered@example.com",
+        password="pw-registered12345",
+        role_name=REGISTERED_USER,
+    )
+    login("registered@example.com", "pw-registered12345")
 
     resp = client.get("/admin/roles")
     assert resp.status_code == 403
 
 
-def test_viewer_can_view_users_page(client, make_user, login):
-    make_user(email="viewer2@example.com", password="pw-viewer12345", role_name=VIEWER)
-    login("viewer2@example.com", "pw-viewer12345")
+def test_registered_user_denied_users_page(client, make_user, login):
+    make_user(
+        email="registered2@example.com",
+        password="pw-registered12345",
+        role_name=REGISTERED_USER,
+    )
+    login("registered2@example.com", "pw-registered12345")
 
     resp = client.get("/admin/users")
-    assert resp.status_code == 200
+    assert resp.status_code == 403

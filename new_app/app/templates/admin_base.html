@@ -6,10 +6,14 @@
     <a href="/admin">Dashboard</a>
     <a href="/admin/cities">Cities</a>
     <a href="/admin/websites">Websites</a>
+    <a href="/admin/events">Events</a>
+    <a href="/admin/event-categories">Categories</a>
+    <a href="/admin/categorization-rules">Category Rules</a>
     <a href="/admin/users">Users</a>
     <a href="/admin/roles">Roles</a>
     <a href="/admin/audit">Audit Log</a>
     <span class="admin-nav-spacer"></span>
+    <a href="/account">My Account</a>
     <span class="admin-nav-user">{{ current_user.email }}</span>
     <form method="post" action="/auth/logout" class="inline-form">
       <input type="hidden" name="csrf_token" value="{{ csrf_token }}" />

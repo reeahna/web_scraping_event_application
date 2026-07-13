@@ -1,19 +1,13 @@
 # Web Scraping Event Application
 
-This repository is being migrated to a new architecture. It currently contains two applications:
+This repository contains two independent applications:
 
-- [`legacy_app/`](legacy_app/) — the existing, working city events aggregator (FastAPI + APScheduler + SQLite + Playwright scrapers). Preserved unmodified; see [`legacy_app/README.md`](legacy_app/README.md) for setup and run instructions.
-- [`new_app/`](new_app/) — placeholder for the replacement application. Currently empty.
+- [`legacy_app/`](legacy_app/) is the existing city-events aggregator. It is
+  preserved unmodified and has its own setup instructions.
+- [`new_app/`](new_app/) is the replacement FastAPI application under active
+  development. It currently provides database foundations, local
+  authentication, RBAC, public registration, and account management.
+  Extraction and scheduling remain deferred.
 
-See [`docs/migration-notes.md`](docs/migration-notes.md) for what changed during the repository reorganization and why.
-
-## Quick start (legacy app)
-
-```bash
-cd legacy_app
-pip install -r requirements.txt
-playwright install chromium
-uvicorn main:app --reload --port 8000
-```
-
-Then open http://localhost:8000
+See [`docs/migration-notes.md`](docs/migration-notes.md) for repository history
+and [`new_app/README.md`](new_app/README.md) for current setup and verification.

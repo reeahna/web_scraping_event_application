@@ -20,6 +20,8 @@ from app.models.website import Website
 from app.services.audit import record_audit
 from app.services.rbac import (
     assert_not_last_super_admin,
+    can_access_admin,
+    can_assign_role,
     count_active_super_admins,
     get_effective_permissions,
     require_permission,
@@ -38,6 +40,9 @@ ManageRoles = Annotated[User, Depends(require_permission("roles.manage"))]
 
 @router.get("", response_class=HTMLResponse)
 def dashboard(request: Request, current_user: CurrentUser, db: DbSession):
+    if not can_access_admin(db, current_user):
+        raise AppError("Forbidden: no admin access", status_code=403)
+
     permissions = sorted(get_effective_permissions(db, current_user))
 
     metrics = {
@@ -189,6 +194,13 @@ def update_user_roles(
     )
 
     if action == "assign":
+        if not role.is_active:
+            raise AppError("Cannot assign a deactivated role.", status_code=409)
+        if not can_assign_role(db, current_user, role):
+            raise AppError(
+                "Only a Super Administrator may assign Administrator or Super Administrator.",
+                status_code=403,
+            )
         if existing is None:
             db.add(UserRole(user_id=target.id, role_id=role.id))
             db.commit()
@@ -204,8 +216,17 @@ def update_user_roles(
             )
     elif action == "revoke":
         if existing is not None:
+            # Revoking Administrator/Super Administrator is exactly as sensitive
+            # as granting it — an ordinary roles.manage holder must not be able
+            # to strip another admin's elevated access either.
+            if not can_assign_role(db, current_user, role):
+                raise AppError(
+                    "Only a Super Administrator may revoke Administrator or Super Administrator.",
+                    status_code=403,
+                )
             # Only the removal of the Super Administrator assignment itself needs
-            # the guard — revoking an unrelated role from a super admin is fine.
+            # the last-active-admin guard — revoking an unrelated role from a
+            # super admin is fine.
             if role.name == SUPER_ADMINISTRATOR:
                 assert_not_last_super_admin(db, target)
             db.delete(existing)

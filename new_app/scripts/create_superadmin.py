@@ -14,6 +14,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
+from app.core.email import normalize_email
 from app.core.permissions import SUPER_ADMINISTRATOR
 from app.core.security import hash_password
 from app.core.seed import seed_defaults
@@ -40,10 +41,11 @@ def main() -> None:
 
         super_admin_role = db.query(Role).filter(Role.name == SUPER_ADMINISTRATOR).one()
 
-        user = db.query(User).filter(User.email == args.email).first()
+        email = normalize_email(args.email)
+        user = db.query(User).filter(User.email == email).first()
         if user is None:
             user = User(
-                email=args.email,
+                email=email,
                 full_name=args.full_name,
                 hashed_password=hash_password(args.password),
                 is_active=True,

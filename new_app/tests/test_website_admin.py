@@ -1,4 +1,4 @@
-from app.core.permissions import EDITOR, VIEWER
+from app.core.permissions import EDITOR, REGISTERED_USER
 from app.models.audit_log import AuditLog
 from app.models.website import Website
 
@@ -185,9 +185,13 @@ def test_editor_cannot_delete_website(client, make_user, make_city, make_website
     assert resp.status_code == 403
 
 
-def test_viewer_cannot_create_website(client, make_user, login):
-    make_user(email="viewer@example.com", password="pw-viewer12345", role_name=VIEWER)
-    login("viewer@example.com", "pw-viewer12345")
+def test_registered_user_cannot_create_website(client, make_user, login):
+    make_user(
+        email="registered@example.com",
+        password="pw-registered12345",
+        role_name=REGISTERED_USER,
+    )
+    login("registered@example.com", "pw-registered12345")
 
     resp = client.get("/admin/websites/new")
     assert resp.status_code == 403

@@ -10,7 +10,7 @@
 
   {% if current_user %}
   <div>
-    <a href="/admin">Admin dashboard</a>
+    <a href="/account">My Account</a>
     ·
     <form method="post" action="/auth/logout" class="inline-form">
       <input type="hidden" name="csrf_token" value="{{ csrf_token }}" />
@@ -18,7 +18,12 @@
     </form>
   </div>
   {% else %}
-  <p><a href="/auth/login">Admin Login</a></p>
+  <p>
+    <a href="/auth/login">Log In</a>
+    {% if registration_enabled %}
+    · <a href="/register">Create Account</a>
+    {% endif %}
+  </p>
   {% endif %}
 </div>
 {% endblock %}

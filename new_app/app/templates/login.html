@@ -27,5 +27,9 @@
 
     <button type="submit">Log in</button>
   </form>
+
+  {% if registration_enabled %}
+  <p><a href="/register">Create Account</a></p>
+  {% endif %}
 </div>
 {% endblock %}

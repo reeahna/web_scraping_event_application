@@ -1,0 +1,45 @@
+{% extends "base.html" %}
+
+{% block title %}Create Account — New City Events{% endblock %}
+
+{% block content %}
+<div class="auth-card">
+  {% if not registration_enabled %}
+  <p class="banner banner-warning">Registration is currently unavailable on this deployment.</p>
+  <p><a href="/auth/login">Back to log in</a></p>
+  {% else %}
+  <h1>Create Account</h1>
+
+  {% if errors._global %}
+  <p class="form-error">{{ errors._global }}</p>
+  {% endif %}
+
+  <form method="post" action="/register">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}" />
+
+    <label for="display_name">Display name</label>
+    <input type="text" id="display_name" name="display_name" value="{{ form.display_name or '' }}"
+           required autocomplete="name" />
+    {% if errors.display_name %}<span class="field-error">{{ errors.display_name }}</span>{% endif %}
+
+    <label for="email">Email</label>
+    <input type="email" id="email" name="email" value="{{ form.email or '' }}"
+           required autocomplete="email" />
+    {% if errors.email %}<span class="field-error">{{ errors.email }}</span>{% endif %}
+
+    <label for="password">Password</label>
+    <input type="password" id="password" name="password" required autocomplete="new-password" />
+    {% if errors.password %}<span class="field-error">{{ errors.password }}</span>{% endif %}
+
+    <label for="password_confirm">Confirm password</label>
+    <input type="password" id="password_confirm" name="password_confirm" required
+           autocomplete="new-password" />
+    {% if errors.password_confirm %}<span class="field-error">{{ errors.password_confirm }}</span>{% endif %}
+
+    <button type="submit">Create Account</button>
+  </form>
+
+  <p><a href="/auth/login">Already have an account? Log in</a></p>
+  {% endif %}
+</div>
+{% endblock %}

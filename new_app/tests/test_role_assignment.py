@@ -1,4 +1,4 @@
-from app.core.permissions import VIEWER
+from app.core.permissions import REGISTERED_USER
 from app.models.audit_log import AuditLog
 from app.models.role import Role
 from app.models.user_role import UserRole
@@ -9,19 +9,19 @@ def test_super_admin_assigns_role_to_user(client, make_super_admin, make_user, l
     target = make_user(email="target@example.com", password="pw-target12345")
     login("root@example.com", "root-pass-1234")
 
-    viewer_role = db_session.query(Role).filter(Role.name == VIEWER).one()
+    registered_role = db_session.query(Role).filter(Role.name == REGISTERED_USER).one()
     csrf = client.cookies.get("csrf_token")
 
     resp = client.post(
         f"/admin/users/{target.id}/roles",
-        data={"role_id": viewer_role.id, "action": "assign", "csrf_token": csrf},
+        data={"role_id": registered_role.id, "action": "assign", "csrf_token": csrf},
         follow_redirects=False,
     )
     assert resp.status_code == 303
 
     link = (
         db_session.query(UserRole)
-        .filter(UserRole.user_id == target.id, UserRole.role_id == viewer_role.id)
+        .filter(UserRole.user_id == target.id, UserRole.role_id == registered_role.id)
         .first()
     )
     assert link is not None

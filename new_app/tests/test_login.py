@@ -1,9 +1,10 @@
+from app.core.permissions import REGISTERED_USER
 from app.models.audit_log import AuditLog
 from app.models.user import User
 
 
 def test_successful_login_sets_session_cookie_and_updates_last_login(client, make_user, db_session):
-    make_user(email="alice@example.com", password="s3cret-pass")
+    make_user(email="alice@example.com", password="s3cret-pass", role_name=REGISTERED_USER)
 
     client.get("/auth/login")
     csrf = client.cookies.get("csrf_token")
@@ -14,7 +15,7 @@ def test_successful_login_sets_session_cookie_and_updates_last_login(client, mak
     )
 
     assert resp.status_code == 303
-    assert resp.headers["location"] == "/admin"
+    assert resp.headers["location"] == "/account"
     assert "session_token" in resp.cookies
 
     db_session.expire_all()

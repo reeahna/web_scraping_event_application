@@ -1,0 +1,74 @@
+<div class="account-page">
+  <h1>My Account</h1>
+
+  {% if errors._global %}
+  <p class="form-error">{{ errors._global }}</p>
+  {% endif %}
+
+  <section class="display-name-section" aria-labelledby="display-name-heading">
+    <h2 id="display-name-heading">Display name</h2>
+
+    <div id="display-name-readonly" class="display-name-readonly"{% if edit_mode %} hidden{% endif %}>
+      <span id="display-name-text">{{ current_user.full_name or "—" }}</span>
+      <form method="get" action="/account" class="inline-form" id="display-name-edit-request">
+        <button type="submit" name="edit" value="1" class="edit-icon-button"
+                aria-label="Edit display name" title="Edit display name">
+          <span aria-hidden="true">✎</span>
+        </button>
+      </form>
+    </div>
+
+    <form method="post" action="/account" class="admin-form account-form"
+          id="display-name-edit-form"{% if not edit_mode %} hidden{% endif %}>
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}" />
+
+      <label for="display_name">Display name</label>
+      <input type="text" id="display_name" name="display_name" value="{{ display_name or '' }}"
+             data-original-value="{{ current_user.full_name or '' }}" maxlength="255" required
+             autocomplete="name"{% if errors.display_name %} aria-invalid="true"
+             aria-describedby="display_name_error"{% endif %} />
+      {% if errors.display_name %}
+      <span class="field-error" id="display_name_error">{{ errors.display_name }}</span>
+      {% endif %}
+
+      <div class="form-actions">
+        <button type="submit">Save</button>
+        <a href="/account" class="button-link btn-secondary" id="cancel-display-name-edit">Cancel</a>
+      </div>
+    </form>
+  </section>
+
+  <table>
+    <tbody>
+      <tr><th>Email</th><td>{{ current_user.email }}</td></tr>
+      <tr><th>Role</th><td>{{ role_names | join(", ") if role_names else "No role assigned" }}</td></tr>
+      <tr><th>Account status</th><td>{{ "Active" if current_user.is_active else "Inactive" }}</td></tr>
+      <tr><th>Last login</th><td>{{ current_user.last_login_at or "This is your first login" }}</td></tr>
+    </tbody>
+  </table>
+
+  <h2>Coming soon</h2>
+  <ul class="impact-list">
+    <li><strong>Saved Events</strong> — <span class="placeholder-note">not yet available</span></li>
+    <li><strong>Followed Cities</strong> — <span class="placeholder-note">not yet available</span></li>
+    <li><strong>Alerts</strong> — <span class="placeholder-note">not yet available</span></li>
+  </ul>
+</div>
+
+<script>
+  (() => {
+    const editRequest = document.getElementById("display-name-edit-request");
+    const readOnlyView = document.getElementById("display-name-readonly");
+    const editForm = document.getElementById("display-name-edit-form");
+    const displayNameInput = document.getElementById("display_name");
+
+    if (!editRequest || !readOnlyView || !editForm || !displayNameInput) return;
+
+    editRequest.addEventListener("submit", (event) => {
+      event.preventDefault();
+      readOnlyView.hidden = true;
+      editForm.hidden = false;
+      displayNameInput.focus();
+    });
+  })();
+</script>

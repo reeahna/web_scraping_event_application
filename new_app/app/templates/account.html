@@ -1,0 +1,17 @@
+{% extends "base.html" %}
+
+{% block title %}My Account — New City Events{% endblock %}
+
+{% block content %}
+<nav class="account-nav" aria-label="Account navigation">
+  <a href="/account">My Account</a>
+  <form method="post" action="/auth/logout" class="inline-form">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}" />
+    <button type="submit">Log out</button>
+  </form>
+</nav>
+{% if flash %}
+<div class="account-flash flash flash-{{ flash.category }}">{{ flash.message }}</div>
+{% endif %}
+{% include "_account_content.html" %}
+{% endblock %}

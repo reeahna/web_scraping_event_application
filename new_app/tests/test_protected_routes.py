@@ -1,10 +1,13 @@
+from app.core.permissions import REGISTERED_USER
+
+
 def test_admin_dashboard_requires_login(client):
     resp = client.get("/admin")
     assert resp.status_code == 401
 
 
-def test_admin_dashboard_accessible_when_logged_in(client, make_user, login):
-    make_user(email="frank@example.com", password="pw-frank12345")
+def test_admin_dashboard_accessible_with_admin_permission(client, make_super_admin, login):
+    make_super_admin(email="frank@example.com", password="pw-frank12345")
     login("frank@example.com", "pw-frank12345")
 
     resp = client.get("/admin")
@@ -25,8 +28,8 @@ def test_api_style_request_to_protected_page_still_gets_401(client):
     assert resp.json()["detail"]
 
 
-def test_login_after_redirect_lands_on_originally_requested_page(client, make_user, login):
-    make_user(email="grace@example.com", password="pw-grace12345")
+def test_login_after_redirect_lands_on_originally_requested_page(client, make_super_admin, login):
+    make_super_admin(email="grace@example.com", password="pw-grace12345")
 
     redirect_resp = client.get(
         "/admin/users", headers={"accept": "text/html"}, follow_redirects=False
@@ -53,7 +56,11 @@ def test_login_after_redirect_lands_on_originally_requested_page(client, make_us
 
 
 def test_next_param_rejects_absolute_or_protocol_relative_urls(client, make_user):
-    make_user(email="henry@example.com", password="pw-henry12345")
+    make_user(
+        email="henry@example.com",
+        password="pw-henry12345",
+        role_name=REGISTERED_USER,
+    )
 
     client.get("/auth/login")
     csrf = client.cookies.get("csrf_token")
@@ -68,4 +75,4 @@ def test_next_param_rejects_absolute_or_protocol_relative_urls(client, make_user
         follow_redirects=False,
     )
     assert resp.status_code == 303
-    assert resp.headers["location"] == "/admin"
+    assert resp.headers["location"] == "/account"

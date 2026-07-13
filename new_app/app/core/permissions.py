@@ -8,9 +8,17 @@ never drift apart.
 SUPER_ADMINISTRATOR = "Super Administrator"
 ADMINISTRATOR = "Administrator"
 EDITOR = "Editor"
-VIEWER = "Viewer"
+# The default role for public self-registration. Deliberately granted zero
+# permissions by default (see DEFAULT_ROLE_PERMISSIONS below) — it exists so
+# a logged-in visitor has an account, not so they get any admin capability.
+REGISTERED_USER = "Registered User"
 
-DEFAULT_ROLES: tuple[str, ...] = (SUPER_ADMINISTRATOR, ADMINISTRATOR, EDITOR, VIEWER)
+# Roles allowed to be granted through ordinary role assignment (roles.manage).
+# Administrator and Super Administrator are deliberately excluded — granting
+# either requires the elevated check in app.services.rbac.can_assign_role.
+ELEVATED_ROLES: tuple[str, ...] = (SUPER_ADMINISTRATOR, ADMINISTRATOR)
+
+DEFAULT_ROLES: tuple[str, ...] = (SUPER_ADMINISTRATOR, ADMINISTRATOR, EDITOR, REGISTERED_USER)
 
 PERMISSIONS: dict[str, str] = {
     "cities.view": "View cities",
@@ -71,11 +79,8 @@ DEFAULT_ROLE_PERMISSIONS: dict[str, tuple[str, ...]] = {
         "events.view_provenance",
         "reports.view",
     ),
-    VIEWER: (
-        "cities.view",
-        "sites.view",
-        "events.view",
-        "users.view",
-        "reports.view",
-    ),
+    # Deliberately empty: the public self-registration role must not receive
+    # city/website/event-management, user/role-management, reporting, or
+    # settings permissions by default.
+    REGISTERED_USER: (),
 }

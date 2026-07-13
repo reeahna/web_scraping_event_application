@@ -1,26 +1,60 @@
+import re
 from datetime import UTC, datetime
+from urllib.parse import unquote, urlsplit
 
 from fastapi import APIRouter, Form, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
+from sqlalchemy.orm import Session
 
 from app.config import get_settings
 from app.core.csrf import verify_csrf
 from app.core.templating import render
 from app.dependencies import ClientIp, CorrelationId, CurrentUser, DbSession
+from app.models.user import User
 from app.services.audit import record_audit
 from app.services.auth import authenticate_local_user, create_session, delete_session
+from app.services.rbac import can_access_admin
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 
 
-def _safe_next(next_url: str | None) -> str:
-    """Only ever redirect to a same-app relative path — never an absolute or
-    protocol-relative URL, to avoid open-redirect via a crafted `next` value."""
-    if not next_url:
-        return "/admin"
-    if next_url.startswith("/") and not next_url.startswith(("//", "/\\")):
+def _is_safe_next(next_url: str | None) -> bool:
+    """Only same-app relative paths — never an absolute URL, an external
+    scheme, or a protocol-relative `//host` path, to avoid open-redirect via
+    a crafted `next` value."""
+    if not next_url or any(ord(char) < 32 or ord(char) == 127 for char in next_url):
+        return False
+    if not next_url.startswith("/") or next_url.startswith("//"):
+        return False
+    if "\\" in next_url or re.search(r"%(?![0-9A-Fa-f]{2})", next_url):
+        return False
+    try:
+        parsed = urlsplit(next_url)
+        decoded_path = unquote(parsed.path)
+    except (UnicodeError, ValueError):
+        return False
+    return (
+        not parsed.scheme
+        and not parsed.netloc
+        and not parsed.fragment
+        and decoded_path.startswith("/")
+        and not decoded_path.startswith("//")
+        and "\\" not in decoded_path
+    )
+
+
+def _default_redirect(db: Session, user: User) -> str:
+    """Where a user lands after a *normal* login with no `next`: admins land
+    on /admin, everyone else on /account. Based on effective permissions
+    (can_access_admin), not role name, so a custom low/high-permission role
+    behaves correctly too."""
+    return "/admin" if can_access_admin(db, user) else "/account"
+
+
+def _resolve_redirect(db: Session, user: User, next_url: str | None) -> str:
+    if _is_safe_next(next_url):
         return next_url
-    return "/admin"
+    return _default_redirect(db, user)
 
 
 def _render_login(
@@ -37,6 +71,7 @@ def _render_login(
         {
             "error": error,
             "local_login_enabled": settings.local_login_enabled,
+            "registration_enabled": settings.registration_enabled,
             "next": next_url or "",
         },
         status_code=status_code,
@@ -111,7 +146,7 @@ def login_submit(
         ip_address=ip_address,
     )
 
-    response = RedirectResponse(url=_safe_next(next), status_code=303)
+    response = RedirectResponse(url=_resolve_redirect(db, user, next), status_code=303)
     response.set_cookie(
         settings.session_cookie_name,
         raw_token,

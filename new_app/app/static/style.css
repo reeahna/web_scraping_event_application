@@ -9,6 +9,8 @@
 
 * { box-sizing: border-box; margin: 0; padding: 0; }
 
+[hidden] { display: none !important; }
+
 body {
   font-family: system-ui, sans-serif;
   background: var(--bg);
@@ -107,6 +109,103 @@ button {
   color: #dc2626;
   font-size: 0.85rem;
   margin-bottom: 8px;
+}
+
+.field-error {
+  color: #dc2626;
+  font-size: 0.78rem;
+}
+
+.auth-card label {
+  font-size: 0.85rem;
+  font-weight: 600;
+  margin-top: 4px;
+}
+
+.account-page {
+  max-width: 640px;
+  margin: 40px auto;
+  padding: 0 24px;
+}
+
+.account-nav {
+  display: flex;
+  justify-content: flex-end;
+  align-items: center;
+  gap: 16px;
+  max-width: 640px;
+  margin: 20px auto 0;
+  padding: 0 24px;
+}
+
+.account-nav a {
+  color: var(--accent);
+  text-decoration: none;
+}
+
+.account-flash {
+  max-width: 592px;
+  margin: 16px auto 0;
+}
+
+.account-form {
+  margin-top: 16px;
+}
+
+.display-name-section h2 {
+  font-size: 0.9rem;
+  margin-bottom: 8px;
+}
+
+.display-name-readonly {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 36px;
+}
+
+.edit-icon-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  padding: 0;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--accent);
+}
+
+.edit-icon-button:hover {
+  background: var(--bg);
+}
+
+.edit-icon-button:focus-visible,
+.button-link:focus-visible {
+  outline: 3px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.button-link {
+  display: inline-block;
+  padding: 8px 16px;
+  border-radius: 6px;
+  text-decoration: none;
+  font-size: 0.9rem;
+}
+
+.account-page table {
+  width: 100%;
+  border-collapse: collapse;
+  margin: 16px 0 24px;
+}
+
+.account-page th,
+.account-page td {
+  text-align: left;
+  padding: 8px 10px;
+  border-bottom: 1px solid var(--border);
+  font-size: 0.9rem;
 }
 
 /* Admin */

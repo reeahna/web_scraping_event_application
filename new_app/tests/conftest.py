@@ -7,13 +7,18 @@ from pathlib import Path
 # legacy_app database.
 TESTS_DIR = Path(__file__).resolve().parent
 TEST_DB_PATH = TESTS_DIR / "test_app.db"
+TEST_TMP_PATH = TESTS_DIR / ".tmp"
+TEST_TMP_PATH.mkdir(exist_ok=True)
 os.environ["DATABASE_URL"] = f"sqlite:///{TEST_DB_PATH.as_posix()}"
+os.environ["TEMP"] = str(TEST_TMP_PATH)
+os.environ["TMP"] = str(TEST_TMP_PATH)
 
 import pytest  # noqa: E402
 from starlette.testclient import TestClient  # noqa: E402
 
 import app.models  # noqa: E402, F401  (registers all models on Base.metadata)
 from app.config import get_settings  # noqa: E402
+from app.core.email import normalize_email  # noqa: E402
 from app.core.permissions import SUPER_ADMINISTRATOR  # noqa: E402
 from app.core.security import hash_password  # noqa: E402
 from app.core.seed import seed_defaults  # noqa: E402
@@ -25,12 +30,14 @@ from app.models.role import Role  # noqa: E402
 from app.models.user import User  # noqa: E402
 from app.models.user_role import UserRole  # noqa: E402
 from app.models.website import Website  # noqa: E402
+from app.services.rate_limit import _attempts_by_ip  # noqa: E402
 
 settings = get_settings()
 
 
 @pytest.fixture(autouse=True)
 def _reset_db():
+    _attempts_by_ip.clear()
     Base.metadata.create_all(bind=engine)
     seed_session = SessionLocal()
     try:
@@ -39,6 +46,7 @@ def _reset_db():
         seed_session.close()
     yield
     Base.metadata.drop_all(bind=engine)
+    _attempts_by_ip.clear()
 
 
 @pytest.fixture
@@ -73,7 +81,7 @@ def make_user(db_session):
         is_active: bool = True,
     ) -> User:
         user = User(
-            email=email,
+            email=normalize_email(email),
             hashed_password=hash_password(password),
             is_active=is_active,
         )
@@ -177,3 +185,22 @@ def login(client):
         )
 
     return _login
+
+
+@pytest.fixture
+def register(client):
+    """Submit the public registration form with a valid CSRF token."""
+
+    def _register(**overrides):
+        client.get("/register")
+        data = {
+            "display_name": "New User",
+            "email": "new-user@example.com",
+            "password": "registration-pass-123",
+            "password_confirm": "registration-pass-123",
+            "csrf_token": client.cookies.get(settings.csrf_cookie_name),
+        }
+        data.update(overrides)
+        return client.post("/register", data=data, follow_redirects=False)
+
+    return _register
