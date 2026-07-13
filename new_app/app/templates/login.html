@@ -1,0 +1,31 @@
+{% extends "base.html" %}
+
+{% block title %}Log in — New City Events{% endblock %}
+
+{% block content %}
+<div class="auth-card">
+  {% if not local_login_enabled %}
+  <p class="banner banner-warning">Local password login is disabled on this deployment.</p>
+  {% else %}
+  <p class="banner banner-dev">Local development login — not for production use.</p>
+  {% endif %}
+
+  <h1>Log in</h1>
+
+  {% if error %}
+  <p class="form-error">{{ error }}</p>
+  {% endif %}
+
+  <form method="post" action="/auth/login">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}" />
+    <input type="hidden" name="next" value="{{ next }}" />
+    <label for="email">Email</label>
+    <input type="email" id="email" name="email" required autocomplete="username" />
+
+    <label for="password">Password</label>
+    <input type="password" id="password" name="password" required autocomplete="current-password" />
+
+    <button type="submit">Log in</button>
+  </form>
+</div>
+{% endblock %}

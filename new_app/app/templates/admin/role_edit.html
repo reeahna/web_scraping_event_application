@@ -1,0 +1,32 @@
+{% extends "admin_base.html" %}
+
+{% block title %}Edit Role{% endblock %}
+
+{% block admin_content %}
+<h1>Edit role: {{ role.name }}</h1>
+<form method="post" action="/admin/roles/{{ role.id }}">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token }}" />
+
+  <label for="name">Name</label>
+  <input type="text" id="name" name="name" value="{{ role.name }}" required />
+
+  <label for="description">Description</label>
+  <input type="text" id="description" name="description" value="{{ role.description or '' }}" />
+
+  <label class="checkbox-label">
+    <input type="checkbox" name="is_active" {% if role.is_active %}checked{% endif %} />
+    Active
+  </label>
+
+  <h2>Permissions</h2>
+  {% for perm in all_permissions %}
+  <label class="checkbox-label perm-checkbox">
+    <input type="checkbox" name="permission_codes" value="{{ perm.code }}"
+      {% if perm.code in assigned_codes %}checked{% endif %} />
+    <code>{{ perm.code }}</code> — {{ perm.description }}
+  </label>
+  {% endfor %}
+
+  <button type="submit">Save</button>
+</form>
+{% endblock %}

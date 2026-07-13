@@ -1,0 +1,34 @@
+{% extends "admin_base.html" %}
+
+{% block title %}Users{% endblock %}
+
+{% block admin_content %}
+<h1>Users</h1>
+<table>
+  <thead>
+    <tr><th>Email</th><th>Active</th><th>Last login</th><th>Actions</th></tr>
+  </thead>
+  <tbody>
+  {% for user in users %}
+    <tr>
+      <td><a href="/admin/users/{{ user.id }}/effective-permissions">{{ user.email }}</a></td>
+      <td>{{ "Yes" if user.is_active else "No" }}</td>
+      <td>{{ user.last_login_at or "Never" }}</td>
+      <td>
+        {% if user.is_active %}
+        <form method="post" action="/admin/users/{{ user.id }}/deactivate" class="inline-form">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token }}" />
+          <button type="submit">Deactivate</button>
+        </form>
+        {% else %}
+        <form method="post" action="/admin/users/{{ user.id }}/activate" class="inline-form">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token }}" />
+          <button type="submit">Activate</button>
+        </form>
+        {% endif %}
+      </td>
+    </tr>
+  {% endfor %}
+  </tbody>
+</table>
+{% endblock %}

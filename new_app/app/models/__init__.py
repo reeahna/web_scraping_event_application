@@ -7,6 +7,7 @@ from app.models.role import Role
 from app.models.role_permission import RolePermission
 from app.models.user import User
 from app.models.user_role import UserRole
+from app.models.user_session import UserSession
 from app.models.website import Website
 
 __all__ = [
@@ -19,5 +20,6 @@ __all__ = [
     "RolePermission",
     "User",
     "UserRole",
+    "UserSession",
     "Website",
 ]

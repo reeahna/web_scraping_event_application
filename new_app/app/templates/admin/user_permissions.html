@@ -1,0 +1,47 @@
+{% extends "admin_base.html" %}
+
+{% block title %}Effective Permissions{% endblock %}
+
+{% block admin_content %}
+<h1>Effective permissions for {{ target.email }}</h1>
+
+<h2>Assigned roles</h2>
+{% if roles %}
+<ul>
+{% for role in roles %}
+  <li>
+    {{ role.name }}
+    <form method="post" action="/admin/users/{{ target.id }}/roles" class="inline-form">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}" />
+      <input type="hidden" name="role_id" value="{{ role.id }}" />
+      <input type="hidden" name="action" value="revoke" />
+      <button type="submit">Revoke</button>
+    </form>
+  </li>
+{% endfor %}
+</ul>
+{% else %}
+<p>No roles assigned.</p>
+{% endif %}
+
+<h2>Assign a role</h2>
+<form method="post" action="/admin/users/{{ target.id }}/roles" class="inline-form">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token }}" />
+  <input type="hidden" name="action" value="assign" />
+  <select name="role_id">
+    {% for role in all_roles %}
+    <option value="{{ role.id }}">{{ role.name }}</option>
+    {% endfor %}
+  </select>
+  <button type="submit">Assign</button>
+</form>
+
+<h2>Effective permissions</h2>
+{% if permissions %}
+<ul>
+{% for p in permissions %}<li>{{ p }}</li>{% endfor %}
+</ul>
+{% else %}
+<p>No effective permissions.</p>
+{% endif %}
+{% endblock %}

@@ -1,8 +1,9 @@
-# New App (Phase 1: Foundation)
+# New App (Phase 2: Local auth & RBAC)
 
-Replacement city events application. This phase establishes the database, models,
-and a minimal FastAPI skeleton only — **no scraping, scheduling, auth, or LLM
-integration yet.**
+Replacement city events application. Phase 1 established the database, models,
+and a minimal FastAPI skeleton. Phase 2 adds local development login,
+session-based auth, and role-based access control (see below). **Still no
+scraping, scheduling, OAuth, or LLM integration.**
 
 ## Stack
 
@@ -53,6 +54,43 @@ CWD-relative path fragility present in `legacy_app`.
   `migrations/env.py` reads `DATABASE_URL` from the environment first, falling back
   to the app's own settings — this is what lets tests point Alembic at a throwaway
   database.
+
+## Authentication & authorization (Phase 2)
+
+**Login URL:** `/auth/login` (GET renders the form, POST submits it). **Logout:** `POST /auth/logout`.
+
+This is **local email/password login — a development/fallback mechanism**,
+clearly labeled as such in the UI. It's controlled by `LOCAL_LOGIN_ENABLED`
+(default `true`) and is meant to be turned off once an external identity
+provider (Google/Microsoft/Facebook, added in a later phase) is wired up. The
+role/permission layer underneath is provider-agnostic and will be reused
+as-is by OAuth logins.
+
+Create the first Super Administrator:
+
+```bash
+python scripts/create_superadmin.py --email admin@example.com --password "..."
+```
+
+**Protected pages auto-redirect to login.** Any admin page under `/admin` requires
+a valid session. How an unauthenticated request is handled depends on what it
+looks like it's asking for:
+- A **browser navigation** (an `Accept: text/html` request — i.e. someone typing
+  a URL or clicking a link) gets a `303` redirect to
+  `/auth/login?next=<original path>`, and logging in from there sends you back
+  to that original page.
+- An **API/XHR-style request** (no `text/html` in `Accept`) still gets a plain
+  `401 {"detail": "..."}` JSON response — this is what a future REST API or
+  fetch()-based frontend should expect.
+
+Default roles: Super Administrator, Administrator, Editor, Viewer — seeded
+automatically by the Phase 2 migration (`app/core/permissions.py` is the single
+source of truth for the roles/permission catalog). A Super Administrator can
+manage roles, permissions, and user role assignments at `/admin/roles` and
+`/admin/users`; the system refuses to remove the last active Super
+Administrator's admin access. All resulting changes (login/logout, role and
+permission changes, user activation/deactivation) are recorded in `audit_logs`,
+viewable at `/admin/audit`.
 
 ## Tests
 

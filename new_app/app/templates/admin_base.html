@@ -1,0 +1,21 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="admin-shell">
+  <nav class="admin-nav">
+    <a href="/admin">Dashboard</a>
+    <a href="/admin/users">Users</a>
+    <a href="/admin/roles">Roles</a>
+    <a href="/admin/audit">Audit Log</a>
+    <span class="admin-nav-spacer"></span>
+    <span class="admin-nav-user">{{ current_user.email }}</span>
+    <form method="post" action="/auth/logout" class="inline-form">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}" />
+      <button type="submit">Log out</button>
+    </form>
+  </nav>
+  <div class="admin-body">
+    {% block admin_content %}{% endblock %}
+  </div>
+</div>
+{% endblock %}

@@ -48,3 +48,127 @@ header {
 .hero a {
   color: var(--accent);
 }
+
+/* Auth */
+.auth-card {
+  max-width: 380px;
+  margin: 60px auto;
+  padding: 0 24px;
+}
+
+.auth-card h1 {
+  font-size: 1.4rem;
+  margin: 16px 0;
+}
+
+.auth-card form {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.auth-card input {
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  font-size: 0.95rem;
+}
+
+.auth-card button,
+button {
+  background: var(--accent);
+  color: #fff;
+  border: none;
+  padding: 8px 16px;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 0.9rem;
+}
+
+.banner {
+  padding: 8px 12px;
+  border-radius: 6px;
+  font-size: 0.82rem;
+  margin-bottom: 12px;
+}
+
+.banner-dev {
+  background: rgba(79, 70, 229, 0.08);
+  color: var(--accent);
+}
+
+.banner-warning {
+  background: rgba(220, 38, 38, 0.08);
+  color: #dc2626;
+}
+
+.form-error {
+  color: #dc2626;
+  font-size: 0.85rem;
+  margin-bottom: 8px;
+}
+
+/* Admin */
+.admin-nav {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  background: var(--surface);
+  border-bottom: 1px solid var(--border);
+  padding: 12px 24px;
+}
+
+.admin-nav a {
+  color: var(--text);
+  text-decoration: none;
+  font-size: 0.9rem;
+}
+
+.admin-nav a:hover {
+  color: var(--accent);
+}
+
+.admin-nav-spacer {
+  flex: 1;
+}
+
+.admin-nav-user {
+  font-size: 0.85rem;
+  color: var(--muted);
+}
+
+.admin-body {
+  max-width: 900px;
+  margin: 0 auto;
+  padding: 24px;
+}
+
+.admin-body table {
+  width: 100%;
+  border-collapse: collapse;
+  margin-bottom: 24px;
+}
+
+.admin-body th,
+.admin-body td {
+  text-align: left;
+  padding: 8px 10px;
+  border-bottom: 1px solid var(--border);
+  font-size: 0.9rem;
+}
+
+.inline-form {
+  display: inline;
+}
+
+.checkbox-label {
+  display: block;
+  font-size: 0.9rem;
+  margin: 4px 0;
+}
+
+.perm-checkbox code {
+  background: var(--bg);
+  padding: 1px 4px;
+  border-radius: 4px;
+}

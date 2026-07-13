@@ -1,0 +1,26 @@
+{% extends "admin_base.html" %}
+
+{% block title %}Audit Log{% endblock %}
+
+{% block admin_content %}
+<h1>Audit log</h1>
+<table>
+  <thead>
+    <tr>
+      <th>Time</th><th>Actor</th><th>Action</th><th>Entity</th><th>Correlation ID</th><th>IP</th>
+    </tr>
+  </thead>
+  <tbody>
+  {% for entry in entries %}
+    <tr>
+      <td>{{ entry.created_at }}</td>
+      <td>{{ entry.user_id or "—" }}</td>
+      <td>{{ entry.action }}</td>
+      <td>{{ entry.entity_type }}{% if entry.entity_id %}#{{ entry.entity_id }}{% endif %}</td>
+      <td>{{ entry.correlation_id }}</td>
+      <td>{{ entry.ip_address }}</td>
+    </tr>
+  {% endfor %}
+  </tbody>
+</table>
+{% endblock %}

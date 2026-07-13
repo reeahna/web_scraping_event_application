@@ -24,6 +24,11 @@ class AuditLog(Base):
     entity_type: Mapped[str | None] = mapped_column(String(100), default=None)
     entity_id: Mapped[int | None] = mapped_column(default=None)
     detail: Mapped[str | None] = mapped_column(Text, default=None)
+    # JSON-encoded snapshots; never populated with passwords, session tokens, or secrets.
+    before_state: Mapped[str | None] = mapped_column(Text, default=None)
+    after_state: Mapped[str | None] = mapped_column(Text, default=None)
+    correlation_id: Mapped[str | None] = mapped_column(String(64), index=True, default=None)
+    ip_address: Mapped[str | None] = mapped_column(String(64), default=None)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 
     user: Mapped["User | None"] = relationship()

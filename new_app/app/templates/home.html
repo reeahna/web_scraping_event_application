@@ -5,7 +5,20 @@
 {% block content %}
 <div class="hero">
   <h1>New application foundation is running</h1>
-  <p>Phase 1: database, models, and health checks only. No scraping, scheduling, or auth yet.</p>
+  <p>Database, models, health checks, and local admin auth. No scraping or scheduling yet.</p>
   <p><a href="/health">Check health endpoint</a></p>
+
+  {% if current_user %}
+  <div>
+    <a href="/admin">Admin dashboard</a>
+    ·
+    <form method="post" action="/auth/logout" class="inline-form">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}" />
+      <button type="submit">Log out</button>
+    </form>
+  </div>
+  {% else %}
+  <p><a href="/auth/login">Admin Login</a></p>
+  {% endif %}
 </div>
 {% endblock %}

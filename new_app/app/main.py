@@ -5,9 +5,16 @@ from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
 
 from app.config import get_settings
-from app.core.exceptions import AppError, app_error_handler, unhandled_exception_handler
+from app.core.exceptions import (
+    AppError,
+    NotAuthenticatedError,
+    app_error_handler,
+    not_authenticated_handler,
+    unhandled_exception_handler,
+)
 from app.core.logging import configure_logging, get_logger
-from app.routers import health, home
+from app.core.middleware import CorrelationIdMiddleware
+from app.routers import admin, auth, health, home
 
 settings = get_settings()
 configure_logging(settings.log_level)
@@ -26,9 +33,13 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(title=settings.app_name, lifespan=lifespan)
 app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
+app.add_middleware(CorrelationIdMiddleware)
 
 app.add_exception_handler(AppError, app_error_handler)
+app.add_exception_handler(NotAuthenticatedError, not_authenticated_handler)
 app.add_exception_handler(Exception, unhandled_exception_handler)
 
 app.include_router(home.router)
 app.include_router(health.router)
+app.include_router(auth.router)
+app.include_router(admin.router)

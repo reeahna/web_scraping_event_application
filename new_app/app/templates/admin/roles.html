@@ -1,0 +1,29 @@
+{% extends "admin_base.html" %}
+
+{% block title %}Roles{% endblock %}
+
+{% block admin_content %}
+<h1>Roles</h1>
+<table>
+  <thead><tr><th>Name</th><th>Active</th><th>Actions</th></tr></thead>
+  <tbody>
+  {% for role in roles %}
+    <tr>
+      <td>{{ role.name }}</td>
+      <td>{{ "Yes" if role.is_active else "No" }}</td>
+      <td><a href="/admin/roles/{{ role.id }}">Edit</a></td>
+    </tr>
+  {% endfor %}
+  </tbody>
+</table>
+
+<h2>Create a custom role</h2>
+<form method="post" action="/admin/roles">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token }}" />
+  <label for="name">Name</label>
+  <input type="text" id="name" name="name" required />
+  <label for="description">Description</label>
+  <input type="text" id="description" name="description" />
+  <button type="submit">Create</button>
+</form>
+{% endblock %}
