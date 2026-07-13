@@ -37,11 +37,18 @@ class EventbriteScraper(BaseScraper):
     # Towns in/adjacent to Monroe County, IN that count as "Bloomington area"
     _ALLOWED_LOCALITIES = {"Bloomington", "Ellettsville", "Stinesville", "Unionville", "Stanford"}
 
-    def __init__(self, base_url: str | None = None, city: str | None = None):
+    def __init__(
+        self,
+        base_url: str | None = None,
+        city: str | None = None,
+        allowed_localities: set[str] | None = None,
+    ):
         if base_url is not None:
             self.base_url = base_url
         if city is not None:
             self.city = city
+        if allowed_localities is not None:
+            self._ALLOWED_LOCALITIES = allowed_localities
 
     def _is_local_location(self, location: dict) -> bool:
         """Return False if the event has an address outside the Bloomington, IN area."""

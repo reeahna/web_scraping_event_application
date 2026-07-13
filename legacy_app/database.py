@@ -37,6 +37,8 @@ def init_db():
         for col, defn in [
             ("end_date", "TEXT"),
             ("city", "TEXT DEFAULT 'Bloomington, IN'"),
+            ("lat", "REAL"),
+            ("lng", "REAL"),
         ]:
             if col not in existing:
                 conn.execute(f"ALTER TABLE events ADD COLUMN {col} {defn}")
@@ -77,6 +79,15 @@ def upsert_event(
         conn.commit()
 
 
+def update_geocode(url: str, lat: float, lng: float) -> None:
+    with get_conn() as conn:
+        conn.execute(
+            "UPDATE events SET lat = ?, lng = ? WHERE url = ?",
+            (lat, lng, url),
+        )
+        conn.commit()
+
+
 def export_csv(path: str = "events.csv") -> None:
     with get_conn() as conn:
         rows = conn.execute("SELECT * FROM events ORDER BY date ASC, scraped_at DESC").fetchall()
@@ -101,7 +112,10 @@ def get_all_events(city: Optional[str] = None) -> list[dict]:
     with get_conn() as conn:
         rows = conn.execute(f"""
             SELECT * FROM events WHERE {where}
-            ORDER BY CASE WHEN date IS NULL THEN 1 ELSE 0 END, date ASC, scraped_at DESC
+            ORDER BY
+                CASE WHEN date IS NULL OR date = 'Multiple Dates' THEN 1 ELSE 0 END,
+                CASE WHEN date < date('now') THEN date('now') ELSE date END ASC,
+                scraped_at DESC
         """, params).fetchall()
     return [dict(row) for row in rows]
 

@@ -87,3 +87,11 @@ async def refresh_city(slug: str):
 async def refresh_all():
     await run_all_scrapers()
     return {"status": "ok", "count": len(get_all_events())}
+
+
+@app.post("/api/geocode")
+async def trigger_geocode(limit: int = 150):
+    from geocoder import geocode_new_events
+    import asyncio
+    asyncio.create_task(geocode_new_events(limit=limit))
+    return {"status": "started", "limit": limit}

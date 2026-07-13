@@ -2,6 +2,7 @@ import asyncio
 import logging
 import re
 
+import asyncio as _asyncio
 from database import upsert_event, export_csv, get_conn
 from scrapers.bloomington_in.iu_events import IUEventsScraper
 from scrapers.bloomington_in.parks import BloomingtonParksScraper
@@ -9,6 +10,8 @@ from scrapers.bloomington_in.eventbrite import EventbriteScraper
 from scrapers.bloomington_in.bloomingtonian import BloomingtonianScraper
 from scrapers.bloomington_in.visit_bloomington import VisitBloomingtonScraper
 from scrapers.bethlehem_pa.discover_lehigh_valley import BethlehemScraper
+from scrapers.bethlehem_pa.the_events_calendar import TheEventsCalendarScraper
+from scrapers.bethlehem_pa.wind_creek import WindCreekScraper
 
 logger = logging.getLogger(__name__)
 
@@ -31,6 +34,22 @@ CITIES: dict[str, dict] = {
         "name": "Bethlehem, PA",
         "scrapers": [
             BethlehemScraper(),
+            TheEventsCalendarScraper(
+                name="City of Bethlehem Events",
+                base_url="https://www.bethlehempa.org/events/",
+                city="Bethlehem, PA",
+            ),
+            TheEventsCalendarScraper(
+                name="Visit Historic Bethlehem",
+                base_url="https://www.visithistoricbethlehem.com/events/list/",
+                city="Bethlehem, PA",
+            ),
+            WindCreekScraper(),
+            EventbriteScraper(
+                base_url="https://www.eventbrite.com/d/pa--bethlehem/events/",
+                city="Bethlehem, PA",
+                allowed_localities={"Bethlehem", "Hellertown", "Northampton"},
+            ),
         ],
     },
 }
@@ -106,3 +125,6 @@ async def run_all_scrapers() -> None:
     logger.info(f"Scrape run complete. Total events saved: {total}")
     _purge_internal_iu_events()
     export_csv()
+    # Geocode new events in the background so it doesn't block the scrape response
+    from geocoder import geocode_new_events
+    _asyncio.create_task(geocode_new_events(limit=150))

@@ -89,6 +89,24 @@ class VisitBloomingtonScraper(BaseScraper):
 
         return results if results else [fallback]
 
+    def _infer_category(self, title: str) -> str:
+        t = title.lower()
+        if any(k in t for k in ("concert", "music", "band", "jazz", "orchestra", "choir", "recital", "symphony", "singer", "bluegrass", "folk", "indie", "acoustic", "open mic")):
+            return "Music"
+        if any(k in t for k in ("theater", "theatre", "dance", "ballet", "comedy", "film", "screening", "art", "gallery", "exhibit", "poetry", "storytelling", "improv", "puppet")):
+            return "Arts & Performance"
+        if any(k in t for k in ("food", "drink", "beer", "wine", "tasting", "dinner", "brunch", "culinary", "chef", "cocktail", "brew", "distill")):
+            return "Food & Drink"
+        if any(k in t for k in ("run", "race", "5k", "10k", "marathon", "hike", "bike", "cycle", "sport", "fitness", "yoga", "swim", "tournament", "golf", "tennis", "climb")):
+            return "Sports & Recreation"
+        if any(k in t for k in ("kids", "children", "youth", "family", "camp", "storytime", "teen", "junior")):
+            return "Family & Youth"
+        if any(k in t for k in ("lecture", "talk", "seminar", "workshop", "class", "training", "education", "symposium", "panel")):
+            return "Lectures & Education"
+        if any(k in t for k in ("spiritual", "faith", "prayer", "church", "religious", "ministry")):
+            return "Religion & Spirituality"
+        return "Community"
+
     def _parse_html(self, html: str) -> list[dict]:
         soup = BeautifulSoup(html, "html.parser")
         results = []
@@ -199,7 +217,7 @@ class VisitBloomingtonScraper(BaseScraper):
                                     source=self.name,
                                     date=date_str,
                                     image_url=r["image_url"],
-                                    category="Community",
+                                    category=self._infer_category(r["title"]),
                                     city=self.city,
                                 ))
                                 added += 1

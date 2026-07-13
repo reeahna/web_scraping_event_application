@@ -1,5 +1,10 @@
-events.db
-events.csv
+legacy_app/events.db
+legacy_app/events.csv
+new_app/events.db
+new_app/events.csv
 __pycache__/
 *.pyc
 .env
+venv/
+legacy_app/venv/
+new_app/venv/

@@ -53,12 +53,17 @@ class BaseScraper(ABC):
             logger.error(f"[{self.name}] Failed to fetch {url}: {e}")
             return None
 
-    def _render_sync(self, url: str, wait_for_selector: str | None = None) -> Optional[str]:
+    def _render_sync(
+        self,
+        url: str,
+        wait_for_selector: str | None = None,
+        wait_until: str = "networkidle",
+    ) -> Optional[str]:
         try:
             with sync_playwright() as p:
                 browser = p.chromium.launch(headless=True)
                 page = browser.new_page()
-                page.goto(url, wait_until="networkidle", timeout=30000)
+                page.goto(url, wait_until=wait_until, timeout=30000)
                 if wait_for_selector:
                     page.wait_for_selector(wait_for_selector, timeout=15000)
                 html = page.content()
@@ -68,8 +73,13 @@ class BaseScraper(ABC):
             logger.error(f"[{self.name}] Playwright render failed for {url}: {e}")
             return None
 
-    async def render(self, url: str, wait_for_selector: str | None = None) -> Optional[str]:
-        return await asyncio.to_thread(self._render_sync, url, wait_for_selector)
+    async def render(
+        self,
+        url: str,
+        wait_for_selector: str | None = None,
+        wait_until: str = "networkidle",
+    ) -> Optional[str]:
+        return await asyncio.to_thread(self._render_sync, url, wait_for_selector, wait_until)
 
     @abstractmethod
     async def scrape(self) -> list[Event]:

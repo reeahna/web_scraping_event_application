@@ -9,6 +9,15 @@ from scrapers.base import BaseScraper, Event
 
 logger = logging.getLogger(__name__)
 
+# Calendars that are 100% internal scheduling — never public events.
+# Grow this set as new internal calendars are discovered.
+_INTERNAL_CALENDAR_SLUGS = {
+    "campus-center",  # room blocks/holds (~18% of all API events)
+    "hsb",            # Health Sciences Building internal scheduling
+}
+_CALENDAR_SLUG_RE = re.compile(r"https://events\.iu\.edu/([^/]+)/")
+
+# Fallback title/description patterns for internal calendars not yet in the slug list
 _INTERNAL_RE = re.compile(
     r"^(block\b|blocked\b|hold\b|holds?\b|maintenance|renovation|storage|staging|uits[-\s]|iuh-|slhs-|iuc\b|closed for|temp offices?|chair management|bridge week|orientation storage|complex processes|holiday-no|year \d|summer \d{4}:|withdrawal|pass/fail)",
     re.IGNORECASE,
@@ -33,7 +42,10 @@ class IUEventsScraper(BaseScraper):
     def _clean(self, text: str) -> str:
         return " ".join(html_lib.unescape(str(text)).split()).strip()
 
-    def _is_internal(self, title: str, description: str | None = None) -> bool:
+    def _is_internal(self, title: str, description: str | None = None, url: str = "") -> bool:
+        m = _CALENDAR_SLUG_RE.match(url)
+        if m and m.group(1) in _INTERNAL_CALENDAR_SLUGS:
+            return True
         if _INTERNAL_RE.match(title) or _COURSE_CODE_RE.match(title) or _INTERNAL_CONTAINS_RE.search(title):
             return True
         if description and _INTERNAL_DESC_RE.search(description):
@@ -82,7 +94,7 @@ class IUEventsScraper(BaseScraper):
         summary = raw.get("summary") or ""
         description_raw = self._clean(summary)[:500] or None
 
-        if raw.get("is_canceled") or self._is_internal(title, description_raw):
+        if raw.get("is_canceled") or self._is_internal(title, description_raw, url):
             return None
 
         date = None
