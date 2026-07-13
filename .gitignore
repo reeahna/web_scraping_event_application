@@ -8,3 +8,5 @@ __pycache__/
 venv/
 legacy_app/venv/
 new_app/venv/
+legacy_app/backups/
+new_app/backups/

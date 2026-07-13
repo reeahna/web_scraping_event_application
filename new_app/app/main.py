@@ -1,0 +1,34 @@
+from contextlib import asynccontextmanager
+from pathlib import Path
+
+from fastapi import FastAPI
+from fastapi.staticfiles import StaticFiles
+
+from app.config import get_settings
+from app.core.exceptions import AppError, app_error_handler, unhandled_exception_handler
+from app.core.logging import configure_logging, get_logger
+from app.routers import health, home
+
+settings = get_settings()
+configure_logging(settings.log_level)
+logger = get_logger("main")
+
+STATIC_DIR = Path(__file__).resolve().parent / "static"
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    # Phase 1: no scheduler, no scraping, no external network calls on startup.
+    logger.info("New app starting up (env=%s, port=%s)", settings.app_env, settings.app_port)
+    yield
+    logger.info("New app shutting down")
+
+
+app = FastAPI(title=settings.app_name, lifespan=lifespan)
+app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
+
+app.add_exception_handler(AppError, app_error_handler)
+app.add_exception_handler(Exception, unhandled_exception_handler)
+
+app.include_router(home.router)
+app.include_router(health.router)
