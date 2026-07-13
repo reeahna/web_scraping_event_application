@@ -22,3 +22,17 @@
   <span class="badge badge-inactive">Inactive</span>
   {% endif %}
 {% endmacro %}
+
+{% macro onboarding_badge(status) %}
+  {% if status in ("active",) %}
+    <span class="badge badge-active">{{ status }}</span>
+  {% elif status in ("unsupported", "failing") %}
+    <span class="badge badge-danger">{{ status }}</span>
+  {% elif status in ("archived",) %}
+    <span class="badge badge-archived">{{ status }}</span>
+  {% elif status in ("draft", "inactive") %}
+    <span class="badge badge-inactive">{{ status }}</span>
+  {% else %}
+    <span class="badge badge-pending">{{ status }}</span>
+  {% endif %}
+{% endmacro %}

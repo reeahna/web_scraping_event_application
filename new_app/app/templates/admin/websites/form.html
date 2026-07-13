@@ -1,0 +1,76 @@
+{% extends "admin_base.html" %}
+{% from "admin/_macros.html" import field_error %}
+
+{% block title %}{{ "Edit Website" if mode == "edit" else "New Website" }}{% endblock %}
+
+{% block admin_content %}
+<h1>{{ "Edit " + website.name if mode == "edit" and website else "New Website" }}</h1>
+{% if mode == "create" %}
+<p class="placeholder-note">New websites start as inactive drafts — they never go live automatically.</p>
+{% endif %}
+
+<form method="post" action="{{ ('/admin/websites/' ~ website.id) if mode == 'edit' else '/admin/websites' }}" class="admin-form">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token }}" />
+
+  <label for="name">Site name</label>
+  <input type="text" id="name" name="name" value="{{ form.name or '' }}" required />
+  {{ field_error(errors, "name") }}
+
+  <label for="source_display_name">Source display name</label>
+  <input type="text" id="source_display_name" name="source_display_name" value="{{ form.source_display_name or '' }}"
+         placeholder="Shown as attribution on scraped events" />
+  {{ field_error(errors, "source_display_name") }}
+
+  <label for="city_id">City</label>
+  <select id="city_id" name="city_id">
+    <option value="">Unassigned</option>
+    {% for city in cities %}
+    <option value="{{ city.id }}" {% if form.city_id|string == city.id|string %}selected{% endif %}>{{ city.name }}</option>
+    {% endfor %}
+  </select>
+  {{ field_error(errors, "city_id") }}
+
+  <label for="base_url">Base URL</label>
+  <input type="text" id="base_url" name="base_url" value="{{ form.base_url or '' }}" required
+         placeholder="https://example.com" />
+  {{ field_error(errors, "base_url") }}
+
+  <label for="event_listing_url">Event listing URL</label>
+  <input type="text" id="event_listing_url" name="event_listing_url" value="{{ form.event_listing_url or '' }}"
+         placeholder="https://example.com/events" />
+  {{ field_error(errors, "event_listing_url") }}
+
+  <label for="timezone_override">Timezone override (optional)</label>
+  <input type="text" id="timezone_override" name="timezone_override" value="{{ form.timezone_override or '' }}"
+         placeholder="Defaults to the assigned city's timezone" />
+  {{ field_error(errors, "timezone_override") }}
+
+  <label class="checkbox-label">
+    <input type="checkbox" name="requires_js" {% if form.requires_js %}checked{% endif %} />
+    Requires JavaScript rendering
+  </label>
+
+  <label for="configuration">Configuration (optional JSON)</label>
+  <textarea id="configuration" name="configuration" rows="3">{{ form.configuration or '' }}</textarea>
+  {{ field_error(errors, "configuration") }}
+
+  <label for="schedule_config">Extraction schedule configuration (optional JSON)</label>
+  <textarea id="schedule_config" name="schedule_config" rows="2">{{ form.schedule_config or '' }}</textarea>
+  {{ field_error(errors, "schedule_config") }}
+
+  <label for="proposed_pattern">Proposed pattern (optional JSON)</label>
+  <textarea id="proposed_pattern" name="proposed_pattern" rows="2">{{ form.proposed_pattern or '' }}</textarea>
+  {{ field_error(errors, "proposed_pattern") }}
+
+  <label for="approved_pattern">Approved pattern (optional JSON)</label>
+  <textarea id="approved_pattern" name="approved_pattern" rows="2">{{ form.approved_pattern or '' }}</textarea>
+  {{ field_error(errors, "approved_pattern") }}
+
+  <div class="form-actions">
+    <button type="submit">{{ "Save" if mode == "edit" else "Create website" }}</button>
+    <a href="{{ ('/admin/websites/' ~ website.id) if mode == 'edit' and website else '/admin/websites' }}">
+      <button type="button" class="btn-secondary">Cancel</button>
+    </a>
+  </div>
+</form>
+{% endblock %}

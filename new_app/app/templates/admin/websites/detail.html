@@ -1,0 +1,87 @@
+{% extends "admin_base.html" %}
+{% from "admin/_macros.html" import onboarding_badge %}
+
+{% block title %}{{ website.name }}{% endblock %}
+
+{% block admin_content %}
+<h1>{{ website.name }} {{ onboarding_badge(website.onboarding_status) }}</h1>
+<p class="audit-meta">Created {{ website.created_at }} · Updated {{ website.updated_at }}</p>
+
+<table>
+  <tbody>
+    <tr><th>Source display name</th><td>{{ website.source_display_name or "—" }}</td></tr>
+    <tr><th>City</th>
+      <td>{% if website.city %}<a href="/admin/cities/{{ website.city.id }}">{{ website.city.name }}</a>{% else %}Unassigned{% endif %}</td>
+    </tr>
+    <tr><th>Base URL</th><td><a href="{{ website.base_url }}" target="_blank" rel="noopener"><code>{{ website.base_url }}</code></a></td></tr>
+    <tr><th>Event listing URL</th><td>{{ website.event_listing_url or "—" }}</td></tr>
+    <tr><th>Timezone override</th><td>{{ website.timezone_override or "(uses city timezone)" }}</td></tr>
+    <tr><th>Requires JS</th><td>{{ "Yes" if website.requires_js else "No" }}</td></tr>
+    <tr><th>Active</th><td>{{ "Yes" if website.is_active else "No" }}</td></tr>
+    <tr><th>Events</th><td>{{ event_count }}</td></tr>
+    <tr><th>Last successful run</th><td>{{ website.last_success_at or "Never" }}</td></tr>
+    <tr><th>Last failed run</th><td>{{ website.last_failure_at or "Never" }}</td></tr>
+    <tr><th>Consecutive failures</th><td>{{ website.consecutive_failure_count }}</td></tr>
+    <tr><th>Configuration set</th><td>{{ "Yes" if website.configuration else "No" }}</td></tr>
+    <tr><th>Approved pattern set</th><td>{{ "Yes" if website.approved_pattern else "No" }}</td></tr>
+  </tbody>
+</table>
+
+<div class="form-actions">
+  {% if can_update %}
+  <a href="/admin/websites/{{ website.id }}/edit"><button type="button">Edit</button></a>
+  {% endif %}
+  {% if can_delete %}
+  <a href="/admin/websites/{{ website.id }}/delete"><button type="button" class="btn-danger">Delete…</button></a>
+  {% endif %}
+</div>
+
+<h2>Lifecycle</h2>
+<p>Current status: {{ onboarding_badge(website.onboarding_status) }}</p>
+{% if next_states %}
+<div class="form-actions">
+  {% for target in next_states %}
+  <form method="post" action="/admin/websites/{{ website.id }}/status" class="inline-form"
+        onsubmit="return confirm('Move {{ website.name }} to status \'{{ target }}\'?');">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}" />
+    <input type="hidden" name="to_status" value="{{ target }}" />
+    <button type="submit" class="{{ 'btn-secondary' if target in ('inactive', 'archived') else '' }}">
+      {% if target == "active" %}Activate
+      {% elif target == "inactive" %}Deactivate
+      {% elif target == "archived" %}Archive
+      {% else %}Move to {{ target }}
+      {% endif %}
+    </button>
+  </form>
+  {% endfor %}
+</div>
+{% else %}
+<p class="audit-meta">No further transitions available from this status.</p>
+{% endif %}
+
+<h2>Extraction pipeline <span class="placeholder-note">(not implemented yet)</span></h2>
+<div class="form-actions">
+  <form method="post" action="/admin/websites/{{ website.id }}/detect-pattern" class="inline-form">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}" />
+    <button type="submit" class="btn-secondary">Detect pattern</button>
+  </form>
+  <form method="post" action="/admin/websites/{{ website.id }}/preview-extraction" class="inline-form">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}" />
+    <button type="submit" class="btn-secondary">Preview extraction</button>
+  </form>
+  <form method="post" action="/admin/websites/{{ website.id }}/approve-configuration" class="inline-form">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}" />
+    <button type="submit" class="btn-secondary">Approve configuration</button>
+  </form>
+  <form method="post" action="/admin/websites/{{ website.id }}/run-extraction" class="inline-form">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}" />
+    <button type="submit" class="btn-secondary">Run extraction</button>
+  </form>
+</div>
+
+<h2>Extraction history</h2>
+<p class="placeholder-note">Extraction run history will appear here once the extraction engine exists.</p>
+
+<h2>Unsupported-site reports</h2>
+<p class="placeholder-note">Unsupported-site diagnostic reports will appear here once pattern detection exists.</p>
+{% endblock %}

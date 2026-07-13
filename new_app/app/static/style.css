@@ -26,6 +26,7 @@ header {
   font-weight: 700;
   font-size: 1.4rem;
   color: var(--accent);
+  text-decoration: none;
 }
 
 .hero {
@@ -215,6 +216,22 @@ button {
 .badge-archived {
   background: rgba(217, 119, 6, 0.1);
   color: #d97706;
+}
+
+.badge-danger {
+  background: rgba(220, 38, 38, 0.1);
+  color: #dc2626;
+}
+
+.badge-pending {
+  background: rgba(79, 70, 229, 0.1);
+  color: var(--accent);
+}
+
+.placeholder-note {
+  font-size: 0.8rem;
+  color: var(--muted);
+  font-style: italic;
 }
 
 /* Forms */

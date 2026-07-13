@@ -1,0 +1,42 @@
+{% extends "admin_base.html" %}
+
+{% block title %}Delete {{ website.name }}{% endblock %}
+
+{% block admin_content %}
+<h1>Delete {{ website.name }}</h1>
+<p class="audit-meta">Base URL: <code>{{ website.base_url }}</code></p>
+
+{% if error %}
+<p class="form-error">{{ error }}</p>
+{% endif %}
+
+<ul class="impact-list">
+  <li>
+    Events: {{ impact.total_events }} total, {{ impact.archived_events }} archived,
+    <span class="{{ 'impact-blocked' if not impact.can_delete else 'impact-ok' }}">
+      {{ impact.unarchived_events }} not yet archived
+    </span>
+  </li>
+</ul>
+
+{% if not impact.can_delete %}
+<p class="impact-blocked">
+  This website cannot be permanently deleted yet — its remaining events must be archived
+  (or removed) first.
+</p>
+{% else %}
+<p class="impact-ok">No unarchived events remain — this website is eligible for permanent deletion.</p>
+
+<form method="post" action="/admin/websites/{{ website.id }}/delete" class="admin-form"
+      onsubmit="return confirm('This permanently deletes {{ website.name }} and cannot be undone. Continue?');">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token }}" />
+  <label for="confirm_name">Type the website's name (<code>{{ website.name }}</code>) to confirm permanent deletion</label>
+  <input type="text" id="confirm_name" name="confirm_name" required autocomplete="off" />
+  <div class="form-actions">
+    <button type="submit" class="btn-danger">Permanently delete website</button>
+  </div>
+</form>
+{% endif %}
+
+<p><a href="/admin/websites/{{ website.id }}">&laquo; Back to website</a></p>
+{% endblock %}

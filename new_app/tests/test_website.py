@@ -1,3 +1,4 @@
+from app.core.onboarding import DRAFT
 from app.repositories.city import create_city
 from app.repositories.website import create_website
 from app.schemas.city import CityCreate
@@ -16,5 +17,7 @@ def test_create_website_linked_to_city(db_session):
     )
     assert website.id is not None
     assert website.city_id == city.id
-    assert website.is_active is True
+    # A new website must never automatically become active (Phase 4).
+    assert website.is_active is False
+    assert website.onboarding_status == DRAFT
     assert website.requires_js is False
