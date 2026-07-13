@@ -1,4 +1,5 @@
 from app.models.audit_log import AuditLog
+from app.models.categorization_rule import CategorizationRule
 from app.models.city import City
 from app.models.event import Event
 from app.models.event_category import EventCategory
@@ -12,6 +13,7 @@ from app.models.website import Website
 
 __all__ = [
     "AuditLog",
+    "CategorizationRule",
     "City",
     "Event",
     "EventCategory",

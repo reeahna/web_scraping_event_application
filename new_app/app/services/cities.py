@@ -61,6 +61,7 @@ def archive_city_events(db: Session, city: City) -> int:
     events = db.query(Event).filter(Event.city_id == city.id, Event.archived_at.is_(None)).all()
     for event in events:
         event.archived_at = now
+        event.is_active = False
     db.commit()
     return len(events)
 

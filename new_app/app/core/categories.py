@@ -1,0 +1,16 @@
+INITIAL_EVENT_CATEGORIES: tuple[tuple[str, str], ...] = (
+    ("Arts and Culture", "arts-and-culture"),
+    ("Music", "music"),
+    ("Sports", "sports"),
+    ("Family", "family"),
+    ("Education", "education"),
+    ("Community", "community"),
+    ("Food and Drink", "food-and-drink"),
+    ("Business", "business"),
+    ("Nightlife", "nightlife"),
+    ("Outdoors", "outdoors"),
+    ("Government", "government"),
+    ("Religious", "religious"),
+    ("Health and Wellness", "health-and-wellness"),
+    ("Other", "other"),
+)

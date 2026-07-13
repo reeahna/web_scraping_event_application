@@ -1,6 +1,9 @@
+from sqlalchemy import inspect
 from sqlalchemy.orm import Session
 
+from app.core.categories import INITIAL_EVENT_CATEGORIES
 from app.core.permissions import DEFAULT_ROLE_PERMISSIONS, PERMISSIONS
+from app.models.event_category import EventCategory
 from app.models.permission import Permission
 from app.models.role import Role
 from app.models.role_permission import RolePermission
@@ -44,3 +47,30 @@ def seed_defaults(db: Session) -> None:
     permissions = seed_permissions(db)
     roles = seed_roles(db)
     seed_role_permissions(db, roles, permissions)
+    seed_event_categories(db)
+
+
+def seed_event_categories(db: Session) -> dict[str, EventCategory]:
+    inspector = inspect(db.get_bind())
+    if "event_categories" not in inspector.get_table_names():
+        return {}
+    columns = {column["name"] for column in inspector.get_columns("event_categories")}
+    if not {"description", "display_order"}.issubset(columns):
+        # Historical migrations import this live seeder. Phase 5 owns the
+        # schema change and its self-contained category seed, so older schema
+        # revisions must not query the newer ORM shape.
+        return {}
+
+    existing = {category.slug: category for category in db.query(EventCategory).all()}
+    for display_order, (name, slug) in enumerate(INITIAL_EVENT_CATEGORIES, start=1):
+        if slug not in existing:
+            db.add(
+                EventCategory(
+                    name=name,
+                    slug=slug,
+                    display_order=display_order,
+                    is_active=True,
+                )
+            )
+    db.commit()
+    return {category.slug: category for category in db.query(EventCategory).all()}

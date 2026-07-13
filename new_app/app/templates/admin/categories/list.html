@@ -1,0 +1,32 @@
+{% extends "admin_base.html" %}
+{% block title %}Event Categories{% endblock %}
+{% block admin_content %}
+<h1>Event Categories</h1>
+<form method="post" action="/admin/event-categories" class="admin-form">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token }}" />
+  <label for="name">Name</label><input id="name" name="name" required />
+  <label for="description">Description</label><input id="description" name="description" />
+  <label for="display_order">Display order</label><input id="display_order" name="display_order" type="number" value="0" />
+  <button type="submit">Create category</button>
+</form>
+{% for category in categories %}
+<section class="metric-tile">
+  <form method="post" action="/admin/event-categories/{{ category.id }}" class="admin-form">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}" />
+    <label>Name</label><input name="name" value="{{ category.name }}" required />
+    <label>Description</label><input name="description" value="{{ category.description or '' }}" />
+    <label>Display order</label><input name="display_order" type="number" value="{{ category.display_order }}" />
+    <button type="submit">Save</button>
+  </form>
+  <form method="post" action="/admin/event-categories/{{ category.id }}/status" class="inline-form">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}" />
+    <input type="hidden" name="action" value="{{ 'deactivate' if category.is_active else 'activate' }}" />
+    <button type="submit">{{ 'Deactivate' if category.is_active else 'Activate' }}</button>
+  </form>
+  <form method="post" action="/admin/event-categories/{{ category.id }}/delete" class="inline-form">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}" />
+    <button type="submit" class="btn-danger">Delete</button>
+  </form>
+</section>
+{% endfor %}
+{% endblock %}

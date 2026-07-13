@@ -1,0 +1,132 @@
+{% extends "admin_base.html" %}
+
+{% block title %}{{ event.title }}{% endblock %}
+
+{% block admin_content %}
+<p><a href="/admin/events">&laquo; Back to events</a></p>
+<h1>{{ event.title }}</h1>
+<p class="audit-meta">Authoritative extracted fields are read-only.</p>
+
+<table>
+  <tbody>
+    <tr><th>Source website</th><td>{{ event.website.name if event.website else event.source }}</td></tr>
+    <tr><th>City</th><td>{{ event.city.name if event.city else '—' }}</td></tr>
+    <tr><th>Dates</th><td>{{ event.start_date or '—' }} to {{ event.end_date or event.start_date or '—' }}</td></tr>
+    <tr><th>Times</th><td>{{ event.start_time or '—' }} to {{ event.end_time or '—' }} {{ event.timezone or '' }}</td></tr>
+    <tr><th>Extracted venue</th><td>{{ event.venue or '—' }}</td></tr>
+    <tr><th>Public venue</th><td>{{ event.public_venue or '—' }}</td></tr>
+    <tr><th>Extracted address</th><td>{{ event.address or '—' }}</td></tr>
+    <tr><th>Public address</th><td>{{ event.public_address or '—' }}</td></tr>
+    <tr><th>Category</th><td>{{ event.effective_category.name if event.effective_category else 'Uncategorized' }}</td></tr>
+    <tr><th>Category source</th><td>{{ 'administrator override' if event.category_override_id else event.category_source }}</td></tr>
+    <tr><th>Matching deterministic rule</th><td>{{ categorization_result.rule_name or 'No matching rule' }}</td></tr>
+    <tr><th>Categorization explanation</th><td>{{ categorization_result.explanation }}</td></tr>
+    <tr><th>Confidence</th><td>{{ categorization_result.confidence_type }}</td></tr>
+    <tr><th>Active</th><td>{{ 'Yes' if event.is_active else 'No' }}</td></tr>
+    <tr><th>Archived</th><td>{{ event.archived_at or 'No' }}</td></tr>
+    <tr><th>Review status</th><td>{{ event.review_status }}</td></tr>
+    <tr><th>Duplicate status</th><td>{{ event.duplicate_status }}</td></tr>
+    <tr><th>Canonical URL</th><td><a href="{{ event.canonical_url }}" rel="noopener noreferrer">{{ event.canonical_url }}</a></td></tr>
+    <tr><th>Scraped</th><td>{{ event.scraped_at or 'Not yet recorded' }}</td></tr>
+    <tr><th>Fingerprint</th><td><code>{{ event.fingerprint or 'Not yet generated' }}</code></td></tr>
+  </tbody>
+</table>
+
+{% if 'events.review' in permissions %}
+<h2>Review</h2>
+<form method="post" action="/admin/events/{{ event.id }}/review-status" class="admin-form">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token }}" />
+  <select name="review_status"><option value="needs_review">Needs review</option><option value="reviewed">Reviewed</option></select>
+  <button type="submit">Update review status</button>
+</form>
+<form method="post" action="/admin/events/{{ event.id }}/categorize" class="inline-form">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token }}" />
+  <button type="submit">Run deterministic categorization</button>
+</form>
+{% endif %}
+
+{% if 'events.activate' in permissions %}
+<h2>Visibility</h2>
+<form method="post" action="/admin/events/{{ event.id }}/lifecycle" class="inline-form">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token }}" />
+  <input type="hidden" name="action" value="{{ 'deactivate' if event.is_active else 'activate' }}" />
+  <button type="submit">{{ 'Deactivate' if event.is_active else 'Activate' }}</button>
+</form>
+{% endif %}
+
+{% if 'events.archive' in permissions %}
+<form method="post" action="/admin/events/{{ event.id }}/lifecycle" class="inline-form">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token }}" />
+  <input type="hidden" name="action" value="{{ 'restore' if event.archived_at else 'archive' }}" />
+  <button type="submit">{{ 'Restore' if event.archived_at else 'Archive' }}</button>
+</form>
+{% endif %}
+
+{% if 'events.override_category' in permissions %}
+<h2>Category override</h2>
+<form method="post" action="/admin/events/{{ event.id }}/category-override" class="admin-form">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token }}" />
+  <label for="category_id">Active category</label>
+  <select id="category_id" name="category_id" required>
+    {% for category in categories %}<option value="{{ category.id }}">{{ category.name }}</option>{% endfor %}
+  </select>
+  <label for="reason">Reason (optional)</label><input id="reason" name="reason" maxlength="500" />
+  <button type="submit">Override category</button>
+</form>
+{% if event.category_override_id %}
+<form method="post" action="/admin/events/{{ event.id }}/category-override/clear">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token }}" /><button type="submit">Clear category override</button>
+</form>
+{% endif %}
+{% endif %}
+
+{% if 'events.correct_location' in permissions %}
+<h2>Public location correction</h2>
+<form method="post" action="/admin/events/{{ event.id }}/location-correction" class="admin-form">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token }}" />
+  <label for="venue">Public venue</label><input id="venue" name="venue" value="{{ event.corrected_venue or '' }}" />
+  <label for="address">Public address</label><input id="address" name="address" value="{{ event.corrected_address or '' }}" />
+  <label for="latitude">Latitude</label><input id="latitude" name="latitude" value="{{ event.corrected_latitude if event.corrected_latitude is not none else '' }}" />
+  <label for="longitude">Longitude</label><input id="longitude" name="longitude" value="{{ event.corrected_longitude if event.corrected_longitude is not none else '' }}" />
+  <button type="submit">Save location correction</button>
+</form>
+<form method="post" action="/admin/events/{{ event.id }}/location-correction/clear">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token }}" /><button type="submit">Clear location correction</button>
+</form>
+{% endif %}
+
+{% if 'events.resolve_duplicates' in permissions %}
+<h2>Duplicate review</h2>
+<form method="post" action="/admin/events/{{ event.id }}/duplicate-status" class="admin-form">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token }}" />
+  <select name="duplicate_status">
+    {% for value in ['not_reviewed', 'possible_duplicate', 'confirmed_duplicate', 'not_duplicate'] %}<option value="{{ value }}">{{ value | replace('_', ' ') | title }}</option>{% endfor %}
+  </select>
+  <label for="preferred_event_id">Preferred event ID (confirmed duplicates only)</label><input id="preferred_event_id" name="preferred_event_id" type="number" />
+  <button type="submit">Update duplicate status</button>
+</form>
+{% endif %}
+
+{% if 'events.view_provenance' in permissions %}
+<h2>Provenance</h2>
+<ul class="impact-list">
+  <li>Source website: {{ event.website.name if event.website else event.source }}</li>
+  <li>Canonical URL: {{ event.canonical_url }}</li>
+  <li>External source ID: {{ event.external_source_id or 'Unavailable' }}</li>
+  <li>Source category: {{ event.source_category or 'Unavailable' }}</li>
+  <li>Origin: {{ event.origin }}</li>
+  <li>Category override: {{ 'Yes' if event.category_override_id else 'No' }}</li>
+  <li>Location correction: {{ 'Yes' if event.location_corrected_at else 'No' }}</li>
+  <li>Field-level extraction provenance: future extraction data.</li>
+</ul>
+{% endif %}
+
+{% if 'events.delete' in permissions and event.archived_at %}
+<h2>Permanent deletion</h2>
+<form method="post" action="/admin/events/{{ event.id }}/delete" class="admin-form">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token }}" />
+  <label for="confirm_title">Type the event title to confirm</label><input id="confirm_title" name="confirm_title" required />
+  <button type="submit" class="btn-danger">Permanently delete event</button>
+</form>
+{% endif %}
+{% endblock %}

@@ -194,14 +194,14 @@ def test_successful_deletion_after_archiving_and_removing_dependencies(
 
     resp = client.post(
         f"/admin/cities/{city.id}/archive-events",
-        data={"csrf_token": _csrf(client)},
+        data={"confirm_slug": city.slug, "csrf_token": _csrf(client)},
         follow_redirects=False,
     )
     assert resp.status_code == 303
 
     resp = client.post(
         f"/admin/cities/{city.id}/delete-events",
-        data={"csrf_token": _csrf(client)},
+        data={"confirm_slug": city.slug, "csrf_token": _csrf(client)},
         follow_redirects=False,
     )
     assert resp.status_code == 303

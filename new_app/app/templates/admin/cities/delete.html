@@ -36,6 +36,7 @@
   <form method="post" action="/admin/cities/{{ city.id }}/archive-events" class="inline-form"
         onsubmit="return confirm('Archive all {{ impact.unarchived_events }} remaining event(s) for {{ city.name }}?');">
     <input type="hidden" name="csrf_token" value="{{ csrf_token }}" />
+    <input type="hidden" name="confirm_slug" value="{{ city.slug }}" />
     <button type="submit">Archive remaining events</button>
   </form>
   {% endif %}
@@ -44,6 +45,7 @@
   <form method="post" action="/admin/cities/{{ city.id }}/delete-events" class="inline-form"
         onsubmit="return confirm('Permanently delete all {{ impact.archived_events }} archived event(s)? This cannot be undone.');">
     <input type="hidden" name="csrf_token" value="{{ csrf_token }}" />
+    <input type="hidden" name="confirm_slug" value="{{ city.slug }}" />
     <button type="submit" class="btn-danger">Permanently delete archived events</button>
   </form>
   {% endif %}

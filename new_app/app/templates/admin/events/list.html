@@ -1,0 +1,73 @@
+{% extends "admin_base.html" %}
+
+{% block title %}Events{% endblock %}
+
+{% block admin_content %}
+<h1>Events</h1>
+
+<form method="get" action="/admin/events" class="filter-bar event-filter-bar">
+  <input type="search" name="q" value="{{ filters.q }}" placeholder="Search title, venue, or source" />
+  <select name="city_id">
+    <option value="">All cities</option>
+    {% for city in cities %}<option value="{{ city.id }}"{% if filters.city_id == city.id %} selected{% endif %}>{{ city.name }}</option>{% endfor %}
+  </select>
+  <select name="website_id">
+    <option value="">All websites</option>
+    {% for website in websites %}<option value="{{ website.id }}"{% if filters.website_id == website.id %} selected{% endif %}>{{ website.name }}</option>{% endfor %}
+  </select>
+  <select name="category_id">
+    <option value="">All categories</option>
+    {% for category in categories %}<option value="{{ category.id }}"{% if filters.category_id == category.id %} selected{% endif %}>{{ category.name }}</option>{% endfor %}
+  </select>
+  <select name="active">
+    <option value="all"{% if filters.active == 'all' %} selected{% endif %}>Any active status</option>
+    <option value="yes"{% if filters.active == 'yes' %} selected{% endif %}>Active</option>
+    <option value="no"{% if filters.active == 'no' %} selected{% endif %}>Inactive</option>
+  </select>
+  <select name="archived">
+    <option value="all"{% if filters.archived == 'all' %} selected{% endif %}>Any archive status</option>
+    <option value="no"{% if filters.archived == 'no' %} selected{% endif %}>Not archived</option>
+    <option value="yes"{% if filters.archived == 'yes' %} selected{% endif %}>Archived</option>
+  </select>
+  <select name="review_status">
+    <option value="all">Any review status</option>
+    <option value="needs_review"{% if filters.review_status == 'needs_review' %} selected{% endif %}>Needs review</option>
+    <option value="reviewed"{% if filters.review_status == 'reviewed' %} selected{% endif %}>Reviewed</option>
+  </select>
+  <select name="duplicate_status">
+    <option value="all">Any duplicate status</option>
+    {% for value in ['not_reviewed', 'possible_duplicate', 'confirmed_duplicate', 'not_duplicate'] %}
+    <option value="{{ value }}"{% if filters.duplicate_status == value %} selected{% endif %}>{{ value | replace('_', ' ') | title }}</option>
+    {% endfor %}
+  </select>
+  <button type="submit">Filter</button>
+</form>
+
+{% if events %}
+<table>
+  <thead><tr><th>Event</th><th>Date</th><th>City</th><th>Category</th><th>Review</th><th>Status</th></tr></thead>
+  <tbody>
+  {% for event in events %}
+  <tr>
+    <td><a href="/admin/events/{{ event.id }}">{{ event.title }}</a><br><span class="audit-meta">{{ event.source }}</span></td>
+    <td>{{ event.start_date or '—' }} {{ event.start_time or '' }}</td>
+    <td>{{ event.city.name if event.city else '—' }}</td>
+    <td>{{ event.effective_category.name if event.effective_category else 'Uncategorized' }}</td>
+    <td>{{ event.review_status | replace('_', ' ') }}</td>
+    <td>{% if event.archived_at %}Archived{% elif event.is_active %}Active{% else %}Inactive{% endif %}</td>
+  </tr>
+  {% endfor %}
+  </tbody>
+</table>
+{% else %}
+<p>No events match these filters.</p>
+{% endif %}
+
+<div class="pagination">
+  <span>{{ total }} event(s)</span>
+  <span class="pagination-links">
+    {% if page > 1 %}<a href="/admin/events?page={{ page - 1 }}">Previous</a>{% endif %}
+    {% if has_next %}<a href="/admin/events?page={{ page + 1 }}">Next</a>{% endif %}
+  </span>
+</div>
+{% endblock %}

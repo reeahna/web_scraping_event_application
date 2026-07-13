@@ -1,0 +1,43 @@
+{% extends "admin_base.html" %}
+{% block title %}Categorization Rules{% endblock %}
+{% block admin_content %}
+<h1>Categorization Rules</h1>
+<p>Precedence: source mapping, administrator mapping, website mapping, venue, keyword, fallback.</p>
+<form method="post" action="/admin/categorization-rules" class="admin-form">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token }}" />
+  <label for="name">Rule name</label><input id="name" name="name" required />
+  <label for="rule_type">Rule type</label><select id="rule_type" name="rule_type">{% for type in rule_types %}<option value="{{ type }}">{{ type }}</option>{% endfor %}</select>
+  <label for="category_id">Category</label><select id="category_id" name="category_id">{% for category in categories %}<option value="{{ category.id }}">{{ category.name }}</option>{% endfor %}</select>
+  <label for="priority">Priority</label><input id="priority" name="priority" type="number" value="0" />
+  <label for="website_id">Website</label><select id="website_id" name="website_id"><option value="">Any</option>{% for website in websites %}<option value="{{ website.id }}">{{ website.name }}</option>{% endfor %}</select>
+  <label for="source_category_value">Source category value</label><input id="source_category_value" name="source_category_value" />
+  <label for="pattern">Venue/keyword pattern</label><input id="pattern" name="pattern" />
+  <label class="checkbox-label"><input type="checkbox" name="is_regex" /> Validated regular expression</label>
+  <label class="checkbox-label"><input type="checkbox" name="case_sensitive" /> Case sensitive</label>
+  <button type="submit">Create rule</button>
+</form>
+<table><thead><tr><th>Name</th><th>Type</th><th>Category</th><th>Priority</th><th>Status</th><th>Actions</th></tr></thead><tbody>
+{% for rule in rules %}<tr>
+  <td>{{ rule.name }}</td><td>{{ rule.rule_type }}</td><td>{{ rule.category.name }}</td><td>{{ rule.priority }}</td><td>{{ 'Active' if rule.is_active else 'Inactive' }}</td>
+  <td>
+    <form method="post" action="/admin/categorization-rules/{{ rule.id }}/status"><input type="hidden" name="csrf_token" value="{{ csrf_token }}" /><input type="hidden" name="action" value="{{ 'deactivate' if rule.is_active else 'activate' }}" /><button type="submit">{{ 'Deactivate' if rule.is_active else 'Activate' }}</button></form>
+    <details>
+      <summary>Edit rule</summary>
+      <form method="post" action="/admin/categorization-rules/{{ rule.id }}" class="admin-form">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}" />
+        <label for="name-{{ rule.id }}">Rule name</label><input id="name-{{ rule.id }}" name="name" value="{{ rule.name }}" required />
+        <label for="type-{{ rule.id }}">Rule type</label><select id="type-{{ rule.id }}" name="rule_type">{% for type in rule_types %}<option value="{{ type }}" {% if type == rule.rule_type %}selected{% endif %}>{{ type }}</option>{% endfor %}</select>
+        <label for="category-{{ rule.id }}">Category</label><select id="category-{{ rule.id }}" name="category_id">{% for category in categories %}<option value="{{ category.id }}" {% if category.id == rule.category_id %}selected{% endif %}>{{ category.name }}</option>{% endfor %}</select>
+        <label for="priority-{{ rule.id }}">Priority</label><input id="priority-{{ rule.id }}" name="priority" type="number" value="{{ rule.priority }}" />
+        <label for="website-{{ rule.id }}">Website</label><select id="website-{{ rule.id }}" name="website_id"><option value="">Any</option>{% for website in websites %}<option value="{{ website.id }}" {% if website.id == rule.website_id %}selected{% endif %}>{{ website.name }}</option>{% endfor %}</select>
+        <label for="source-value-{{ rule.id }}">Source category value</label><input id="source-value-{{ rule.id }}" name="source_category_value" value="{{ rule.source_category_value or '' }}" />
+        <label for="pattern-{{ rule.id }}">Venue/keyword pattern</label><input id="pattern-{{ rule.id }}" name="pattern" value="{{ rule.pattern or '' }}" />
+        <label class="checkbox-label"><input type="checkbox" name="is_regex" {% if rule.is_regex %}checked{% endif %} /> Validated regular expression</label>
+        <label class="checkbox-label"><input type="checkbox" name="case_sensitive" {% if rule.case_sensitive %}checked{% endif %} /> Case sensitive</label>
+        <button type="submit">Save rule</button>
+      </form>
+    </details>
+  </td>
+</tr>{% endfor %}
+</tbody></table>
+{% endblock %}

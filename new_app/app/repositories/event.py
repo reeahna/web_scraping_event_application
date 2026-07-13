@@ -2,12 +2,15 @@ from sqlalchemy.orm import Session
 
 from app.models.event import Event
 from app.schemas.event import EventCreate
+from app.services.fingerprints import update_fingerprint_and_duplicates
 
 
 def create_event(db: Session, data: EventCreate) -> Event:
     event = Event(**data.model_dump())
     db.add(event)
     db.commit()
+    db.refresh(event)
+    update_fingerprint_and_duplicates(db, event)
     db.refresh(event)
     return event
 

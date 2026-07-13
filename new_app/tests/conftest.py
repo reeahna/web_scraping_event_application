@@ -26,6 +26,7 @@ from app.database import Base, SessionLocal, engine  # noqa: E402
 from app.main import app as fastapi_app  # noqa: E402
 from app.models.city import City  # noqa: E402
 from app.models.event import Event  # noqa: E402
+from app.models.event_category import EventCategory  # noqa: E402
 from app.models.role import Role  # noqa: E402
 from app.models.user import User  # noqa: E402
 from app.models.user_role import UserRole  # noqa: E402
@@ -127,6 +128,12 @@ def make_event(db_session):
         title: str = "Test Event",
         canonical_url: str = "https://example.com/event",
         archived: bool = False,
+        website: Website | None = None,
+        category: EventCategory | None = None,
+        is_active: bool = True,
+        review_status: str = "needs_review",
+        duplicate_status: str = "not_reviewed",
+        **values,
     ) -> Event:
         from datetime import UTC, datetime
 
@@ -135,7 +142,13 @@ def make_event(db_session):
             canonical_url=canonical_url,
             source="Test Source",
             city_id=city.id,
+            website_id=website.id if website else None,
+            category_id=category.id if category else None,
+            is_active=is_active,
+            review_status=review_status,
+            duplicate_status=duplicate_status,
             archived_at=datetime.now(UTC) if archived else None,
+            **values,
         )
         db_session.add(event)
         db_session.commit()
@@ -143,6 +156,22 @@ def make_event(db_session):
         return event
 
     return _make_event
+
+
+@pytest.fixture
+def make_category(db_session):
+    def _make_category(
+        name: str = "Test Category",
+        slug: str = "test-category",
+        is_active: bool = True,
+    ) -> EventCategory:
+        category = EventCategory(name=name, slug=slug, is_active=is_active)
+        db_session.add(category)
+        db_session.commit()
+        db_session.refresh(category)
+        return category
+
+    return _make_category
 
 
 @pytest.fixture

@@ -6,8 +6,9 @@ from fastapi.responses import HTMLResponse, RedirectResponse
 from pydantic import ValidationError
 
 from app.core.csrf import verify_csrf
-from app.core.exceptions import NotFoundError
+from app.core.exceptions import AppError, NotFoundError
 from app.core.flash import set_flash
+from app.core.forms import reject_unexpected_form_fields
 from app.core.templating import render
 from app.dependencies import ClientIp, CorrelationId, DbSession
 from app.models.event import Event
@@ -517,25 +518,29 @@ def city_delete_impact(city_id: int, request: Request, current_user: DeleteCitie
 
 
 @router.post("/{city_id}/archive-events")
-def archive_events_view(
+async def archive_events_view(
     city_id: int,
     request: Request,
     db: DbSession,
     correlation_id: CorrelationId,
     ip_address: ClientIp,
     current_user: ArchiveEvents,
+    confirm_slug: str = Form(...),
     csrf_token: str = Form(...),
 ):
     verify_csrf(request, csrf_token)
+    await reject_unexpected_form_fields(request, {"confirm_slug", "csrf_token"})
     city = get_city(db, city_id)
     if city is None:
         raise NotFoundError("City not found")
+    if confirm_slug != city.slug:
+        raise AppError("City slug confirmation does not match", status_code=400)
 
     count = archive_city_events(db, city)
     record_audit(
         db,
         actor_id=current_user.id,
-        action="events_archived",
+        action="bulk_city_events_archived",
         entity_type="city",
         entity_id=city.id,
         after={"archived_count": count},
@@ -548,25 +553,29 @@ def archive_events_view(
 
 
 @router.post("/{city_id}/delete-events")
-def delete_events_view(
+async def delete_events_view(
     city_id: int,
     request: Request,
     db: DbSession,
     correlation_id: CorrelationId,
     ip_address: ClientIp,
     current_user: DeleteEvents,
+    confirm_slug: str = Form(...),
     csrf_token: str = Form(...),
 ):
     verify_csrf(request, csrf_token)
+    await reject_unexpected_form_fields(request, {"confirm_slug", "csrf_token"})
     city = get_city(db, city_id)
     if city is None:
         raise NotFoundError("City not found")
+    if confirm_slug != city.slug:
+        raise AppError("City slug confirmation does not match", status_code=400)
 
     count = delete_archived_city_events(db, city)
     record_audit(
         db,
         actor_id=current_user.id,
-        action="events_deleted",
+        action="bulk_city_events_deleted",
         entity_type="city",
         entity_id=city.id,
         before={"deleted_count": count},

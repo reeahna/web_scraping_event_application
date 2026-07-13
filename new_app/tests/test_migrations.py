@@ -19,6 +19,7 @@ EXPECTED_TABLES = {
     "cities",
     "websites",
     "event_categories",
+    "categorization_rules",
     "events",
     "audit_logs",
     "alembic_version",
@@ -213,5 +214,61 @@ def test_role_rename_merges_unexpected_duplicate_without_duplicate_assignments()
             .all()
         )
         assert assignments == [registered_id]
+    engine.dispose()
+    db_file.unlink(missing_ok=True)
+
+
+def test_phase5_migration_round_trip_preserves_existing_events():
+    db_file, database_url = _database_url("phase5_round_trip.db")
+    before_phase5 = _run_alembic(database_url, "upgrade", "c8abf388f25c")
+    assert before_phase5.returncode == 0, before_phase5.stderr
+
+    engine = create_engine(database_url)
+    now = datetime.now(UTC)
+    with engine.begin() as connection:
+        connection.execute(
+            text(
+                "INSERT INTO events "
+                "(title, canonical_url, source, is_active, archived_at, created_at, updated_at) "
+                "VALUES ('Preserved Event', 'https://example.com/preserved', 'Historical', "
+                "1, NULL, :now, :now)"
+            ),
+            {"now": now},
+        )
+        event_id = connection.execute(
+            text("SELECT id FROM events WHERE title = 'Preserved Event'")
+        ).scalar_one()
+
+    upgrade = _run_alembic(database_url, "upgrade", "head")
+    assert upgrade.returncode == 0, upgrade.stderr
+    with engine.connect() as connection:
+        row = connection.execute(
+            text(
+                "SELECT title, origin, review_status, duplicate_status FROM events WHERE id = :id"
+            ),
+            {"id": event_id},
+        ).one()
+        assert row == ("Preserved Event", "extracted", "needs_review", "not_reviewed")
+        assert connection.execute(text("SELECT COUNT(*) FROM event_categories")).scalar_one() >= 14
+
+    downgrade = _run_alembic(database_url, "downgrade", "c8abf388f25c")
+    assert downgrade.returncode == 0, downgrade.stderr
+    with engine.connect() as connection:
+        assert (
+            connection.execute(
+                text("SELECT title FROM events WHERE id = :id"), {"id": event_id}
+            ).scalar_one()
+            == "Preserved Event"
+        )
+
+    reupgrade = _run_alembic(database_url, "upgrade", "head")
+    assert reupgrade.returncode == 0, reupgrade.stderr
+    with engine.connect() as connection:
+        assert (
+            connection.execute(
+                text("SELECT title FROM events WHERE id = :id"), {"id": event_id}
+            ).scalar_one()
+            == "Preserved Event"
+        )
     engine.dispose()
     db_file.unlink(missing_ok=True)
