@@ -1,0 +1,48 @@
+{% extends "admin_base.html" %}
+
+{% block title %}Notifications{% endblock %}
+
+{% block admin_content %}
+<h1>Notifications</h1>
+
+<form method="get" action="/admin/notifications" class="filter-bar">
+  <label class="checkbox-label">
+    <input type="checkbox" name="unread_only" value="true" {% if unread_only %}checked{% endif %} onchange="this.form.submit()" />
+    Unread only
+  </label>
+</form>
+
+{% if notifications %}
+<table>
+  <thead><tr><th>Created</th><th>Severity</th><th>Title</th><th>Message</th><th></th><th></th></tr></thead>
+  <tbody>
+    {% for n in notifications %}
+    <tr class="{{ 'notification-unread' if not n.read_at else '' }}">
+      <td>{{ n.created_at }}</td>
+      <td>{{ n.severity }}</td>
+      <td>{{ n.title }}</td>
+      <td>{{ n.message }}{% if n.action_url %} — <a href="{{ n.action_url }}">view</a>{% endif %}</td>
+      <td>
+        {% if not n.read_at %}
+        <form method="post" action="/admin/notifications/{{ n.id }}/read" class="inline-form">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token }}" />
+          <button type="submit" class="btn-secondary">Mark read</button>
+        </form>
+        {% endif %}
+      </td>
+      <td>
+        {% if not n.dismissed_at %}
+        <form method="post" action="/admin/notifications/{{ n.id }}/dismiss" class="inline-form">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token }}" />
+          <button type="submit" class="btn-secondary">Dismiss</button>
+        </form>
+        {% endif %}
+      </td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% else %}
+<p class="audit-meta">No notifications.</p>
+{% endif %}
+{% endblock %}

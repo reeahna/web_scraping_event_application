@@ -29,6 +29,22 @@ def user_has_permission(db: Session, user: User, code: str) -> bool:
     return code in get_effective_permissions(db, user)
 
 
+def users_with_permission(db: Session, code: str) -> list[User]:
+    """Active users who currently hold `code` through any active role —
+    used to resolve notification recipients by permission rather than a
+    hardcoded user list (app.services.notifications)."""
+    return (
+        db.query(User)
+        .join(UserRole, UserRole.user_id == User.id)
+        .join(Role, Role.id == UserRole.role_id)
+        .join(RolePermission, RolePermission.role_id == Role.id)
+        .join(Permission, Permission.id == RolePermission.permission_id)
+        .filter(Permission.code == code, Role.is_active.is_(True), User.is_active.is_(True))
+        .distinct()
+        .all()
+    )
+
+
 def can_access_admin(db: Session, user: User | None) -> bool:
     """Whether `user` has *any* effective permission at all — the general
     admission check for the admin area (`/admin`), used for post-login

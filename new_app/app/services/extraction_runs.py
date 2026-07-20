@@ -25,7 +25,15 @@ from datetime import UTC, datetime
 from sqlalchemy.orm import Session
 
 from app.core.exceptions import AppError
-from app.core.onboarding import ACTIVE, DETECTED, DETECTING, DRAFT, FAILING, UNSUPPORTED
+from app.core.onboarding import (
+    ACTIVE,
+    DETECTED,
+    DETECTING,
+    DRAFT,
+    FAILING,
+    NEEDS_REVIEW,
+    UNSUPPORTED,
+)
 from app.core.onboarding import can_transition as _can_transition
 from app.extraction.dedup import dedupe_within_run
 from app.extraction.detail_pages import enrich_with_detail_pages
@@ -54,12 +62,29 @@ from app.repositories.event_provenance import create_event_provenance
 from app.repositories.extraction_run import create_extraction_run
 from app.repositories.unsupported_site_report import (
     create_unsupported_site_report,
+    record_report_occurrence,
     should_create_new_report,
 )
 from app.schemas.extraction import FetchConfig, SiteConfiguration
+from app.services.notifications import (
+    SEVERITY_ERROR,
+    SEVERITY_INFO,
+    SEVERITY_WARNING,
+    build_dedup_fingerprint,
+    notify,
+)
+from app.services.rbac import users_with_permission
 from app.services.websites import transition_website
 
 CONSECUTIVE_FAILURE_THRESHOLD = 3
+
+
+def _review_recipients(db: Session) -> list:
+    return users_with_permission(db, "sites.approve")
+
+
+def _website_action_url(website: Website) -> str:
+    return f"/admin/websites/{website.id}"
 
 
 def _draft_fetch_config(website: Website) -> FetchConfig:
@@ -105,15 +130,36 @@ async def run_detection(
     detection = detect_patterns(response)
     completed_at = datetime.now(UTC)
 
+    # A "no confident winner" result can still carry a plausible-but-below-
+    # threshold candidate (detection.evidence["winner"] is set whenever some
+    # detector matched at all, even if the merged result was demoted to
+    # needs_review). Blocked responses never have a usable winner, so they
+    # always fall through to UNSUPPORTED regardless of `needs_review`.
+    has_plausible_candidate = (
+        response.blocked_reason is None
+        and detection.pattern_name is None
+        and detection.needs_review
+        and detection.evidence.get("winner") is not None
+    )
     if response.blocked_reason is not None:
         status = "blocked"
-    elif detection.pattern_name is None:
-        status = "unsupported"
-    else:
+    elif detection.pattern_name is not None:
         status = "success"
+    elif has_plausible_candidate:
+        status = "needs_review"
+    else:
+        status = "unsupported"
 
-    # DRAFT can only ever move to DETECTING first — both DETECTED and
-    # UNSUPPORTED are reached from there, never directly from DRAFT.
+    onboarding_target = (
+        DETECTED
+        if status == "success"
+        else NEEDS_REVIEW
+        if status == "needs_review"
+        else UNSUPPORTED
+    )
+
+    # DRAFT can only ever move to DETECTING first — DETECTED/NEEDS_REVIEW/
+    # UNSUPPORTED are all reached from there, never directly from DRAFT.
     if website.onboarding_status == DRAFT:
         transition_website(db, website, DETECTING)
 
@@ -123,27 +169,20 @@ async def run_detection(
             "detection": _detection_dict(detection, completed_at),
             "configuration": proposed_configuration.model_dump(mode="json"),
         }
-        if _can_transition(website.onboarding_status, DETECTED):
-            transition_website(db, website, DETECTED)
     else:
         website.proposed_pattern = {
             "detection": _detection_dict(detection, completed_at),
             "configuration": None,
         }
-        if _can_transition(website.onboarding_status, UNSUPPORTED):
-            transition_website(db, website, UNSUPPORTED)
-        report_data = build_report(
-            website_id=website.id,
-            submitted_url=listing_url,
-            response=response,
-            detection=detection,
-            failure_reason=response.blocked_reason or "no_pattern_matched",
-        )
-        if should_create_new_report(db, website.id, report_data.fingerprint):
-            create_unsupported_site_report(db, report_data)
+
+    if _can_transition(website.onboarding_status, onboarding_target):
+        transition_website(db, website, onboarding_target)
 
     db.commit()
 
+    # Created before the unsupported-report write below so the report can
+    # reference a real run id (same ordering rationale as run_extraction's
+    # EventProvenance rows).
     run = create_extraction_run(
         db,
         website_id=website.id,
@@ -160,6 +199,78 @@ async def run_detection(
         completed_at=completed_at,
         correlation_id=correlation_id,
     )
+
+    if onboarding_target == UNSUPPORTED:
+        report_data = build_report(
+            website_id=website.id,
+            submitted_url=listing_url,
+            response=response,
+            detection=detection,
+            failure_reason=response.blocked_reason or "no_pattern_matched",
+        )
+        if should_create_new_report(db, website.id, report_data.fingerprint):
+            create_unsupported_site_report(db, report_data, extraction_run_id=run.id)
+        else:
+            record_report_occurrence(db, website.id, report_data.fingerprint, run_id=run.id)
+
+        if detection.browser_required:
+            notify(
+                db,
+                notification_type="website_browser_required",
+                severity=SEVERITY_WARNING,
+                title=f"{website.name}: browser rendering required",
+                message=(
+                    f"Detection on '{website.name}' indicates this site requires browser "
+                    "rendering, which isn't supported yet. Recommended next step: revisit "
+                    "once Playwright support is added."
+                ),
+                recipients=_review_recipients(db),
+                related_resource_type="website",
+                related_resource_id=website.id,
+                action_url=_website_action_url(website),
+                dedup_fingerprint=build_dedup_fingerprint(
+                    "website_browser_required", str(website.id), report_data.fingerprint
+                ),
+                correlation_id=correlation_id,
+            )
+        else:
+            notify(
+                db,
+                notification_type="website_detection_unsupported",
+                severity=SEVERITY_WARNING,
+                title=f"{website.name}: detection unsupported",
+                message=(
+                    f"No detector could confidently match '{website.name}' "
+                    f"(reason: {report_data.failure_reason})."
+                ),
+                recipients=_review_recipients(db),
+                related_resource_type="website",
+                related_resource_id=website.id,
+                action_url=_website_action_url(website),
+                dedup_fingerprint=build_dedup_fingerprint(
+                    "website_detection_unsupported", str(website.id), report_data.fingerprint
+                ),
+                correlation_id=correlation_id,
+            )
+    elif onboarding_target == NEEDS_REVIEW:
+        notify(
+            db,
+            notification_type="website_needs_review",
+            severity=SEVERITY_INFO,
+            title=f"{website.name}: low-confidence detection needs review",
+            message=(
+                f"Detection on '{website.name}' found a plausible pattern below the "
+                "confidence threshold. Review the detector evidence and select a pattern."
+            ),
+            recipients=_review_recipients(db),
+            related_resource_type="website",
+            related_resource_id=website.id,
+            action_url=_website_action_url(website),
+            dedup_fingerprint=build_dedup_fingerprint(
+                "website_needs_review", str(website.id), str(website.configuration_version)
+            ),
+            correlation_id=correlation_id,
+        )
 
     return ExtractionResult(
         status=status,
@@ -378,6 +489,68 @@ async def preview_extraction(
         correlation_id=correlation_id,
     )
 
+    if status == "failed":
+        notify(
+            db,
+            notification_type="extraction_preview_failed",
+            severity=SEVERITY_ERROR,
+            title=f"{website.name}: preview failed",
+            message=(
+                f"Preview of '{website.name}' at configuration version "
+                f"{website.configuration_version} found no valid events."
+            ),
+            recipients=_review_recipients(db),
+            related_resource_type="website",
+            related_resource_id=website.id,
+            action_url=_website_action_url(website),
+            dedup_fingerprint=build_dedup_fingerprint(
+                "extraction_preview_failed", str(website.id), str(website.configuration_version)
+            ),
+            correlation_id=correlation_id,
+        )
+    elif rejected:
+        notify(
+            db,
+            notification_type="extraction_preview_completed_with_rejections",
+            severity=SEVERITY_WARNING,
+            title=f"{website.name}: preview has rejected candidates",
+            message=(
+                f"Preview of '{website.name}' found {len(valid)} valid and {len(rejected)} "
+                "rejected candidates. Review before approving."
+            ),
+            recipients=_review_recipients(db),
+            related_resource_type="website",
+            related_resource_id=website.id,
+            action_url=_website_action_url(website),
+            dedup_fingerprint=build_dedup_fingerprint(
+                "extraction_preview_completed_with_rejections",
+                str(website.id),
+                str(website.configuration_version),
+            ),
+            correlation_id=correlation_id,
+        )
+    elif status in ("success", "partial"):
+        notify(
+            db,
+            notification_type="configuration_ready_for_approval",
+            severity=SEVERITY_INFO,
+            title=f"{website.name}: ready for approval",
+            message=(
+                f"Preview of '{website.name}' completed successfully with no rejected "
+                "candidates and is ready for approval."
+            ),
+            recipients=_review_recipients(db),
+            related_resource_type="website",
+            related_resource_id=website.id,
+            action_url=_website_action_url(website),
+            dedup_fingerprint=build_dedup_fingerprint(
+                "configuration_ready_for_approval",
+                str(website.id),
+                str(website.configuration_version),
+            ),
+            correlation_id=correlation_id,
+        )
+
     return ExtractionResult(
         status=status,
         run_id=run.id,
@@ -502,7 +675,7 @@ async def run_extraction(
     run.duplicates_skipped = dedup_outcome.duplicates_skipped
     db.commit()
 
-    _update_website_health(db, website, status)
+    _update_website_health(db, website, status, correlation_id=correlation_id)
 
     return ExtractionResult(
         status=status,
@@ -522,7 +695,9 @@ async def run_extraction(
     )
 
 
-def _update_website_health(db: Session, website: Website, status: str) -> None:
+def _update_website_health(
+    db: Session, website: Website, status: str, *, correlation_id: str | None = None
+) -> None:
     now = datetime.now(UTC)
     if status in ("success", "partial"):
         website.last_success_at = now
@@ -535,5 +710,25 @@ def _update_website_health(db: Session, website: Website, status: str) -> None:
             and website.onboarding_status == ACTIVE
         ):
             transition_website(db, website, FAILING)
+            notify(
+                db,
+                notification_type="website_entered_failing_status",
+                severity=SEVERITY_ERROR,
+                title=f"{website.name}: extraction failing",
+                message=(
+                    f"'{website.name}' has failed {website.consecutive_failure_count} "
+                    "consecutive persistent extraction runs and moved to FAILING."
+                ),
+                recipients=_review_recipients(db),
+                related_resource_type="website",
+                related_resource_id=website.id,
+                action_url=_website_action_url(website),
+                dedup_fingerprint=build_dedup_fingerprint(
+                    "website_entered_failing_status",
+                    str(website.id),
+                    website.last_success_at.isoformat() if website.last_success_at else "never",
+                ),
+                correlation_id=correlation_id,
+            )
     db.commit()
     db.refresh(website)

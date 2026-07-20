@@ -50,21 +50,17 @@
     Requires JavaScript rendering
   </label>
 
-  <label for="configuration">Configuration (optional JSON)</label>
-  <textarea id="configuration" name="configuration" rows="3">{{ form.configuration or '' }}</textarea>
-  {{ field_error(errors, "configuration") }}
-
   <label for="schedule_config">Extraction schedule configuration (optional JSON)</label>
   <textarea id="schedule_config" name="schedule_config" rows="2">{{ form.schedule_config or '' }}</textarea>
   {{ field_error(errors, "schedule_config") }}
 
-  <label for="proposed_pattern">Proposed pattern (optional JSON)</label>
-  <textarea id="proposed_pattern" name="proposed_pattern" rows="2">{{ form.proposed_pattern or '' }}</textarea>
-  {{ field_error(errors, "proposed_pattern") }}
-
-  <label for="approved_pattern">Approved pattern (optional JSON)</label>
-  <textarea id="approved_pattern" name="approved_pattern" rows="2">{{ form.approved_pattern or '' }}</textarea>
-  {{ field_error(errors, "approved_pattern") }}
+  {% if mode == "edit" %}
+  <p class="placeholder-note">
+    Extraction configuration (pattern, selectors, transformations) is managed on the
+    <a href="/admin/websites/{{ website.id }}/configure">configuration review screen</a>,
+    not here.
+  </p>
+  {% endif %}
 
   <div class="form-actions">
     <button type="submit">{{ "Save" if mode == "edit" else "Create website" }}</button>

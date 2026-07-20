@@ -50,7 +50,8 @@ PERMISSIONS: dict[str, str] = {
     "users.view": "View users",
     "users.update": "Update users, including activation/deactivation",
     "roles.manage": "Manage roles, permissions, and role/permission assignments",
-    "reports.view": "View reports",
+    "reports.view": "View unsupported-site reports",
+    "reports.manage": "Assign, annotate, and change the status of unsupported-site reports",
     "settings.manage": "Manage application settings",
 }
 

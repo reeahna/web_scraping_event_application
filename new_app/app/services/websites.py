@@ -18,6 +18,18 @@ def transition_website(db: Session, website: Website, target_status: str) -> Web
             status_code=409,
         )
 
+    if target_status == ACTIVE:
+        if not website.approved_pattern or website.active_configuration_version is None:
+            raise AppError(
+                "Website cannot be activated without an approved configuration.",
+                status_code=409,
+            )
+        if website.city_id is None or website.city is None or not website.city.is_active:
+            raise AppError(
+                "Website cannot be activated unless it is assigned to an active city.",
+                status_code=409,
+            )
+
     website.onboarding_status = target_status
     website.is_active = target_status == ACTIVE
     if target_status == ARCHIVED:

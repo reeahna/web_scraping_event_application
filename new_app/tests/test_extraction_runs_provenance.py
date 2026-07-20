@@ -22,6 +22,15 @@ def website_with_listing(make_city, make_website):
     return make_website(city, name="Test Source", base_url="https://example.com")
 
 
+async def _approve_with_current_preview(db_session, website, *, approved_by_user_id: int):
+    """approve_configuration requires a successful preview at the current
+    configuration_version — run one against the same fixture before
+    approving, matching how a real admin would use the workflow."""
+    with patched_http_fetch(_html_handler("jsonld_single_event.html")):
+        await preview_extraction(db_session, website)
+    return approve_configuration(db_session, website, approved_by_user_id=approved_by_user_id)
+
+
 # --- Detection --------------------------------------------------------------
 
 
@@ -104,7 +113,7 @@ async def test_approve_then_run_extraction_persists_event_with_provenance(
     admin = make_user(email="approver@example.com")
     website.configuration = JSONLD_CONFIG.model_dump(mode="json")
     db_session.commit()
-    approve_configuration(db_session, website, approved_by_user_id=admin.id)
+    await _approve_with_current_preview(db_session, website, approved_by_user_id=admin.id)
     assert website.approved_pattern is not None
 
     with patched_http_fetch(_html_handler("jsonld_single_event.html")):
@@ -128,7 +137,7 @@ async def test_second_run_updates_event_and_preserves_admin_override(
     admin = make_user(email="approver2@example.com")
     website.configuration = JSONLD_CONFIG.model_dump(mode="json")
     db_session.commit()
-    approve_configuration(db_session, website, approved_by_user_id=admin.id)
+    await _approve_with_current_preview(db_session, website, approved_by_user_id=admin.id)
 
     with patched_http_fetch(_html_handler("jsonld_single_event.html")):
         await run_extraction(db_session, website, triggered_by_user_id=admin.id)
@@ -160,7 +169,7 @@ async def test_archived_event_not_silently_reactivated_by_rescrape(
     admin = make_user(email="approver3@example.com")
     website.configuration = JSONLD_CONFIG.model_dump(mode="json")
     db_session.commit()
-    approve_configuration(db_session, website, approved_by_user_id=admin.id)
+    await _approve_with_current_preview(db_session, website, approved_by_user_id=admin.id)
 
     with patched_http_fetch(_html_handler("jsonld_single_event.html")):
         await run_extraction(db_session, website, triggered_by_user_id=admin.id)
@@ -188,7 +197,7 @@ async def test_blocked_response_marks_run_blocked_and_no_events_persisted(
     admin = make_user(email="approver4@example.com")
     website.configuration = JSONLD_CONFIG.model_dump(mode="json")
     db_session.commit()
-    approve_configuration(db_session, website, approved_by_user_id=admin.id)
+    await _approve_with_current_preview(db_session, website, approved_by_user_id=admin.id)
 
     with patched_http_fetch(_blocked_handler(403)):
         result = await run_extraction(db_session, website, triggered_by_user_id=admin.id)
@@ -209,7 +218,7 @@ async def test_repeated_failures_auto_transition_active_website_to_failing(
     admin = make_user(email="approver5@example.com")
     website.configuration = JSONLD_CONFIG.model_dump(mode="json")
     db_session.commit()
-    approve_configuration(db_session, website, approved_by_user_id=admin.id)
+    await _approve_with_current_preview(db_session, website, approved_by_user_id=admin.id)
     website.onboarding_status = "active"
     website.is_active = True
     db_session.commit()

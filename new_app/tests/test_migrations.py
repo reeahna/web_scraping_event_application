@@ -28,6 +28,7 @@ EXPECTED_TABLES = {
     "extraction_errors",
     "event_provenance",
     "unsupported_site_reports",
+    "notifications",
 }
 
 

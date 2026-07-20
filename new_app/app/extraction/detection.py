@@ -252,9 +252,20 @@ def run_detection(
         (name, result) for name, result in results.items() if result.pattern_name is not None
     ]
 
+    def _detector_summary(result: PatternDetectionResult) -> dict:
+        # Per-detector confidence/needs_review/browser_required alongside its
+        # own evidence — the detection-review screen needs every detector's
+        # confidence, not just the eventual winner's.
+        return {
+            "confidence": result.confidence,
+            "needs_review": result.needs_review,
+            "browser_required": result.browser_required,
+            **result.evidence,
+        }
+
     if not matched:
         all_warnings = tuple(w for r in results.values() for w in r.warnings)
-        merged_evidence = {name: r.evidence for name, r in results.items()}
+        merged_evidence = {name: _detector_summary(r) for name, r in results.items()}
         browser_required = any(r.browser_required for r in results.values())
         discovered = tuple(e for r in results.values() for e in r.discovered_endpoints)
         return PatternDetectionResult(
@@ -274,7 +285,7 @@ def run_detection(
     needs_review = winner.confidence < min_confidence
     merged_evidence = {
         "winner": winner_name,
-        "all_results": {name: r.evidence for name, r in results.items()},
+        "all_results": {name: _detector_summary(r) for name, r in results.items()},
     }
     return PatternDetectionResult(
         pattern_name=winner.pattern_name if not needs_review else None,

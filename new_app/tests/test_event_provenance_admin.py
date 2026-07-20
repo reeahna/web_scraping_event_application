@@ -2,7 +2,7 @@ import pytest
 
 from app.models.event import Event
 from app.schemas.extraction import SiteConfiguration
-from app.services.extraction_runs import run_extraction
+from app.services.extraction_runs import preview_extraction, run_extraction
 from app.services.website_configuration import approve_configuration
 from tests.extraction_helpers import html_handler, patched_http_fetch
 
@@ -22,6 +22,9 @@ async def test_event_detail_shows_real_provenance_for_permitted_role(
         pattern_name="json_ld_event", listing_url="https://example.com/events"
     ).model_dump(mode="json")
     db_session.commit()
+
+    with patched_http_fetch(html_handler("jsonld_single_event.html")):
+        await preview_extraction(db_session, website)
     approve_configuration(db_session, website, approved_by_user_id=admin.id)
 
     with patched_http_fetch(html_handler("jsonld_single_event.html")):

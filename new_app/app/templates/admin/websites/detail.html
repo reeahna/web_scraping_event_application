@@ -11,7 +11,7 @@
   <tbody>
     <tr><th>Source display name</th><td>{{ website.source_display_name or "—" }}</td></tr>
     <tr><th>City</th>
-      <td>{% if website.city %}<a href="/admin/cities/{{ website.city.id }}">{{ website.city.name }}</a>{% else %}Unassigned{% endif %}</td>
+      <td>{% if website.city %}<a href="/admin/cities/{{ website.city.id }}">{{ website.city.name }}</a>{% if not website.city.is_active %} (inactive){% endif %}{% else %}Unassigned{% endif %}</td>
     </tr>
     <tr><th>Base URL</th><td><a href="{{ website.base_url }}" target="_blank" rel="noopener"><code>{{ website.base_url }}</code></a></td></tr>
     <tr><th>Event listing URL</th><td>{{ website.event_listing_url or "—" }}</td></tr>
@@ -23,11 +23,8 @@
     <tr><th>Last failed run</th><td>{{ website.last_failure_at or "Never" }}</td></tr>
     <tr><th>Consecutive failures</th><td>{{ website.consecutive_failure_count }}</td></tr>
     <tr><th>Configuration version (draft)</th><td>{{ website.configuration_version }}</td></tr>
-    <tr><th>Configuration set</th><td>{{ "Yes" if website.configuration else "No" }}</td></tr>
-    <tr><th>Proposed pattern</th>
-      <td>{% if website.proposed_pattern %}{{ website.proposed_pattern.detection.pattern_name or "none (unsupported)" }}
-        (confidence {{ "%.2f"|format(website.proposed_pattern.detection.confidence) }}){% else %}—{% endif %}</td>
-    </tr>
+    <tr><th>Configuration set</th><td>{{ "Yes" if website.configuration else "No" }}
+      {% if website.configuration %}(<a href="/admin/websites/{{ website.id }}/configure">review / edit</a>){% endif %}</td></tr>
     <tr><th>Approved pattern</th>
       <td>{% if website.approved_pattern %}{{ website.approved_pattern.pattern_name }}
         — approved {{ website.approved_at }}{% if website.approved_by_user_id %} by user #{{ website.approved_by_user_id }}{% endif %}
@@ -39,6 +36,7 @@
 <div class="form-actions">
   {% if can_update %}
   <a href="/admin/websites/{{ website.id }}/edit"><button type="button">Edit</button></a>
+  <a href="/admin/websites/{{ website.id }}/configure"><button type="button">Configure extraction</button></a>
   {% endif %}
   {% if can_delete %}
   <a href="/admin/websites/{{ website.id }}/delete"><button type="button" class="btn-danger">Delete…</button></a>
@@ -51,7 +49,7 @@
 <div class="form-actions">
   {% for target in next_states %}
   <form method="post" action="/admin/websites/{{ website.id }}/status" class="inline-form"
-        onsubmit="return confirm('Move {{ website.name }} to status \'{{ target }}\'?');">
+        onsubmit="return confirm('Move {{ website.name }} to status \'{{ target }}\'?{% if target == 'active' %} Approved configuration: {{ website.approved_pattern.pattern_name if website.approved_pattern else 'none' }} (v{{ website.active_configuration_version }}).{% endif %}');">
     <input type="hidden" name="csrf_token" value="{{ csrf_token }}" />
     <input type="hidden" name="to_status" value="{{ target }}" />
     <button type="submit" class="{{ 'btn-secondary' if target in ('inactive', 'archived') else '' }}">
@@ -66,6 +64,65 @@
 </div>
 {% else %}
 <p class="audit-meta">No further transitions available from this status.</p>
+{% endif %}
+
+<h2>Detection review</h2>
+{% if website.proposed_pattern %}
+{% set detection = website.proposed_pattern.detection %}
+<table>
+  <tbody>
+    <tr><th>Selected pattern</th><td>{{ detection.pattern_name or "none — needs review or unsupported" }}</td></tr>
+    <tr><th>Confidence</th>
+      <td>{{ "%.2f"|format(detection.confidence) }} (threshold {{ "%.2f"|format(min_pattern_confidence) }})
+        {% if detection.confidence < min_pattern_confidence %}<span class="badge badge-pending">below threshold — review recommended</span>
+        {% elif detection.pattern_name %}<span class="badge badge-active">high confidence</span>{% endif %}</td></tr>
+    <tr><th>Why it won</th><td>Highest confidence among detectors clearing the threshold, ties broken by reliability order (wordpress_rest &gt; json_ld_event &gt; generic_html_cards).</td></tr>
+    <tr><th>Detector version</th><td>{{ detection.detector_version }}</td></tr>
+    <tr><th>Discovered endpoints</th><td>{% if detection.discovered_endpoints %}{% for e in detection.discovered_endpoints %}<code>{{ e }}</code><br/>{% endfor %}{% else %}—{% endif %}</td></tr>
+    <tr><th>Browser required</th><td>{{ "Yes — Playwright support is deferred" if detection.browser_required else "No" }}</td></tr>
+    <tr><th>Warnings</th><td>{% if detection.warnings %}{{ detection.warnings | join(", ") }}{% else %}None{% endif %}</td></tr>
+    <tr><th>Detected at</th><td>{{ detection.detected_at }}</td></tr>
+    {% if latest_detection_run %}
+    <tr><th>Extraction run</th><td><a href="/admin/websites/{{ website.id }}/runs/{{ latest_detection_run.id }}">Run #{{ latest_detection_run.id }}</a> ({{ latest_detection_run.status }}, response status {{ (latest_detection_run.response_metadata or {}).get("status_code", "—") }}, content-type {{ (latest_detection_run.response_metadata or {}).get("content_type", "—") }}, body hash <code>{{ (latest_detection_run.response_metadata or {}).get("body_hash", "—") }}</code>)</td></tr>
+    {% endif %}
+  </tbody>
+</table>
+
+<h3>All detector results</h3>
+{% if all_detector_results %}
+<table>
+  <thead><tr><th>Detector</th><th>Confidence</th><th>Needs review</th><th>Browser required</th><th>Evidence</th></tr></thead>
+  <tbody>
+    {% for name, result in all_detector_results.items() %}
+    <tr>
+      <td>{{ name }}</td>
+      <td>{{ "%.2f"|format(result.confidence) if result.confidence is defined else "—" }}</td>
+      <td>{{ "Yes" if result.needs_review else "No" }}</td>
+      <td>{{ "Yes" if result.browser_required else "No" }}</td>
+      <td><code>{{ result }}</code></td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% else %}
+<p class="audit-meta">No competing detector results recorded.</p>
+{% endif %}
+
+{% if website.onboarding_status in ("draft", "unsupported", "needs_review") and can_update %}
+<h3>Manually select a pattern</h3>
+<form method="post" action="/admin/websites/{{ website.id }}/select-pattern" class="inline-form">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token }}" />
+  <select name="pattern_name" required>
+    {% for name in pattern_names %}
+    <option value="{{ name }}">{{ name }}</option>
+    {% endfor %}
+  </select>
+  <button type="submit" class="btn-secondary">Select pattern</button>
+</form>
+<p class="audit-meta">Manual selection still requires preview and approval — it never bypasses either.</p>
+{% endif %}
+{% else %}
+<p class="audit-meta">No detection has been run yet.</p>
 {% endif %}
 
 <h2>Extraction pipeline</h2>
@@ -88,10 +145,39 @@
   </form>
 </div>
 
+{% if can_approve %}
+<h3>Reject proposed configuration</h3>
+<form method="post" action="/admin/websites/{{ website.id }}/reject-configuration" class="admin-form"
+      onsubmit="return confirm('Reject the proposed configuration for {{ website.name }}?');">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token }}" />
+  <label for="reject-reason">Reason (required)</label>
+  <input type="text" id="reject-reason" name="reason" required maxlength="500" />
+  <label for="reject-notes">Notes (optional)</label>
+  <textarea id="reject-notes" name="notes" rows="2"></textarea>
+  <button type="submit" class="btn-danger">Reject configuration</button>
+</form>
+{% endif %}
+
+<h2>Preview results</h2>
+{% if latest_preview_run %}
+<table>
+  <tbody>
+    <tr><th>Run</th><td><a href="/admin/websites/{{ website.id }}/runs/{{ latest_preview_run.id }}">Run #{{ latest_preview_run.id }}</a></td></tr>
+    <tr><th>Configuration version used</th><td>{{ latest_preview_run.configuration_version }}</td></tr>
+    <tr><th>Status</th><td>{{ latest_preview_run.status }}</td></tr>
+    <tr><th>Found / valid / rejected</th><td>{{ latest_preview_run.events_found }} / {{ latest_preview_run.events_valid }} / {{ latest_preview_run.events_rejected }}</td></tr>
+    <tr><th>Warnings</th><td>{% if latest_preview_run.warnings %}{{ latest_preview_run.warnings | join(", ") }}{% else %}None{% endif %}</td></tr>
+    <tr><th>Errors (first 5)</th><td>{{ latest_preview_run.error_summary or "None" }}</td></tr>
+  </tbody>
+</table>
+{% else %}
+<p class="audit-meta">No preview has been run yet.</p>
+{% endif %}
+
 <h2>Extraction history</h2>
 {% if extraction_runs %}
 <table>
-  <thead><tr><th>Started</th><th>Type</th><th>Status</th><th>Pattern</th><th>Found</th><th>Valid</th><th>Rejected</th><th>Inserted</th><th>Updated</th><th>Dup. skipped</th></tr></thead>
+  <thead><tr><th>Started</th><th>Type</th><th>Status</th><th>Pattern</th><th>Found</th><th>Valid</th><th>Rejected</th><th>Inserted</th><th>Updated</th><th>Dup. skipped</th><th></th></tr></thead>
   <tbody>
     {% for run in extraction_runs %}
     <tr>
@@ -105,6 +191,7 @@
       <td>{{ run.events_inserted }}</td>
       <td>{{ run.events_updated }}</td>
       <td>{{ run.duplicates_skipped }}</td>
+      <td><a href="/admin/websites/{{ website.id }}/runs/{{ run.id }}">Details</a></td>
     </tr>
     {% endfor %}
   </tbody>
@@ -116,7 +203,7 @@
 <h2>Unsupported-site reports</h2>
 {% if unsupported_reports %}
 <table>
-  <thead><tr><th>Created</th><th>Status</th><th>HTTP status</th><th>Browser required</th><th>JSON-LD present</th><th>Failure reason</th></tr></thead>
+  <thead><tr><th>Created</th><th>Status</th><th>HTTP status</th><th>Browser required</th><th>JSON-LD present</th><th>Occurrences</th><th>Failure reason</th><th></th></tr></thead>
   <tbody>
     {% for report in unsupported_reports %}
     <tr>
@@ -125,7 +212,9 @@
       <td>{{ report.http_status or "—" }}</td>
       <td>{{ "Yes" if report.browser_required else "No" }}</td>
       <td>{{ "Yes" if report.json_ld_presence else "No" }}</td>
+      <td>{{ report.occurrence_count }} (last seen {{ report.last_seen_at }})</td>
       <td>{{ report.failure_reason or "—" }}</td>
+      <td><a href="/admin/unsupported-reports/{{ report.id }}">Details</a></td>
     </tr>
     {% endfor %}
   </tbody>

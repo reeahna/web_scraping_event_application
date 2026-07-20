@@ -1,0 +1,79 @@
+{% extends "admin_base.html" %}
+
+{% block title %}Report #{{ report.id }}{% endblock %}
+
+{% block admin_content %}
+<h1>Unsupported-site report #{{ report.id }}</h1>
+<p class="audit-meta"><a href="/admin/unsupported-reports">&laquo; All reports</a> ·
+   <a href="/admin/websites/{{ report.website_id }}">{{ report.website.name }}</a></p>
+
+<table>
+  <tbody>
+    <tr><th>Status</th><td>{{ report.status }}</td></tr>
+    <tr><th>Submitted URL</th><td><code>{{ report.submitted_url }}</code></td></tr>
+    <tr><th>Final URL</th><td><code>{{ report.final_url or "—" }}</code></td></tr>
+    <tr><th>HTTP status</th><td>{{ report.http_status or "—" }}</td></tr>
+    <tr><th>Page title</th><td>{{ report.page_title or "—" }}</td></tr>
+    <tr><th>Browser required</th><td>{{ "Yes" if report.browser_required else "No" }}</td></tr>
+    <tr><th>JSON-LD present</th><td>{{ "Yes" if report.json_ld_presence else "No" }}</td></tr>
+    <tr><th>Access denied / challenge detected</th><td>{{ "Yes" if report.access_denied_or_challenge_detected else "No" }}</td></tr>
+    <tr><th>Failure reason</th><td>{{ report.failure_reason or "—" }}</td></tr>
+    <tr><th>Discovered endpoints</th><td>{% if report.discovered_endpoints %}{% for e in report.discovered_endpoints %}<code>{{ e }}</code><br/>{% endfor %}{% else %}—{% endif %}</td></tr>
+    <tr><th>Pagination indicators</th><td>{{ report.pagination_indicators or "—" }}</td></tr>
+    <tr><th>Fingerprint</th><td><code>{{ report.fingerprint }}</code></td></tr>
+    <tr><th>Occurrence count</th><td>{{ report.occurrence_count }}</td></tr>
+    <tr><th>First seen</th><td>{{ report.created_at }}</td></tr>
+    <tr><th>Last seen</th><td>{{ report.last_seen_at }}</td></tr>
+    <tr><th>Latest extraction run</th>
+      <td>{% if report.latest_extraction_run_id %}<a href="/admin/websites/{{ report.website_id }}/runs/{{ report.latest_extraction_run_id }}">Run #{{ report.latest_extraction_run_id }}</a>{% else %}—{% endif %}</td></tr>
+    <tr><th>Assigned to</th><td>{{ report.assigned_user.email if report.assigned_user else "Unassigned" }}</td></tr>
+    <tr><th>Resolved</th><td>{% if report.resolved_at %}{{ report.resolved_at }} by {{ report.resolved_by_user.email if report.resolved_by_user else "—" }}{% else %}Not resolved{% endif %}</td></tr>
+  </tbody>
+</table>
+
+<h2>Detector results</h2>
+{% if report.available_detector_results %}
+<pre>{{ report.available_detector_results }}</pre>
+{% else %}
+<p class="audit-meta">None recorded.</p>
+{% endif %}
+
+<h2>Administrator notes</h2>
+<pre>{{ report.admin_notes or "No notes yet." }}</pre>
+
+{% if can_manage %}
+<h3>Add a note</h3>
+<form method="post" action="/admin/unsupported-reports/{{ report.id }}/notes" class="admin-form">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token }}" />
+  <textarea name="note" rows="3" required maxlength="2000"></textarea>
+  <button type="submit">Add note</button>
+</form>
+
+<h3>Assign</h3>
+<form method="post" action="/admin/unsupported-reports/{{ report.id }}/assign" class="inline-form">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token }}" />
+  <select name="assigned_user_id">
+    <option value="">Unassigned</option>
+    {% for user in assignable_users %}
+    <option value="{{ user.id }}" {% if report.assigned_user_id == user.id %}selected{% endif %}>{{ user.email }}</option>
+    {% endfor %}
+  </select>
+  <button type="submit" class="btn-secondary">Update assignment</button>
+</form>
+
+<h3>Change status</h3>
+{% if next_statuses %}
+<div class="form-actions">
+  {% for target in next_statuses %}
+  <form method="post" action="/admin/unsupported-reports/{{ report.id }}/status" class="inline-form">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}" />
+    <input type="hidden" name="target_status" value="{{ target }}" />
+    <button type="submit" class="{{ 'btn-danger' if target == 'dismissed' else 'btn-secondary' }}">Move to {{ target }}</button>
+  </form>
+  {% endfor %}
+</div>
+{% else %}
+<p class="audit-meta">No further status transitions available.</p>
+{% endif %}
+{% endif %}
+{% endblock %}

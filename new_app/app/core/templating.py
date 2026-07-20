@@ -14,6 +14,25 @@ templates = Jinja2Templates(directory=str(TEMPLATES_DIR))
 FLASH_COOKIE = "flash"
 
 
+def _unread_notification_count(user_id: int) -> int:
+    """Registered as a Jinja global (below) so admin_base.html can show a
+    live unread-notification count without every admin route needing to
+    thread it through context. Opens its own short-lived session on the
+    same engine every request/service call already uses — a single bounded
+    COUNT query, not a payload scan."""
+    from app.database import SessionLocal
+    from app.repositories.notification import count_unread_for_user
+
+    db = SessionLocal()
+    try:
+        return count_unread_for_user(db, user_id)
+    finally:
+        db.close()
+
+
+templates.env.globals["unread_notification_count"] = _unread_notification_count
+
+
 def render(
     request: Request,
     template_name: str,

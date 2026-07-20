@@ -6,6 +6,7 @@ from fastapi.responses import HTMLResponse, RedirectResponse
 from app.core.csrf import verify_csrf
 from app.core.exceptions import AppError, NotFoundError
 from app.core.permissions import SUPER_ADMINISTRATOR
+from app.core.report_status import DISMISSED, RESOLVED
 from app.core.templating import render
 from app.dependencies import ClientIp, CorrelationId, CurrentUser, DbSession
 from app.models.audit_log import AuditLog
@@ -14,9 +15,11 @@ from app.models.event import Event
 from app.models.permission import Permission
 from app.models.role import Role
 from app.models.role_permission import RolePermission
+from app.models.unsupported_site_report import UnsupportedSiteReport
 from app.models.user import User
 from app.models.user_role import UserRole
 from app.models.website import Website
+from app.repositories.notification import count_unread_for_user
 from app.services.audit import record_audit
 from app.services.rbac import (
     assert_not_last_super_admin,
@@ -52,6 +55,40 @@ def dashboard(request: Request, current_user: CurrentUser, db: DbSession):
         "events": db.query(Event).count(),
     }
 
+    onboarding_metrics = None
+    if user_has_permission(db, current_user, "sites.view"):
+        onboarding_metrics = {
+            "draft": db.query(Website).filter(Website.onboarding_status == "draft").count(),
+            "detecting": db.query(Website).filter(Website.onboarding_status == "detecting").count(),
+            "needs_review": db.query(Website)
+            .filter(Website.onboarding_status == "needs_review")
+            .count(),
+            "detected": db.query(Website).filter(Website.onboarding_status == "detected").count(),
+            "approved_awaiting_activation": db.query(Website)
+            .filter(Website.onboarding_status == "approved")
+            .count(),
+            "unsupported": db.query(Website)
+            .filter(Website.onboarding_status == "unsupported")
+            .count(),
+            "failing": db.query(Website).filter(Website.onboarding_status == "failing").count(),
+            "browser_required": db.query(Website)
+            .filter(Website.onboarding_status.in_(("unsupported", "needs_review")))
+            .join(UnsupportedSiteReport, UnsupportedSiteReport.website_id == Website.id)
+            .filter(UnsupportedSiteReport.browser_required.is_(True))
+            .distinct()
+            .count(),
+        }
+
+    unresolved_reports = None
+    if user_has_permission(db, current_user, "reports.view"):
+        unresolved_reports = (
+            db.query(UnsupportedSiteReport)
+            .filter(UnsupportedSiteReport.status.notin_((RESOLVED, DISMISSED)))
+            .count()
+        )
+
+    unread_notifications = count_unread_for_user(db, current_user.id)
+
     recent_audit = None
     if user_has_permission(db, current_user, "roles.manage"):
         recent_audit = db.query(AuditLog).order_by(AuditLog.created_at.desc()).limit(10).all()
@@ -63,6 +100,9 @@ def dashboard(request: Request, current_user: CurrentUser, db: DbSession):
             "current_user": current_user,
             "permissions": permissions,
             "metrics": metrics,
+            "onboarding_metrics": onboarding_metrics,
+            "unresolved_reports": unresolved_reports,
+            "unread_notifications": unread_notifications,
             "recent_audit": recent_audit,
         },
     )

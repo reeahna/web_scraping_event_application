@@ -11,10 +11,12 @@ from app.core.flash import set_flash
 from app.core.onboarding import ALLOWED_TRANSITIONS, ONBOARDING_STATES, TRANSITION_PERMISSIONS
 from app.core.templating import render
 from app.dependencies import ClientIp, CorrelationId, CurrentUser, DbSession
+from app.extraction.detection import MIN_PATTERN_CONFIDENCE
+from app.extraction.registry import REGISTRY
 from app.models.event import Event
 from app.models.user import User
 from app.repositories.city import list_cities
-from app.repositories.extraction_run import list_extraction_runs_for_website
+from app.repositories.extraction_run import get_extraction_run, list_extraction_runs_for_website
 from app.repositories.unsupported_site_report import list_reports_for_website
 from app.repositories.website import (
     create_website,
@@ -22,11 +24,23 @@ from app.repositories.website import (
     search_websites,
     update_website,
 )
+from app.schemas.extraction import SiteConfiguration
+from app.schemas.extraction_config_forms import (
+    REQUIRED_FIELD_CHOICES,
+    ConfigFormInput,
+    build_site_configuration,
+    configuration_to_form,
+)
 from app.schemas.website import WebsiteCreate, WebsiteUpdate
 from app.services.audit import record_audit
 from app.services.extraction_runs import preview_extraction, run_detection, run_extraction
 from app.services.rbac import require_permission, user_has_permission
-from app.services.website_configuration import approve_configuration
+from app.services.website_configuration import (
+    approve_configuration,
+    reject_configuration,
+    save_draft_configuration,
+    select_pattern,
+)
 from app.services.websites import get_deletion_impact, transition_website
 
 router = APIRouter(prefix="/admin/websites", tags=["admin-websites"])
@@ -63,10 +77,7 @@ def _build_website_data(
     event_listing_url: str,
     timezone_override: str,
     requires_js: bool,
-    configuration: str,
     schedule_config: str,
-    proposed_pattern: str,
-    approved_pattern: str,
     schema_cls: type[WebsiteCreate] | type[WebsiteUpdate],
 ):
     return schema_cls(
@@ -77,15 +88,12 @@ def _build_website_data(
         event_listing_url=event_listing_url or None,
         timezone_override=timezone_override or None,
         requires_js=requires_js,
-        configuration=_parse_json_field(configuration),
         schedule_config=_parse_json_field(schedule_config),
-        proposed_pattern=_parse_json_field(proposed_pattern),
-        approved_pattern=_parse_json_field(approved_pattern),
     )
 
 
 def _json_error_context() -> dict[str, str]:
-    return {"configuration": "All JSON fields must be valid JSON, or left blank"}
+    return {"schedule_config": "Must be valid JSON, or left blank"}
 
 
 # --- List / filter -----------------------------------------------------------------
@@ -167,10 +175,7 @@ def create_website_view(
     event_listing_url: str = Form(""),
     timezone_override: str = Form(""),
     requires_js: str | None = Form(None),
-    configuration: str = Form(""),
     schedule_config: str = Form(""),
-    proposed_pattern: str = Form(""),
-    approved_pattern: str = Form(""),
     csrf_token: str = Form(...),
 ):
     verify_csrf(request, csrf_token)
@@ -182,10 +187,7 @@ def create_website_view(
         "event_listing_url": event_listing_url,
         "timezone_override": timezone_override,
         "requires_js": requires_js is not None,
-        "configuration": configuration,
         "schedule_config": schedule_config,
-        "proposed_pattern": proposed_pattern,
-        "approved_pattern": approved_pattern,
     }
     cities = list_cities(db, active_only=False)
 
@@ -198,10 +200,7 @@ def create_website_view(
             event_listing_url=event_listing_url,
             timezone_override=timezone_override,
             requires_js=requires_js is not None,
-            configuration=configuration,
             schedule_config=schedule_config,
-            proposed_pattern=proposed_pattern,
-            approved_pattern=approved_pattern,
             schema_cls=WebsiteCreate,
         )
     except ValidationError as exc:
@@ -264,6 +263,11 @@ def website_detail(website_id: int, request: Request, current_user: ViewSites, d
         for s in ALLOWED_TRANSITIONS.get(website.onboarding_status, frozenset())
         if user_has_permission(db, current_user, TRANSITION_PERMISSIONS[s])
     )
+    extraction_runs = list_extraction_runs_for_website(db, website.id, limit=20)
+    latest_detection_run = next((r for r in extraction_runs if r.run_type == "detection"), None)
+    latest_preview_run = next((r for r in extraction_runs if r.run_type == "preview"), None)
+    detection_evidence = (website.proposed_pattern or {}).get("detection", {}).get("evidence", {})
+    all_detector_results = (detection_evidence or {}).get("all_results", {})
 
     return render(
         request,
@@ -275,8 +279,39 @@ def website_detail(website_id: int, request: Request, current_user: ViewSites, d
             "next_states": next_states,
             "can_update": user_has_permission(db, current_user, "sites.update"),
             "can_delete": user_has_permission(db, current_user, "sites.delete"),
-            "extraction_runs": list_extraction_runs_for_website(db, website.id, limit=20),
+            "can_approve": user_has_permission(db, current_user, "sites.approve"),
+            "extraction_runs": extraction_runs,
             "unsupported_reports": list_reports_for_website(db, website.id, limit=20),
+            "latest_detection_run": latest_detection_run,
+            "latest_preview_run": latest_preview_run,
+            "all_detector_results": all_detector_results,
+            "pattern_names": REGISTRY.names(),
+            "min_pattern_confidence": MIN_PATTERN_CONFIDENCE,
+        },
+    )
+
+
+@router.get("/{website_id}/runs/{run_id}", response_class=HTMLResponse)
+def extraction_run_detail(
+    website_id: int, run_id: int, request: Request, current_user: ViewSites, db: DbSession
+):
+    website = get_website(db, website_id)
+    if website is None:
+        raise NotFoundError("Website not found")
+    run = get_extraction_run(db, run_id)
+    if run is None or run.website_id != website.id:
+        raise NotFoundError("Extraction run not found")
+
+    return render(
+        request,
+        "admin/websites/run_detail.html",
+        {
+            "current_user": current_user,
+            "website": website,
+            "run": run,
+            "detector_evidence_json": json.dumps(run.detector_evidence, indent=2)
+            if run.detector_evidence
+            else None,
         },
     )
 
@@ -296,14 +331,7 @@ def edit_website_form(website_id: int, request: Request, current_user: UpdateSit
         "event_listing_url": website.event_listing_url or "",
         "timezone_override": website.timezone_override or "",
         "requires_js": website.requires_js,
-        "configuration": json.dumps(website.configuration) if website.configuration else "",
         "schedule_config": json.dumps(website.schedule_config) if website.schedule_config else "",
-        "proposed_pattern": json.dumps(website.proposed_pattern)
-        if website.proposed_pattern
-        else "",
-        "approved_pattern": json.dumps(website.approved_pattern)
-        if website.approved_pattern
-        else "",
     }
     return render(
         request,
@@ -334,10 +362,7 @@ def update_website_view(
     event_listing_url: str = Form(""),
     timezone_override: str = Form(""),
     requires_js: str | None = Form(None),
-    configuration: str = Form(""),
     schedule_config: str = Form(""),
-    proposed_pattern: str = Form(""),
-    approved_pattern: str = Form(""),
     csrf_token: str = Form(...),
 ):
     verify_csrf(request, csrf_token)
@@ -354,10 +379,7 @@ def update_website_view(
         "event_listing_url": event_listing_url,
         "timezone_override": timezone_override,
         "requires_js": requires_js is not None,
-        "configuration": configuration,
         "schedule_config": schedule_config,
-        "proposed_pattern": proposed_pattern,
-        "approved_pattern": approved_pattern,
     }
 
     try:
@@ -369,10 +391,7 @@ def update_website_view(
             event_listing_url=event_listing_url,
             timezone_override=timezone_override,
             requires_js=requires_js is not None,
-            configuration=configuration,
             schedule_config=schedule_config,
-            proposed_pattern=proposed_pattern,
-            approved_pattern=approved_pattern,
             schema_cls=WebsiteUpdate,
         )
     except ValidationError as exc:
@@ -622,6 +641,227 @@ async def run_extraction_view(
     )
     response = RedirectResponse(url=f"/admin/websites/{website.id}", status_code=303)
     _extraction_result_flash(response, "Extraction run", result)
+    return response
+
+
+# --- Configuration review --------------------------------------------------------------
+# Structured, pattern-specific fields + independently-validated scoped JSON
+# sub-editors for the inherently list/dict-shaped pieces — never one opaque
+# textarea for the whole config. Saves only to the draft (`configuration`);
+# approval is a separate, later action.
+
+
+def _configure_context(
+    request: Request,
+    current_user: User,
+    website,
+    *,
+    form,
+    errors: dict[str, str],
+) -> dict:
+    return {
+        "current_user": current_user,
+        "website": website,
+        "form": form,
+        "errors": errors,
+        "required_field_choices": REQUIRED_FIELD_CHOICES,
+        "pattern_names": REGISTRY.names(),
+    }
+
+
+@router.get("/{website_id}/configure", response_class=HTMLResponse)
+def configure_website_view(
+    website_id: int, request: Request, current_user: UpdateSites, db: DbSession
+):
+    website = get_website(db, website_id)
+    if website is None:
+        raise NotFoundError("Website not found")
+
+    form = None
+    if website.configuration:
+        form = configuration_to_form(SiteConfiguration.model_validate(website.configuration))
+    elif website.proposed_pattern and website.proposed_pattern.get("configuration"):
+        form = configuration_to_form(
+            SiteConfiguration.model_validate(website.proposed_pattern["configuration"])
+        )
+
+    return render(
+        request,
+        "admin/websites/configure.html",
+        _configure_context(request, current_user, website, form=form, errors={}),
+    )
+
+
+@router.post("/{website_id}/configure", response_class=HTMLResponse)
+def configure_website_submit(
+    website_id: int,
+    request: Request,
+    db: DbSession,
+    correlation_id: CorrelationId,
+    ip_address: ClientIp,
+    current_user: UpdateSites,
+    pattern_name: str = Form(...),
+    listing_url: str = Form(""),
+    api_endpoint: str = Form(""),
+    timezone: str = Form(""),
+    event_container_selector: str = Form(""),
+    detail_page_selector: str = Form(""),
+    max_detail_fetches: str = Form("25"),
+    pagination_strategy: str = Form("none"),
+    page_param: str = Form(""),
+    page_size_param: str = Form(""),
+    next_page_selector: str = Form(""),
+    max_pages: str = Form("10"),
+    max_events: str = Form("500"),
+    date_formats: str = Form(""),
+    time_formats: str = Form(""),
+    required_fields: list[str] | None = Form(None),  # noqa: B008
+    allow_page_url_as_canonical_fallback: str | None = Form(None),
+    allow_offers_url_as_event_url: str | None = Form(None),
+    field_selectors: str = Form(""),
+    json_paths: str = Form(""),
+    transformations: str = Form(""),
+    category_mappings: str = Form(""),
+    exclusion_rules: str = Form(""),
+    geographic_filters: str = Form(""),
+    raw_json: str = Form(""),
+    csrf_token: str = Form(...),
+):
+    verify_csrf(request, csrf_token)
+    website = get_website(db, website_id)
+    if website is None:
+        raise NotFoundError("Website not found")
+
+    form_input = ConfigFormInput(
+        pattern_name=pattern_name,
+        listing_url=listing_url,
+        api_endpoint=api_endpoint,
+        timezone=timezone,
+        event_container_selector=event_container_selector,
+        detail_page_selector=detail_page_selector,
+        max_detail_fetches=max_detail_fetches,
+        pagination_strategy=pagination_strategy,
+        page_param=page_param,
+        page_size_param=page_size_param,
+        next_page_selector=next_page_selector,
+        max_pages=max_pages,
+        max_events=max_events,
+        date_formats=date_formats,
+        time_formats=time_formats,
+        required_fields=required_fields or [],
+        allow_page_url_as_canonical_fallback=allow_page_url_as_canonical_fallback is not None,
+        allow_offers_url_as_event_url=allow_offers_url_as_event_url is not None,
+        field_selectors=field_selectors,
+        json_paths=json_paths,
+        transformations=transformations,
+        category_mappings=category_mappings,
+        exclusion_rules=exclusion_rules,
+        geographic_filters=geographic_filters,
+        raw_json=raw_json,
+    )
+    result = build_site_configuration(form_input)
+    if result.configuration is None:
+        return render(
+            request,
+            "admin/websites/configure.html",
+            _configure_context(
+                request, current_user, website, form=form_input, errors=result.errors
+            ),
+            status_code=422,
+        )
+
+    before_version = website.configuration_version
+    save_draft_configuration(db, website, result.configuration)
+    record_audit(
+        db,
+        actor_id=current_user.id,
+        action="website_configuration_updated",
+        entity_type="website",
+        entity_id=website.id,
+        before={"configuration_version": before_version},
+        after={
+            "configuration_version": website.configuration_version,
+            "pattern_name": pattern_name,
+        },
+        correlation_id=correlation_id,
+        ip_address=ip_address,
+    )
+    response = RedirectResponse(url=f"/admin/websites/{website.id}", status_code=303)
+    set_flash(response, f"Configuration saved (draft version {website.configuration_version}).")
+    return response
+
+
+@router.post("/{website_id}/select-pattern")
+def select_pattern_view(
+    website_id: int,
+    request: Request,
+    db: DbSession,
+    correlation_id: CorrelationId,
+    ip_address: ClientIp,
+    current_user: UpdateSites,
+    pattern_name: str = Form(...),
+    csrf_token: str = Form(...),
+):
+    verify_csrf(request, csrf_token)
+    website = get_website(db, website_id)
+    if website is None:
+        raise NotFoundError("Website not found")
+
+    before = {"onboarding_status": website.onboarding_status}
+    select_pattern(db, website, pattern_name=pattern_name)
+    record_audit(
+        db,
+        actor_id=current_user.id,
+        action="website_pattern_manually_selected",
+        entity_type="website",
+        entity_id=website.id,
+        before=before,
+        after={"onboarding_status": website.onboarding_status, "pattern_name": pattern_name},
+        correlation_id=correlation_id,
+        ip_address=ip_address,
+    )
+    response = RedirectResponse(url=f"/admin/websites/{website.id}/configure", status_code=303)
+    set_flash(response, f"Pattern '{pattern_name}' selected — review and save the configuration.")
+    return response
+
+
+@router.post("/{website_id}/reject-configuration")
+def reject_configuration_view(
+    website_id: int,
+    request: Request,
+    db: DbSession,
+    correlation_id: CorrelationId,
+    ip_address: ClientIp,
+    current_user: ApproveSites,
+    reason: str = Form(...),
+    notes: str = Form(""),
+    csrf_token: str = Form(...),
+):
+    verify_csrf(request, csrf_token)
+    website = get_website(db, website_id)
+    if website is None:
+        raise NotFoundError("Website not found")
+
+    before = {
+        "onboarding_status": website.onboarding_status,
+        "approved_pattern_set": bool(website.approved_pattern),
+    }
+    reject_configuration(db, website, reason=reason, correlation_id=correlation_id)
+    detail = reason if not notes.strip() else f"{reason} | notes: {notes.strip()}"
+    record_audit(
+        db,
+        actor_id=current_user.id,
+        action="website_configuration_rejected",
+        entity_type="website",
+        entity_id=website.id,
+        before=before,
+        after={"onboarding_status": website.onboarding_status},
+        detail=detail,
+        correlation_id=correlation_id,
+        ip_address=ip_address,
+    )
+    response = RedirectResponse(url=f"/admin/websites/{website.id}", status_code=303)
+    set_flash(response, "Configuration rejected.")
     return response
 
 

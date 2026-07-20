@@ -1,0 +1,140 @@
+{% extends "admin_base.html" %}
+{% from "admin/_macros.html" import field_error %}
+
+{% block title %}Configure {{ website.name }}{% endblock %}
+
+{% block admin_content %}
+<h1>Configure extraction — {{ website.name }}</h1>
+<p class="audit-meta"><a href="/admin/websites/{{ website.id }}">&laquo; Back to {{ website.name }}</a></p>
+
+{% if not form %}
+<p class="placeholder-note">
+  No draft configuration yet. Run <a href="/admin/websites/{{ website.id }}">pattern detection</a>
+  or manually select a pattern first.
+</p>
+{% else %}
+<form method="post" action="/admin/websites/{{ website.id }}/configure" class="admin-form">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token }}" />
+  <input type="hidden" name="pattern_name" value="{{ form.pattern_name }}" />
+
+  <h2>Pattern: {{ form.pattern_name }}</h2>
+
+  {% if form.pattern_name == "wordpress_rest" %}
+  <label for="api_endpoint">API endpoint</label>
+  <input type="text" id="api_endpoint" name="api_endpoint" value="{{ form.api_endpoint }}" />
+  {{ field_error(errors, "api_endpoint") }}
+  {% else %}
+  <label for="listing_url">Listing URL</label>
+  <input type="text" id="listing_url" name="listing_url" value="{{ form.listing_url }}" />
+  {{ field_error(errors, "listing_url") }}
+  {% endif %}
+
+  <label for="timezone">Timezone override (optional)</label>
+  <input type="text" id="timezone" name="timezone" value="{{ form.timezone }}" placeholder="Defaults to the assigned city's timezone" />
+  {{ field_error(errors, "timezone") }}
+
+  {% if form.pattern_name == "generic_html_cards" %}
+  <label for="event_container_selector">Event container selector</label>
+  <input type="text" id="event_container_selector" name="event_container_selector" value="{{ form.event_container_selector }}" />
+  {{ field_error(errors, "event_container_selector") }}
+
+  <label for="detail_page_selector">Detail-page selector (optional)</label>
+  <input type="text" id="detail_page_selector" name="detail_page_selector" value="{{ form.detail_page_selector }}" />
+  {{ field_error(errors, "detail_page_selector") }}
+
+  <label for="max_detail_fetches">Maximum detail-page fetches</label>
+  <input type="number" id="max_detail_fetches" name="max_detail_fetches" value="{{ form.max_detail_fetches }}" min="0" />
+  {{ field_error(errors, "max_detail_fetches") }}
+  {% endif %}
+
+  <h3>Pagination</h3>
+  <label for="pagination_strategy">Strategy</label>
+  <select id="pagination_strategy" name="pagination_strategy">
+    {% for strategy in ("none", "query_param", "wordpress", "next_link") %}
+    <option value="{{ strategy }}" {% if form.pagination_strategy == strategy %}selected{% endif %}>{{ strategy }}</option>
+    {% endfor %}
+  </select>
+  <label for="page_param">Page parameter (query_param strategy)</label>
+  <input type="text" id="page_param" name="page_param" value="{{ form.page_param }}" />
+  <label for="page_size_param">Page-size parameter (optional)</label>
+  <input type="text" id="page_size_param" name="page_size_param" value="{{ form.page_size_param }}" />
+  <label for="next_page_selector">Next-page selector (next_link strategy)</label>
+  <input type="text" id="next_page_selector" name="next_page_selector" value="{{ form.next_page_selector }}" />
+  <label for="max_pages">Maximum pages</label>
+  <input type="number" id="max_pages" name="max_pages" value="{{ form.max_pages }}" min="1" />
+  <label for="max_events">Maximum events</label>
+  <input type="number" id="max_events" name="max_events" value="{{ form.max_events }}" min="1" />
+  {{ field_error(errors, "pagination") }}
+
+  <h3>Dates and required fields</h3>
+  <label for="date_formats">Date formats (one strptime pattern per line, e.g. %B %d, %Y)</label>
+  <textarea id="date_formats" name="date_formats" rows="2">{{ form.date_formats }}</textarea>
+  <label for="time_formats">Time formats (one strptime pattern per line, e.g. %I:%M %p)</label>
+  <textarea id="time_formats" name="time_formats" rows="2">{{ form.time_formats }}</textarea>
+
+  <label>Required fields</label>
+  {% for choice in required_field_choices %}
+  <label class="checkbox-label">
+    <input type="checkbox" name="required_fields" value="{{ choice }}" {% if choice in form.required_fields %}checked{% endif %} />
+    {{ choice }}
+  </label>
+  {% endfor %}
+
+  {% if form.pattern_name == "json_ld_event" %}
+  <label class="checkbox-label">
+    <input type="checkbox" name="allow_page_url_as_canonical_fallback" {% if form.allow_page_url_as_canonical_fallback %}checked{% endif %} />
+    Allow the listing page URL as a canonical-URL fallback
+  </label>
+  <label class="checkbox-label">
+    <input type="checkbox" name="allow_offers_url_as_event_url" {% if form.allow_offers_url_as_event_url %}checked{% endif %} />
+    Allow an offer's URL as the event URL fallback
+  </label>
+  {% endif %}
+
+  <h3>Field selectors, mappings, and transformations (JSON)</h3>
+  <p class="audit-meta">Each section below is validated independently — leave blank for the default.</p>
+
+  {% if form.pattern_name != "wordpress_rest" %}
+  <label for="field_selectors">Field selectors ({"field": {"kind": "css"|"json_path"|"attribute", "selector": "...", "attribute": "..."}})</label>
+  <textarea id="field_selectors" name="field_selectors" rows="6">{{ form.field_selectors }}</textarea>
+  {{ field_error(errors, "field_selectors") }}
+  {% endif %}
+
+  {% if form.pattern_name in ("json_ld_event", "wordpress_rest") %}
+  <label for="json_paths">JSON paths ({"field": "dot.path"})</label>
+  <textarea id="json_paths" name="json_paths" rows="4">{{ form.json_paths }}</textarea>
+  {{ field_error(errors, "json_paths") }}
+  {% endif %}
+
+  <label for="transformations">Transformations (list of {"field", "kind", "params"})</label>
+  <textarea id="transformations" name="transformations" rows="4">{{ form.transformations }}</textarea>
+  {{ field_error(errors, "transformations") }}
+
+  <label for="category_mappings">Category mappings ({"source_category": "internal_slug"})</label>
+  <textarea id="category_mappings" name="category_mappings" rows="3">{{ form.category_mappings }}</textarea>
+  {{ field_error(errors, "category_mappings") }}
+
+  <label for="exclusion_rules">Exclusion rules (list of {"field", "kind", "params"})</label>
+  <textarea id="exclusion_rules" name="exclusion_rules" rows="3">{{ form.exclusion_rules }}</textarea>
+  {{ field_error(errors, "exclusion_rules") }}
+
+  <label for="geographic_filters">Geographic filters (optional JSON object)</label>
+  <textarea id="geographic_filters" name="geographic_filters" rows="2">{{ form.geographic_filters }}</textarea>
+  {{ field_error(errors, "geographic_filters") }}
+
+  <details>
+    <summary>Advanced: replace the entire configuration with raw JSON</summary>
+    <p class="audit-meta">
+      If filled in, this replaces every field above — it is validated against the same
+      SiteConfiguration schema (unknown fields rejected, no code/secrets accepted).
+    </p>
+    <textarea name="raw_json" rows="6" placeholder="Leave blank to use the structured fields above"></textarea>
+    {{ field_error(errors, "raw_json") }}
+  </details>
+
+  <div class="form-actions">
+    <button type="submit">Save draft configuration</button>
+  </div>
+</form>
+{% endif %}
+{% endblock %}

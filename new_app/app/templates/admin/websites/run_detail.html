@@ -1,0 +1,53 @@
+{% extends "admin_base.html" %}
+
+{% block title %}Run #{{ run.id }} — {{ website.name }}{% endblock %}
+
+{% block admin_content %}
+<h1>Extraction run #{{ run.id }}</h1>
+<p class="audit-meta"><a href="/admin/websites/{{ website.id }}">&laquo; Back to {{ website.name }}</a></p>
+
+<table>
+  <tbody>
+    <tr><th>Run type</th><td>{{ run.run_type }}</td></tr>
+    <tr><th>Status</th><td>{{ run.status }}</td></tr>
+    <tr><th>Pattern</th><td>{{ run.pattern_name or "—" }}</td></tr>
+    <tr><th>Configuration version</th><td>{{ run.configuration_version if run.configuration_version is not none else "—" }}</td></tr>
+    <tr><th>Source URL</th><td><code>{{ run.source_url }}</code></td></tr>
+    <tr><th>Final URL</th><td><code>{{ run.final_url or "—" }}</code></td></tr>
+    <tr><th>Started</th><td>{{ run.started_at }}</td></tr>
+    <tr><th>Completed</th><td>{{ run.completed_at or "—" }}</td></tr>
+    <tr><th>Initiating user</th><td>{% if run.initiating_user_id %}user #{{ run.initiating_user_id }}{% else %}(system){% endif %}</td></tr>
+    <tr><th>Correlation ID</th><td>{{ run.correlation_id or "—" }}</td></tr>
+    <tr><th>Events found / valid / rejected</th><td>{{ run.events_found }} / {{ run.events_valid }} / {{ run.events_rejected }}</td></tr>
+    <tr><th>Events inserted / updated / duplicates skipped</th><td>{{ run.events_inserted }} / {{ run.events_updated }} / {{ run.duplicates_skipped }}</td></tr>
+    <tr><th>Error summary</th><td>{{ run.error_summary or "—" }}</td></tr>
+  </tbody>
+</table>
+
+<h2>Response metadata</h2>
+{% if run.response_metadata %}
+<table>
+  <tbody>
+    {% for key, value in run.response_metadata.items() %}
+    <tr><th>{{ key }}</th><td>{{ value }}</td></tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% else %}
+<p class="audit-meta">No response metadata recorded.</p>
+{% endif %}
+
+<h2>Warnings</h2>
+{% if run.warnings %}
+<ul>{% for warning in run.warnings %}<li>{{ warning }}</li>{% endfor %}</ul>
+{% else %}
+<p class="audit-meta">None.</p>
+{% endif %}
+
+<h2>Detector evidence</h2>
+{% if detector_evidence_json %}
+<pre>{{ detector_evidence_json }}</pre>
+{% else %}
+<p class="audit-meta">Not recorded for this run type.</p>
+{% endif %}
+{% endblock %}

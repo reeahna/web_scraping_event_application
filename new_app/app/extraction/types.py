@@ -16,7 +16,9 @@ from typing import TYPE_CHECKING, Any, Literal
 if TYPE_CHECKING:
     from app.schemas.extraction import SiteConfiguration
 
-RunStatus = Literal["success", "partial", "unsupported", "blocked", "failed", "cancelled"]
+RunStatus = Literal[
+    "success", "partial", "needs_review", "unsupported", "blocked", "failed", "cancelled"
+]
 RunType = Literal["detection", "preview", "manual", "scheduled"]
 
 

@@ -74,3 +74,14 @@ def list_extraction_runs_for_website(
 
 def get_extraction_run(db: Session, run_id: int) -> ExtractionRun | None:
     return db.get(ExtractionRun, run_id)
+
+
+def get_latest_run_for_website(
+    db: Session, website_id: int, *, run_type: str
+) -> ExtractionRun | None:
+    return (
+        db.query(ExtractionRun)
+        .filter(ExtractionRun.website_id == website_id, ExtractionRun.run_type == run_type)
+        .order_by(ExtractionRun.started_at.desc())
+        .first()
+    )

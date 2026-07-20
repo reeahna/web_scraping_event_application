@@ -24,7 +24,9 @@ from app.routers import (
     events,
     health,
     home,
+    notifications,
     registration,
+    unsupported_reports,
     websites,
 )
 
@@ -62,3 +64,5 @@ app.include_router(websites.router)
 app.include_router(events.router)
 app.include_router(event_categories.router)
 app.include_router(categorization_rules.router)
+app.include_router(unsupported_reports.router)
+app.include_router(notifications.router)

@@ -59,9 +59,12 @@ def test_website_assigned_to_correct_city(client, make_super_admin, make_city, l
     assert website.city_id != city_a.id
 
 
-def test_valid_status_transition_path_to_active(
+def test_activation_blocked_without_approved_configuration(
     client, make_super_admin, make_city, make_website, login, db_session
 ):
+    """The generic DRAFT->APPROVED status transition alone (with no real
+    approved_pattern) must not be enough to activate — transition_website's
+    ACTIVE guard requires an actual approved configuration snapshot."""
     make_super_admin(email="root3@example.com", password="root-pass-1234")
     city = make_city(name="Transition City", slug="transition-city")
     website = make_website(city, name="Transition Site")
@@ -72,6 +75,34 @@ def test_valid_status_transition_path_to_active(
     resp = client.post(
         f"/admin/websites/{website.id}/status",
         data={"to_status": "approved", "csrf_token": _csrf(client)},
+        follow_redirects=False,
+    )
+    assert resp.status_code == 303
+    db_session.refresh(website)
+    assert website.onboarding_status == "approved"
+    assert website.is_active is False
+
+    resp = client.post(
+        f"/admin/websites/{website.id}/status",
+        data={"to_status": "active", "csrf_token": _csrf(client)},
+        follow_redirects=False,
+    )
+    assert resp.status_code == 409
+    db_session.refresh(website)
+    assert website.onboarding_status == "approved"
+    assert website.is_active is False
+
+
+def test_valid_status_transition_path_to_active(
+    client, make_super_admin, make_city, make_website, login, db_session
+):
+    make_super_admin(email="root3b@example.com", password="root-pass-1234")
+    website = _approved_website(db_session, make_city, make_website, "RealTransition")
+    login("root3b@example.com", "root-pass-1234")
+
+    resp = client.post(
+        f"/admin/websites/{website.id}/approve-configuration",
+        data={"csrf_token": _csrf(client)},
         follow_redirects=False,
     )
     assert resp.status_code == 303
@@ -107,10 +138,10 @@ def test_invalid_status_transition_rejected(
     login("root4@example.com", "root-pass-1234")
 
     client.get(f"/admin/websites/{website.id}")
-    # draft -> needs_review isn't allowed (only draft -> detecting/approved/archived).
+    # draft -> failing isn't allowed (only draft -> detecting/needs_review/approved/archived).
     resp = client.post(
         f"/admin/websites/{website.id}/status",
-        data={"to_status": "needs_review", "csrf_token": _csrf(client)},
+        data={"to_status": "failing", "csrf_token": _csrf(client)},
         follow_redirects=False,
     )
     assert resp.status_code == 409
@@ -341,7 +372,14 @@ def test_detect_pattern_route_runs_real_detection_and_is_audited(
 
 
 def _approved_website(db_session, make_city, make_website, name: str):
+    """A website with a *current* draft configuration and a matching
+    successful preview already recorded — approve_configuration's
+    stale-preview guard requires exactly this before approval can succeed."""
+    import asyncio
+
     from app.schemas.extraction import SiteConfiguration
+    from app.services.extraction_runs import preview_extraction
+    from tests.extraction_helpers import html_handler, patched_http_fetch
 
     city = make_city(name=f"{name} City", slug=f"{name.lower()}-city")
     website = make_website(city, name=name)
@@ -349,6 +387,10 @@ def _approved_website(db_session, make_city, make_website, name: str):
         pattern_name="json_ld_event", listing_url="https://example.com/events"
     ).model_dump(mode="json")
     db_session.commit()
+
+    with patched_http_fetch(html_handler("jsonld_single_event.html")):
+        asyncio.run(preview_extraction(db_session, website))
+
     return website
 
 

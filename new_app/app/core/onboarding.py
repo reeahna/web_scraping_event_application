@@ -2,10 +2,11 @@
 
 A new website starts in DRAFT and must never become ACTIVE automatically —
 it only reaches ACTIVE by passing through (or manually fast-tracking past)
-review states. Real pattern detection doesn't exist yet, so DETECTING/
-DETECTED/UNSUPPORTED/FAILING are schema-complete and transition-validated now,
-ready for a future phase's extraction engine to drive them automatically —
-today they're only reachable via explicit admin action.
+review states. DETECTING/DETECTED/UNSUPPORTED/FAILING are driven
+automatically by the extraction engine (app.services.extraction_runs);
+NEEDS_REVIEW is reachable either from a low-confidence detection result or
+from an administrator manually selecting a pattern on a DRAFT or UNSUPPORTED
+website (app.services.website_configuration.select_pattern).
 """
 
 DRAFT = "draft"
@@ -34,17 +35,20 @@ ONBOARDING_STATES: tuple[str, ...] = (
 
 # Allowed next-states per current state. APPROVED is reachable directly from
 # every pre-approval state (not just NEEDS_REVIEW) as a manual fast-track —
-# there's no real detection pipeline yet, so admins need a way to hand-approve
-# a site they've configured themselves via `configuration`/`approved_pattern`.
+# admins can hand-approve a site they've configured themselves without
+# running detection. NEEDS_REVIEW is reachable from DRAFT and UNSUPPORTED
+# (manual pattern selection) and directly from DETECTING (a low-confidence
+# automatic detection result, the third possible detection outcome alongside
+# DETECTED and UNSUPPORTED).
 ALLOWED_TRANSITIONS: dict[str, frozenset[str]] = {
-    DRAFT: frozenset({DETECTING, APPROVED, ARCHIVED}),
-    DETECTING: frozenset({DETECTED, UNSUPPORTED, APPROVED, ARCHIVED}),
+    DRAFT: frozenset({DETECTING, NEEDS_REVIEW, APPROVED, ARCHIVED}),
+    DETECTING: frozenset({DETECTED, NEEDS_REVIEW, UNSUPPORTED, APPROVED, ARCHIVED}),
     DETECTED: frozenset({NEEDS_REVIEW, UNSUPPORTED, APPROVED, ARCHIVED}),
     NEEDS_REVIEW: frozenset({APPROVED, UNSUPPORTED, ARCHIVED}),
     APPROVED: frozenset({ACTIVE, ARCHIVED}),
     ACTIVE: frozenset({INACTIVE, FAILING, ARCHIVED}),
     INACTIVE: frozenset({ACTIVE, ARCHIVED}),
-    UNSUPPORTED: frozenset({DRAFT, ARCHIVED}),
+    UNSUPPORTED: frozenset({DRAFT, NEEDS_REVIEW, ARCHIVED}),
     FAILING: frozenset({ACTIVE, INACTIVE, ARCHIVED}),
     ARCHIVED: frozenset(),
 }

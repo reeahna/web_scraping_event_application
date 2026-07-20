@@ -12,6 +12,8 @@
     <a href="/admin/users">Users</a>
     <a href="/admin/roles">Roles</a>
     <a href="/admin/audit">Audit Log</a>
+    <a href="/admin/unsupported-reports">Unsupported Reports</a>
+    <a href="/admin/notifications">Notifications{% if current_user %} ({{ unread_notification_count(current_user.id) }}){% endif %}</a>
     <span class="admin-nav-spacer"></span>
     <a href="/account">My Account</a>
     <span class="admin-nav-user">{{ current_user.email }}</span>

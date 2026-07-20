@@ -1,0 +1,52 @@
+{% extends "admin_base.html" %}
+{% from "admin/_macros.html" import pagination %}
+
+{% block title %}Unsupported-site reports{% endblock %}
+
+{% block admin_content %}
+<h1>Unsupported-site reports</h1>
+
+<form method="get" action="/admin/unsupported-reports" class="filter-bar">
+  <select name="status">
+    <option value="">All statuses</option>
+    {% for st in all_statuses %}
+    <option value="{{ st }}" {% if status == st %}selected{% endif %}>{{ st }}</option>
+    {% endfor %}
+  </select>
+  <select name="city_id">
+    <option value="">All cities</option>
+    {% for city in cities %}
+    <option value="{{ city.id }}" {% if city_id == city.id %}selected{% endif %}>{{ city.name }}</option>
+    {% endfor %}
+  </select>
+  <label class="checkbox-label">
+    <input type="checkbox" name="browser_required" value="true" {% if browser_required %}checked{% endif %} />
+    Browser required only
+  </label>
+  <button type="submit">Filter</button>
+</form>
+
+{{ pagination(page, per_page, total, base_url) }}
+
+<table>
+  <thead>
+    <tr><th>Created</th><th>Website</th><th>Status</th><th>HTTP status</th><th>Browser required</th><th>Occurrences</th><th>Assigned</th><th></th></tr>
+  </thead>
+  <tbody>
+  {% for report in reports %}
+    <tr>
+      <td>{{ report.created_at }}</td>
+      <td><a href="/admin/websites/{{ report.website_id }}">{{ report.website.name }}</a></td>
+      <td>{{ report.status }}</td>
+      <td>{{ report.http_status or "—" }}</td>
+      <td>{{ "Yes" if report.browser_required else "No" }}</td>
+      <td>{{ report.occurrence_count }}</td>
+      <td>{{ report.assigned_user.email if report.assigned_user else "Unassigned" }}</td>
+      <td><a href="/admin/unsupported-reports/{{ report.id }}">Details</a></td>
+    </tr>
+  {% else %}
+    <tr><td colspan="8">No unsupported-site reports found.</td></tr>
+  {% endfor %}
+  </tbody>
+</table>
+{% endblock %}

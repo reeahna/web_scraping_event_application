@@ -22,7 +22,29 @@
     <div class="metric-value">{{ metrics.events }}</div>
     <div class="metric-label">Events</div>
   </div>
+  <div class="metric-tile">
+    <div class="metric-value">{{ unread_notifications }}</div>
+    <div class="metric-label">Unread notifications</div>
+  </div>
 </div>
+
+{% if onboarding_metrics is not none %}
+<h2>Website onboarding</h2>
+<div class="metrics-grid">
+  <div class="metric-tile"><div class="metric-value">{{ onboarding_metrics.draft }}</div><div class="metric-label">Draft</div></div>
+  <div class="metric-tile"><div class="metric-value">{{ onboarding_metrics.detecting }}</div><div class="metric-label">Detecting</div></div>
+  <div class="metric-tile"><div class="metric-value">{{ onboarding_metrics.detected }}</div><div class="metric-label">Detected</div></div>
+  <div class="metric-tile"><div class="metric-value">{{ onboarding_metrics.needs_review }}</div><div class="metric-label">Needs review</div></div>
+  <div class="metric-tile"><div class="metric-value">{{ onboarding_metrics.approved_awaiting_activation }}</div><div class="metric-label">Approved (awaiting activation)</div></div>
+  <div class="metric-tile"><div class="metric-value">{{ onboarding_metrics.unsupported }}</div><div class="metric-label">Unsupported</div></div>
+  <div class="metric-tile"><div class="metric-value">{{ onboarding_metrics.failing }}</div><div class="metric-label">Failing</div></div>
+  <div class="metric-tile"><div class="metric-value">{{ onboarding_metrics.browser_required }}</div><div class="metric-label">Browser required</div></div>
+</div>
+{% endif %}
+
+{% if unresolved_reports is not none %}
+<p><a href="/admin/unsupported-reports">{{ unresolved_reports }} unresolved unsupported-site report(s)</a></p>
+{% endif %}
 
 {% if recent_audit is not none %}
 <h2>Recent audit actions</h2>
