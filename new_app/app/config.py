@@ -33,6 +33,13 @@ class Settings(BaseSettings):
     # why this is not a production-grade rate limiter.
     registration_rate_limit_per_hour: int = 20
 
+    # Single application-wide timezone used to compute "today" for public
+    # event visibility (see app/repositories/public_events.py). Deliberately
+    # not per-city or per-viewer for this MVP — per-city date-boundary
+    # handling is deferred to a later phase rather than mixing timezone
+    # semantics inconsistently across events from different cities.
+    app_timezone: str = "UTC"
+
     model_config = SettingsConfigDict(
         env_file=str(BASE_DIR / ".env"),
         env_file_encoding="utf-8",

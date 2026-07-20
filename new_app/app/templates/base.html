@@ -3,15 +3,50 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="description" content="Find local events — concerts, theater, festivals, and more." />
   <title>{% block title %}New City Events{% endblock %}</title>
   <link rel="stylesheet" href="/static/style.css" />
 </head>
 <body>
-  <header>
-    <a href="/" class="logo">New City Events</a>
+  <a class="skip-link" href="#main-content">Skip to content</a>
+  <header class="site-header">
+    <div class="site-header-inner">
+      <a href="/" class="logo">New City Events</a>
+      <nav class="site-nav" aria-label="Primary">
+        {% block header_nav %}
+        <a href="/">Events</a>
+        {% if current_user %}
+          {% if can_access_admin %}<a href="/admin">Admin</a>{% endif %}
+          <a href="/account">My Account</a>
+          <form method="post" action="/auth/logout" class="inline-form">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token }}" />
+            <button type="submit" class="nav-button">Log Out</button>
+          </form>
+        {% else %}
+          <a href="/auth/login">Log In</a>
+          {% if registration_enabled %}<a href="/register" class="nav-button-link">Create Account</a>{% endif %}
+        {% endif %}
+        {% endblock %}
+      </nav>
+    </div>
   </header>
-  <main>
+
+  {% if flash %}
+  <div class="flash-region">
+    <div class="flash flash-{{ flash.category }}" role="status">{{ flash.message }}</div>
+  </div>
+  {% endif %}
+
+  <main id="main-content">
     {% block content %}{% endblock %}
   </main>
+
+  <footer class="site-footer">
+    <div class="site-footer-inner">
+      <p class="site-footer-name">New City Events</p>
+      <p class="site-footer-tagline">Local events, gathered in one place.</p>
+      <p class="site-footer-copyright">&copy; {{ current_year() }} New City Events</p>
+    </div>
+  </footer>
 </body>
 </html>

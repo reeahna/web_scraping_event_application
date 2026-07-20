@@ -1,4 +1,5 @@
 import json
+import re
 
 import pytest
 
@@ -152,7 +153,9 @@ def test_event_detail_source_fields_are_read_only(client, make_user, make_city, 
         "image_url",
         "external_source_id",
     ):
-        assert f'name="{field}"' not in response.text
+        # An editable form control, not just any attribute in the page (the
+        # base layout's own `<meta name="description">` is unrelated).
+        assert re.search(rf'<(input|textarea|select)[^>]*name="{field}"', response.text) is None
 
 
 @pytest.mark.parametrize(

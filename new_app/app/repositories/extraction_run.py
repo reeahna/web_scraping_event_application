@@ -85,3 +85,19 @@ def get_latest_run_for_website(
         .order_by(ExtractionRun.started_at.desc())
         .first()
     )
+
+
+def get_latest_successful_run_for_website(db: Session, website_id: int) -> ExtractionRun | None:
+    """Latest persistent-extraction run whose events would already be
+    reflected in the public listing — used for the admin diagnostic panel
+    on the public event-detail page."""
+    return (
+        db.query(ExtractionRun)
+        .filter(
+            ExtractionRun.website_id == website_id,
+            ExtractionRun.run_type == "manual",
+            ExtractionRun.status.in_(("success", "partial")),
+        )
+        .order_by(ExtractionRun.started_at.desc())
+        .first()
+    )

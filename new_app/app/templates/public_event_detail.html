@@ -1,0 +1,85 @@
+{% extends "base.html" %}
+
+{% block title %}{{ event.title }} — New City Events{% endblock %}
+
+{% block content %}
+<div class="page-container event-detail">
+  <p class="breadcrumb"><a href="/">&laquo; Back to events</a></p>
+
+  <article>
+    {% if event.image_url %}
+    <div class="event-detail-image">
+      <img src="{{ event.image_url }}" alt="{{ event.title }}" loading="lazy" />
+    </div>
+    {% endif %}
+
+    <header class="event-detail-header">
+      {% if event.effective_category %}<span class="badge badge-pending">{{ event.effective_category.name }}</span>{% endif %}
+      <h1>{{ event.title }}</h1>
+      <p class="event-detail-datetime">
+        {{ event.start_date | human_date_long }}{% if event.end_date and event.end_date != event.start_date %} &ndash; {{ event.end_date | human_date_long }}{% endif %}
+        {% if event.start_time %}<br />{{ event.start_time | human_time }}{% if event.end_time %} &ndash; {{ event.end_time | human_time }}{% endif %}{% endif %}
+      </p>
+    </header>
+
+    <div class="event-detail-grid">
+      <div class="event-detail-main">
+        {% if event.description %}
+        <section aria-labelledby="about-heading">
+          <h2 id="about-heading">About this event</h2>
+          <p class="event-detail-description">{{ event.description }}</p>
+        </section>
+        {% endif %}
+
+        <p>
+          <a href="{{ event.canonical_url }}" rel="noopener noreferrer" target="_blank" class="external-link">
+            View original listing
+            <span aria-hidden="true">&#8599;</span>
+            <span class="sr-only">(opens in a new tab)</span>
+          </a>
+        </p>
+      </div>
+
+      <aside class="event-detail-side">
+        <h2>Details</h2>
+        <dl class="event-detail-facts">
+          <div>
+            <dt>Venue</dt>
+            <dd>{{ event.public_venue or 'Venue TBD' }}</dd>
+          </div>
+          {% if event.public_address %}
+          <div>
+            <dt>Address</dt>
+            <dd>{{ event.public_address }}</dd>
+          </div>
+          {% endif %}
+          <div>
+            <dt>City</dt>
+            <dd>{{ event.city.name if event.city else '—' }}</dd>
+          </div>
+          <div>
+            <dt>Source</dt>
+            <dd>{{ event.source }}</dd>
+          </div>
+        </dl>
+      </aside>
+    </div>
+
+    {% if can_access_admin %}
+    <aside class="admin-diagnostic" aria-label="Admin diagnostics">
+      <h2>Admin</h2>
+      <p><a href="/admin/events/{{ event.id }}">Open in admin</a></p>
+      {% if latest_run %}
+      <ul class="impact-list">
+        <li>Latest successful extraction run: #{{ latest_run.id }} ({{ latest_run.status }})</li>
+        <li>Started: {{ latest_run.started_at }}</li>
+        <li>Events found / valid: {{ latest_run.events_found }} / {{ latest_run.events_valid }}</li>
+      </ul>
+      {% else %}
+      <p class="audit-meta">No successful extraction run recorded for this event's source.</p>
+      {% endif %}
+    </aside>
+    {% endif %}
+  </article>
+</div>
+{% endblock %}

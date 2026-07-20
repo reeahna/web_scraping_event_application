@@ -40,17 +40,46 @@ async def enrich_with_detail_pages(
     if not detail_selectors:
         return candidates
 
+    # Multiple cards can legitimately share one detail_link (e.g. several
+    # showtimes of the same production pointing at one page). `visited`
+    # records every URL already fetched (or attempted) this run, in the
+    # order first seen, so each distinct detail page is fetched — and
+    # counted against max_detail_fetches — at most once per run, never once
+    # per card. Iteration stays over `candidates` in its original,
+    # deterministic order throughout.
+    visited: dict[str, BeautifulSoup | None] = {}
+
     enriched: list[EventCandidate] = []
-    fetches_used = 0
     for candidate in candidates:
         detail_link = candidate.raw.get("detail_link")
-        if not detail_link or fetches_used >= config.max_detail_fetches:
+        if not detail_link:
             enriched.append(candidate)
             continue
+        detail_link = str(detail_link)
+        extra_warning: str | None = None
 
-        fetches_used += 1
-        response = await fetch.fetch(FetchRequest(url=str(detail_link)), config.fetch)
-        if response.blocked_reason is not None or response.status_code != 200:
+        if detail_link in visited:
+            extra_warning = f"detail_link_deduplicated:{detail_link}"
+        elif len(visited) >= config.max_detail_fetches:
+            enriched.append(
+                dataclasses.replace(
+                    candidate,
+                    warnings=(
+                        *candidate.warnings,
+                        f"detail_page_fetch_skipped_max_reached:{detail_link}",
+                    ),
+                )
+            )
+            continue
+        else:
+            response = await fetch.fetch(FetchRequest(url=detail_link), config.fetch)
+            if response.blocked_reason is not None or response.status_code != 200:
+                visited[detail_link] = None
+            else:
+                visited[detail_link] = BeautifulSoup(response.text, "html.parser")
+
+        soup = visited[detail_link]
+        if soup is None:
             enriched.append(
                 dataclasses.replace(
                     candidate,
@@ -59,10 +88,11 @@ async def enrich_with_detail_pages(
             )
             continue
 
-        soup = BeautifulSoup(response.text, "html.parser")
         new_raw = dict(candidate.raw)
         new_source_paths = dict(candidate.field_source_paths)
         new_warnings = list(candidate.warnings)
+        if extra_warning:
+            new_warnings.append(extra_warning)
         for field_name, selector_config in detail_selectors.items():
             result = resolve_css(soup, selector_config.selector, selector_config.attribute)
             if result.value is not None:

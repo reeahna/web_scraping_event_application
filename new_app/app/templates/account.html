@@ -10,8 +10,5 @@
     <button type="submit">Log out</button>
   </form>
 </nav>
-{% if flash %}
-<div class="account-flash flash flash-{{ flash.category }}">{{ flash.message }}</div>
-{% endif %}
 {% include "_account_content.html" %}
 {% endblock %}

@@ -25,6 +25,7 @@ from app.routers import (
     health,
     home,
     notifications,
+    public_events,
     registration,
     unsupported_reports,
     websites,
@@ -54,6 +55,7 @@ app.add_exception_handler(NotAuthenticatedError, not_authenticated_handler)
 app.add_exception_handler(Exception, unhandled_exception_handler)
 
 app.include_router(home.router)
+app.include_router(public_events.router)
 app.include_router(health.router)
 app.include_router(auth.router)
 app.include_router(registration.router)

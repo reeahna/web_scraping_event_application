@@ -1,79 +1,284 @@
+/* ==========================================================================
+   1. Variables
+   ========================================================================== */
 :root {
-  --bg: #f5f5f7;
+  /* Colors (kept as the original short names — used throughout admin/account/
+     auth styles below — plus a few semantic additions for the public site) */
+  --bg: #f7f7fb;
   --surface: #ffffff;
-  --border: #e0e0e6;
+  --border: #e3e3ec;
+  --border-strong: #d3d3e0;
   --accent: #4f46e5;
-  --text: #111118;
+  --accent-hover: #4338ca;
+  --accent-soft: rgba(79, 70, 229, 0.08);
+  --text: #14141f;
   --muted: #6b6b80;
+  --success: #16a34a;
+  --danger: #dc2626;
+  --warning: #d97706;
+
+  /* Spacing scale */
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 24px;
+  --space-6: 32px;
+  --space-7: 48px;
+  --space-8: 64px;
+
+  /* Radius */
+  --radius-sm: 6px;
+  --radius-md: 10px;
+  --radius-lg: 16px;
+  --radius-pill: 999px;
+
+  /* Shadows */
+  --shadow-sm: 0 1px 2px rgba(20, 20, 31, 0.06);
+  --shadow-md: 0 4px 16px rgba(20, 20, 31, 0.08);
+  --shadow-lg: 0 16px 40px rgba(20, 20, 31, 0.14);
+
+  /* Layout */
+  --max-width: 1180px;
+  --max-width-narrow: 760px;
+
+  /* Font sizes */
+  --font-xs: 0.75rem;
+  --font-sm: 0.85rem;
+  --font-base: 1rem;
+  --font-md: 1.15rem;
+  --font-lg: 1.5rem;
+  --font-xl: 2rem;
+  --font-2xl: 2.6rem;
 }
 
+/* ==========================================================================
+   2. Reset / base
+   ========================================================================== */
 * { box-sizing: border-box; margin: 0; padding: 0; }
 
 [hidden] { display: none !important; }
 
+html { -webkit-text-size-adjust: 100%; }
+
 body {
-  font-family: system-ui, sans-serif;
+  font-family:
+    system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
   background: var(--bg);
   color: var(--text);
   min-height: 100vh;
+  line-height: 1.5;
+  display: flex;
+  flex-direction: column;
 }
 
-header {
+main { flex: 1; }
+
+img { max-width: 100%; display: block; }
+
+a { color: inherit; }
+
+button, input, select, textarea { font: inherit; color: inherit; }
+
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+.skip-link {
+  position: absolute;
+  left: 8px;
+  top: -48px;
+  background: var(--accent);
+  color: #fff;
+  padding: 10px 16px;
+  border-radius: var(--radius-sm);
+  z-index: 100;
+  transition: top 0.15s ease;
+}
+
+.skip-link:focus {
+  top: 8px;
+}
+
+:focus-visible {
+  outline: 3px solid var(--accent);
+  outline-offset: 2px;
+}
+
+/* ==========================================================================
+   3. Layout primitives
+   ========================================================================== */
+.page-container {
+  max-width: var(--max-width);
+  margin: 0 auto;
+  padding: var(--space-5);
+}
+
+/* ==========================================================================
+   4. Header / navigation
+   ========================================================================== */
+.site-header {
   background: var(--surface);
   border-bottom: 1px solid var(--border);
-  padding: 20px 32px;
+  position: sticky;
+  top: 0;
+  z-index: 10;
+}
+
+.site-header-inner {
+  max-width: var(--max-width);
+  margin: 0 auto;
+  padding: var(--space-4) var(--space-5);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-4);
+  flex-wrap: wrap;
 }
 
 .logo {
-  font-weight: 700;
-  font-size: 1.4rem;
+  font-weight: 800;
+  font-size: var(--font-md);
   color: var(--accent);
   text-decoration: none;
+  letter-spacing: -0.01em;
 }
 
-.hero {
-  max-width: 640px;
-  margin: 80px auto;
+.site-nav {
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+  flex-wrap: wrap;
+  font-size: var(--font-sm);
+}
+
+.site-nav a {
+  color: var(--text);
+  text-decoration: none;
+  font-weight: 600;
+  padding: var(--space-2) 0;
+}
+
+.site-nav a:hover {
+  color: var(--accent);
+}
+
+.site-nav .nav-button,
+.site-nav .nav-button-link {
+  background: var(--accent);
+  color: #fff;
+  border: none;
+  border-radius: var(--radius-sm);
+  padding: var(--space-2) var(--space-3);
+  font-weight: 600;
+  font-size: var(--font-sm);
+  text-decoration: none;
+  cursor: pointer;
+}
+
+.site-nav .nav-button:hover,
+.site-nav .nav-button-link:hover {
+  background: var(--accent-hover);
+  color: #fff;
+}
+
+/* ==========================================================================
+   5. Footer
+   ========================================================================== */
+.site-footer {
+  border-top: 1px solid var(--border);
+  background: var(--surface);
+  margin-top: var(--space-8);
+}
+
+.site-footer-inner {
+  max-width: var(--max-width);
+  margin: 0 auto;
+  padding: var(--space-6) var(--space-5);
   text-align: center;
-  padding: 0 24px;
+  color: var(--muted);
+  font-size: var(--font-sm);
+}
+
+.site-footer-name {
+  font-weight: 700;
+  color: var(--text);
+  margin-bottom: var(--space-1);
+}
+
+.site-footer-tagline {
+  margin-bottom: var(--space-2);
+}
+
+/* ==========================================================================
+   6. Hero
+   ========================================================================== */
+.hero {
+  background: linear-gradient(180deg, var(--accent-soft), transparent);
+  border-bottom: 1px solid var(--border);
+}
+
+.hero-inner {
+  max-width: var(--max-width-narrow);
+  margin: 0 auto;
+  padding: var(--space-7) var(--space-5) var(--space-6);
+  text-align: center;
 }
 
 .hero h1 {
-  font-size: 1.8rem;
-  margin-bottom: 12px;
+  font-size: var(--font-2xl);
+  font-weight: 800;
+  letter-spacing: -0.02em;
+  margin-bottom: var(--space-3);
 }
 
+.hero-subtext {
+  color: var(--muted);
+  font-size: var(--font-md);
+}
+
+/* Legacy hero (auth-adjacent placeholder pages, if any remain) */
 .hero p {
   color: var(--muted);
-  margin-bottom: 8px;
+  margin-bottom: var(--space-2);
 }
 
 .hero a {
   color: var(--accent);
 }
 
-/* Auth */
+/* ==========================================================================
+   7. Auth cards
+   ========================================================================== */
 .auth-card {
   max-width: 380px;
   margin: 60px auto;
-  padding: 0 24px;
+  padding: 0 var(--space-5);
 }
 
 .auth-card h1 {
-  font-size: 1.4rem;
-  margin: 16px 0;
+  font-size: var(--font-lg);
+  margin: var(--space-4) 0;
 }
 
 .auth-card form {
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: var(--space-2);
 }
 
 .auth-card input {
-  padding: 8px 10px;
+  padding: var(--space-2) var(--space-3);
   border: 1px solid var(--border);
-  border-radius: 6px;
+  border-radius: var(--radius-sm);
   font-size: 0.95rem;
 }
 
@@ -82,60 +287,69 @@ button {
   background: var(--accent);
   color: #fff;
   border: none;
-  padding: 8px 16px;
-  border-radius: 6px;
+  padding: var(--space-2) var(--space-4);
+  border-radius: var(--radius-sm);
   cursor: pointer;
   font-size: 0.9rem;
+  transition: background-color 0.15s ease;
+}
+
+.auth-card button:hover,
+button:hover {
+  background: var(--accent-hover);
 }
 
 .banner {
-  padding: 8px 12px;
-  border-radius: 6px;
+  padding: var(--space-2) var(--space-3);
+  border-radius: var(--radius-sm);
   font-size: 0.82rem;
-  margin-bottom: 12px;
+  margin-bottom: var(--space-3);
 }
 
 .banner-dev {
-  background: rgba(79, 70, 229, 0.08);
+  background: var(--accent-soft);
   color: var(--accent);
 }
 
 .banner-warning {
   background: rgba(220, 38, 38, 0.08);
-  color: #dc2626;
+  color: var(--danger);
 }
 
 .form-error {
-  color: #dc2626;
+  color: var(--danger);
   font-size: 0.85rem;
-  margin-bottom: 8px;
+  margin-bottom: var(--space-2);
 }
 
 .field-error {
-  color: #dc2626;
+  color: var(--danger);
   font-size: 0.78rem;
 }
 
 .auth-card label {
   font-size: 0.85rem;
   font-weight: 600;
-  margin-top: 4px;
+  margin-top: var(--space-1);
 }
 
+/* ==========================================================================
+   8. Account page
+   ========================================================================== */
 .account-page {
   max-width: 640px;
   margin: 40px auto;
-  padding: 0 24px;
+  padding: 0 var(--space-5);
 }
 
 .account-nav {
   display: flex;
   justify-content: flex-end;
   align-items: center;
-  gap: 16px;
+  gap: var(--space-4);
   max-width: 640px;
-  margin: 20px auto 0;
-  padding: 0 24px;
+  margin: var(--space-5) auto 0;
+  padding: 0 var(--space-5);
 }
 
 .account-nav a {
@@ -145,22 +359,22 @@ button {
 
 .account-flash {
   max-width: 592px;
-  margin: 16px auto 0;
+  margin: var(--space-4) auto 0;
 }
 
 .account-form {
-  margin-top: 16px;
+  margin-top: var(--space-4);
 }
 
 .display-name-section h2 {
   font-size: 0.9rem;
-  margin-bottom: 8px;
+  margin-bottom: var(--space-2);
 }
 
 .display-name-readonly {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: var(--space-2);
   min-height: 36px;
 }
 
@@ -188,8 +402,8 @@ button {
 
 .button-link {
   display: inline-block;
-  padding: 8px 16px;
-  border-radius: 6px;
+  padding: var(--space-2) var(--space-4);
+  border-radius: var(--radius-sm);
   text-decoration: none;
   font-size: 0.9rem;
 }
@@ -197,25 +411,28 @@ button {
 .account-page table {
   width: 100%;
   border-collapse: collapse;
-  margin: 16px 0 24px;
+  margin: var(--space-4) 0 var(--space-5);
 }
 
 .account-page th,
 .account-page td {
   text-align: left;
-  padding: 8px 10px;
+  padding: var(--space-2) var(--space-3);
   border-bottom: 1px solid var(--border);
   font-size: 0.9rem;
 }
 
-/* Admin */
+/* ==========================================================================
+   9. Admin shell
+   ========================================================================== */
 .admin-nav {
   display: flex;
   align-items: center;
-  gap: 16px;
+  gap: var(--space-4);
   background: var(--surface);
   border-bottom: 1px solid var(--border);
-  padding: 12px 24px;
+  padding: var(--space-3) var(--space-5);
+  flex-wrap: wrap;
 }
 
 .admin-nav a {
@@ -240,19 +457,19 @@ button {
 .admin-body {
   max-width: 900px;
   margin: 0 auto;
-  padding: 24px;
+  padding: var(--space-5);
 }
 
 .admin-body table {
   width: 100%;
   border-collapse: collapse;
-  margin-bottom: 24px;
+  margin-bottom: var(--space-5);
 }
 
 .admin-body th,
 .admin-body td {
   text-align: left;
-  padding: 8px 10px;
+  padding: var(--space-2) var(--space-3);
   border-bottom: 1px solid var(--border);
   font-size: 0.9rem;
 }
@@ -262,9 +479,12 @@ button {
 }
 
 .checkbox-label {
-  display: block;
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
   font-size: 0.9rem;
-  margin: 4px 0;
+  margin: var(--space-1) 0;
+  cursor: pointer;
 }
 
 .perm-checkbox code {
@@ -273,38 +493,48 @@ button {
   border-radius: 4px;
 }
 
-/* Flash messages */
+/* ==========================================================================
+   10. Flash messages
+   ========================================================================== */
+.flash-region {
+  max-width: var(--max-width);
+  margin: var(--space-4) auto 0;
+  padding: 0 var(--space-5);
+}
+
 .flash {
-  padding: 10px 14px;
-  border-radius: 6px;
+  padding: var(--space-3) var(--space-4);
+  border-radius: var(--radius-sm);
   font-size: 0.88rem;
-  margin-bottom: 16px;
+  margin-bottom: var(--space-4);
 }
 
 .flash-success {
   background: rgba(22, 163, 74, 0.1);
-  color: #16a34a;
+  color: var(--success);
 }
 
 .flash-error {
   background: rgba(220, 38, 38, 0.08);
-  color: #dc2626;
+  color: var(--danger);
 }
 
-/* Badges */
+/* ==========================================================================
+   11. Badges
+   ========================================================================== */
 .badge {
   display: inline-block;
-  font-size: 0.72rem;
+  font-size: var(--font-xs);
   font-weight: 600;
-  padding: 2px 8px;
-  border-radius: 999px;
+  padding: 3px 10px;
+  border-radius: var(--radius-pill);
   text-transform: uppercase;
   letter-spacing: 0.03em;
 }
 
 .badge-active {
   background: rgba(22, 163, 74, 0.1);
-  color: #16a34a;
+  color: var(--success);
 }
 
 .badge-inactive {
@@ -314,16 +544,16 @@ button {
 
 .badge-archived {
   background: rgba(217, 119, 6, 0.1);
-  color: #d97706;
+  color: var(--warning);
 }
 
 .badge-danger {
   background: rgba(220, 38, 38, 0.1);
-  color: #dc2626;
+  color: var(--danger);
 }
 
 .badge-pending {
-  background: rgba(79, 70, 229, 0.1);
+  background: var(--accent-soft);
   color: var(--accent);
 }
 
@@ -333,40 +563,42 @@ button {
   font-style: italic;
 }
 
-/* Forms */
+/* ==========================================================================
+   12. Forms (admin)
+   ========================================================================== */
 .admin-form {
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: var(--space-1);
   max-width: 520px;
-  margin-bottom: 24px;
+  margin-bottom: var(--space-5);
 }
 
 .admin-form label {
   font-size: 0.85rem;
   font-weight: 600;
-  margin-top: 10px;
+  margin-top: var(--space-3);
 }
 
 .admin-form input,
 .admin-form select,
 .admin-form textarea {
-  padding: 8px 10px;
+  padding: var(--space-2) var(--space-3);
   border: 1px solid var(--border);
-  border-radius: 6px;
+  border-radius: var(--radius-sm);
   font-size: 0.9rem;
   font-family: inherit;
 }
 
 .admin-form .field-error {
-  color: #dc2626;
+  color: var(--danger);
   font-size: 0.78rem;
 }
 
 .admin-form .form-actions {
-  margin-top: 16px;
+  margin-top: var(--space-4);
   display: flex;
-  gap: 8px;
+  gap: var(--space-2);
 }
 
 .btn-secondary {
@@ -376,54 +608,41 @@ button {
 }
 
 .btn-danger {
-  background: #dc2626;
+  background: var(--danger);
 }
 
-/* Search/filter bar */
+/* Generic admin search/filter bar (distinct from the public .filter-panel below) */
 .filter-bar {
   display: flex;
-  gap: 8px;
+  gap: var(--space-2);
   align-items: center;
-  margin-bottom: 16px;
+  margin-bottom: var(--space-4);
+  flex-wrap: wrap;
 }
 
 .filter-bar input,
 .filter-bar select {
   padding: 7px 10px;
   border: 1px solid var(--border);
-  border-radius: 6px;
+  border-radius: var(--radius-sm);
   font-size: 0.88rem;
 }
 
-/* Pagination */
-.pagination {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  font-size: 0.82rem;
-  color: var(--muted);
-  margin-bottom: 16px;
-}
-
-.pagination-links a {
-  color: var(--accent);
-  text-decoration: none;
-  margin-left: 12px;
-}
-
-/* Metrics / dashboard */
+/* ==========================================================================
+   13. Metrics / dashboard
+   ========================================================================== */
 .metrics-grid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
-  gap: 12px;
-  margin-bottom: 28px;
+  gap: var(--space-3);
+  margin-bottom: var(--space-6);
 }
 
 .metric-tile {
   background: var(--surface);
   border: 1px solid var(--border);
-  border-radius: 8px;
-  padding: 14px 16px;
+  border-radius: var(--radius-md);
+  padding: var(--space-4);
 }
 
 .metric-value {
@@ -438,30 +657,529 @@ button {
   letter-spacing: 0.03em;
 }
 
-/* Audit metadata */
+/* ==========================================================================
+   14. Audit metadata / deletion impact
+   ========================================================================== */
 .audit-meta {
   font-size: 0.75rem;
   color: var(--muted);
 }
 
-/* Deletion impact */
 .impact-list {
   list-style: none;
-  margin-bottom: 16px;
+  margin-bottom: var(--space-4);
 }
 
 .impact-list li {
-  padding: 6px 0;
+  padding: var(--space-2) 0;
   border-bottom: 1px solid var(--border);
   font-size: 0.9rem;
 }
 
 .impact-blocked {
-  color: #dc2626;
+  color: var(--danger);
   font-weight: 600;
 }
 
 .impact-ok {
-  color: #16a34a;
+  color: var(--success);
   font-weight: 600;
+}
+
+/* ==========================================================================
+   15. Public filter panel
+   ========================================================================== */
+.filter-panel {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-sm);
+  padding: var(--space-5);
+  margin-top: calc(-1 * var(--space-7));
+  margin-bottom: var(--space-6);
+  position: relative;
+}
+
+.filter-form {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: end;
+  gap: var(--space-4);
+}
+
+.filter-field {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  min-width: 160px;
+  flex: 1 1 160px;
+}
+
+.filter-field label {
+  font-size: var(--font-xs);
+  font-weight: 700;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+
+.filter-field select,
+.filter-field input[type="date"] {
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  font-size: 0.9rem;
+  min-height: 40px;
+  background: var(--surface);
+}
+
+.filter-field select:focus-visible,
+.filter-field input:focus-visible {
+  outline: 3px solid var(--accent);
+  outline-offset: 1px;
+}
+
+.filter-field-checkbox {
+  justify-content: center;
+  min-width: auto;
+  flex: 0 0 auto;
+}
+
+.filter-field-checkbox .checkbox-label {
+  margin: 0;
+  padding-bottom: 9px;
+  font-size: 0.9rem;
+  font-weight: 500;
+  color: var(--text);
+  text-transform: none;
+  letter-spacing: normal;
+}
+
+.filter-field-checkbox input[type="checkbox"] {
+  width: 18px;
+  height: 18px;
+  accent-color: var(--accent);
+}
+
+.filter-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  flex: 0 0 auto;
+}
+
+.filter-actions button {
+  min-height: 40px;
+  padding: 0 var(--space-5);
+  font-weight: 600;
+}
+
+.filter-clear-link {
+  color: var(--muted);
+  text-decoration: underline;
+  font-size: 0.88rem;
+  white-space: nowrap;
+}
+
+.filter-clear-link:hover {
+  color: var(--accent);
+}
+
+/* ==========================================================================
+   16. Event grid / cards
+   ========================================================================== */
+.event-grid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: var(--space-5);
+  margin: 0 0 var(--space-6);
+}
+
+@media (min-width: 640px) {
+  .event-grid { grid-template-columns: repeat(2, 1fr); }
+}
+
+@media (min-width: 1024px) {
+  .event-grid { grid-template-columns: repeat(3, 1fr); }
+}
+
+.event-card {
+  display: flex;
+  flex-direction: column;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  overflow: hidden;
+  text-decoration: none;
+  color: var(--text);
+  box-shadow: var(--shadow-sm);
+  transition: box-shadow 0.15s ease, transform 0.15s ease, border-color 0.15s ease;
+  height: 100%;
+}
+
+.event-card:hover {
+  border-color: var(--border-strong);
+  box-shadow: var(--shadow-md);
+  transform: translateY(-2px);
+}
+
+.event-card:focus-visible {
+  outline: 3px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.event-card-image {
+  aspect-ratio: 16 / 9;
+  width: 100%;
+  background: var(--bg);
+  overflow: hidden;
+}
+
+.event-card-image img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.event-card-image-fallback {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--muted);
+  background: linear-gradient(135deg, var(--accent-soft), var(--bg));
+}
+
+.event-card-body {
+  padding: var(--space-4);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  flex: 1;
+}
+
+.event-card-body h2 {
+  font-size: var(--font-base);
+  font-weight: 700;
+  line-height: 1.3;
+  overflow-wrap: anywhere;
+}
+
+.event-card-meta {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  font-size: var(--font-sm);
+  color: var(--muted);
+  margin: var(--space-1) 0;
+}
+
+.event-card-date {
+  color: var(--accent);
+  font-weight: 600;
+}
+
+.event-card-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+  margin-top: auto;
+  padding-top: var(--space-2);
+}
+
+.event-card-source {
+  font-size: var(--font-xs);
+  color: var(--muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.event-card-cta {
+  font-size: var(--font-xs);
+  font-weight: 700;
+  color: var(--accent);
+  white-space: nowrap;
+}
+
+/* ==========================================================================
+   17. Empty state
+   ========================================================================== */
+.empty-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-3);
+  color: var(--muted);
+  background: var(--surface);
+  border: 1px dashed var(--border-strong);
+  border-radius: var(--radius-lg);
+  padding: var(--space-8) var(--space-5);
+  text-align: center;
+  margin-bottom: var(--space-6);
+}
+
+.empty-state svg {
+  color: var(--border-strong);
+}
+
+.empty-state h2 {
+  color: var(--text);
+  font-size: var(--font-md);
+}
+
+.empty-state p {
+  max-width: 40ch;
+}
+
+/* ==========================================================================
+   18. Pagination
+   ========================================================================== */
+.pagination {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: var(--font-sm);
+  color: var(--muted);
+  margin-bottom: var(--space-6);
+  flex-wrap: wrap;
+  gap: var(--space-3);
+}
+
+.pagination-links {
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+}
+
+.pagination-links a {
+  color: var(--accent);
+  text-decoration: none;
+  font-weight: 600;
+}
+
+.pagination-links a:hover {
+  text-decoration: underline;
+}
+
+.pagination-disabled {
+  color: var(--border-strong);
+  font-weight: 600;
+}
+
+.pagination-current {
+  font-weight: 600;
+  color: var(--text);
+}
+
+/* ==========================================================================
+   19. Event detail page
+   ========================================================================== */
+.event-detail {
+  padding-top: var(--space-5);
+}
+
+.breadcrumb {
+  margin-bottom: var(--space-4);
+}
+
+.breadcrumb a {
+  color: var(--muted);
+  text-decoration: none;
+  font-size: var(--font-sm);
+}
+
+.breadcrumb a:hover {
+  color: var(--accent);
+}
+
+.event-detail-image {
+  aspect-ratio: 21 / 9;
+  width: 100%;
+  border-radius: var(--radius-lg);
+  overflow: hidden;
+  background: var(--bg);
+  margin-bottom: var(--space-5);
+}
+
+.event-detail-image img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.event-detail-header h1 {
+  font-size: var(--font-xl);
+  font-weight: 800;
+  letter-spacing: -0.01em;
+  margin: var(--space-3) 0 var(--space-3);
+  overflow-wrap: anywhere;
+}
+
+.event-detail-datetime {
+  font-size: var(--font-md);
+  color: var(--accent);
+  font-weight: 600;
+  margin-bottom: var(--space-6);
+}
+
+.event-detail-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--space-6);
+  margin-bottom: var(--space-6);
+}
+
+@media (min-width: 768px) {
+  .event-detail-grid { grid-template-columns: minmax(0, 2fr) minmax(240px, 1fr); }
+}
+
+.event-detail-main h2 {
+  font-size: var(--font-md);
+  margin-bottom: var(--space-3);
+}
+
+.event-detail-description {
+  line-height: 1.7;
+  white-space: pre-line;
+  max-width: 68ch;
+  margin-bottom: var(--space-5);
+}
+
+.external-link {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  color: var(--accent);
+  font-weight: 600;
+  text-decoration: none;
+  border-bottom: 1px solid transparent;
+}
+
+.external-link:hover {
+  border-bottom-color: var(--accent);
+}
+
+.event-detail-side {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  padding: var(--space-5);
+  height: fit-content;
+}
+
+.event-detail-side h2 {
+  font-size: var(--font-sm);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--muted);
+  margin-bottom: var(--space-4);
+}
+
+.event-detail-facts {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+.event-detail-facts dt {
+  font-size: var(--font-xs);
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  margin-bottom: 2px;
+}
+
+.event-detail-facts dd {
+  font-size: 0.95rem;
+  overflow-wrap: anywhere;
+}
+
+/* ==========================================================================
+   20. Admin diagnostic panel
+   ========================================================================== */
+.admin-diagnostic {
+  margin-top: var(--space-6);
+  padding: var(--space-5);
+  border: 1px solid var(--accent);
+  border-radius: var(--radius-lg);
+  background: var(--accent-soft);
+}
+
+.admin-diagnostic h2 {
+  font-size: var(--font-sm);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--accent);
+  margin-bottom: var(--space-3);
+}
+
+/* ==========================================================================
+   21. Responsive breakpoints (page-level adjustments)
+   ========================================================================== */
+@media (max-width: 640px) {
+  .site-header-inner {
+    padding: var(--space-3) var(--space-4);
+  }
+
+  .site-nav {
+    gap: var(--space-3);
+  }
+
+  .hero-inner {
+    padding: var(--space-6) var(--space-4) var(--space-5);
+  }
+
+  .hero h1 {
+    font-size: var(--font-xl);
+  }
+
+  .page-container {
+    padding: var(--space-4);
+  }
+
+  .filter-panel {
+    margin-top: var(--space-4);
+    padding: var(--space-4);
+  }
+
+  .filter-form {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .filter-field,
+  .filter-field-checkbox,
+  .filter-actions {
+    width: 100%;
+    flex: 1 1 auto;
+  }
+
+  .filter-field select,
+  .filter-field input[type="date"] {
+    width: 100%;
+  }
+
+  .filter-actions {
+    flex-direction: column;
+    align-items: stretch;
+    gap: var(--space-2);
+  }
+
+  .filter-actions button {
+    width: 100%;
+  }
+
+  .filter-clear-link {
+    text-align: center;
+  }
+
+  .event-detail-header h1 {
+    font-size: var(--font-lg);
+  }
+
+  .pagination {
+    justify-content: center;
+    text-align: center;
+  }
 }

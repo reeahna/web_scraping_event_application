@@ -181,14 +181,28 @@ def make_website(db_session):
         name: str = "Test Site",
         base_url: str = "https://example.com",
         archived: bool = False,
+        is_active: bool = False,
+        approved_pattern: dict | None = None,
+        active_configuration_version: int | None = None,
+        source_display_name: str | None = None,
     ) -> Website:
         from datetime import UTC, datetime
+
+        # Mirrors app.services.website_configuration.approve_configuration,
+        # which always sets both together — a real approved website never has
+        # one without the other.
+        if approved_pattern is not None and active_configuration_version is None:
+            active_configuration_version = 1
 
         website = Website(
             name=name,
             base_url=base_url,
             city_id=city.id,
             archived_at=datetime.now(UTC) if archived else None,
+            is_active=is_active,
+            approved_pattern=approved_pattern,
+            active_configuration_version=active_configuration_version,
+            source_display_name=source_display_name,
         )
         db_session.add(website)
         db_session.commit()

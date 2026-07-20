@@ -1,29 +1,123 @@
 {% extends "base.html" %}
 
-{% block title %}New City Events — Home{% endblock %}
+{% block title %}New City Events — Find Events Near You{% endblock %}
 
 {% block content %}
-<div class="hero">
-  <h1>New application foundation is running</h1>
-  <p>Database, models, health checks, and local admin auth. No scraping or scheduling yet.</p>
-  <p><a href="/health">Check health endpoint</a></p>
-
-  {% if current_user %}
-  <div>
-    <a href="/account">My Account</a>
-    ·
-    <form method="post" action="/auth/logout" class="inline-form">
-      <input type="hidden" name="csrf_token" value="{{ csrf_token }}" />
-      <button type="submit">Log out</button>
-    </form>
-  </div>
-  {% else %}
-  <p>
-    <a href="/auth/login">Log In</a>
-    {% if registration_enabled %}
-    · <a href="/register">Create Account</a>
+<section class="hero">
+  <div class="hero-inner">
+    <h1>Find events near you</h1>
+    {% if selected_city %}
+    <p class="hero-subtext">Showing events in {{ selected_city.name }}{% if selected_city.state_or_region %}, {{ selected_city.state_or_region }}{% endif %}.</p>
+    {% else %}
+    <p class="hero-subtext">Concerts, theater, festivals, and more — gathered from local sources in one place.</p>
     {% endif %}
-  </p>
+  </div>
+</section>
+
+<div class="page-container">
+  <section class="filter-panel" aria-label="Filter events">
+    <form method="get" action="/" class="filter-form">
+      <div class="filter-field">
+        <label for="city_id">City</label>
+        <select id="city_id" name="city_id">
+          <option value="">All cities</option>
+          {% for city in cities %}
+          <option value="{{ city.id }}"{% if filters.city_id == city.id %} selected{% endif %}>{{ city.name }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="filter-field">
+        <label for="category_id">Category</label>
+        <select id="category_id" name="category_id">
+          <option value="">All categories</option>
+          {% for category in categories %}
+          <option value="{{ category.id }}"{% if filters.category_id == category.id %} selected{% endif %}>{{ category.name }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="filter-field">
+        <label for="date_from">From</label>
+        <input type="date" id="date_from" name="date_from" value="{{ filters.date_from }}" />
+      </div>
+      <div class="filter-field">
+        <label for="date_to">To</label>
+        <input type="date" id="date_to" name="date_to" value="{{ filters.date_to }}" />
+      </div>
+      <div class="filter-field filter-field-checkbox">
+        <label class="checkbox-label" for="upcoming_only">
+          <input type="checkbox" id="upcoming_only" name="upcoming_only" value="1"{% if filters.upcoming_only %} checked{% endif %} />
+          Upcoming only
+        </label>
+      </div>
+      <div class="filter-actions">
+        <button type="submit">Filter</button>
+        <a href="/" class="filter-clear-link">Clear filters</a>
+      </div>
+    </form>
+  </section>
+
+  {% if events %}
+  <div class="event-grid">
+    {% for event in events %}
+    <a class="event-card" href="/events/{{ event.id }}">
+      {% if event.image_url %}
+      <div class="event-card-image">
+        <img src="{{ event.image_url }}" alt="{{ event.title }}" loading="lazy" />
+      </div>
+      {% else %}
+      <div class="event-card-image event-card-image-fallback" aria-hidden="true">
+        <svg viewBox="0 0 24 24" width="36" height="36" fill="none" stroke="currentColor" stroke-width="1.5">
+          <rect x="3" y="5" width="18" height="16" rx="2" />
+          <path d="M3 9h18" />
+          <path d="M8 3v4M16 3v4" />
+        </svg>
+      </div>
+      {% endif %}
+      <div class="event-card-body">
+        {% if event.effective_category %}<span class="badge badge-pending">{{ event.effective_category.name }}</span>{% endif %}
+        <h2>{{ event.title }}</h2>
+        <div class="event-card-meta">
+          <span class="event-card-date">{{ event.start_date | human_date }}{% if event.start_time %} · {{ event.start_time | human_time }}{% endif %}</span>
+          <span>{{ event.public_venue or 'Venue TBD' }}</span>
+          <span>{{ event.city.name if event.city else '—' }}</span>
+        </div>
+        <div class="event-card-footer">
+          <span class="event-card-source">{{ event.source }}</span>
+          <span class="event-card-cta" aria-hidden="true">View event &rarr;</span>
+        </div>
+      </div>
+    </a>
+    {% endfor %}
+  </div>
+
+  <nav class="pagination" aria-label="Pagination">
+    <span class="pagination-count">{{ total }} event{{ 's' if total != 1 else '' }}</span>
+    <span class="pagination-links">
+      {% set qs = "city_id=" ~ (filters.city_id or "") ~ "&category_id=" ~ (filters.category_id or "") ~ "&upcoming_only=" ~ ("1" if filters.upcoming_only else "") ~ "&date_from=" ~ filters.date_from ~ "&date_to=" ~ filters.date_to %}
+      {% if page > 1 %}
+      <a href="/?{{ qs }}&page={{ page - 1 }}">&larr; Previous</a>
+      {% else %}
+      <span class="pagination-disabled">&larr; Previous</span>
+      {% endif %}
+      <span class="pagination-current">Page {{ page }}</span>
+      {% if has_next %}
+      <a href="/?{{ qs }}&page={{ page + 1 }}">Next &rarr;</a>
+      {% else %}
+      <span class="pagination-disabled">Next &rarr;</span>
+      {% endif %}
+    </span>
+  </nav>
+  {% else %}
+  <div class="empty-state">
+    <svg viewBox="0 0 24 24" width="48" height="48" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true">
+      <rect x="3" y="5" width="18" height="16" rx="2" />
+      <path d="M3 9h18" />
+      <path d="M8 3v4M16 3v4" />
+    </svg>
+    <h2>No events match these filters</h2>
+    <p>Try widening your date range or clearing filters to see everything upcoming.</p>
+    <a href="/" class="filter-clear-link">Clear filters</a>
+  </div>
   {% endif %}
 </div>
 {% endblock %}

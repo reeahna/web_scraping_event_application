@@ -1,4 +1,5 @@
 import json
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
@@ -7,9 +8,14 @@ from fastapi.responses import HTMLResponse
 from fastapi.templating import Jinja2Templates
 
 from app.core.csrf import get_or_create_csrf_token, set_csrf_cookie
+from app.core.formatting import human_date, human_date_long, human_time
 
 TEMPLATES_DIR = Path(__file__).resolve().parent.parent / "templates"
 templates = Jinja2Templates(directory=str(TEMPLATES_DIR))
+
+templates.env.filters["human_date"] = human_date
+templates.env.filters["human_date_long"] = human_date_long
+templates.env.filters["human_time"] = human_time
 
 FLASH_COOKIE = "flash"
 
@@ -31,6 +37,7 @@ def _unread_notification_count(user_id: int) -> int:
 
 
 templates.env.globals["unread_notification_count"] = _unread_notification_count
+templates.env.globals["current_year"] = lambda: datetime.now(UTC).year
 
 
 def render(
