@@ -14,6 +14,8 @@ from app.dependencies import ClientIp, CorrelationId, CurrentUser, DbSession
 from app.models.event import Event
 from app.models.user import User
 from app.repositories.city import list_cities
+from app.repositories.extraction_run import list_extraction_runs_for_website
+from app.repositories.unsupported_site_report import list_reports_for_website
 from app.repositories.website import (
     create_website,
     get_website,
@@ -22,7 +24,9 @@ from app.repositories.website import (
 )
 from app.schemas.website import WebsiteCreate, WebsiteUpdate
 from app.services.audit import record_audit
+from app.services.extraction_runs import preview_extraction, run_detection, run_extraction
 from app.services.rbac import require_permission, user_has_permission
+from app.services.website_configuration import approve_configuration
 from app.services.websites import get_deletion_impact, transition_website
 
 router = APIRouter(prefix="/admin/websites", tags=["admin-websites"])
@@ -271,6 +275,8 @@ def website_detail(website_id: int, request: Request, current_user: ViewSites, d
             "next_states": next_states,
             "can_update": user_has_permission(db, current_user, "sites.update"),
             "can_delete": user_has_permission(db, current_user, "sites.delete"),
+            "extraction_runs": list_extraction_runs_for_website(db, website.id, limit=20),
+            "unsupported_reports": list_reports_for_website(db, website.id, limit=20),
         },
     )
 
@@ -461,56 +467,57 @@ def change_website_status(
     return response
 
 
-# --- Placeholder extraction-pipeline actions ------------------------------------------
-# These exist so routes/permissions/UI are in place ahead of the real extraction
-# engine. None of them perform real work yet.
+# --- Extraction pipeline actions ------------------------------------------------------
+# Detection never persists events or touches approved_pattern. Preview never
+# persists events. Persistent extraction requires an approved configuration.
+# None of these change website activation — that stays the separate,
+# explicit sites.activate transition below.
 
 
-def _placeholder_action(
+def _extraction_result_flash(response: RedirectResponse, action_label: str, result) -> None:
+    summary = (
+        f"{action_label}: {result.status} — {result.events_valid} valid / "
+        f"{result.events_found} found, {result.events_rejected} rejected"
+    )
+    if result.pattern:
+        summary += f" (pattern: {result.pattern})"
+    level = "error" if result.status in ("failed", "blocked") else "success"
+    set_flash(response, summary, level)
+
+
+@router.post("/{website_id}/detect-pattern")
+async def detect_pattern_view(
     website_id: int,
-    action: str,
+    request: Request,
     db: DbSession,
-    current_user: User,
-    correlation_id: str | None,
-    ip_address: str | None,
-) -> RedirectResponse:
+    correlation_id: CorrelationId,
+    ip_address: ClientIp,
+    current_user: TestSites,
+    csrf_token: str = Form(...),
+):
+    verify_csrf(request, csrf_token)
     website = get_website(db, website_id)
     if website is None:
         raise NotFoundError("Website not found")
 
+    result = await run_detection(db, website, correlation_id=correlation_id)
     record_audit(
         db,
         actor_id=current_user.id,
-        action=action,
+        action="pattern_detection_requested",
         entity_type="website",
         entity_id=website.id,
-        detail="Not implemented yet — the extraction engine does not exist in this phase.",
+        after={"status": result.status, "pattern": result.pattern, "run_id": result.run_id},
         correlation_id=correlation_id,
         ip_address=ip_address,
     )
     response = RedirectResponse(url=f"/admin/websites/{website.id}", status_code=303)
-    set_flash(response, "Not implemented yet.", "error")
+    _extraction_result_flash(response, "Pattern detection", result)
     return response
 
 
-@router.post("/{website_id}/detect-pattern")
-def detect_pattern_view(
-    website_id: int,
-    request: Request,
-    db: DbSession,
-    correlation_id: CorrelationId,
-    ip_address: ClientIp,
-    current_user: TestSites,
-    csrf_token: str = Form(...),
-):
-    verify_csrf(request, csrf_token)
-    return _placeholder_action(
-        website_id, "pattern_detection_requested", db, current_user, correlation_id, ip_address
-    )
-
-
 @router.post("/{website_id}/preview-extraction")
-def preview_extraction_view(
+async def preview_extraction_view(
     website_id: int,
     request: Request,
     db: DbSession,
@@ -520,9 +527,30 @@ def preview_extraction_view(
     csrf_token: str = Form(...),
 ):
     verify_csrf(request, csrf_token)
-    return _placeholder_action(
-        website_id, "extraction_preview_requested", db, current_user, correlation_id, ip_address
+    website = get_website(db, website_id)
+    if website is None:
+        raise NotFoundError("Website not found")
+
+    result = await preview_extraction(db, website, correlation_id=correlation_id)
+    record_audit(
+        db,
+        actor_id=current_user.id,
+        action="extraction_preview_requested",
+        entity_type="website",
+        entity_id=website.id,
+        after={
+            "status": result.status,
+            "events_found": result.events_found,
+            "events_valid": result.events_valid,
+            "events_rejected": result.events_rejected,
+            "run_id": result.run_id,
+        },
+        correlation_id=correlation_id,
+        ip_address=ip_address,
     )
+    response = RedirectResponse(url=f"/admin/websites/{website.id}", status_code=303)
+    _extraction_result_flash(response, "Preview", result)
+    return response
 
 
 @router.post("/{website_id}/approve-configuration")
@@ -536,13 +564,30 @@ def approve_configuration_view(
     csrf_token: str = Form(...),
 ):
     verify_csrf(request, csrf_token)
-    return _placeholder_action(
-        website_id, "configuration_approval_requested", db, current_user, correlation_id, ip_address
+    website = get_website(db, website_id)
+    if website is None:
+        raise NotFoundError("Website not found")
+
+    before = {"approved_pattern_set": bool(website.approved_pattern)}
+    approve_configuration(db, website, approved_by_user_id=current_user.id)
+    record_audit(
+        db,
+        actor_id=current_user.id,
+        action="configuration_approved",
+        entity_type="website",
+        entity_id=website.id,
+        before=before,
+        after={"configuration_version": website.active_configuration_version},
+        correlation_id=correlation_id,
+        ip_address=ip_address,
     )
+    response = RedirectResponse(url=f"/admin/websites/{website.id}", status_code=303)
+    set_flash(response, f"Configuration approved (version {website.active_configuration_version}).")
+    return response
 
 
 @router.post("/{website_id}/run-extraction")
-def run_extraction_view(
+async def run_extraction_view(
     website_id: int,
     request: Request,
     db: DbSession,
@@ -552,9 +597,32 @@ def run_extraction_view(
     csrf_token: str = Form(...),
 ):
     verify_csrf(request, csrf_token)
-    return _placeholder_action(
-        website_id, "extraction_run_requested", db, current_user, correlation_id, ip_address
+    website = get_website(db, website_id)
+    if website is None:
+        raise NotFoundError("Website not found")
+
+    result = await run_extraction(
+        db, website, triggered_by_user_id=current_user.id, correlation_id=correlation_id
     )
+    record_audit(
+        db,
+        actor_id=current_user.id,
+        action="extraction_run_requested",
+        entity_type="website",
+        entity_id=website.id,
+        after={
+            "status": result.status,
+            "events_inserted": result.events_inserted,
+            "events_updated": result.events_updated,
+            "duplicates_skipped": result.duplicates_skipped,
+            "run_id": result.run_id,
+        },
+        correlation_id=correlation_id,
+        ip_address=ip_address,
+    )
+    response = RedirectResponse(url=f"/admin/websites/{website.id}", status_code=303)
+    _extraction_result_flash(response, "Extraction run", result)
+    return response
 
 
 # --- Deletion ------------------------------------------------------------------------

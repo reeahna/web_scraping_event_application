@@ -22,8 +22,17 @@
     <tr><th>Last successful run</th><td>{{ website.last_success_at or "Never" }}</td></tr>
     <tr><th>Last failed run</th><td>{{ website.last_failure_at or "Never" }}</td></tr>
     <tr><th>Consecutive failures</th><td>{{ website.consecutive_failure_count }}</td></tr>
+    <tr><th>Configuration version (draft)</th><td>{{ website.configuration_version }}</td></tr>
     <tr><th>Configuration set</th><td>{{ "Yes" if website.configuration else "No" }}</td></tr>
-    <tr><th>Approved pattern set</th><td>{{ "Yes" if website.approved_pattern else "No" }}</td></tr>
+    <tr><th>Proposed pattern</th>
+      <td>{% if website.proposed_pattern %}{{ website.proposed_pattern.detection.pattern_name or "none (unsupported)" }}
+        (confidence {{ "%.2f"|format(website.proposed_pattern.detection.confidence) }}){% else %}—{% endif %}</td>
+    </tr>
+    <tr><th>Approved pattern</th>
+      <td>{% if website.approved_pattern %}{{ website.approved_pattern.pattern_name }}
+        — approved {{ website.approved_at }}{% if website.approved_by_user_id %} by user #{{ website.approved_by_user_id }}{% endif %}
+        (config v{{ website.active_configuration_version }}){% else %}Not approved{% endif %}</td>
+    </tr>
   </tbody>
 </table>
 
@@ -59,7 +68,7 @@
 <p class="audit-meta">No further transitions available from this status.</p>
 {% endif %}
 
-<h2>Extraction pipeline <span class="placeholder-note">(not implemented yet)</span></h2>
+<h2>Extraction pipeline</h2>
 <div class="form-actions">
   <form method="post" action="/admin/websites/{{ website.id }}/detect-pattern" class="inline-form">
     <input type="hidden" name="csrf_token" value="{{ csrf_token }}" />
@@ -80,8 +89,48 @@
 </div>
 
 <h2>Extraction history</h2>
-<p class="placeholder-note">Extraction run history will appear here once the extraction engine exists.</p>
+{% if extraction_runs %}
+<table>
+  <thead><tr><th>Started</th><th>Type</th><th>Status</th><th>Pattern</th><th>Found</th><th>Valid</th><th>Rejected</th><th>Inserted</th><th>Updated</th><th>Dup. skipped</th></tr></thead>
+  <tbody>
+    {% for run in extraction_runs %}
+    <tr>
+      <td>{{ run.started_at }}</td>
+      <td>{{ run.run_type }}</td>
+      <td>{{ run.status }}</td>
+      <td>{{ run.pattern_name or "—" }}</td>
+      <td>{{ run.events_found }}</td>
+      <td>{{ run.events_valid }}</td>
+      <td>{{ run.events_rejected }}</td>
+      <td>{{ run.events_inserted }}</td>
+      <td>{{ run.events_updated }}</td>
+      <td>{{ run.duplicates_skipped }}</td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% else %}
+<p class="audit-meta">No extraction runs yet.</p>
+{% endif %}
 
 <h2>Unsupported-site reports</h2>
-<p class="placeholder-note">Unsupported-site diagnostic reports will appear here once pattern detection exists.</p>
+{% if unsupported_reports %}
+<table>
+  <thead><tr><th>Created</th><th>Status</th><th>HTTP status</th><th>Browser required</th><th>JSON-LD present</th><th>Failure reason</th></tr></thead>
+  <tbody>
+    {% for report in unsupported_reports %}
+    <tr>
+      <td>{{ report.created_at }}</td>
+      <td>{{ report.status }}</td>
+      <td>{{ report.http_status or "—" }}</td>
+      <td>{{ "Yes" if report.browser_required else "No" }}</td>
+      <td>{{ "Yes" if report.json_ld_presence else "No" }}</td>
+      <td>{{ report.failure_reason or "—" }}</td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% else %}
+<p class="audit-meta">No unsupported-site reports for this website.</p>
+{% endif %}
 {% endblock %}

@@ -1,10 +1,22 @@
 from typing import Any
 
-from pydantic import BaseModel, ConfigDict, field_validator
+from pydantic import BaseModel, ConfigDict, ValidationError, field_validator
 
 from app.core.onboarding import ONBOARDING_STATES
 from app.core.url_safety import UnsafeURLError, validate_public_url
 from app.schemas.city import _VALID_TIMEZONES
+from app.schemas.extraction import SiteConfiguration
+
+
+def _validate_site_configuration(
+    v: dict[str, Any] | None, *, field_label: str
+) -> dict[str, Any] | None:
+    if v is None:
+        return None
+    try:
+        return SiteConfiguration.model_validate(v).model_dump(mode="json")
+    except ValidationError as exc:
+        raise ValueError(f"{field_label} is not a valid site configuration: {exc}") from exc
 
 
 class WebsiteBase(BaseModel):
@@ -58,6 +70,34 @@ class WebsiteBase(BaseModel):
         if v not in _VALID_TIMEZONES:
             raise ValueError(f"'{v}' is not a recognized IANA timezone")
         return v
+
+    @field_validator("configuration", "approved_pattern")
+    @classmethod
+    def validate_site_configuration_fields(cls, v: dict[str, Any] | None) -> dict[str, Any] | None:
+        # Both fields hold the same shape (a full SiteConfiguration, which
+        # already carries `pattern_name`). Approving is a distinct workflow
+        # action (see app.services.website_configuration.approve_configuration)
+        # but this validator also lets an administrator hand-approve by
+        # directly editing `approved_pattern` — the manual fast-track already
+        # anticipated by app.core.onboarding's docstring — while still
+        # enforcing every configuration-security rule (header blocklist,
+        # method allowlist, no env-var references, SSRF-safe URLs, etc.).
+        return _validate_site_configuration(v, field_label="Configuration")
+
+    @field_validator("proposed_pattern")
+    @classmethod
+    def validate_proposed_pattern(cls, v: dict[str, Any] | None) -> dict[str, Any] | None:
+        if v is None:
+            return None
+        if not isinstance(v, dict) or "configuration" not in v:
+            raise ValueError("Proposed pattern must be an object with a 'configuration' field")
+        validated_configuration = _validate_site_configuration(
+            v.get("configuration"), field_label="Proposed configuration"
+        )
+        detection = v.get("detection")
+        if detection is not None and not isinstance(detection, dict):
+            raise ValueError("Proposed pattern 'detection' must be an object")
+        return {**v, "configuration": validated_configuration}
 
 
 class WebsiteCreate(WebsiteBase):

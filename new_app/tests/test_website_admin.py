@@ -308,26 +308,198 @@ def test_website_deletion_requires_matching_name_confirmation(
     assert db_session.query(Website).filter(Website.id == website.id).first() is not None
 
 
-def test_placeholder_actions_do_not_change_status_but_are_audited(
+def test_detect_pattern_route_runs_real_detection_and_is_audited(
     client, make_super_admin, make_city, make_website, login, db_session
 ):
+    from tests.extraction_helpers import html_handler, patched_http_fetch
+
     make_super_admin(email="root13@example.com", password="root-pass-1234")
     city = make_city(name="Placeholder City", slug="placeholder-city")
     website = make_website(city, name="Placeholder Site")
+    website.event_listing_url = "https://example.com/events"
+    db_session.commit()
     login("root13@example.com", "root-pass-1234")
 
     client.get(f"/admin/websites/{website.id}")
-    resp = client.post(
-        f"/admin/websites/{website.id}/detect-pattern",
-        data={"csrf_token": _csrf(client)},
-        follow_redirects=False,
-    )
+    with patched_http_fetch(html_handler("jsonld_single_event.html")):
+        resp = client.post(
+            f"/admin/websites/{website.id}/detect-pattern",
+            data={"csrf_token": _csrf(client)},
+            follow_redirects=False,
+        )
     assert resp.status_code == 303
     db_session.refresh(website)
-    assert website.onboarding_status == "draft"
+    assert website.onboarding_status == "detected"
+    assert website.proposed_pattern["detection"]["pattern_name"] == "json_ld_event"
+    assert website.approved_pattern is None  # detection never approves anything
 
     entries = (
         db_session.query(AuditLog).filter(AuditLog.action == "pattern_detection_requested").all()
     )
     assert len(entries) == 1
     assert entries[0].entity_id == website.id
+
+
+def _approved_website(db_session, make_city, make_website, name: str):
+    from app.schemas.extraction import SiteConfiguration
+
+    city = make_city(name=f"{name} City", slug=f"{name.lower()}-city")
+    website = make_website(city, name=name)
+    website.configuration = SiteConfiguration(
+        pattern_name="json_ld_event", listing_url="https://example.com/events"
+    ).model_dump(mode="json")
+    db_session.commit()
+    return website
+
+
+def test_preview_extraction_route_never_persists_events(
+    client, make_super_admin, make_city, make_website, login, db_session
+):
+    from app.models.event import Event
+    from tests.extraction_helpers import html_handler, patched_http_fetch
+
+    make_super_admin(email="root14@example.com", password="root-pass-1234")
+    website = _approved_website(db_session, make_city, make_website, "Preview")
+    login("root14@example.com", "root-pass-1234")
+
+    with patched_http_fetch(html_handler("jsonld_single_event.html")):
+        resp = client.post(
+            f"/admin/websites/{website.id}/preview-extraction",
+            data={"csrf_token": _csrf(client)},
+            follow_redirects=False,
+        )
+    assert resp.status_code == 303
+    assert db_session.query(Event).count() == 0
+
+
+def test_approve_configuration_route_requires_sites_approve_permission(
+    client, make_user, make_city, make_website, login, db_session
+):
+    website = _approved_website(db_session, make_city, make_website, "ApproveDenied")
+    make_user(email="editor-approve@example.com", password="editor-pass-123", role_name=EDITOR)
+    login("editor-approve@example.com", "editor-pass-123")
+
+    resp = client.post(
+        f"/admin/websites/{website.id}/approve-configuration",
+        data={"csrf_token": _csrf(client)},
+        follow_redirects=False,
+    )
+    assert resp.status_code == 403
+    db_session.refresh(website)
+    assert website.approved_pattern is None
+
+
+def test_approve_configuration_route_approves_when_permitted(
+    client, make_super_admin, make_city, make_website, login, db_session
+):
+    make_super_admin(email="root15@example.com", password="root-pass-1234")
+    website = _approved_website(db_session, make_city, make_website, "ApproveAllowed")
+    login("root15@example.com", "root-pass-1234")
+
+    resp = client.post(
+        f"/admin/websites/{website.id}/approve-configuration",
+        data={"csrf_token": _csrf(client)},
+        follow_redirects=False,
+    )
+    assert resp.status_code == 303
+    db_session.refresh(website)
+    assert website.approved_pattern is not None
+    assert website.approved_at is not None
+
+    entries = db_session.query(AuditLog).filter(AuditLog.action == "configuration_approved").all()
+    assert len(entries) == 1
+
+
+def test_run_extraction_route_requires_approved_configuration(
+    client, make_super_admin, make_city, make_website, login, db_session
+):
+    make_super_admin(email="root16@example.com", password="root-pass-1234")
+    city = make_city(name="RunDenied City", slug="run-denied-city")
+    website = make_website(city, name="RunDenied")
+    login("root16@example.com", "root-pass-1234")
+
+    resp = client.post(
+        f"/admin/websites/{website.id}/run-extraction",
+        data={"csrf_token": _csrf(client)},
+        follow_redirects=False,
+    )
+    assert resp.status_code == 409
+
+
+def test_run_extraction_route_persists_events_once_approved(
+    client, make_super_admin, make_city, make_website, login, db_session
+):
+    from app.models.event import Event
+    from tests.extraction_helpers import html_handler, patched_http_fetch
+
+    make_super_admin(email="root17@example.com", password="root-pass-1234")
+    website = _approved_website(db_session, make_city, make_website, "RunAllowed")
+    login("root17@example.com", "root-pass-1234")
+
+    client.post(
+        f"/admin/websites/{website.id}/approve-configuration",
+        data={"csrf_token": _csrf(client)},
+        follow_redirects=False,
+    )
+
+    with patched_http_fetch(html_handler("jsonld_single_event.html")):
+        resp = client.post(
+            f"/admin/websites/{website.id}/run-extraction",
+            data={"csrf_token": _csrf(client)},
+            follow_redirects=False,
+        )
+    assert resp.status_code == 303
+    assert db_session.query(Event).count() == 1
+
+
+def test_registered_user_denied_all_four_extraction_routes(
+    client, make_user, make_city, make_website, login, db_session
+):
+    website = _approved_website(db_session, make_city, make_website, "RegisteredDenied")
+    make_user(
+        email="registered-extraction@example.com",
+        password="registered-pass-123",
+        role_name=REGISTERED_USER,
+    )
+    login("registered-extraction@example.com", "registered-pass-123")
+
+    for path in ("detect-pattern", "preview-extraction", "approve-configuration", "run-extraction"):
+        resp = client.post(
+            f"/admin/websites/{website.id}/{path}",
+            data={"csrf_token": _csrf(client)},
+            follow_redirects=False,
+        )
+        assert resp.status_code == 403, path
+
+
+def test_editor_can_detect_and_preview_but_not_approve(
+    client, make_user, make_city, make_website, login, db_session
+):
+    from tests.extraction_helpers import html_handler, patched_http_fetch
+
+    website = _approved_website(db_session, make_city, make_website, "EditorAccess")
+    make_user(email="editor-access@example.com", password="editor-pass-123", role_name=EDITOR)
+    login("editor-access@example.com", "editor-pass-123")
+
+    with patched_http_fetch(html_handler("jsonld_single_event.html")):
+        resp = client.post(
+            f"/admin/websites/{website.id}/detect-pattern",
+            data={"csrf_token": _csrf(client)},
+            follow_redirects=False,
+        )
+    assert resp.status_code == 303
+
+    with patched_http_fetch(html_handler("jsonld_single_event.html")):
+        resp = client.post(
+            f"/admin/websites/{website.id}/preview-extraction",
+            data={"csrf_token": _csrf(client)},
+            follow_redirects=False,
+        )
+    assert resp.status_code == 303
+
+    resp = client.post(
+        f"/admin/websites/{website.id}/approve-configuration",
+        data={"csrf_token": _csrf(client)},
+        follow_redirects=False,
+    )
+    assert resp.status_code == 403

@@ -24,6 +24,10 @@ EXPECTED_TABLES = {
     "audit_logs",
     "alembic_version",
     "user_sessions",
+    "extraction_runs",
+    "extraction_errors",
+    "event_provenance",
+    "unsupported_site_reports",
 }
 
 
@@ -259,6 +263,108 @@ def test_phase5_migration_round_trip_preserves_existing_events():
                 text("SELECT title FROM events WHERE id = :id"), {"id": event_id}
             ).scalar_one()
             == "Preserved Event"
+        )
+
+    reupgrade = _run_alembic(database_url, "upgrade", "head")
+    assert reupgrade.returncode == 0, reupgrade.stderr
+    with engine.connect() as connection:
+        assert (
+            connection.execute(
+                text("SELECT title FROM events WHERE id = :id"), {"id": event_id}
+            ).scalar_one()
+            == "Preserved Event"
+        )
+    engine.dispose()
+    db_file.unlink(missing_ok=True)
+
+
+def test_phase6_migration_round_trip_preserves_websites_and_events():
+    db_file, database_url = _database_url("phase6_round_trip.db")
+    before_phase6 = _run_alembic(database_url, "upgrade", "f5c3d9a1e7b2")
+    assert before_phase6.returncode == 0, before_phase6.stderr
+
+    engine = create_engine(database_url)
+    now = datetime.now(UTC)
+    with engine.begin() as connection:
+        connection.execute(
+            text(
+                "INSERT INTO cities (name, slug, timezone, is_active, created_at, updated_at) "
+                "VALUES ('Preserved City', 'preserved-city', 'UTC', 1, :now, :now)"
+            ),
+            {"now": now},
+        )
+        city_id = connection.execute(
+            text("SELECT id FROM cities WHERE slug = 'preserved-city'")
+        ).scalar_one()
+        connection.execute(
+            text(
+                "INSERT INTO websites "
+                "(name, city_id, base_url, requires_js, is_active, onboarding_status, "
+                "consecutive_failure_count, created_at, updated_at) "
+                "VALUES ('Preserved Site', :city_id, 'https://example.com', 0, 0, 'draft', "
+                "0, :now, :now)"
+            ),
+            {"city_id": city_id, "now": now},
+        )
+        website_id = connection.execute(
+            text("SELECT id FROM websites WHERE name = 'Preserved Site'")
+        ).scalar_one()
+        connection.execute(
+            text(
+                "INSERT INTO events "
+                "(title, canonical_url, source, website_id, city_id, is_active, "
+                "review_status, duplicate_status, category_source, origin, "
+                "created_at, updated_at) "
+                "VALUES ('Preserved Event', 'https://example.com/preserved', 'Historical', "
+                ":website_id, :city_id, 1, 'needs_review', 'not_reviewed', 'uncategorized', "
+                "'extracted', :now, :now)"
+            ),
+            {"website_id": website_id, "city_id": city_id, "now": now},
+        )
+        event_id = connection.execute(
+            text("SELECT id FROM events WHERE title = 'Preserved Event'")
+        ).scalar_one()
+
+    upgrade = _run_alembic(database_url, "upgrade", "head")
+    assert upgrade.returncode == 0, upgrade.stderr
+    with engine.connect() as connection:
+        assert (
+            connection.execute(
+                text("SELECT title FROM events WHERE id = :id"), {"id": event_id}
+            ).scalar_one()
+            == "Preserved Event"
+        )
+        website_row = connection.execute(
+            text(
+                "SELECT name, onboarding_status, configuration_version, "
+                "active_configuration_version, approved_at "
+                "FROM websites WHERE id = :id"
+            ),
+            {"id": website_id},
+        ).one()
+        assert website_row == ("Preserved Site", "draft", 0, None, None)
+        assert set(inspect(engine).get_table_names()).issuperset(
+            {"extraction_runs", "extraction_errors", "event_provenance", "unsupported_site_reports"}
+        )
+
+    downgrade = _run_alembic(database_url, "downgrade", "f5c3d9a1e7b2")
+    assert downgrade.returncode == 0, downgrade.stderr
+    with engine.connect() as connection:
+        assert (
+            connection.execute(
+                text("SELECT name FROM websites WHERE id = :id"), {"id": website_id}
+            ).scalar_one()
+            == "Preserved Site"
+        )
+        assert (
+            connection.execute(
+                text("SELECT title FROM events WHERE id = :id"), {"id": event_id}
+            ).scalar_one()
+            == "Preserved Event"
+        )
+        remaining_tables = set(inspect(engine).get_table_names())
+        assert not remaining_tables.intersection(
+            {"extraction_runs", "extraction_errors", "event_provenance", "unsupported_site_reports"}
         )
 
     reupgrade = _run_alembic(database_url, "upgrade", "head")

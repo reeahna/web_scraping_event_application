@@ -16,6 +16,7 @@ from app.models.event import Event
 from app.models.event_category import EventCategory
 from app.models.user import User
 from app.models.website import Website
+from app.repositories.event_provenance import get_latest_provenance_for_event
 from app.services.audit import record_audit
 from app.services.categorization import apply_categorization, categorize_event
 from app.services.rbac import get_effective_permissions, require_permission, user_has_permission
@@ -152,6 +153,11 @@ def event_detail(event_id: int, request: Request, current_user: ViewEvents, db: 
                 .filter(EventCategory.is_active.is_(True))
                 .order_by(EventCategory.display_order, EventCategory.name)
                 .all()
+            ),
+            "latest_provenance": (
+                get_latest_provenance_for_event(db, event.id)
+                if "events.view_provenance" in permissions
+                else None
             ),
         },
     )

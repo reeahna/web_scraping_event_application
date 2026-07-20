@@ -59,7 +59,13 @@ def update_fingerprint_and_duplicates(db: Session, event: Event) -> list[Event]:
         .all()
     )
     if matches:
-        event.duplicate_status = "possible_duplicate"
+        # Only flip a "not_reviewed" event into "possible_duplicate" — never
+        # downgrade an already-resolved "confirmed_duplicate"/"not_duplicate"
+        # decision back to unresolved just because a later re-extraction
+        # recomputed the same (correct, unchanged) fingerprint match. This
+        # is what lets an admin's duplicate resolution survive a re-scrape.
+        if event.duplicate_status == "not_reviewed":
+            event.duplicate_status = "possible_duplicate"
         for match in matches:
             if match.duplicate_status == "not_reviewed":
                 match.duplicate_status = "possible_duplicate"

@@ -1,0 +1,18 @@
+[
+  {
+    "id": 101,
+    "date_gmt": "2025-08-01T18:00:00",
+    "link": "https://example.com/events/summer-concert",
+    "title": {"rendered": "Summer Concert Series"},
+    "content": {"rendered": "<p>Join us for an evening of music.</p>"},
+    "type": "tribe_events"
+  },
+  {
+    "id": 102,
+    "date_gmt": "2025-08-03T10:00:00",
+    "link": "https://example.com/events/craft-fair",
+    "title": {"rendered": "Craft Fair"},
+    "content": {"rendered": "<p>Handmade goods from local artisans.</p>"},
+    "type": "tribe_events"
+  }
+]

@@ -18,7 +18,15 @@ def create_website(db: Session, data: WebsiteCreate) -> Website:
 def update_website(db: Session, website: Website, data: WebsiteUpdate) -> Website:
     """Updates only the core editable fields — never is_active/onboarding_status,
     which are exclusively managed via app.services.websites.transition_website."""
-    for field, value in data.model_dump().items():
+    values = data.model_dump()
+    if values.get("configuration") != website.configuration:
+        # Editing the draft through the generic form is still an edit to the
+        # draft configuration — bump the version exactly like
+        # app.services.website_configuration.save_draft_configuration does,
+        # so `configuration_version` always reflects the draft actually in
+        # `configuration`, however it was saved.
+        website.configuration_version += 1
+    for field, value in values.items():
         setattr(website, field, value)
     db.commit()
     db.refresh(website)

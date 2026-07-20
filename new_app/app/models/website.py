@@ -39,12 +39,26 @@ class Website(Base, TimestampMixin):
     is_active: Mapped[bool] = mapped_column(Boolean, default=False)
     onboarding_status: Mapped[str] = mapped_column(String(32), default=DRAFT)
 
-    # Not populated or enforced yet — the extraction/detection engine that
-    # would fill these in doesn't exist until a later phase.
+    # `proposed_pattern` = the detector's suggestion, awaiting review.
+    # `approved_pattern` = a FROZEN, self-contained snapshot of the full
+    # SiteConfiguration (not just a pattern-name pointer) as it was at
+    # approval time — persistent extraction reads only this, never the live
+    # `configuration` draft, so editing the draft after approval has zero
+    # effect on live extraction until an explicit re-approve.
     proposed_pattern: Mapped[dict[str, Any] | None] = mapped_column(JSON, default=None)
     approved_pattern: Mapped[dict[str, Any] | None] = mapped_column(JSON, default=None)
     configuration: Mapped[dict[str, Any] | None] = mapped_column(JSON, default=None)
     schedule_config: Mapped[dict[str, Any] | None] = mapped_column(JSON, default=None)
+
+    approved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), default=None)
+    approved_by_user_id: Mapped[int | None] = mapped_column(
+        ForeignKey("users.id", ondelete="SET NULL"), default=None
+    )
+    # Bumped every time `configuration` (the editable draft) is saved.
+    configuration_version: Mapped[int] = mapped_column(Integer, default=0)
+    # The configuration_version that was live at the moment it was copied
+    # into `approved_pattern` — None until the first approval.
+    active_configuration_version: Mapped[int | None] = mapped_column(Integer, default=None)
 
     last_success_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), default=None)
     last_failure_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), default=None)

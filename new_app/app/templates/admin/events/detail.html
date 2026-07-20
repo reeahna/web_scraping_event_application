@@ -117,8 +117,30 @@
   <li>Origin: {{ event.origin }}</li>
   <li>Category override: {{ 'Yes' if event.category_override_id else 'No' }}</li>
   <li>Location correction: {{ 'Yes' if event.location_corrected_at else 'No' }}</li>
-  <li>Field-level extraction provenance: future extraction data.</li>
 </ul>
+{% if latest_provenance %}
+<h3>Latest extraction provenance</h3>
+<ul class="impact-list">
+  <li>Extraction pattern: {{ latest_provenance.extraction_pattern }} (v{{ latest_provenance.pattern_version }})</li>
+  <li>Source page: <a href="{{ latest_provenance.source_page }}" target="_blank" rel="noopener">{{ latest_provenance.source_page }}</a></li>
+  <li>Extraction run: #{{ latest_provenance.extraction_run_id or "unavailable" }}</li>
+  <li>Raw record hash: <code>{{ latest_provenance.raw_record_hash }}</code></li>
+  <li>Source response hash: <code>{{ latest_provenance.source_response_hash }}</code></li>
+  <li>Recorded: {{ latest_provenance.created_at }}</li>
+</ul>
+{% if latest_provenance.field_source_paths %}
+<table>
+  <thead><tr><th>Field</th><th>Source path</th></tr></thead>
+  <tbody>
+    {% for field_name, path in latest_provenance.field_source_paths.items() %}
+    <tr><td>{{ field_name }}</td><td><code>{{ path }}</code></td></tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% endif %}
+{% else %}
+<p class="audit-meta">No extraction provenance recorded for this event (created or last edited manually).</p>
+{% endif %}
 {% endif %}
 
 {% if 'events.delete' in permissions and event.archived_at %}

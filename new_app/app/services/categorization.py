@@ -3,6 +3,7 @@ from dataclasses import dataclass
 
 from sqlalchemy.orm import Session
 
+from app.core.safe_regex import validate_safe_regex
 from app.models.categorization_rule import CategorizationRule
 from app.models.event import Event
 from app.models.event_category import EventCategory
@@ -16,13 +17,6 @@ RULE_TYPES = (
 )
 CONFIDENCE_TYPES = ("exact", "strong_rule", "weak_rule", "fallback", "uncategorized")
 _PRECEDENCE = {rule_type: index for index, rule_type in enumerate(RULE_TYPES)}
-_UNSAFE_REGEX_RE = re.compile(
-    r"\(\?"  # lookaround, named, or non-capturing groups — "(?=", "(?:", "(?P<...>", etc.
-    r"|\\[1-9]"  # backreferences
-    r"|\([^)]*[+*|][^)]*\)\s*[+*{]"  # a group containing +, *, or | that is itself
-    # quantified, e.g. "(a+)+" or "(a|ab)+" — the classic nested-quantifier/
-    # alternation shape that causes catastrophic backtracking in Python's `re`.
-)
 
 
 @dataclass(frozen=True)
@@ -41,15 +35,7 @@ def validate_rule_pattern(pattern: str | None, *, is_regex: bool) -> str | None:
     cleaned = (pattern or "").strip() or None
     if not is_regex or cleaned is None:
         return cleaned
-    if len(cleaned) > 200:
-        raise ValueError("Regular expressions must be 200 characters or fewer")
-    if _UNSAFE_REGEX_RE.search(cleaned):
-        raise ValueError("Regular expression uses a disallowed high-risk construct")
-    try:
-        re.compile(cleaned)
-    except re.error as exc:
-        raise ValueError(f"Invalid regular expression: {exc}") from exc
-    return cleaned
+    return validate_safe_regex(cleaned)
 
 
 def _text_matches(value: str | None, rule: CategorizationRule) -> bool:

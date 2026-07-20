@@ -1,0 +1,10 @@
+[
+  {
+    "id": 103,
+    "date_gmt": "2025-08-05T09:00:00",
+    "link": "https://example.com/events/5k-run",
+    "title": {"rendered": "Charity 5K Run"},
+    "content": {"rendered": "<p>Annual charity run through downtown.</p>"},
+    "type": "tribe_events"
+  }
+]
