@@ -13,6 +13,7 @@ from dataclasses import dataclass
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 
+from app.core.onboarding import ARCHIVED
 from app.core.onboarding_jobs import ACTIVE_STATUSES, BATCH_OPEN
 from app.core.url_canonical import (
     canonical_origin,
@@ -128,51 +129,135 @@ def find_active_job_for_url(
     return query.order_by(OnboardingJob.id).first()
 
 
+# --- How a submitted URL is matched to an existing Website ------------------
+#
+# Match type: which rule fired, most specific first.
+MATCH_LISTING_URL = "listing_url"
+MATCH_BASE_URL = "base_url"
+MATCH_PAGE_UNDER_ORIGIN = "page_under_origin"
+
+_MATCH_TYPE_RANK: dict[str, int] = {
+    MATCH_LISTING_URL: 0,
+    MATCH_BASE_URL: 1,
+    MATCH_PAGE_UNDER_ORIGIN: 2,
+}
+
+_MATCH_TYPE_DESCRIPTION: dict[str, str] = {
+    MATCH_LISTING_URL: "matched the website's event listing URL",
+    MATCH_BASE_URL: "matched the website's base URL",
+    MATCH_PAGE_UNDER_ORIGIN: "the submitted page belongs to this website's base URL",
+}
+
+# Reason: the lifecycle-level answer, which is what a caller branches on.
+# An archived match is still a match — it is never silently skipped — but it
+# is labelled distinctly so the caller can require a human decision instead of
+# treating it as an ordinary duplicate.
+REASON_EXISTING = "existing"
+REASON_ARCHIVED_EXISTING = "archived_existing"
+
+# Lifecycle preference. A live source outranks a dormant one, and any
+# non-archived row outranks an archived one.
+_LIFECYCLE_ACTIVE = 0
+_LIFECYCLE_ONBOARDING = 1
+_LIFECYCLE_ARCHIVED = 2
+
+
 @dataclass(frozen=True)
 class WebsiteMatch:
     website: Website
-    # Why it matched, so the UI and audit trail can say which rule fired
-    # rather than just asserting "duplicate".
+    # Which rule fired (MATCH_* above) — for audit and UI detail.
+    match_type: str
+    # Lifecycle answer (REASON_* above) — what callers branch on.
     reason: str
+    is_archived: bool
+    # (lifecycle rank, match-type rank, website id). Lower sorts first; also
+    # exposed so a caller or test can assert *why* one match beat another.
+    priority: tuple[int, int, int]
+
+    @property
+    def description(self) -> str:
+        text = _MATCH_TYPE_DESCRIPTION[self.match_type]
+        return f"{text} (archived)" if self.is_archived else text
+
+
+def _lifecycle_rank(website: Website) -> int:
+    if website.archived_at is not None or website.onboarding_status == ARCHIVED:
+        return _LIFECYCLE_ARCHIVED
+    return _LIFECYCLE_ACTIVE if website.is_active else _LIFECYCLE_ONBOARDING
+
+
+def _match_type_for(website: Website, url: str, target_origin: str) -> str | None:
+    """Which rule, if any, connects `url` to `website`.
+
+    Rule 3 (page-under-origin) deliberately does not apply when the stored row
+    already has a listing URL: two different event paths on one host (a
+    theatre's and a music school's, say) are two different sources, and
+    equating them would be exactly the "arbitrary different paths" match this
+    must avoid.
+    """
+    if website.event_listing_url and same_resource(website.event_listing_url, url):
+        return MATCH_LISTING_URL
+    if same_resource(website.base_url, url):
+        return MATCH_BASE_URL
+    if (
+        website.event_listing_url is None
+        and is_origin_only(website.base_url)
+        and canonical_url(website.base_url) == target_origin
+    ):
+        return MATCH_PAGE_UNDER_ORIGIN
+    return None
+
+
+def find_website_matches(db: Session, url: str) -> list[WebsiteMatch]:
+    """Every Website `url` could belong to, best first.
+
+    Ranking, in order:
+
+    1. **lifecycle** — active, then non-archived-but-not-live, then archived.
+       Row order must never decide which of two rows for one source wins; an
+       archived row cannot shadow the live one that replaced it.
+    2. **match specificity** — an exact listing-URL match beats an exact
+       base-URL match, which beats a page-under-origin match.
+    3. **lowest website id**, as the final tiebreaker. Chosen over "most
+       recently updated" precisely because it cannot change: the earliest row
+       is the one existing events, provenance and extraction runs are most
+       likely to already reference, and a matcher that returns a different
+       answer after an unrelated edit would be a worse problem than the one
+       this ranking fixes.
+
+    Both sides of every comparison go through `canonical_url`, so trailing
+    slash, host casing, default port and fragment differences never split one
+    source into two rows.
+    """
+    if not canonical_url(url):
+        return []
+    target_origin = canonical_origin(url)
+
+    matches: list[WebsiteMatch] = []
+    for website in db.query(Website).order_by(Website.id).all():
+        match_type = _match_type_for(website, url, target_origin)
+        if match_type is None:
+            continue
+        lifecycle = _lifecycle_rank(website)
+        is_archived = lifecycle == _LIFECYCLE_ARCHIVED
+        matches.append(
+            WebsiteMatch(
+                website=website,
+                match_type=match_type,
+                reason=REASON_ARCHIVED_EXISTING if is_archived else REASON_EXISTING,
+                is_archived=is_archived,
+                priority=(lifecycle, _MATCH_TYPE_RANK[match_type], website.id),
+            )
+        )
+    matches.sort(key=lambda match: match.priority)
+    return matches
 
 
 def find_website_match(db: Session, url: str) -> WebsiteMatch | None:
-    """Locates the existing Website a submitted URL belongs to.
-
-    Both sides go through `canonical_url`, so trailing slash, host casing,
-    default port and fragment differences never create a second row. Three
-    rules, in order of specificity:
-
-    1. the URL is that website's event listing URL
-    2. the URL is that website's base URL
-    3. the URL sits under a website whose base URL is the bare origin and
-       which has no listing URL of its own — that row represents the whole
-       site, so a page within it is the same source
-
-    Rule 3 deliberately does not apply when the stored row already has a
-    listing URL: two different event paths on one host (a theatre's and a
-    music school's, say) are two different sources, and equating them would
-    be exactly the "arbitrary different paths" match this must avoid.
-    """
-    target = canonical_url(url)
-    if not target:
-        return None
-    target_origin = canonical_origin(url)
-
-    for website in db.query(Website).order_by(Website.id).all():
-        if website.event_listing_url and same_resource(website.event_listing_url, url):
-            return WebsiteMatch(website, "matched the website's event listing URL")
-        if same_resource(website.base_url, url):
-            return WebsiteMatch(website, "matched the website's base URL")
-        if (
-            website.event_listing_url is None
-            and is_origin_only(website.base_url)
-            and canonical_url(website.base_url) == target_origin
-        ):
-            return WebsiteMatch(
-                website, "the submitted page belongs to this website's base URL"
-            )
-    return None
+    """The single best match for `url`, or None. See `find_website_matches`
+    for the ranking."""
+    matches = find_website_matches(db, url)
+    return matches[0] if matches else None
 
 
 def find_website_by_url(db: Session, url: str) -> Website | None:

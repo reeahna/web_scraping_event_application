@@ -62,13 +62,13 @@ from app.extraction.types import FetchRequest
 from app.models.city import City
 from app.models.onboarding_batch import OnboardingBatch
 from app.models.onboarding_job import OnboardingJob
-from app.models.website import Website
 from app.repositories.city import get_city_by_slug
 from app.repositories.onboarding import (
+    WebsiteMatch,
     create_batch,
     create_job,
     find_active_job_for_url,
-    find_website_by_url,
+    find_website_match,
     list_jobs_for_batch,
     next_queued_jobs,
     status_counts,
@@ -259,16 +259,27 @@ def _resolve_city(db: Session, job: OnboardingJob) -> City | None:
 def _link_existing(
     db: Session,
     job: OnboardingJob,
-    website: Website,
+    match: WebsiteMatch,
     *,
     actor_id: int | None,
     correlation_id: str | None,
 ) -> None:
+    website = match.website
     job.duplicate_of_website_id = website.id
     job.website_id = website.id
     job.status = DUPLICATE
-    job.failure_reason = None
     job.completed_at = _now()
+    # An archived match is reported, never acted on: the job says what it
+    # found and stops, so restoring the archived source (or declaring this a
+    # genuinely separate one) stays an administrator decision.
+    job.failure_reason = (
+        (
+            f"Matched archived website #{website.id} ('{website.name}') — {match.description}. "
+            "Restore that website, or confirm this is a separate source, before onboarding it."
+        )[:500]
+        if match.is_archived
+        else None
+    )
     record_audit(
         db,
         actor_id=actor_id,
@@ -279,6 +290,9 @@ def _link_existing(
             "website_id": website.id,
             "website_onboarding_status": website.onboarding_status,
             "normalized_url": job.normalized_url,
+            "match_type": match.match_type,
+            "match_reason": match.reason,
+            "archived": match.is_archived,
         },
         correlation_id=correlation_id,
     )
@@ -325,15 +339,20 @@ async def process_job(
         db.commit()
         return job
 
-    website = find_website_by_url(db, job.submitted_url)
-    if website is None and final_url:
+    match = find_website_match(db, job.submitted_url)
+    if match is None and final_url:
         # The redirect destination, checked before anything is created.
-        website = find_website_by_url(db, final_url)
+        match = find_website_match(db, final_url)
 
-    if website is not None and not redetect_existing:
-        _link_existing(db, job, website, actor_id=actor_id, correlation_id=correlation_id)
+    # An archived match is terminal regardless of the re-detect option: it must
+    # neither be re-detected (that would write a draft onto an archived source)
+    # nor quietly replaced by a fresh row.
+    if match is not None and (match.is_archived or not redetect_existing):
+        _link_existing(db, job, match, actor_id=actor_id, correlation_id=correlation_id)
         db.commit()
         return job
+
+    website = match.website if match is not None else None
 
     # --- locate or create the Website -------------------------------------
     if website is None:

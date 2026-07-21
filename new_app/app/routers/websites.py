@@ -244,6 +244,21 @@ def create_website_view(
             continue
         match = find_website_match(db, candidate_url)
         if match is not None:
+            if match.is_archived:
+                # An archived match still blocks creation — otherwise every
+                # archived source could be silently re-created as a duplicate.
+                # Restoring it is an administrator decision, never automatic.
+                message = (
+                    f"'{match.website.name}' (website #{match.website.id}) already covers this "
+                    f"URL but has been archived — {match.description}. Restore that website, or "
+                    "have an administrator confirm this really is a separate source."
+                )
+            else:
+                message = (
+                    f"'{match.website.name}' (website #{match.website.id}, status "
+                    f"{match.website.onboarding_status}) already covers this URL — "
+                    f"{match.description}. Open that website instead of creating a second one."
+                )
             return render(
                 request,
                 "admin/websites/form.html",
@@ -252,15 +267,10 @@ def create_website_view(
                     "mode": "create",
                     "website": None,
                     "form": form_values,
-                    "errors": {
-                        "base_url": (
-                            f"'{match.website.name}' (website #{match.website.id}, status "
-                            f"{match.website.onboarding_status}) already covers this URL — "
-                            f"{match.reason}. Open that website instead of creating a second one."
-                        )
-                    },
+                    "errors": {"base_url": message},
                     "cities": cities,
                     "duplicate_website": match.website,
+                    "duplicate_is_archived": match.is_archived,
                 },
                 status_code=409,
             )

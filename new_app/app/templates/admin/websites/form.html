@@ -15,6 +15,9 @@
   <a href="/admin/websites/{{ duplicate_website.id }}">{{ duplicate_website.name }}</a>
   (status {{ duplicate_website.onboarding_status }}). Creating a second website for the same
   source would split its events and configuration across two records.
+  {% if duplicate_is_archived %}
+  That website is archived — restoring it keeps its history, whereas a new record starts empty.
+  {% endif %}
 </p>
 {% endif %}
 
