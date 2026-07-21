@@ -58,6 +58,18 @@ DATE_FORMAT_TABLE: tuple[str, ...] = (
     "%a | %b %d , %Y",
     "%A - %B %d, %Y",
     "%A - %b %d, %Y",
+    # A separator before the year instead of a comma. Common on card layouts
+    # that render month/day/year as separate elements and join them with a
+    # slash or bullet — the same shape as the comma variants above, so it
+    # belongs in the table rather than in a special case.
+    "%B %d / %Y",
+    "%b %d / %Y",
+    "%A | %B %d / %Y",
+    "%A | %b %d / %Y",
+    "%B %d · %Y",
+    "%b %d · %Y",
+    "%B %d | %Y",
+    "%b %d | %Y",
 )
 
 TIME_FORMAT_TABLE: tuple[str, ...] = (

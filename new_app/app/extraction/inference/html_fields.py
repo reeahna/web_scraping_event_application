@@ -148,6 +148,9 @@ _W_PARSE = 0.16
 _W_VARIATION = 0.08
 _W_STABILITY_PENALTY = 0.10
 _BARE_TAG_PENALTY = 0.04
+# Enough to win a tie against the same element's rendered text, not enough to
+# rescue a candidate that has no other evidence for it.
+_MACHINE_READABLE_BONUS = 0.08
 _BARE_TAG_RE = re.compile(r"[a-z][a-z0-9]*")
 
 
@@ -515,6 +518,16 @@ def _score_role(
     if observation.selector == "a" and role in ("canonical_url", "detail_link"):
         warnings.append("broad_anchor_selector")
 
+    # A machine-readable `datetime` attribute is the site telling us the date
+    # directly, rather than us reading a rendering of it. Preferred over the
+    # same element's visible text whenever it actually parses — but only
+    # then, since an unparseable attribute is worse than readable text.
+    machine_readable = (
+        role in ("start_datetime", "end_datetime")
+        and observation.attribute == "datetime"
+        and parse >= policy.min_parse_success
+    )
+
     variation_component = variation if role in IDENTITY_ROLES else 1.0
     stability = selector_stability(observation.selector, policy)
     # A bare element selector (`h3`, `img`) is one page edit away from
@@ -531,6 +544,7 @@ def _score_role(
         + _W_VARIATION * variation_component
         - _W_STABILITY_PENALTY * (1.0 - stability)
         - (_BARE_TAG_PENALTY if bare_tag else 0.0)
+        + (_MACHINE_READABLE_BONUS if machine_readable else 0.0)
     )
     if warnings:
         confidence -= 0.15
@@ -549,6 +563,8 @@ def _score_role(
     evidence.append(f"selector stability {stability:.2f}")
     if bare_tag:
         evidence.append("bare element selector — class-qualified form preferred when tied")
+    if machine_readable:
+        evidence.append("machine-readable datetime attribute, preferred over rendered text")
 
     return FieldSelectorCandidate(
         field=role,

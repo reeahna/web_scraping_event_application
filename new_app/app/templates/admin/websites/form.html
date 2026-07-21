@@ -9,6 +9,15 @@
 <p class="placeholder-note">New websites start as inactive drafts — they never go live automatically.</p>
 {% endif %}
 
+{% if duplicate_website %}
+<p class="placeholder-note">
+  This URL already belongs to
+  <a href="/admin/websites/{{ duplicate_website.id }}">{{ duplicate_website.name }}</a>
+  (status {{ duplicate_website.onboarding_status }}). Creating a second website for the same
+  source would split its events and configuration across two records.
+</p>
+{% endif %}
+
 <form method="post" action="{{ ('/admin/websites/' ~ website.id) if mode == 'edit' else '/admin/websites' }}" class="admin-form">
   <input type="hidden" name="csrf_token" value="{{ csrf_token }}" />
 

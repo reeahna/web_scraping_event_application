@@ -55,6 +55,7 @@ from app.core.onboarding_jobs import (
     VALIDATING,
     is_terminal,
 )
+from app.core.url_canonical import canonical_url
 from app.extraction.inference import policy as inference_policy
 from app.extraction.inference.site_metadata import infer_site_metadata
 from app.extraction.types import FetchRequest
@@ -77,7 +78,6 @@ from app.schemas.extraction import FetchConfig
 from app.schemas.website import WebsiteCreate
 from app.services import extraction_runs
 from app.services.audit import record_audit
-from app.services.fingerprints import normalize_url
 from app.services.notifications import (
     SEVERITY_INFO,
     SEVERITY_WARNING,
@@ -629,6 +629,6 @@ def cancel_job(db: Session, job: OnboardingJob, *, actor_id: int | None = None) 
 
 
 def normalized(url: str) -> str:
-    """Exposed so routes and tests use the same normalization the duplicate
-    checks use."""
-    return normalize_url(url)
+    """Exposed so routes and tests use the same canonicalization the duplicate
+    checks use (app.core.url_canonical)."""
+    return canonical_url(url)

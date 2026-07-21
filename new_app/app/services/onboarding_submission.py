@@ -24,9 +24,9 @@ import csv
 import io
 from dataclasses import dataclass, field
 
+from app.core.url_canonical import canonical_url
 from app.core.url_safety import UnsafeURLError, validate_public_url
 from app.schemas.city import _VALID_TIMEZONES
-from app.services.fingerprints import normalize_url
 
 # Closed column set. `url` is required; everything else is optional, and
 # anything outside this set is ignored with a warning rather than silently
@@ -129,7 +129,7 @@ def _validate_url(raw: str, limits: SubmissionLimits) -> tuple[str, str] | str:
         url = validate_public_url(url)
     except UnsafeURLError as exc:
         return str(exc)
-    normalized = normalize_url(url)
+    normalized = canonical_url(url)
     if not normalized:
         return "URL could not be normalized"
     return url, normalized

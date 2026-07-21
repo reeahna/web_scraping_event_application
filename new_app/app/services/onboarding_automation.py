@@ -174,6 +174,12 @@ async def detect_and_configure(
     )
     if preview.result.status == "blocked":
         outcome = BLOCKED
+    elif inference.missing_required_fields:
+        # Fail closed, but *informatively*: a preview that produced nothing
+        # because a required field could not be inferred is not an unexplained
+        # failure — we know exactly what is missing and an administrator can
+        # act on it. `failed` is reserved for the cases we can't explain.
+        outcome = NEEDS_REVIEW
     elif preview.result.status == "failed":
         outcome = FAILED
     elif inference.outcome == READY_FOR_APPROVAL and ok:

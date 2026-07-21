@@ -18,6 +18,7 @@ from app.models.event import Event
 from app.models.user import User
 from app.repositories.city import list_cities
 from app.repositories.extraction_run import get_extraction_run, list_extraction_runs_for_website
+from app.repositories.onboarding import find_website_match
 from app.repositories.unsupported_site_report import list_reports_for_website
 from app.repositories.website import (
     create_website,
@@ -233,6 +234,36 @@ def create_website_view(
             },
             status_code=422,
         )
+
+    # Duplicate prevention belongs on every path that creates a Website, not
+    # just the bulk one: this form is how the duplicate found during Phase 8C
+    # verification was created. Matching is the same canonical comparison
+    # bulk onboarding uses (app.core.url_canonical).
+    for candidate_url in (data.event_listing_url, data.base_url):
+        if not candidate_url:
+            continue
+        match = find_website_match(db, candidate_url)
+        if match is not None:
+            return render(
+                request,
+                "admin/websites/form.html",
+                {
+                    "current_user": current_user,
+                    "mode": "create",
+                    "website": None,
+                    "form": form_values,
+                    "errors": {
+                        "base_url": (
+                            f"'{match.website.name}' (website #{match.website.id}, status "
+                            f"{match.website.onboarding_status}) already covers this URL — "
+                            f"{match.reason}. Open that website instead of creating a second one."
+                        )
+                    },
+                    "cities": cities,
+                    "duplicate_website": match.website,
+                },
+                status_code=409,
+            )
 
     website = create_website(db, data)
     record_audit(
