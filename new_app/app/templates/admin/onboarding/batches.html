@@ -1,0 +1,44 @@
+{% extends "admin_base.html" %}
+
+{% block title %}Onboarding batches{% endblock %}
+
+{% block admin_content %}
+<h1>Onboarding batches</h1>
+{% if can_create %}
+<div class="form-actions">
+  <a href="/admin/websites/onboard"><button type="button">Onboard sources</button></a>
+</div>
+{% endif %}
+
+{% if batches %}
+<table>
+  <thead>
+    <tr>
+      <th>Created</th><th>Submitted by</th><th>City</th><th>Sources</th><th>Progress</th>
+      <th>Ready</th><th>Needs review</th><th>Unsupported</th><th>Failed</th><th>Duplicate</th><th></th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for batch in batches %}
+    {% set counts = counts_by_batch[batch.id] %}
+    <tr>
+      <td>{{ batch.created_at }}</td>
+      <td>{{ batch.submitted_by.email if batch.submitted_by else "—" }}</td>
+      <td>{{ batch.default_city.name if batch.default_city else "—" }}</td>
+      <td>{{ batch.valid_count }}{% if batch.invalid_count %} (+{{ batch.invalid_count }} rejected){% endif %}</td>
+      <td>{{ batch.completed_count }} / {{ batch.valid_count }} ({{ batch.status }})</td>
+      <td>{{ counts.get("ready_for_approval", 0) }}</td>
+      <td>{{ counts.get("needs_review", 0) }}</td>
+      <td>{{ counts.get("unsupported", 0) + counts.get("blocked", 0) }}</td>
+      <td>{{ counts.get("failed", 0) }}</td>
+      <td>{{ counts.get("duplicate", 0) }}</td>
+      <td><a href="/admin/onboarding/batches/{{ batch.id }}">Details</a></td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+<p class="audit-meta">{{ total }} batch(es).</p>
+{% else %}
+<p class="audit-meta">No onboarding batches yet.</p>
+{% endif %}
+{% endblock %}

@@ -25,6 +25,7 @@ from app.routers import (
     health,
     home,
     notifications,
+    onboarding,
     public_events,
     registration,
     unsupported_reports,
@@ -62,6 +63,9 @@ app.include_router(registration.router)
 app.include_router(account.router)
 app.include_router(admin.router)
 app.include_router(cities.router)
+# Registered before the websites router so /admin/websites/onboard is
+# matched by the onboarding route rather than by /admin/websites/{website_id}.
+app.include_router(onboarding.router)
 app.include_router(websites.router)
 app.include_router(events.router)
 app.include_router(event_categories.router)

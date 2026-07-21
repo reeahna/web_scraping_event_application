@@ -40,6 +40,18 @@ class Settings(BaseSettings):
     # semantics inconsistently across events from different cities.
     app_timezone: str = "UTC"
 
+    # Bulk source onboarding (app.services.bulk_onboarding). Caps exist so a
+    # single submission can't queue an unbounded amount of outbound fetching,
+    # and so a synchronous processing request stays responsive.
+    onboarding_max_urls_per_batch: int = 100
+    onboarding_max_csv_rows: int = 200
+    onboarding_max_csv_bytes: int = 1_000_000
+    onboarding_max_url_length: int = 2000
+    # How many jobs one "process" request works through before returning. The
+    # admin UI continues the batch with a further request; a Phase 10 worker
+    # would instead loop until the batch drains.
+    onboarding_jobs_per_request: int = 10
+
     model_config = SettingsConfigDict(
         env_file=str(BASE_DIR / ".env"),
         env_file_encoding="utf-8",

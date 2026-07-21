@@ -1,0 +1,80 @@
+{% extends "admin_base.html" %}
+
+{% block title %}Onboarding batch #{{ batch.id }}{% endblock %}
+
+{% block admin_content %}
+<h1>Onboarding batch #{{ batch.id }}</h1>
+<p class="audit-meta"><a href="/admin/onboarding/batches">&laquo; All batches</a></p>
+
+<table>
+  <tbody>
+    <tr><th>Created</th><td>{{ batch.created_at }}</td></tr>
+    <tr><th>Submitted by</th><td>{{ batch.submitted_by.email if batch.submitted_by else "—" }}</td></tr>
+    <tr><th>Default city</th><td>{{ batch.default_city.name if batch.default_city else "—" }}</td></tr>
+    <tr><th>Default timezone</th><td>{{ batch.default_timezone or "(each city's timezone)" }}</td></tr>
+    <tr><th>Source</th><td>{{ batch.source_kind }}</td></tr>
+    <tr><th>Re-detect existing</th><td>{{ "Yes" if batch.redetect_existing else "No" }}</td></tr>
+    <tr><th>Status</th><td>{{ batch.status }} — {{ batch.completed_count }} / {{ batch.valid_count }} complete</td></tr>
+    <tr><th>Outcomes</th>
+      <td>{% for status, count in counts.items() %}{{ status.replace("_", " ") }}: {{ count }}{% if not loop.last %} · {% endif %}{% endfor %}</td></tr>
+    <tr><th>Completed</th><td>{{ batch.completed_at or "—" }}</td></tr>
+  </tbody>
+</table>
+
+{% if remaining and can_process %}
+<form method="post" action="/admin/onboarding/batches/{{ batch.id }}/process" class="inline-form">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token }}" />
+  <button type="submit">Process next {{ remaining }} remaining</button>
+</form>
+{% endif %}
+
+<h2>Sources</h2>
+{% if jobs %}
+<table>
+  <thead>
+    <tr>
+      <th>Row</th><th>Submitted URL</th><th>Site name</th><th>Pattern</th>
+      <th>Found / valid / rejected</th><th>Outcome</th><th>Website</th><th>Reason</th><th></th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for job in jobs %}
+    <tr>
+      <td>{{ job.row_number }}</td>
+      <td><code>{{ job.submitted_url }}</code></td>
+      <td>{{ job.website.name if job.website else (job.submitted_name or "—") }}</td>
+      <td>{{ job.detected_pattern or "—" }}</td>
+      <td>{{ job.events_found }} / {{ job.events_valid }} / {{ job.events_rejected }}</td>
+      <td>
+        {{ job.status.replace("_", " ") }}
+        {% if job.status == ready_status %}<span class="badge badge-active">ready</span>{% endif %}
+      </td>
+      <td>{% if job.website %}<a href="/admin/websites/{{ job.website.id }}">{{ job.website.onboarding_status }}</a>{% else %}—{% endif %}</td>
+      <td>{{ job.failure_reason or "—" }}</td>
+      <td>
+        <a href="/admin/onboarding/jobs/{{ job.id }}">Details</a>
+        {% if job.website %}
+        · <a href="/admin/websites/{{ job.website.id }}/onboarding">Review</a>
+        {% endif %}
+      </td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% else %}
+<p class="audit-meta">This batch has no processable sources.</p>
+{% endif %}
+
+{% if batch.rejected_rows %}
+<h2>Rejected rows</h2>
+<p class="audit-meta">These rows never produced a usable URL, so no source was queued for them.</p>
+<table>
+  <thead><tr><th>Row</th><th>Value</th><th>Reason</th></tr></thead>
+  <tbody>
+    {% for row in batch.rejected_rows %}
+    <tr><td>{{ row.row }}</td><td><code>{{ row.value }}</code></td><td>{{ row.reason }}</td></tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% endif %}
+{% endblock %}

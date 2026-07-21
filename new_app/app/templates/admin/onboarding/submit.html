@@ -1,0 +1,78 @@
+{% extends "admin_base.html" %}
+{% from "admin/_macros.html" import field_error %}
+
+{% block title %}Onboard sources{% endblock %}
+
+{% block admin_content %}
+<h1>Onboard event sources</h1>
+<p class="audit-meta">
+  Paste one or more URLs, or upload a CSV. Each source is validated, matched against existing
+  websites, created, detected, configured and previewed automatically — no website form and no
+  configuration JSON. Nothing is approved or activated; you review the results afterwards.
+</p>
+
+{{ field_error(errors, "submission") }}
+
+{% if parsed and parsed.rejected %}
+<h2>Rows that will be skipped</h2>
+<table>
+  <thead><tr><th>Row</th><th>Value</th><th>Reason</th></tr></thead>
+  <tbody>
+    {% for row in parsed.rejected %}
+    <tr><td>{{ row.row_number }}</td><td><code>{{ row.value }}</code></td><td>{{ row.reason }}</td></tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% endif %}
+{% if parsed and parsed.warnings %}
+<p class="audit-meta">{{ parsed.warnings | join("; ") }}</p>
+{% endif %}
+
+<form method="post" action="/admin/websites/onboard" class="admin-form" enctype="multipart/form-data">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token }}" />
+
+  <label for="city_id">Default city</label>
+  <select id="city_id" name="city_id" required>
+    <option value="">Select a city…</option>
+    {% for city in cities %}
+    <option value="{{ city.id }}" {% if form and form.city_id == city.id|string %}selected{% endif %}>
+      {{ city.name }}{% if not city.is_active %} (inactive){% endif %}
+    </option>
+    {% endfor %}
+  </select>
+  {{ field_error(errors, "city_id") }}
+
+  <label for="default_timezone">Default timezone override (optional)</label>
+  <select id="default_timezone" name="default_timezone">
+    <option value="">Use each city's timezone</option>
+    {% for tz in timezones %}
+    <option value="{{ tz }}" {% if form and form.default_timezone == tz %}selected{% endif %}>{{ tz }}</option>
+    {% endfor %}
+  </select>
+  {{ field_error(errors, "default_timezone") }}
+
+  <label for="urls">URLs (one per line, maximum {{ limits.urls }})</label>
+  <textarea id="urls" name="urls" rows="8"
+            placeholder="https://example.org/events">{{ form.urls if form else "" }}</textarea>
+
+  <label for="csv_file">…or upload a CSV (maximum {{ limits.csv_rows }} rows, {{ limits.csv_bytes }} bytes)</label>
+  <input type="file" id="csv_file" name="csv_file" accept=".csv,text/csv" />
+  <p class="audit-meta">
+    Only <code>url</code> is required. Optional columns: <code>name</code>,
+    <code>source_display_name</code>, <code>city_slug</code>, <code>timezone</code>.
+    Any other column is ignored. Extraction configuration cannot be uploaded.
+    If a CSV is attached it takes precedence over the pasted URLs.
+  </p>
+
+  <label class="checkbox-label">
+    <input type="checkbox" name="redetect_existing" />
+    Re-detect websites that already exist (creates a new draft configuration; the approved
+    configuration is preserved and normal re-approval still applies)
+  </label>
+
+  <div class="form-actions">
+    <button type="submit">Submit and process</button>
+    <a href="/admin/onboarding/batches"><button type="button" class="btn-secondary">View batches</button></a>
+  </div>
+</form>
+{% endblock %}

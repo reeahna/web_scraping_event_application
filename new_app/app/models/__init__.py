@@ -7,6 +7,8 @@ from app.models.event_provenance import EventProvenance
 from app.models.extraction_error import ExtractionError
 from app.models.extraction_run import ExtractionRun
 from app.models.notification import Notification
+from app.models.onboarding_batch import OnboardingBatch
+from app.models.onboarding_job import OnboardingJob
 from app.models.permission import Permission
 from app.models.role import Role
 from app.models.role_permission import RolePermission
@@ -26,6 +28,8 @@ __all__ = [
     "ExtractionError",
     "ExtractionRun",
     "Notification",
+    "OnboardingBatch",
+    "OnboardingJob",
     "Permission",
     "Role",
     "RolePermission",

@@ -1,0 +1,130 @@
+{% extends "admin_base.html" %}
+
+{% block title %}Onboarding job #{{ job.id }}{% endblock %}
+
+{% block admin_content %}
+<h1>Onboarding job #{{ job.id }}</h1>
+<p class="audit-meta">
+  {% if job.batch %}<a href="/admin/onboarding/batches/{{ job.batch_id }}">&laquo; Batch #{{ job.batch_id }}</a>{% endif %}
+</p>
+
+<h2>Timeline</h2>
+<table>
+  <tbody>
+    <tr><th>Status</th>
+      <td>{{ job.status.replace("_", " ") }}
+        {% if job.status == ready_status %}<span class="badge badge-active">ready for approval</span>{% endif %}</td></tr>
+    <tr><th>Last step attempted</th><td>{{ job.current_step or "—" }}</td></tr>
+    <tr><th>Created</th><td>{{ job.created_at }}</td></tr>
+    <tr><th>Started</th><td>{{ job.started_at or "—" }}</td></tr>
+    <tr><th>Completed</th><td>{{ job.completed_at or "—" }}</td></tr>
+    <tr><th>Retries</th><td>{{ job.retry_count }}</td></tr>
+    <tr><th>Correlation ID</th><td><code>{{ job.correlation_id or "—" }}</code></td></tr>
+    {% if job.failure_reason %}
+    <tr><th>Reason</th><td>{{ job.failure_reason }}</td></tr>
+    {% endif %}
+  </tbody>
+</table>
+
+<h2>URLs</h2>
+<table>
+  <tbody>
+    <tr><th>Submitted</th><td><code>{{ job.submitted_url }}</code></td></tr>
+    <tr><th>Normalized</th><td><code>{{ job.normalized_url }}</code></td></tr>
+    <tr><th>Final (after redirects)</th><td><code>{{ job.final_url or "—" }}</code></td></tr>
+  </tbody>
+</table>
+
+<h2>Inferred site metadata</h2>
+{% if job.inferred_metadata %}
+<table>
+  <tbody>
+    <tr><th>Name</th><td>{{ job.inferred_metadata.name }}</td></tr>
+    <tr><th>Source display name</th><td>{{ job.inferred_metadata.source_display_name }}</td></tr>
+    <tr><th>Base URL</th><td><code>{{ job.inferred_metadata.base_url }}</code></td></tr>
+    <tr><th>Event listing URL</th><td><code>{{ job.inferred_metadata.event_listing_url }}</code></td></tr>
+    <tr><th>Inferred by</th>
+      <td>{% for field, rule in (job.inferred_metadata.inferred_fields or {}).items() %}
+        {{ field }}: {{ rule }}<br/>
+        {% else %}All values were supplied.{% endfor %}</td></tr>
+  </tbody>
+</table>
+<p class="audit-meta">These are editable on the website itself at any time.</p>
+{% else %}
+<p class="audit-meta">No metadata was inferred (no website was created for this job).</p>
+{% endif %}
+
+<h2>Result</h2>
+<table>
+  <tbody>
+    <tr><th>City</th><td>{{ job.city.name if job.city else "—" }}</td></tr>
+    <tr><th>Timezone override</th><td>{{ job.timezone_override or "(city timezone)" }}</td></tr>
+    <tr><th>Website</th>
+      <td>{% if job.website %}<a href="/admin/websites/{{ job.website.id }}">{{ job.website.name }}</a>
+        ({{ job.website.onboarding_status }}){% else %}—{% endif %}</td></tr>
+    {% if job.duplicate_of_website_id %}
+    <tr><th>Matched existing website</th>
+      <td><a href="/admin/websites/{{ job.duplicate_of_website_id }}">#{{ job.duplicate_of_website_id }}</a>
+        — no new website was created and its approved configuration was left untouched.</td></tr>
+    {% endif %}
+    <tr><th>Detected pattern</th>
+      <td>{{ job.detected_pattern or "—" }}
+        {% if job.detection_confidence %}(confidence {{ "%.2f"|format(job.detection_confidence) }}){% endif %}</td></tr>
+    <tr><th>Configuration version</th><td>{{ job.configuration_version or "—" }}</td></tr>
+    <tr><th>Detection run</th>
+      <td>{% if job.detection_run_id and job.website %}<a href="/admin/websites/{{ job.website_id }}/runs/{{ job.detection_run_id }}">Run #{{ job.detection_run_id }}</a>{% else %}—{% endif %}</td></tr>
+    <tr><th>Preview run</th>
+      <td>{% if job.preview_run_id and job.website %}<a href="/admin/websites/{{ job.website_id }}/runs/{{ job.preview_run_id }}">Run #{{ job.preview_run_id }}</a>{% else %}—{% endif %}</td></tr>
+    <tr><th>Found / valid / rejected</th>
+      <td>{{ job.events_found }} / {{ job.events_valid }} / {{ job.events_rejected }}</td></tr>
+  </tbody>
+</table>
+
+{% if job.quality %}
+<h2>Preview quality</h2>
+<table>
+  <tbody>
+    <tr><th>Valid</th><td>{{ "%.0f%%"|format(job.quality.valid_percentage * 100) }}</td></tr>
+    <tr><th>Rejected</th><td>{{ "%.0f%%"|format(job.quality.rejected_percentage * 100) }}</td></tr>
+    <tr><th>Date parse success</th><td>{{ "%.0f%%"|format(job.quality.date_parse_success_rate * 100) }}</td></tr>
+    <tr><th>URL validity</th><td>{{ "%.0f%%"|format(job.quality.url_validity_rate * 100) }}</td></tr>
+    <tr><th>Duplicate rate</th><td>{{ "%.0f%%"|format(job.quality.duplicate_rate * 100) }}</td></tr>
+    <tr><th>Warnings</th><td>{{ job.quality.warning_count }}</td></tr>
+    <tr><th>Pages fetched</th><td>{{ job.quality.pages_fetched }}</td></tr>
+    <tr><th>Detail pages used</th><td>{{ "Yes" if job.quality.detail_fetch_used else "No" }}</td></tr>
+  </tbody>
+</table>
+{% endif %}
+
+{% if inference and inference.samples and inference.samples.rejected %}
+<h2>Rejected sample events</h2>
+<table>
+  <thead><tr><th>Title</th><th>Start</th><th>Why it was rejected</th></tr></thead>
+  <tbody>
+    {% for sample in inference.samples.rejected %}
+    <tr><td>{{ sample.title or "—" }}</td><td>{{ sample.start_date or "—" }}</td>
+      <td>{{ sample.errors | join("; ") }}</td></tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% endif %}
+
+<h2>Next step</h2>
+<div class="form-actions">
+  {% if job.website %}
+  <a href="/admin/websites/{{ job.website_id }}/onboarding"><button type="button">Review and approve</button></a>
+  {% endif %}
+  {% if can_retry and job.status in retryable %}
+  <form method="post" action="/admin/onboarding/jobs/{{ job.id }}/retry" class="inline-form">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}" />
+    <button type="submit" class="btn-secondary">Retry</button>
+  </form>
+  {% endif %}
+  {% if can_cancel and not job.completed_at %}
+  <form method="post" action="/admin/onboarding/jobs/{{ job.id }}/cancel" class="inline-form">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}" />
+    <button type="submit" class="btn-secondary">Cancel</button>
+  </form>
+  {% endif %}
+</div>
+{% endblock %}
