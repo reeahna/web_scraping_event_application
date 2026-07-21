@@ -229,7 +229,7 @@ button, input, select, textarea { font: inherit; color: inherit; }
 .hero-inner {
   max-width: var(--max-width-narrow);
   margin: 0 auto;
-  padding: var(--space-7) var(--space-5) var(--space-6);
+  padding: var(--space-6) var(--space-5) var(--space-5);
   text-align: center;
 }
 
@@ -696,7 +696,7 @@ button:hover {
   box-shadow: var(--shadow-sm);
   padding: var(--space-5);
   margin-top: calc(-1 * var(--space-7));
-  margin-bottom: var(--space-6);
+  margin-bottom: var(--space-5);
   position: relative;
 }
 
@@ -830,6 +830,7 @@ button:hover {
 
 .event-card-image {
   aspect-ratio: 16 / 9;
+  max-height: 180px;
   width: 100%;
   background: var(--bg);
   overflow: hidden;
@@ -839,6 +840,8 @@ button:hover {
   width: 100%;
   height: 100%;
   object-fit: cover;
+  object-position: center;
+  display: block;
 }
 
 .event-card-image-fallback {
@@ -850,15 +853,15 @@ button:hover {
 }
 
 .event-card-body {
-  padding: var(--space-4);
+  padding: var(--space-3);
   display: flex;
   flex-direction: column;
-  gap: var(--space-2);
+  gap: 6px;
   flex: 1;
 }
 
 .event-card-body h2 {
-  font-size: var(--font-base);
+  font-size: var(--font-sm);
   font-weight: 700;
   line-height: 1.3;
   overflow-wrap: anywhere;
@@ -868,9 +871,9 @@ button:hover {
   display: flex;
   flex-direction: column;
   gap: 3px;
-  font-size: var(--font-sm);
+  font-size: var(--font-xs);
   color: var(--muted);
-  margin: var(--space-1) 0;
+  margin: 2px 0;
 }
 
 .event-card-date {
@@ -914,7 +917,7 @@ button:hover {
   background: var(--surface);
   border: 1px dashed var(--border-strong);
   border-radius: var(--radius-lg);
-  padding: var(--space-8) var(--space-5);
+  padding: var(--space-6) var(--space-5);
   text-align: center;
   margin-bottom: var(--space-6);
 }
@@ -994,24 +997,30 @@ button:hover {
 }
 
 .event-detail-image {
-  aspect-ratio: 21 / 9;
+  aspect-ratio: 16 / 9;
+  max-width: 720px;
+  max-height: 420px;
   width: 100%;
+  margin: 0 auto var(--space-5);
   border-radius: var(--radius-lg);
   overflow: hidden;
   background: var(--bg);
-  margin-bottom: var(--space-5);
 }
 
 .event-detail-image img {
   width: 100%;
   height: 100%;
   object-fit: cover;
+  object-position: center;
+  display: block;
 }
 
 .event-detail-header h1 {
   font-size: var(--font-xl);
   font-weight: 800;
   letter-spacing: -0.01em;
+  line-height: 1.25;
+  max-width: 34ch;
   margin: var(--space-3) 0 var(--space-3);
   overflow-wrap: anywhere;
 }
@@ -1127,7 +1136,7 @@ button:hover {
   }
 
   .hero-inner {
-    padding: var(--space-6) var(--space-4) var(--space-5);
+    padding: var(--space-5) var(--space-4) var(--space-4);
   }
 
   .hero h1 {
@@ -1136,6 +1145,14 @@ button:hover {
 
   .page-container {
     padding: var(--space-4);
+  }
+
+  .event-card-image {
+    max-height: 150px;
+  }
+
+  .event-detail-image {
+    max-height: 260px;
   }
 
   .filter-panel {

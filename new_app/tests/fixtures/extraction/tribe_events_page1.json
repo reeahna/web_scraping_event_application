@@ -1,0 +1,54 @@
+{
+  "events": [
+    {
+      "id": 501,
+      "title": "Summer Jazz Night",
+      "description": "<p>An evening of jazz under the stars.</p>",
+      "excerpt": "Jazz under the stars.",
+      "url": "https://example.com/event/summer-jazz-night/",
+      "start_date": "2026-08-01 19:00:00",
+      "end_date": "2026-08-01 22:00:00",
+      "all_day": false,
+      "timezone": "America/Indiana/Indianapolis",
+      "image": {"url": "https://example.com/wp-content/uploads/jazz.jpg"},
+      "venue": {
+        "venue": "The Blue Note",
+        "address": "123 Main St",
+        "city": "Bloomington",
+        "state": "IN",
+        "zip": "47401",
+        "geo_lat": 39.1653,
+        "geo_lng": -86.5264
+      },
+      "organizer": [{"organizer": "Downtown Events Co"}],
+      "categories": [{"id": 12, "name": "Music", "slug": "music"}],
+      "cost": "$25 - $50"
+    },
+    {
+      "id": 502,
+      "title": "Farmers Market",
+      "description": "<p>Fresh produce every Saturday.</p>",
+      "url": "https://example.com/event/farmers-market/",
+      "start_date": "2026-08-02 00:00:00",
+      "end_date": "2026-08-02 00:00:00",
+      "all_day": true,
+      "timezone": "America/Indiana/Indianapolis",
+      "image": false,
+      "venue": {
+        "venue": "Courthouse Square",
+        "address": "100 Courthouse Sq",
+        "city": "Bloomington",
+        "state": "IN",
+        "zip": "47404"
+      },
+      "organizer": [],
+      "categories": [],
+      "cost": ""
+    }
+  ],
+  "rest_url": "https://example.com/wp-json/tribe/events/v1/events?page=1",
+  "total": 3,
+  "total_pages": 2,
+  "previous_rest_url": null,
+  "next_rest_url": "https://example.com/wp-json/tribe/events/v1/events?page=2"
+}

@@ -1,0 +1,26 @@
+{
+  "events": [
+    {
+      "id": 601,
+      "title": "Valid Event",
+      "url": "https://example.com/event/valid/",
+      "start_date": "2026-09-01 10:00:00",
+      "all_day": false,
+      "venue": {
+        "venue": "Hall",
+        "address": "1 St",
+        "city": "Bloomington",
+        "state": "IN",
+        "zip": "47401"
+      }
+    },
+    "not-an-object",
+    {
+      "id": 603,
+      "title": "No Date Event",
+      "url": "https://example.com/event/no-date/"
+    }
+  ],
+  "total_pages": 1,
+  "next_rest_url": null
+}

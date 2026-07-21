@@ -65,7 +65,10 @@ def select_pattern(db: Session, website: Website, *, pattern_name: str) -> Websi
         )
 
     scaffold_kwargs: dict = {"pattern_name": pattern_name}
-    if pattern_name == "wordpress_rest" and website.event_listing_url:
+    if (
+        pattern_name in ("wordpress_rest", "the_events_calendar", "livewhale_json")
+        and website.event_listing_url
+    ):
         scaffold_kwargs["api_endpoint"] = website.event_listing_url
     else:
         scaffold_kwargs["listing_url"] = website.event_listing_url or website.base_url

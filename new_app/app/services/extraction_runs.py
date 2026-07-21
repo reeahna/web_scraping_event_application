@@ -39,6 +39,8 @@ from app.extraction.dedup import dedupe_within_run
 from app.extraction.detail_pages import enrich_with_detail_pages
 from app.extraction.detection import run_detection as detect_patterns
 from app.extraction.fetch import FetchStrategy, HttpFetchStrategy, content_type_allowed
+from app.extraction.inference.quality import evaluate_preview_quality
+from app.extraction.inference.types import PreviewQualityResult
 from app.extraction.normalize import normalize_candidate
 from app.extraction.pagination import build_pagination_strategy
 from app.extraction.registry import REGISTRY
@@ -117,9 +119,28 @@ def _response_metadata(response: FetchResponse) -> dict:
 # --- Detection ------------------------------------------------------------
 
 
+@dataclass(frozen=True)
+class DetectionOutcome:
+    """A detection's ExtractionResult plus the response and raw detection it
+    was derived from — configuration inference needs the response body, and
+    re-fetching it would be a second, pointless request against the site."""
+
+    result: ExtractionResult
+    response: FetchResponse
+    detection: PatternDetectionResult
+    listing_url: str
+
+
 async def run_detection(
     db: Session, website: Website, *, correlation_id: str | None = None
 ) -> ExtractionResult:
+    outcome = await run_detection_detailed(db, website, correlation_id=correlation_id)
+    return outcome.result
+
+
+async def run_detection_detailed(
+    db: Session, website: Website, *, correlation_id: str | None = None
+) -> DetectionOutcome:
     listing_url = website.event_listing_url or website.base_url
     if not listing_url:
         raise AppError("Website has no listing URL or base URL to detect against.", status_code=409)
@@ -272,21 +293,26 @@ async def run_detection(
             correlation_id=correlation_id,
         )
 
-    return ExtractionResult(
-        status=status,
-        run_id=run.id,
-        pattern=detection.pattern_name,
-        source_url=listing_url,
-        final_url=response.final_url,
-        events_found=0,
-        events_valid=0,
-        events_rejected=0,
-        events_inserted=0,
-        events_updated=0,
-        duplicates_skipped=0,
-        warnings=tuple(detection.warnings),
-        errors=(),
-        evidence=detection.evidence,
+    return DetectionOutcome(
+        result=ExtractionResult(
+            status=status,
+            run_id=run.id,
+            pattern=detection.pattern_name,
+            source_url=listing_url,
+            final_url=response.final_url,
+            events_found=0,
+            events_valid=0,
+            events_rejected=0,
+            events_inserted=0,
+            events_updated=0,
+            duplicates_skipped=0,
+            warnings=tuple(detection.warnings),
+            errors=(),
+            evidence=detection.evidence,
+        ),
+        response=response,
+        detection=detection,
+        listing_url=listing_url,
     )
 
 
@@ -307,7 +333,10 @@ def _build_proposed_configuration(
     website: Website, detection: PatternDetectionResult, listing_url: str
 ) -> SiteConfiguration:
     kwargs: dict = {"pattern_name": detection.pattern_name}
-    if detection.pattern_name == "wordpress_rest" and detection.discovered_endpoints:
+    if (
+        detection.pattern_name in ("wordpress_rest", "the_events_calendar", "livewhale_json")
+        and detection.discovered_endpoints
+    ):
         kwargs["api_endpoint"] = detection.discovered_endpoints[0]
     else:
         kwargs["listing_url"] = listing_url
@@ -369,8 +398,6 @@ async def _execute_pipeline(
             warnings.append(f"unexpected_content_type:{response.content_type}")
             break
 
-        visited_urls.add(response.final_url)
-        seen_hashes.add(response.body_hash)
         response_hash_by_page[response.final_url] = response.body_hash
 
         page_candidates = pattern.extract(response, config)
@@ -382,8 +409,15 @@ async def _execute_pipeline(
         all_candidates.extend(page_candidates)
         if max_events_reached:
             warnings.append("max_events_reached")
+            visited_urls.add(response.final_url)
+            seen_hashes.add(response.body_hash)
             break
 
+        # Pagination strategies decide "already seen" against every *prior*
+        # page's URL/hash — not this page's own, which would trivially
+        # always be "seen" and stop pagination after a single page. This
+        # page's own URL/hash are recorded immediately after, so the next
+        # iteration's check does include it.
         next_request = pagination.next_request(
             response,
             page_index,
@@ -391,6 +425,8 @@ async def _execute_pipeline(
             visited_urls=frozenset(visited_urls),
             seen_body_hashes=frozenset(seen_hashes),
         )
+        visited_urls.add(response.final_url)
+        seen_hashes.add(response.body_hash)
         if next_request is None:
             break
         current_request = next_request
@@ -439,9 +475,29 @@ def _resolve_configuration(website: Website, *, use_approved: bool) -> SiteConfi
 # --- Preview ---------------------------------------------------------------
 
 
+@dataclass(frozen=True)
+class PreviewOutcome:
+    """A preview's ExtractionResult plus the per-candidate detail an approval
+    decision needs — scored quality, and the actual sample events (valid and
+    rejected) to show the administrator. Candidates are in-flight
+    EventCandidates, never ORM rows."""
+
+    result: ExtractionResult
+    quality: PreviewQualityResult
+    valid_samples: tuple[EventCandidate, ...]
+    rejected_samples: tuple[tuple[EventCandidate, tuple[str, ...]], ...]
+
+
 async def preview_extraction(
     db: Session, website: Website, *, correlation_id: str | None = None
 ) -> ExtractionResult:
+    outcome = await preview_extraction_detailed(db, website, correlation_id=correlation_id)
+    return outcome.result
+
+
+async def preview_extraction_detailed(
+    db: Session, website: Website, *, correlation_id: str | None = None
+) -> PreviewOutcome:
     """Builds from the *draft* configuration (an admin previews before
     approving). Never calls app.repositories.event — there is no code path
     here that can persist an Event row."""
@@ -551,21 +607,35 @@ async def preview_extraction(
             correlation_id=correlation_id,
         )
 
-    return ExtractionResult(
-        status=status,
-        run_id=run.id,
-        pattern=config.pattern_name,
-        source_url=config.api_endpoint or config.listing_url or "",
-        final_url=outcome.last_response.final_url if outcome.last_response else None,
-        events_found=len(outcome.outcomes),
-        events_valid=len(valid),
-        events_rejected=len(rejected),
-        events_inserted=0,
-        events_updated=0,
-        duplicates_skipped=0,
-        warnings=tuple(warnings),
-        errors=tuple(errors),
-        evidence={},
+    quality = evaluate_preview_quality(
+        outcome.outcomes,
+        config,
+        warnings=list(outcome.warnings),
+        pages_fetched=len(outcome.response_hash_by_page),
+        website_id=website.id,
+        city_id=website.city_id,
+    )
+
+    return PreviewOutcome(
+        result=ExtractionResult(
+            status=status,
+            run_id=run.id,
+            pattern=config.pattern_name,
+            source_url=config.api_endpoint or config.listing_url or "",
+            final_url=outcome.last_response.final_url if outcome.last_response else None,
+            events_found=len(outcome.outcomes),
+            events_valid=len(valid),
+            events_rejected=len(rejected),
+            events_inserted=0,
+            events_updated=0,
+            duplicates_skipped=0,
+            warnings=tuple(warnings),
+            errors=tuple(errors),
+            evidence={},
+        ),
+        quality=quality,
+        valid_samples=tuple(valid),
+        rejected_samples=tuple((c, result.errors) for c, result in rejected),
     )
 
 

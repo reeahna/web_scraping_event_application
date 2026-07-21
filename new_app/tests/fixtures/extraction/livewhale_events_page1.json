@@ -1,0 +1,71 @@
+{
+  "count": 6,
+  "events": [
+    {
+      "id": 101,
+      "occur_id": "101-1",
+      "title": "Fall Concert Series",
+      "url": "https://example.edu/events/fall-concert",
+      "date_ts": 1789480800,
+      "date_end_ts": 1789488000,
+      "all_day": false,
+      "timezone": "America/Indiana/Indianapolis",
+      "location": "Recital Hall",
+      "address": "123 Campus Dr",
+      "city": "Bloomington",
+      "state": "IN",
+      "zip": "47401",
+      "latitude": 39.16,
+      "longitude": -86.52,
+      "summary": "Short summary text",
+      "description": "<p>Full <strong>HTML</strong> description with <script>alert(1)</script> embedded and a <a href=\"javascript:evil()\">bad link</a>.</p>",
+      "photo": "https://example.edu/img/fall-concert.jpg",
+      "tags": ["music", "free"],
+      "groups": [{"name": "Music Department"}],
+      "contact_name": "Jane Doe",
+      "contact_email": "jane@example.edu",
+      "contact_phone": "555-1234"
+    },
+    {
+      "id": 102,
+      "occur_id": "102-1",
+      "title": "Guest Lecture: AI Ethics",
+      "url": "https://example.edu/events/ai-ethics",
+      "date_ts": 1793874600,
+      "all_day": false,
+      "tags": [],
+      "groups": [],
+      "photo": {"lg": "https://example.edu/img/lecture-lg.jpg", "sm": "https://example.edu/img/lecture-sm.jpg"}
+    },
+    {
+      "id": 103,
+      "occur_id": "103-1",
+      "title": "All-Day Art Exhibit",
+      "url": "https://example.edu/events/art-exhibit",
+      "date_ts": 1790812800,
+      "date_end_ts": 1790812800,
+      "all_day": true,
+      "location": "Gallery A",
+      "city": "Bloomington",
+      "state": "IN"
+    },
+    "not-an-event-object",
+    {
+      "id": 105,
+      "title": "Fallback ID Event",
+      "url": "https://example.edu/events/fallback-id",
+      "date_ts": 1796115600,
+      "all_day": false,
+      "location": "Study Room B"
+    },
+    {
+      "id": 106,
+      "occur_id": "106-1",
+      "title": "Bad Date Event",
+      "url": "https://example.edu/events/bad-date",
+      "date_ts": "not-a-number",
+      "location": "Room X"
+    }
+  ],
+  "next_offset": 6
+}

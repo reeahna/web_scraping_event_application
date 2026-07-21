@@ -37,6 +37,7 @@ _SCOPED_JSON_FIELDS: tuple[str, ...] = (
     "category_mappings",
     "exclusion_rules",
     "geographic_filters",
+    "query_params",
 )
 
 
@@ -66,6 +67,7 @@ class ConfigFormInput:
     category_mappings: str = ""
     exclusion_rules: str = ""
     geographic_filters: str = ""
+    query_params: str = ""
     raw_json: str = ""
 
 
@@ -111,6 +113,7 @@ def build_site_configuration(form: ConfigFormInput) -> ConfigFormResult:
         "category_mappings": {},
         "exclusion_rules": [],
         "geographic_filters": None,
+        "query_params": {},
     }
     parsed_scoped: dict[str, Any] = {}
     for name in _SCOPED_JSON_FIELDS:
@@ -130,6 +133,8 @@ def build_site_configuration(form: ConfigFormInput) -> ConfigFormResult:
     if errors:
         return ConfigFormResult(None, errors)
 
+    query_params = parsed_scoped.pop("query_params")
+
     kwargs: dict[str, Any] = {
         "pattern_name": form.pattern_name,
         "listing_url": form.listing_url or None,
@@ -138,6 +143,7 @@ def build_site_configuration(form: ConfigFormInput) -> ConfigFormResult:
         "event_container_selector": form.event_container_selector or None,
         "detail_page_selector": form.detail_page_selector or None,
         "max_detail_fetches": max_detail_fetches,
+        "fetch": {"query_params": query_params},
         "pagination": {
             "strategy": form.pagination_strategy,
             "page_param": form.page_param or None,
@@ -158,7 +164,13 @@ def build_site_configuration(form: ConfigFormInput) -> ConfigFormResult:
         return ConfigFormResult(SiteConfiguration.model_validate(kwargs), {})
     except ValidationError as exc:
         for err in exc.errors():
-            field_name = str(err["loc"][0]) if err["loc"] else "configuration"
+            # `fetch.query_params` is the only nested-fetch field this form
+            # exposes, so surface its errors next to the field the admin
+            # actually sees rather than under the opaque "fetch" section.
+            if tuple(err["loc"][:2]) == ("fetch", "query_params"):
+                field_name = "query_params"
+            else:
+                field_name = str(err["loc"][0]) if err["loc"] else "configuration"
             errors[field_name] = err["msg"]
         return ConfigFormResult(None, errors)
 
@@ -166,6 +178,7 @@ def build_site_configuration(form: ConfigFormInput) -> ConfigFormResult:
 def configuration_to_form(config: SiteConfiguration) -> ConfigFormInput:
     data = config.model_dump(mode="json")
     pagination = data.get("pagination") or {}
+    fetch = data.get("fetch") or {}
     return ConfigFormInput(
         pattern_name=data["pattern_name"],
         listing_url=data.get("listing_url") or "",
@@ -193,4 +206,5 @@ def configuration_to_form(config: SiteConfiguration) -> ConfigFormInput:
         geographic_filters=json.dumps(data.get("geographic_filters"))
         if data.get("geographic_filters")
         else "",
+        query_params=json.dumps(fetch.get("query_params") or {}, indent=2),
     )

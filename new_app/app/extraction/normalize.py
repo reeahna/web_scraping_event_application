@@ -11,12 +11,15 @@ module or this engine.
 from __future__ import annotations
 
 import dataclasses
+import re
 from urllib.parse import urljoin
 
 from app.extraction.sanitize import strip_to_text
 from app.extraction.transform import apply_transformations, parse_date_value, parse_time_value
 from app.extraction.types import EventCandidate
 from app.schemas.extraction import SiteConfiguration, TransformationRuleConfig
+
+_ISO_DATETIME_SPLIT_RE = re.compile(r"^(\d{4}-\d{2}-\d{2})T(.*)$")
 
 
 def _clean_whitespace(value: object) -> str | None:
@@ -33,10 +36,16 @@ def _rules_for_field(
 
 
 def _split_iso_datetime(value: str | None) -> tuple[str | None, str | None]:
+    """Only splits on "T" when it's the actual ISO 8601 date/time separator
+    (immediately after a YYYY-MM-DD date) — a naive `"T" in value` substring
+    check would also match free-text weekday names like "Tuesday"/"Thursday"
+    (as generic_html_cards sources often emit) and silently discard the date
+    by partitioning inside the word itself."""
     if not value:
         return None, None
-    if "T" in value:
-        date_part, _, time_part = value.partition("T")
+    match = _ISO_DATETIME_SPLIT_RE.match(value)
+    if match:
+        date_part, time_part = match.groups()
         return date_part or None, time_part or None
     return value, None
 

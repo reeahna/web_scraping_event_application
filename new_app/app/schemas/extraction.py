@@ -78,6 +78,13 @@ class FetchConfig(BaseModel):
             _reject_env_var_reference(value, field_label=f"Header '{key}'")
         return v
 
+    @field_validator("query_params")
+    @classmethod
+    def _validate_query_params(cls, v: dict[str, str]) -> dict[str, str]:
+        for key, value in v.items():
+            _reject_env_var_reference(value, field_label=f"Query parameter '{key}'")
+        return v
+
     @field_validator("json_body")
     @classmethod
     def _validate_json_body(cls, v: dict[str, Any] | None) -> dict[str, Any] | None:
@@ -109,7 +116,9 @@ class FetchConfig(BaseModel):
 class PaginationConfig(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    strategy: Literal["none", "query_param", "wordpress", "next_link"] = "none"
+    strategy: Literal[
+        "none", "query_param", "wordpress", "next_link", "tribe_rest", "livewhale_offset"
+    ] = "none"
     page_param: str | None = None
     page_size_param: str | None = None
     next_page_selector: str | None = None

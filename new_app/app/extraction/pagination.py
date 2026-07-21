@@ -15,9 +15,10 @@ dict/set iteration.
 
 from __future__ import annotations
 
+import json
 import re
 from typing import Protocol
-from urllib.parse import urljoin
+from urllib.parse import parse_qs, urljoin, urlsplit
 
 from bs4 import BeautifulSoup
 
@@ -149,6 +150,98 @@ class NextLinkPagination:
         return FetchRequest(url=safe_url)
 
 
+class TribeRestPagination:
+    """The Events Calendar REST API pagination — driven entirely by the JSON
+    response body's own `next_rest_url` (this endpoint doesn't set the WP
+    core X-WP-TotalPages header), so it is not just QueryParamPagination
+    with a different param name."""
+
+    def next_request(
+        self,
+        response: FetchResponse,
+        page_index: int,
+        config: SiteConfiguration,
+        *,
+        visited_urls,
+        seen_body_hashes,
+    ) -> FetchRequest | None:
+        if _stop_conditions_met(response, page_index, config, visited_urls, seen_body_hashes):
+            return None
+        try:
+            payload = json.loads(response.text)
+        except json.JSONDecodeError:
+            return None
+        if not isinstance(payload, dict):
+            return None
+        next_url = payload.get("next_rest_url")
+        if not next_url or not isinstance(next_url, str):
+            return None
+        next_url = urljoin(response.final_url, next_url)
+        safe_url = _safe_or_none(next_url)
+        if safe_url is None or safe_url in visited_urls:
+            return None
+        return FetchRequest(url=safe_url)
+
+
+class LiveWhaleOffsetPagination:
+    """LiveWhale-style offset pagination: no page number, no next-page URL in
+    the body — just an ever-increasing `offset` query parameter. The next
+    offset is computed from how many events this page's own response body
+    actually contained (never a guessed/configured page size), so it works
+    whether or not the admin also configured a limit parameter. `page_param`
+    is reused here as the offset parameter's name, the same way it's already
+    reused for a page number elsewhere in this module — no new schema field.
+
+    Known limitation, shared with QueryParamPagination/WordPressPagination
+    (not new here): `config.fetch.query_params` (e.g. group/tag filters) are
+    only applied to the *first* request, via httpx's own params merging —
+    FetchResponse.final_url never reflects them, so a next URL rebuilt from
+    final_url (as every strategy in this module except TribeRestPagination
+    does) can't carry them forward either. TribeRestPagination avoids this
+    because the remote server's own `next_rest_url` already echoes the full
+    query string back. A shared-core fix (e.g. threading the original
+    request's static params through every subsequent page) would need to be
+    made once, for all affected strategies — out of scope here."""
+
+    def next_request(
+        self,
+        response: FetchResponse,
+        page_index: int,
+        config: SiteConfiguration,
+        *,
+        visited_urls,
+        seen_body_hashes,
+    ) -> FetchRequest | None:
+        if _stop_conditions_met(response, page_index, config, visited_urls, seen_body_hashes):
+            return None
+        try:
+            payload = json.loads(response.text)
+        except json.JSONDecodeError:
+            return None
+        if isinstance(payload, dict):
+            events = payload.get("events")
+        elif isinstance(payload, list):
+            events = payload
+        else:
+            events = None
+        if not isinstance(events, list) or not events:
+            return None
+
+        offset_param = config.pagination.page_param or "offset"
+        current_offset_values = parse_qs(urlsplit(response.final_url).query).get(offset_param)
+        try:
+            current_offset = int(current_offset_values[0]) if current_offset_values else 0
+        except (TypeError, ValueError):
+            current_offset = 0
+
+        next_offset = current_offset + len(events)
+        next_url = _next_url_with_param(response.final_url, offset_param, str(next_offset))
+        safe_url = _safe_or_none(next_url)
+        if safe_url is None or safe_url in visited_urls:
+            return None
+        return FetchRequest(url=safe_url)
+
+
 _QUERY_PARAM_RE_TEMPLATE = r"([?&]{param}=)[^&]*"
 
 
@@ -170,4 +263,8 @@ def build_pagination_strategy(config: SiteConfiguration) -> PaginationStrategy:
         return WordPressPagination()
     if strategy == "next_link":
         return NextLinkPagination(config.pagination.next_page_selector)
+    if strategy == "tribe_rest":
+        return TribeRestPagination()
+    if strategy == "livewhale_offset":
+        return LiveWhaleOffsetPagination()
     raise ValueError(f"Unknown pagination strategy: {strategy}")

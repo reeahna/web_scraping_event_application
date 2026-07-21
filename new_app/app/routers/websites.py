@@ -12,6 +12,7 @@ from app.core.onboarding import ALLOWED_TRANSITIONS, ONBOARDING_STATES, TRANSITI
 from app.core.templating import render
 from app.dependencies import ClientIp, CorrelationId, CurrentUser, DbSession
 from app.extraction.detection import MIN_PATTERN_CONFIDENCE
+from app.extraction.inference.policy import READY_FOR_APPROVAL as INFERENCE_READY
 from app.extraction.registry import REGISTRY
 from app.models.event import Event
 from app.models.user import User
@@ -34,6 +35,7 @@ from app.schemas.extraction_config_forms import (
 from app.schemas.website import WebsiteCreate, WebsiteUpdate
 from app.services.audit import record_audit
 from app.services.extraction_runs import preview_extraction, run_detection, run_extraction
+from app.services.onboarding_automation import detect_and_configure
 from app.services.rbac import require_permission, user_has_permission
 from app.services.website_configuration import (
     approve_configuration,
@@ -535,6 +537,76 @@ async def detect_pattern_view(
     return response
 
 
+@router.post("/{website_id}/detect-and-configure")
+async def detect_and_configure_view(
+    website_id: int,
+    request: Request,
+    db: DbSession,
+    correlation_id: CorrelationId,
+    ip_address: ClientIp,
+    current_user: TestSites,
+    csrf_token: str = Form(...),
+):
+    """The main onboarding path: detect, infer a complete configuration, save
+    it as a draft, preview it, and score the preview — one action. It never
+    approves and never activates; those stay separate, permissioned steps."""
+    verify_csrf(request, csrf_token)
+    website = get_website(db, website_id)
+    if website is None:
+        raise NotFoundError("Website not found")
+
+    result = await detect_and_configure(db, website, correlation_id=correlation_id)
+    record_audit(
+        db,
+        actor_id=current_user.id,
+        action="website_auto_configured",
+        entity_type="website",
+        entity_id=website.id,
+        after={
+            "outcome": result.outcome,
+            "pattern": result.inference.pattern_name,
+            "configuration_version": website.configuration_version,
+            "preview_run_id": result.preview.run_id if result.preview else None,
+            "valid_events": result.quality.valid_count if result.quality else 0,
+        },
+        correlation_id=correlation_id,
+        ip_address=ip_address,
+    )
+    response = RedirectResponse(url=f"/admin/websites/{website.id}/onboarding", status_code=303)
+    summary = f"Detect and configure: {result.outcome.replace('_', ' ')}"
+    if result.quality is not None:
+        summary += (
+            f" — {result.quality.valid_count}/{result.quality.candidates_found} candidates valid"
+        )
+    level = "success" if result.outcome == INFERENCE_READY else "error"
+    set_flash(response, summary, level)
+    return response
+
+
+@router.get("/{website_id}/onboarding", response_class=HTMLResponse)
+def onboarding_result_view(
+    website_id: int, request: Request, current_user: ViewSites, db: DbSession
+):
+    website = get_website(db, website_id)
+    if website is None:
+        raise NotFoundError("Website not found")
+
+    inference = (website.proposed_pattern or {}).get("inference")
+    return render(
+        request,
+        "admin/websites/onboarding.html",
+        {
+            "current_user": current_user,
+            "website": website,
+            "result": inference,
+            "can_approve": user_has_permission(db, current_user, "sites.approve"),
+            "can_update": user_has_permission(db, current_user, "sites.update"),
+            "can_test": user_has_permission(db, current_user, "sites.test"),
+            "ready_outcome": INFERENCE_READY,
+        },
+    )
+
+
 @router.post("/{website_id}/preview-extraction")
 async def preview_extraction_view(
     website_id: int,
@@ -724,6 +796,7 @@ def configure_website_submit(
     category_mappings: str = Form(""),
     exclusion_rules: str = Form(""),
     geographic_filters: str = Form(""),
+    query_params: str = Form(""),
     raw_json: str = Form(""),
     csrf_token: str = Form(...),
 ):
@@ -757,6 +830,7 @@ def configure_website_submit(
         category_mappings=category_mappings,
         exclusion_rules=exclusion_rules,
         geographic_filters=geographic_filters,
+        query_params=query_params,
         raw_json=raw_json,
     )
     result = build_site_configuration(form_input)

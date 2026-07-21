@@ -1,0 +1,229 @@
+{% extends "admin_base.html" %}
+{% from "admin/_macros.html" import onboarding_badge %}
+
+{% block title %}Onboarding — {{ website.name }}{% endblock %}
+
+{% block admin_content %}
+<h1>Automatic onboarding — {{ website.name }}</h1>
+<p class="audit-meta"><a href="/admin/websites/{{ website.id }}">&laquo; Back to {{ website.name }}</a></p>
+
+{% if not result %}
+<p class="placeholder-note">
+  This website hasn't been automatically configured yet.
+</p>
+{% if can_test %}
+<form method="post" action="/admin/websites/{{ website.id }}/detect-and-configure" class="inline-form">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token }}" />
+  <button type="submit">Detect and configure</button>
+</form>
+{% endif %}
+{% else %}
+
+{% set inference = result.inference %}
+{% set quality = result.quality %}
+
+<h2>Result</h2>
+<table>
+  <tbody>
+    <tr><th>Outcome</th>
+      <td>
+        <strong>{{ result.outcome.replace("_", " ") }}</strong>
+        {% if result.outcome == ready_outcome %}
+        <span class="badge badge-active">ready to approve</span>
+        {% else %}
+        <span class="badge badge-pending">needs a decision</span>
+        {% endif %}
+      </td></tr>
+    <tr><th>Detected pattern</th>
+      <td>{{ inference.pattern_name or "none" }}
+        (detection confidence {{ "%.2f"|format(inference.detection_confidence) }},
+        proposal confidence {{ "%.2f"|format(inference.proposal_confidence) }})</td></tr>
+    <tr><th>Generated</th><td>{{ result.generated_at }}</td></tr>
+    <tr><th>Current status</th><td>{{ onboarding_badge(website.onboarding_status) }}</td></tr>
+    {% if inference.error %}
+    <tr><th>Problem</th><td>{{ inference.error }}</td></tr>
+    {% endif %}
+    {% if result.blocking_reasons %}
+    <tr><th>Why it isn't ready</th>
+      <td><ul>{% for reason in result.blocking_reasons %}<li>{{ reason }}</li>{% endfor %}</ul></td></tr>
+    {% endif %}
+    {% if inference.warnings %}
+    <tr><th>Warnings</th><td>{{ inference.warnings | join(", ") }}</td></tr>
+    {% endif %}
+  </tbody>
+</table>
+
+{% if inference.configuration %}
+{% set config = inference.configuration %}
+<h2>Proposed configuration</h2>
+<p class="audit-meta">
+  Saved as draft version {{ website.configuration_version }}. Nothing below needs to be typed —
+  use "Edit advanced configuration" only if you want to change it.
+</p>
+<table>
+  <tbody>
+    <tr><th>Pattern</th><td>{{ config.pattern_name }}</td></tr>
+    <tr><th>Source</th><td><code>{{ config.api_endpoint or config.listing_url }}</code></td></tr>
+    {% if config.event_container_selector %}
+    <tr><th>Event card</th><td><code>{{ config.event_container_selector }}</code></td></tr>
+    {% endif %}
+    <tr><th>Timezone</th><td>{{ config.timezone or "(uses the city timezone)" }}</td></tr>
+    <tr><th>Pagination</th>
+      <td>{{ config.pagination.strategy }}
+        {% if config.pagination.next_page_selector %}
+        via <code>{{ config.pagination.next_page_selector }}</code>{% endif %}
+        (max {{ config.pagination.max_pages }} pages / {{ config.pagination.max_events }} events)</td></tr>
+    <tr><th>Date formats</th>
+      <td>{% if config.date_formats %}{% for f in config.date_formats %}<code>{{ f }}</code> {% endfor %}
+        {% else %}ISO 8601 (built in){% endif %}</td></tr>
+    <tr><th>Time formats</th>
+      <td>{% if config.time_formats %}{% for f in config.time_formats %}<code>{{ f }}</code> {% endfor %}
+        {% else %}—{% endif %}</td></tr>
+    <tr><th>Required fields</th><td>{{ config.required_fields | join(", ") }}</td></tr>
+    <tr><th>Detail-page fetches</th><td>{{ config.max_detail_fetches }}</td></tr>
+  </tbody>
+</table>
+
+{% if config.transformations %}
+<h3>Inferred transformations</h3>
+<table>
+  <thead><tr><th>Field</th><th>Transformation</th><th>Parameters</th></tr></thead>
+  <tbody>
+    {% for rule in config.transformations %}
+    <tr><td>{{ rule.field }}</td><td>{{ rule.kind }}</td><td><code>{{ rule.params }}</code></td></tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% endif %}
+{% endif %}
+
+<h2>Field proposals</h2>
+{% if inference.field_candidates %}
+<table>
+  <thead><tr><th>Field</th><th>Accepted</th><th>Confidence</th><th>Selector / path</th><th>Coverage</th><th>Samples</th><th>Evidence</th><th>Alternatives considered</th></tr></thead>
+  <tbody>
+    {% for candidate in inference.field_candidates %}
+    <tr>
+      <td>{{ candidate.field }}</td>
+      <td>{{ "Yes" if candidate.accepted else "No" }}</td>
+      <td>{{ "%.2f"|format(candidate.confidence) }}</td>
+      <td><code>{{ candidate.selector }}{% if candidate.attribute %}@{{ candidate.attribute }}{% endif %}</code></td>
+      <td>{{ "%.0f%%"|format(candidate.coverage * 100) }}</td>
+      <td>{% for value in candidate.sample_values %}<div class="audit-meta">{{ value }}</div>{% endfor %}</td>
+      <td><ul>{% for item in candidate.evidence %}<li>{{ item }}</li>{% endfor %}
+        {% for warning in candidate.warnings %}<li><em>{{ warning }}</em></li>{% endfor %}</ul></td>
+      <td>{% for alternative in candidate.alternatives %}<div class="audit-meta"><code>{{ alternative }}</code></div>{% else %}—{% endfor %}</td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% else %}
+<p class="audit-meta">No field proposals were produced.</p>
+{% endif %}
+
+{% if inference.date_format_candidates %}
+<h3>Date and time formats considered</h3>
+<table>
+  <thead><tr><th>Kind</th><th>Format</th><th>Match rate</th><th>Accepted</th><th>Samples</th><th>Notes</th></tr></thead>
+  <tbody>
+    {% for candidate in inference.date_format_candidates %}
+    <tr>
+      <td>{{ candidate.kind }}</td>
+      <td><code>{{ candidate.format or "ISO 8601" }}</code></td>
+      <td>{{ "%.0f%%"|format(candidate.match_rate * 100) }}</td>
+      <td>{{ "Yes" if candidate.accepted else "No" }}</td>
+      <td>{% for value in candidate.samples %}<div class="audit-meta">{{ value }}</div>{% endfor %}</td>
+      <td>{{ (candidate.evidence + candidate.warnings) | join("; ") }}</td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% endif %}
+
+{% if quality %}
+<h2>Preview quality</h2>
+<p class="audit-meta">Preview never creates events — these are extracted candidates only.</p>
+<table>
+  <tbody>
+    <tr><th>Candidates found</th><td>{{ quality.candidates_found }}</td></tr>
+    <tr><th>Valid</th><td>{{ quality.valid_count }} ({{ "%.0f%%"|format(quality.valid_percentage * 100) }})</td></tr>
+    <tr><th>Rejected</th><td>{{ quality.rejected_count }} ({{ "%.0f%%"|format(quality.rejected_percentage * 100) }})</td></tr>
+    <tr><th>Required-field coverage</th>
+      <td>{% for field, value in quality.required_field_coverage.items() %}
+        {{ field }}: {{ "%.0f%%"|format(value * 100) }}{% if not loop.last %} · {% endif %}
+        {% endfor %}</td></tr>
+    <tr><th>Date parse success</th><td>{{ "%.0f%%"|format(quality.date_parse_success_rate * 100) }}</td></tr>
+    <tr><th>URL validity</th><td>{{ "%.0f%%"|format(quality.url_validity_rate * 100) }}</td></tr>
+    <tr><th>Duplicate rate</th><td>{{ "%.0f%%"|format(quality.duplicate_rate * 100) }}</td></tr>
+    <tr><th>Warnings</th><td>{{ quality.warning_count }}</td></tr>
+    <tr><th>Pages fetched</th><td>{{ quality.pages_fetched }}{% if quality.pagination_truncated %} (truncated at the configured cap){% endif %}</td></tr>
+    <tr><th>Detail pages used</th><td>{{ "Yes" if quality.detail_fetch_used else "No" }}</td></tr>
+  </tbody>
+</table>
+{% endif %}
+
+{% if result.samples %}
+<h2>Sample events</h2>
+<h3>Valid</h3>
+{% if result.samples.valid %}
+<table>
+  <thead><tr><th>Title</th><th>Start</th><th>Venue</th><th>URL</th></tr></thead>
+  <tbody>
+    {% for sample in result.samples.valid %}
+    <tr>
+      <td>{{ sample.title }}</td>
+      <td>{{ sample.start_date }}{% if sample.start_time %} {{ sample.start_time }}{% endif %}</td>
+      <td>{{ sample.venue or "—" }}</td>
+      <td>{% if sample.canonical_url %}<code>{{ sample.canonical_url }}</code>{% else %}—{% endif %}</td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% else %}
+<p class="audit-meta">No valid candidates.</p>
+{% endif %}
+
+{% if result.samples.rejected %}
+<h3>Rejected</h3>
+<table>
+  <thead><tr><th>Title</th><th>Start</th><th>Why it was rejected</th></tr></thead>
+  <tbody>
+    {% for sample in result.samples.rejected %}
+    <tr>
+      <td>{{ sample.title or "—" }}</td>
+      <td>{{ sample.start_date or "—" }}</td>
+      <td>{{ sample.errors | join("; ") }}</td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% endif %}
+{% endif %}
+
+<h2>Next step</h2>
+<div class="form-actions">
+  {% if can_approve %}
+  <form method="post" action="/admin/websites/{{ website.id }}/approve-configuration" class="inline-form"
+        onsubmit="return confirm('Approve this configuration for {{ website.name }}? Approval does not activate the website.');">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}" />
+    <button type="submit">Approve</button>
+  </form>
+  {% endif %}
+  {% if can_update %}
+  <a href="/admin/websites/{{ website.id }}/configure"><button type="button" class="btn-secondary">Edit advanced configuration</button></a>
+  {% endif %}
+  {% if can_test %}
+  <form method="post" action="/admin/websites/{{ website.id }}/detect-and-configure" class="inline-form">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}" />
+    <button type="submit" class="btn-secondary">Run detect and configure again</button>
+  </form>
+  {% endif %}
+</div>
+{% if result.outcome != ready_outcome %}
+<p class="audit-meta">
+  This source did not clear the automatic bar. Review the evidence above, adjust the
+  configuration if needed, and re-run preview before approving.
+</p>
+{% endif %}
+{% endif %}
+{% endblock %}

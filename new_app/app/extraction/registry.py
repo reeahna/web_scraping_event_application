@@ -11,15 +11,29 @@ from dataclasses import dataclass
 from app.extraction.detection import (
     RELIABILITY_ORDER,
     JsonLdDetector,
+    LiveWhaleDetector,
     PatternDetector,
     StaticHtmlDetector,
+    TheEventsCalendarDetector,
     WordPressRestDetector,
+)
+from app.extraction.inference.base import PatternConfigurationProposer
+from app.extraction.inference.proposers.generic_html import GenericHtmlCardsProposer
+from app.extraction.inference.proposers.structured import (
+    JsonLdEventProposer,
+    livewhale_proposer,
+    the_events_calendar_proposer,
+    wordpress_rest_proposer,
 )
 from app.extraction.patterns.base import ExtractionPattern
 from app.extraction.patterns.jsonld import PATTERN_VERSION as _JSONLD_VERSION
 from app.extraction.patterns.jsonld import JsonLdEventPattern
+from app.extraction.patterns.livewhale_json import PATTERN_VERSION as _LW_VERSION
+from app.extraction.patterns.livewhale_json import LiveWhalePattern
 from app.extraction.patterns.static_html import PATTERN_VERSION as _HTML_VERSION
 from app.extraction.patterns.static_html import StaticHtmlCardsPattern
+from app.extraction.patterns.the_events_calendar import PATTERN_VERSION as _TEC_VERSION
+from app.extraction.patterns.the_events_calendar import TheEventsCalendarPattern
 from app.extraction.patterns.wordpress_rest import PATTERN_VERSION as _WP_VERSION
 from app.extraction.patterns.wordpress_rest import WordPressRestPattern
 from app.schemas.extraction import SiteConfiguration
@@ -43,6 +57,10 @@ class PatternRegistration:
     version: str
     browser_required: bool
     supported_pagination: tuple[str, ...]
+    # Optional so a pattern can be registered before it is automatically
+    # configurable; a pattern without one simply falls back to the manual
+    # configuration form instead of participating in automatic onboarding.
+    proposer: PatternConfigurationProposer | None = None
 
 
 class PatternRegistry:
@@ -79,6 +97,33 @@ def build_default_registry() -> PatternRegistry:
             version=_WP_VERSION,
             browser_required=False,
             supported_pagination=("none", "wordpress"),
+            proposer=wordpress_rest_proposer(),
+        )
+    )
+    registry.register(
+        PatternRegistration(
+            name="the_events_calendar",
+            detector=TheEventsCalendarDetector(),
+            extractor=TheEventsCalendarPattern(),
+            config_schema=SiteConfiguration,
+            priority=RELIABILITY_ORDER.index("the_events_calendar"),
+            version=_TEC_VERSION,
+            browser_required=False,
+            supported_pagination=("none", "tribe_rest"),
+            proposer=the_events_calendar_proposer(),
+        )
+    )
+    registry.register(
+        PatternRegistration(
+            name="livewhale_json",
+            detector=LiveWhaleDetector(),
+            extractor=LiveWhalePattern(),
+            config_schema=SiteConfiguration,
+            priority=RELIABILITY_ORDER.index("livewhale_json"),
+            version=_LW_VERSION,
+            browser_required=False,
+            supported_pagination=("none", "livewhale_offset"),
+            proposer=livewhale_proposer(),
         )
     )
     registry.register(
@@ -91,6 +136,7 @@ def build_default_registry() -> PatternRegistry:
             version=_JSONLD_VERSION,
             browser_required=False,
             supported_pagination=("none", "query_param", "next_link"),
+            proposer=JsonLdEventProposer(),
         )
     )
     registry.register(
@@ -103,6 +149,7 @@ def build_default_registry() -> PatternRegistry:
             version=_HTML_VERSION,
             browser_required=False,
             supported_pagination=("none", "query_param", "next_link"),
+            proposer=GenericHtmlCardsProposer(),
         )
     )
     return registry

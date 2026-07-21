@@ -125,7 +125,23 @@
 <p class="audit-meta">No detection has been run yet.</p>
 {% endif %}
 
-<h2>Extraction pipeline</h2>
+<h2>Onboarding</h2>
+<p class="audit-meta">
+  Detect and configure runs detection, generates a complete draft configuration, previews it and
+  scores the result in one step — no HTML inspection, CSS selectors or JSON required. The
+  individual steps below remain available for advanced use.
+</p>
+<div class="form-actions">
+  <form method="post" action="/admin/websites/{{ website.id }}/detect-and-configure" class="inline-form">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}" />
+    <button type="submit">Detect and configure</button>
+  </form>
+  {% if website.proposed_pattern and website.proposed_pattern.inference %}
+  <a href="/admin/websites/{{ website.id }}/onboarding"><button type="button" class="btn-secondary">View onboarding result ({{ website.proposed_pattern.inference.outcome.replace("_", " ") }})</button></a>
+  {% endif %}
+</div>
+
+<h2>Extraction pipeline (advanced)</h2>
 <div class="form-actions">
   <form method="post" action="/admin/websites/{{ website.id }}/detect-pattern" class="inline-form">
     <input type="hidden" name="csrf_token" value="{{ csrf_token }}" />

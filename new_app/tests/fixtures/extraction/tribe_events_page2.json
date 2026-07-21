@@ -1,0 +1,31 @@
+{
+  "events": [
+    {
+      "id": 503,
+      "title": "Weekly Trivia Night",
+      "description": "<p>Recurring trivia at the pub.</p>",
+      "url": "https://example.com/event/trivia-night-2026-08-09/",
+      "start_date": "2026-08-09 20:00:00",
+      "end_date": "2026-08-09 22:00:00",
+      "all_day": false,
+      "timezone": "America/Indiana/Indianapolis",
+      "venue": {
+        "venue": "The Pub",
+        "address": "55 Kirkwood Ave",
+        "city": "Bloomington",
+        "state": "IN",
+        "zip": "47408"
+      },
+      "organizer": [{"organizer": "The Pub Events"}],
+      "categories": [{"id": 14, "name": "Trivia", "slug": "trivia"}],
+      "cost": "Free",
+      "series": "trivia-weekly",
+      "recurrence": {"rules": [{"type": "Weekly", "interval": 1}]}
+    }
+  ],
+  "rest_url": "https://example.com/wp-json/tribe/events/v1/events?page=2",
+  "total": 3,
+  "total_pages": 2,
+  "previous_rest_url": "https://example.com/wp-json/tribe/events/v1/events?page=1",
+  "next_rest_url": null
+}

@@ -19,10 +19,22 @@
 
   <h2>Pattern: {{ form.pattern_name }}</h2>
 
-  {% if form.pattern_name == "wordpress_rest" %}
+  {% if form.pattern_name in ("wordpress_rest", "the_events_calendar", "livewhale_json") %}
   <label for="api_endpoint">API endpoint</label>
   <input type="text" id="api_endpoint" name="api_endpoint" value="{{ form.api_endpoint }}" />
   {{ field_error(errors, "api_endpoint") }}
+  {% if form.pattern_name == "the_events_calendar" %}
+  <p class="audit-meta">
+    Typically the site's /wp-json/tribe/events/v1/events route. Use the "Query parameters"
+    section below for API-level filters such as start_date, end_date, or status.
+  </p>
+  {% elif form.pattern_name == "livewhale_json" %}
+  <p class="audit-meta">
+    Typically the site's calendar API route (e.g. /calendar/api/1/events). Use the
+    "Query parameters" section below for group/tag filters, date range, and result limit;
+    use the pagination "Page parameter" field below as the offset parameter name.
+  </p>
+  {% endif %}
   {% else %}
   <label for="listing_url">Listing URL</label>
   <input type="text" id="listing_url" name="listing_url" value="{{ form.listing_url }}" />
@@ -50,7 +62,7 @@
   <h3>Pagination</h3>
   <label for="pagination_strategy">Strategy</label>
   <select id="pagination_strategy" name="pagination_strategy">
-    {% for strategy in ("none", "query_param", "wordpress", "next_link") %}
+    {% for strategy in ("none", "query_param", "wordpress", "next_link", "tribe_rest", "livewhale_offset") %}
     <option value="{{ strategy }}" {% if form.pagination_strategy == strategy %}selected{% endif %}>{{ strategy }}</option>
     {% endfor %}
   </select>
@@ -100,10 +112,20 @@
   {{ field_error(errors, "field_selectors") }}
   {% endif %}
 
-  {% if form.pattern_name in ("json_ld_event", "wordpress_rest") %}
+  {% if form.pattern_name in ("json_ld_event", "wordpress_rest", "the_events_calendar", "livewhale_json") %}
   <label for="json_paths">JSON paths ({"field": "dot.path"})</label>
   <textarea id="json_paths" name="json_paths" rows="4">{{ form.json_paths }}</textarea>
   {{ field_error(errors, "json_paths") }}
+  {% endif %}
+
+  {% if form.pattern_name == "the_events_calendar" %}
+  <label for="query_params">Query parameters ({"start_date": "...", "end_date": "...", "status": "publish"})</label>
+  <textarea id="query_params" name="query_params" rows="3">{{ form.query_params }}</textarea>
+  {{ field_error(errors, "query_params") }}
+  {% elif form.pattern_name == "livewhale_json" %}
+  <label for="query_params">Query parameters ({"group": "...", "tag": "...", "days": "...", "limit": "..."})</label>
+  <textarea id="query_params" name="query_params" rows="3">{{ form.query_params }}</textarea>
+  {{ field_error(errors, "query_params") }}
   {% endif %}
 
   <label for="transformations">Transformations (list of {"field", "kind", "params"})</label>

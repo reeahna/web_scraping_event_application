@@ -44,9 +44,15 @@ def test_unknown_pattern_rejected():
         registry.get("does_not_exist")
 
 
-def test_default_registry_has_exactly_three_patterns():
+def test_default_registry_has_exactly_five_patterns():
     registry = build_default_registry()
-    assert set(registry.names()) == {"json_ld_event", "generic_html_cards", "wordpress_rest"}
+    assert set(registry.names()) == {
+        "json_ld_event",
+        "generic_html_cards",
+        "wordpress_rest",
+        "the_events_calendar",
+        "livewhale_json",
+    }
 
 
 # --- SiteConfiguration validation ------------------------------------------

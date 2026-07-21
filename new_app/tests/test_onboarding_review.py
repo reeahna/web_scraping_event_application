@@ -2,6 +2,7 @@ import pytest
 
 from app.core.exceptions import AppError
 from app.core.onboarding import DRAFT, NEEDS_REVIEW, UNSUPPORTED, can_transition
+from app.extraction.detection import RELIABILITY_ORDER
 from app.models.audit_log import AuditLog
 from app.models.website import Website
 from app.services.extraction_runs import run_detection
@@ -111,7 +112,10 @@ async def test_all_detector_results_carry_their_own_confidence(db_session, websi
 
     db_session.refresh(website)
     all_results = website.proposed_pattern["detection"]["evidence"]["all_results"]
-    assert set(all_results.keys()) == {"wordpress_rest", "json_ld_event", "generic_html_cards"}
+    # Every registered detector reports, not just the winner — derived from
+    # the reliability order so registering a new pattern doesn't silently
+    # leave this assertion behind.
+    assert set(all_results.keys()) == set(RELIABILITY_ORDER)
     for name, result in all_results.items():
         assert "confidence" in result, name
         assert "needs_review" in result, name
