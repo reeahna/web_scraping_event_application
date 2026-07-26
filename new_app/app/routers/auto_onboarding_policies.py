@@ -97,6 +97,15 @@ FORM_SECTIONS: tuple[tuple[str, tuple[str, ...]], ...] = (
         ),
     ),
     (
+        "Shared date-range and geographic quality",
+        (
+            "require_date_range_parse_success",
+            "minimum_date_range_parse_success",
+            "require_geographic_filter",
+            "minimum_geographic_inclusion_rate",
+        ),
+    ),
+    (
         "Generic HTML thresholds (stricter)",
         (
             "generic_html_minimum_detector_confidence",

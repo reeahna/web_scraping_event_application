@@ -193,6 +193,49 @@ def test_no_applicable_policy_means_manual_review():
     assert result.eligible_for_automatic_approval is False
 
 
+# --- Phase 8G gates ----------------------------------------------------------
+
+
+def test_date_range_success_gate_denies_a_low_rate(make_policy):
+    policy = make_policy(
+        require_date_range_parse_success=True, minimum_date_range_parse_success=0.95
+    )
+    result = _evaluate(policy, quality=_quality(range_parse_success_rate=0.5))
+    assert result.final_decision == AUTOMATIC_APPROVAL_DENIED
+    assert _denied_for(result, "date-range parse success")
+
+
+def test_date_range_success_gate_is_off_by_default(base_policy):
+    # A low range rate does not block when the policy hasn't opted in.
+    result = _evaluate(base_policy, quality=_quality(range_parse_success_rate=0.0))
+    assert result.final_decision == AUTOMATIC_APPROVAL_ALLOWED
+
+
+def test_require_geographic_filter_denies_when_none_configured(make_policy):
+    policy = make_policy(require_geographic_filter=True)
+    result = _evaluate(policy)  # default config has no geographic_filters
+    assert result.final_decision == AUTOMATIC_APPROVAL_DENIED
+    assert _denied_for(result, "geographic filter")
+
+
+def test_require_geographic_filter_passes_when_configured(make_policy):
+    from app.schemas.geographic import GeographicFilterConfig
+
+    policy = make_policy(require_geographic_filter=True)
+    result = _evaluate(
+        policy,
+        configuration=_config(geographic_filters=GeographicFilterConfig(localities=["Springfield"])),
+    )
+    assert result.final_decision == AUTOMATIC_APPROVAL_ALLOWED
+
+
+def test_geographic_inclusion_rate_gate(make_policy):
+    policy = make_policy(minimum_geographic_inclusion_rate=0.9)
+    result = _evaluate(policy, quality=_quality(geographic_inclusion_rate=0.4))
+    assert result.final_decision == AUTOMATIC_APPROVAL_DENIED
+    assert _denied_for(result, "geographic inclusion rate")
+
+
 @pytest.mark.parametrize(
     "disabled", ["active", "automatic_configuration_enabled", "automatic_preview_enabled"]
 )

@@ -153,6 +153,17 @@
         {{ field }}: {{ "%.0f%%"|format(value * 100) }}{% if not loop.last %} · {% endif %}
         {% endfor %}</td></tr>
     <tr><th>Date parse success</th><td>{{ "%.0f%%"|format(quality.date_parse_success_rate * 100) }}</td></tr>
+    <tr><th>Date ranges</th>
+      <td>{{ quality.range_count }} multi-day ·
+        parse success {{ "%.0f%%"|format(quality.range_parse_success_rate * 100) }} ·
+        end-date success {{ "%.0f%%"|format(quality.end_date_success_rate * 100) }}
+        {% if quality.ambiguous_range_rejections %} · {{ quality.ambiguous_range_rejections }} ambiguous rejected{% endif %}</td></tr>
+    {% if quality.geographic_considered %}
+    <tr><th>Geographic filter</th>
+      <td>inclusion {{ "%.0f%%"|format(quality.geographic_inclusion_rate * 100) }}
+        ({{ quality.geographic_included }} of {{ quality.geographic_considered }}) ·
+        {{ quality.geographic_excluded }} excluded · {{ quality.geographic_missing }} missing geography</td></tr>
+    {% endif %}
     <tr><th>URL validity</th><td>{{ "%.0f%%"|format(quality.url_validity_rate * 100) }}</td></tr>
     <tr><th>Duplicate rate</th><td>{{ "%.0f%%"|format(quality.duplicate_rate * 100) }}</td></tr>
     <tr><th>Warnings</th><td>{{ quality.warning_count }}</td></tr>

@@ -80,6 +80,12 @@ def create_event_from_candidate(
         scraped_at=datetime.now(UTC),
         city_id=city_id,
         website_id=website_id,
+        occurrence_id=candidate.occurrence_id,
+        recurrence_parent_id=candidate.recurrence_parent_id,
+        is_recurrence_parent=candidate.is_recurrence_parent,
+        is_cancelled=candidate.is_cancelled,
+        # A cancelled occurrence is created deactivated (hidden), never dropped.
+        is_active=not candidate.is_cancelled,
     )
     db.add(event)
     db.commit()
@@ -125,6 +131,16 @@ def update_event(db: Session, event: Event, candidate: EventCandidate) -> Event:
         event.longitude = candidate.longitude
     if candidate.external_source_id is not None:
         event.external_source_id = candidate.external_source_id
+    if candidate.occurrence_id is not None:
+        event.occurrence_id = candidate.occurrence_id
+    if candidate.recurrence_parent_id is not None:
+        event.recurrence_parent_id = candidate.recurrence_parent_id
+    # An occurrence that has become cancelled is hidden safely on re-scrape:
+    # deactivated and flagged, never deleted, and never silently reactivated
+    # once cancelled.
+    if candidate.is_cancelled:
+        event.is_cancelled = True
+        event.is_active = False
     event.scraped_at = datetime.now(UTC)
     db.commit()
     db.refresh(event)

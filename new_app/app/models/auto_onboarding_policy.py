@@ -103,6 +103,15 @@ class AutoOnboardingPolicy(Base, TimestampMixin):
     require_zero_critical_warnings: Mapped[bool] = mapped_column(Boolean, default=True)
     require_distinct_events: Mapped[bool] = mapped_column(Boolean, default=True)
 
+    # --- Phase 8G: shared date-range / geographic quality -----------------
+    # All off/zero by default so installing 8G changes no existing outcome; an
+    # administrator opts a source in when its dates are ranges or its coverage
+    # area must be enforced.
+    require_date_range_parse_success: Mapped[bool] = mapped_column(Boolean, default=False)
+    minimum_date_range_parse_success: Mapped[float] = mapped_column(Float, default=0.95)
+    require_geographic_filter: Mapped[bool] = mapped_column(Boolean, default=False)
+    minimum_geographic_inclusion_rate: Mapped[float] = mapped_column(Float, default=0.0)
+
     # --- Stricter thresholds for generic_html_cards -----------------------
     # An inferred-from-markup configuration has no schema behind it, so it
     # carries its own, higher bar rather than sharing the structured one.

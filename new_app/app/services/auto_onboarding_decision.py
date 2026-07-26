@@ -134,6 +134,13 @@ class PolicySnapshot:
     city_ids: frozenset[int] = frozenset()
     role_ids: frozenset[int] = frozenset()
 
+    # Phase 8G shared date-range / geographic quality gates. Defaulted (off/
+    # neutral) so a snapshot or test that predates 8G still constructs cleanly.
+    require_date_range_parse_success: bool = False
+    minimum_date_range_parse_success: float = 0.95
+    require_geographic_filter: bool = False
+    minimum_geographic_inclusion_rate: float = 0.0
+
 
 def snapshot_policy(policy, *, city_ids=(), role_ids=()) -> PolicySnapshot:
     """Builds a PolicySnapshot from an AutoOnboardingPolicy ORM row."""
@@ -195,6 +202,10 @@ def snapshot_policy(policy, *, city_ids=(), role_ids=()) -> PolicySnapshot:
         generic_html_reject_unstable_required_selectors=(
             policy.generic_html_reject_unstable_required_selectors
         ),
+        require_date_range_parse_success=policy.require_date_range_parse_success,
+        minimum_date_range_parse_success=policy.minimum_date_range_parse_success,
+        require_geographic_filter=policy.require_geographic_filter,
+        minimum_geographic_inclusion_rate=policy.minimum_geographic_inclusion_rate,
         city_ids=frozenset(city_ids),
         role_ids=frozenset(role_ids),
     )
@@ -670,6 +681,31 @@ class AutoOnboardingDecisionService:
             "warning_count", quality.warning_count, policy.maximum_warning_count,
             label="warning count",
         )
+
+        # Phase 8G: shared date-range and geographic-filter quality gates. Each
+        # is off/neutral by default, so a policy that hasn't opted in is
+        # unaffected.
+        if policy.require_date_range_parse_success:
+            rules.at_least(
+                "date_range_parse_success",
+                quality.range_parse_success_rate,
+                policy.minimum_date_range_parse_success,
+                label="date-range parse success",
+            )
+        if policy.require_geographic_filter:
+            geo = context.configuration.geographic_filters if context.configuration else None
+            rules.check(
+                geo is not None and geo.has_any_rule(),
+                "a geographic filter is configured",
+                "no geographic filter is configured",
+            )
+        if policy.minimum_geographic_inclusion_rate > 0.0:
+            rules.at_least(
+                "geographic_inclusion_rate",
+                quality.geographic_inclusion_rate,
+                policy.minimum_geographic_inclusion_rate,
+                label="geographic inclusion rate",
+            )
 
         critical = sum(
             1

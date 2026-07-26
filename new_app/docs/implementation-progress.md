@@ -239,6 +239,75 @@ page reported blocked (nothing captured); a private URL refused before launch;
 plan schema rejects unknown actions and enforces caps; a second render succeeds
 (clean teardown). Tests skip with a clear reason if chromium is unavailable, so
 the suite stays green on machines without the binary. Ruff clean; full suite:
-see below.
+889 passed.
+
+**Commit:** `7789b27`.
+
+## Phase 8G — shared date ranges, recurrence, and geography
+
+**Status:** complete (completes Phase 8).
+
+Three shared-core capabilities, each one function/service every pattern calls —
+no per-pattern or per-site copies.
+
+**Date ranges (`app/extraction/date_ranges.py`).** A closed parser for the
+explicit multi-day forms (`Sep 29 - 30 / 2026`, `Sep 29–30, 2026`,
+`September 29 - October 1, 2026`, `Sep 29, 2026 - Oct 1, 2026`, ISO ranges,
+weekday-prefixed ranges) returning start/end + a provenance `form` label. It
+never invents: a missing year/month, a reversed range, or an impossible date is
+rejected as ambiguous rather than repaired. Wired into `normalize_candidate` as
+a dedicated `date_range` field and as a fallback for a start value the plain
+parser can't read (so a column mixing single dates and ranges just works).
+Preview quality gained `range_count`, `range_parse_success_rate`,
+`end_date_success_rate`, and `ambiguous_range_rejections`.
+
+**Recurrence (`app/schemas/recurrence.py`, `app/extraction/recurrence.py`).** A
+validated `RecurrenceSpec` (modes `parent_only` / `explicit_occurrences` /
+`bounded_expand`) and a `dateutil`-backed expander. RRULE/RDATE/EXDATE,
+explicit occurrence arrays, and detached/modified instances are supported;
+RECURRENCE-ID matches a detached override to the slot it replaces; a cancelled
+occurrence is flagged, never dropped. Bounded on every axis — future horizon,
+per-parent cap, per-run budget, rule length, sub-daily refusal, wall-clock
+guard. Occurrence identity is deterministic (source occurrence id → parent id +
+RECURRENCE-ID → parent fingerprint + normalized start → bounded hash) and is
+carried on `external_source_id` so a re-run matches an occurrence instead of
+duplicating it, and so the shared parent UID never collapses the series to one
+row. Times are wall-clock (DST-correct for a local listing). Config-driven via
+`SiteConfiguration.recurrence` (default parent_only → existing behaviour
+unchanged); expanded in the shared pipeline so preview quality reflects stored
+events. A cancelled occurrence persists deactivated (`is_cancelled=True`,
+`is_active=False`) — hidden, never deleted, and never silently reactivated.
+
+**Geography (`app/schemas/geographic.py`, `app/services/geographic_filter.py`).**
+A post-normalization, pre-persistence filter supporting locality/region/country,
+postal codes/prefixes, address substrings, radius, bounding box, configured
+aliases, and any/all mode. No fuzzy matching (word-boundary only) and no
+geocoding (radius/bbox apply only when coordinates are already present).
+Inclusion is decided from the event's own geography, never from its assigned
+city. Missing-geography policy is reject / keep_with_warning / needs_review. The
+decision is recorded once in the shared pipeline as provenance history; the
+persistent run drops excluded events and flags needs_review ones. Preview
+quality gained `geographic_considered/included/excluded/missing` and
+`geographic_inclusion_rate`.
+
+**Policy (Phase 8D integration).** `AutoOnboardingPolicy` gained
+`require_date_range_parse_success` + `minimum_date_range_parse_success` and
+`require_geographic_filter` + `minimum_geographic_inclusion_rate`; the decision
+service's `_check_preview` gates on them; `PolicySnapshot`/`snapshot_policy` and
+the policy admin form carry them. All default off/neutral, so installing 8G
+changes no existing outcome. AI-origin approval stays denied by default.
+
+**Migration `e3c9f21a7b48`** (revises `d7a1c4e83b60`): additive columns on
+`events` (occurrence identity + cancellation, two indexes) and
+`auto_onboarding_policies` (the four gates), every one server-defaulted;
+self-contained, round-trips up/down on a scratch DB, non-destructive.
+
+**Dependency added:** `python-dateutil>=2.9`.
+
+**Verification:** new unit suites for the range parser (27), range
+normalization + quality (6), the recurrence expander (15), the geographic filter
+(10), the pipeline steps (6), plus policy-gate cases added to the qualification
+suite; migration parity + configure + auto-onboarding suites pass. Ruff clean;
+full suite: see below.
 
 **Commit:** (recorded with the next update).

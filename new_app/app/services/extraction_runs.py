@@ -43,6 +43,7 @@ from app.extraction.inference.quality import evaluate_preview_quality
 from app.extraction.inference.types import PreviewQualityResult
 from app.extraction.normalize import normalize_candidate
 from app.extraction.pagination import build_pagination_strategy
+from app.extraction.recurrence import expand_candidates
 from app.extraction.registry import REGISTRY
 from app.extraction.types import (
     EventCandidate,
@@ -68,6 +69,11 @@ from app.repositories.unsupported_site_report import (
     should_create_new_report,
 )
 from app.schemas.extraction import FetchConfig, SiteConfiguration
+from app.services.geographic_filter import (
+    annotate_candidate_geography,
+    geo_needs_review,
+    geo_should_drop,
+)
 from app.services.notifications import (
     SEVERITY_ERROR,
     SEVERITY_INFO,
@@ -443,6 +449,20 @@ async def _execute_pipeline(
         normalize_candidate(c, config, fallback_timezone=config.timezone or fallback_timezone)
         for c in all_candidates
     ]
+    # Recurrence expansion (Phase 8G): a parent bearing an RRULE/occurrence set
+    # becomes one candidate per bounded occurrence. A parent_only config (the
+    # default) leaves the list untouched. Shared by preview and persistent runs
+    # so quality reflects the events that will actually be stored.
+    normalized, recurrence_warnings = expand_candidates(
+        normalized, config, reference_date=datetime.now(UTC).date()
+    )
+    warnings.extend(recurrence_warnings)
+    # Geographic decision (Phase 8G), recorded once here as provenance so both
+    # preview quality and persistence read the same decision. A no-op unless a
+    # geographic filter is configured.
+    normalized = [
+        annotate_candidate_geography(c, config.geographic_filters) for c in normalized
+    ]
     outcomes = [(c, validate_candidate(c, config)) for c in normalized]
 
     return _PipelineOutcome(
@@ -668,12 +688,21 @@ async def run_extraction(
 
     valid = [c for c, result in outcome.outcomes if result.is_valid]
     rejected = [(c, result) for c, result in outcome.outcomes if not result.is_valid]
+
+    warnings = list(outcome.warnings)
+    # Geographic filtering (Phase 8G) is decided in the shared pipeline and
+    # recorded as provenance; here we act on it: excluded/missing-reject events
+    # are not persisted, and a "needs_review" outcome is kept but flagged.
+    geo_excluded = [c for c in valid if geo_should_drop(c)]
+    if geo_excluded:
+        warnings.append(f"geographic_filter_excluded:{len(geo_excluded)}")
+        valid = [c for c in valid if not geo_should_drop(c)]
+
     blocked = outcome.last_response is not None and outcome.last_response.blocked_reason is not None
     status = _compute_status(
         blocked=blocked, events_found=len(outcome.outcomes), events_valid=len(valid)
     )
 
-    warnings = list(outcome.warnings)
     errors = [
         f"candidate[{i}]: {err}" for i, (_, result) in enumerate(rejected) for err in result.errors
     ]
@@ -725,6 +754,11 @@ async def run_extraction(
                 source=website.source_display_name or website.name,
             )
             events_inserted += 1
+
+        # A missing-geography "needs_review" outcome keeps the event but routes
+        # it to a human rather than silently trusting it.
+        if geo_needs_review(candidate) and event.review_status != "needs_review":
+            event.review_status = "needs_review"
 
         create_event_provenance(
             db,

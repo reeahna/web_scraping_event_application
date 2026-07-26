@@ -163,6 +163,25 @@ class PreviewQualityResult:
     pagination_truncated: bool
     detail_fetch_used: bool
     pages_fetched: int
+    # Phase 8G date-range quality. `range_count` is multi-day events (a non-null
+    # end date). `range_parse_success_rate` / `end_date_success_rate` are over
+    # the candidates that actually attempted a range parse (1.0 when none did,
+    # so a source with no ranges is not penalised). `ambiguous_range_rejections`
+    # counts values understood as range-shaped but rejected for a missing/
+    # inconsistent component — never invented.
+    range_count: int = 0
+    range_parse_success_rate: float = 1.0
+    end_date_success_rate: float = 1.0
+    ambiguous_range_rejections: int = 0
+    # Phase 8G geographic-filter quality. `considered` is the number of
+    # candidates a configured filter judged; `inclusion_rate` is the fraction
+    # it kept (1.0 when no filter is configured, so an unfiltered source is not
+    # penalised). `missing` counts candidates with no geography of their own.
+    geographic_considered: int = 0
+    geographic_included: int = 0
+    geographic_excluded: int = 0
+    geographic_missing: int = 0
+    geographic_inclusion_rate: float = 1.0
 
     def as_dict(self) -> dict[str, Any]:
         return {
@@ -181,4 +200,13 @@ class PreviewQualityResult:
             "pagination_truncated": self.pagination_truncated,
             "detail_fetch_used": self.detail_fetch_used,
             "pages_fetched": self.pages_fetched,
+            "range_count": self.range_count,
+            "range_parse_success_rate": round(self.range_parse_success_rate, 3),
+            "end_date_success_rate": round(self.end_date_success_rate, 3),
+            "ambiguous_range_rejections": self.ambiguous_range_rejections,
+            "geographic_considered": self.geographic_considered,
+            "geographic_included": self.geographic_included,
+            "geographic_excluded": self.geographic_excluded,
+            "geographic_missing": self.geographic_missing,
+            "geographic_inclusion_rate": round(self.geographic_inclusion_rate, 3),
         }

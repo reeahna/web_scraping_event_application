@@ -40,6 +40,16 @@ class Event(Base, TimestampMixin):
     start_time: Mapped[time | None] = mapped_column(Time, default=None)
     end_time: Mapped[time | None] = mapped_column(Time, default=None)
 
+    # Recurrence (Phase 8G). Populated only for events produced by the shared
+    # recurrence expander. `occurrence_id` is the deterministic per-occurrence
+    # identity used as the source id so a re-run matches an occurrence instead
+    # of duplicating it. `is_cancelled` is set for a cancelled occurrence: the
+    # event is deactivated (hidden) but never deleted, so history survives.
+    occurrence_id: Mapped[str | None] = mapped_column(String(512), index=True, default=None)
+    recurrence_parent_id: Mapped[str | None] = mapped_column(String(512), index=True, default=None)
+    is_recurrence_parent: Mapped[bool] = mapped_column(Boolean, default=False)
+    is_cancelled: Mapped[bool] = mapped_column(Boolean, default=False)
+
     venue: Mapped[str | None] = mapped_column(String(500), default=None)
     address: Mapped[str | None] = mapped_column(String(1000), default=None)
     image_url: Mapped[str | None] = mapped_column(String(2000), default=None)

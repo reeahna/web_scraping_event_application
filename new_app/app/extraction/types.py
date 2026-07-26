@@ -96,6 +96,16 @@ class EventCandidate:
     extraction_pattern: str
     warnings: tuple[str, ...]
     raw_record_hash: str
+    # Recurrence (Phase 8G). Populated only for candidates produced by the
+    # recurrence expander; a plain single event leaves them at their defaults.
+    # `occurrence_id` is the deterministic per-occurrence identity used as the
+    # dedup key so each instance persists distinctly and re-runs match rather
+    # than duplicate. `is_cancelled` marks an occurrence to hide/deactivate on
+    # persistence — never to delete.
+    occurrence_id: str | None = None
+    recurrence_parent_id: str | None = None
+    is_recurrence_parent: bool = False
+    is_cancelled: bool = False
 
 
 @dataclass(frozen=True)

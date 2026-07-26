@@ -14,6 +14,7 @@ import dataclasses
 import re
 from urllib.parse import urljoin
 
+from app.extraction.date_ranges import parse_date_range
 from app.extraction.sanitize import strip_to_text
 from app.extraction.transform import apply_transformations, parse_date_value, parse_time_value
 from app.extraction.types import EventCandidate
@@ -110,6 +111,27 @@ def normalize_candidate(
     end_date = parse_date_value(end_date_part, config.date_formats)
     start_time = parse_time_value(start_time_raw, config.time_formats)
     end_time = parse_time_value(end_time_raw, config.time_formats)
+
+    # Shared date-range handling (Phase 8G). A dedicated `date_range` field is
+    # the explicit path; failing that, a start value the plain parser could not
+    # read is offered to the range parser, so a column mixing single dates and
+    # multi-day ranges works without per-site configuration. The range parser
+    # never invents a missing year/month/end — an ambiguous value is recorded
+    # as a warning and leaves the dates unset.
+    range_input = apply("date_range", raw.get("date_range"))
+    had_explicit_range = range_input is not None and str(range_input).strip() != ""
+    if not had_explicit_range and start_date is None and start_date_part:
+        range_input = start_date_part
+    if range_input is not None and str(range_input).strip() != "":
+        range_result = parse_date_range(range_input)
+        if range_result.matched:
+            if start_date is None:
+                start_date = range_result.start_date
+            if end_date is None and range_result.end_date is not None:
+                end_date = range_result.end_date
+            history.append(f"date_range:{range_result.form}")
+        elif range_result.ambiguous:
+            warnings.append(f"date_range_ambiguous:{range_result.reason}")
 
     if start_date_part is not None and start_date is None:
         warnings.append(f"unparseable_start_date:{start_date_part}")

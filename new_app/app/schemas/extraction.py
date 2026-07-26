@@ -18,6 +18,8 @@ from typing import Any, Literal
 from pydantic import BaseModel, ConfigDict, field_validator, model_validator
 
 from app.core.url_safety import UnsafeURLError, validate_public_url
+from app.schemas.geographic import GeographicFilterConfig
+from app.schemas.recurrence import RecurrenceBounds, RecurrenceMode
 
 # Headers an administrator can never set via configuration — either they are
 # meaningless/dangerous on an outbound request we build ourselves (Host,
@@ -199,6 +201,19 @@ class TransformationRuleConfig(BaseModel):
     params: dict[str, Any] = {}
 
 
+class RecurrenceRuntimeConfig(BaseModel):
+    """How a source's recurrence should be handled at extraction time. The
+    per-event RRULE/occurrence data comes from the pattern (in the candidate's
+    raw payload); this chooses the *mode* and the expansion bounds, so nothing
+    expands unless an administrator/proposer opted in. Default is parent_only,
+    which preserves the existing one-row-per-event behaviour exactly."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    mode: RecurrenceMode = "parent_only"
+    bounds: RecurrenceBounds = RecurrenceBounds()
+
+
 class SiteConfiguration(BaseModel):
     """Everything an extraction pattern needs to run against one website,
     independent of which registered pattern it is. Pattern-specific fields
@@ -225,7 +240,8 @@ class SiteConfiguration(BaseModel):
     transformations: list[TransformationRuleConfig] = []
     category_mappings: dict[str, str] = {}
     exclusion_rules: list[TransformationRuleConfig] = []
-    geographic_filters: dict[str, Any] | None = None
+    geographic_filters: GeographicFilterConfig | None = None
+    recurrence: RecurrenceRuntimeConfig | None = None
     required_fields: list[str] = ["title", "start_date", "canonical_url"]
     allow_page_url_as_canonical_fallback: bool = False
     allow_offers_url_as_event_url: bool = False

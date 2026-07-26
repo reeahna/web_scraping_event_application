@@ -88,6 +88,10 @@ class AutoOnboardingPolicy:
     min_date_parse_success: float = 0.6
     min_url_validity: float = 0.8
     max_duplicate_rate: float = 0.5
+    # Phase 8G: minimum date-range parse success. 0.0 = no requirement (the
+    # default), so a source with no ranges, or one whose ranges we don't gate
+    # on, is unaffected. Raised when a source's dates are known to be ranges.
+    min_range_parse_success: float = 0.0
 
 
 DEFAULT_POLICY = AutoOnboardingPolicy()

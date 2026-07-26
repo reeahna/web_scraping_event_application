@@ -26,10 +26,24 @@ _FIELD_ACCESSORS = {
 }
 
 _DETAIL_SOURCE_PREFIX = "detail:"
+_RANGE_HISTORY_PREFIX = "date_range:"
+_AMBIGUOUS_RANGE_PREFIX = "date_range_ambiguous:"
+# The geographic decision the pipeline records as provenance. Duplicated here
+# (rather than imported from app.services) to keep the inference layer free of
+# a dependency on the service layer.
+_GEO_HISTORY_PREFIX = "geographic:"
+_GEO_DROP_OUTCOMES = frozenset({"excluded", "missing_reject"})
 
 
 def _ratio(count: int, total: int) -> float:
     return count / total if total else 0.0
+
+
+def _geo_outcome(candidate) -> str | None:
+    for token in reversed(candidate.transformation_history):
+        if token.startswith(_GEO_HISTORY_PREFIX):
+            return token[len(_GEO_HISTORY_PREFIX):]
+    return None
 
 
 def _url_is_valid(url: str | None) -> bool:
@@ -78,6 +92,41 @@ def evaluate_preview_quality(
         if any(path.startswith(_DETAIL_SOURCE_PREFIX) for path in c.field_source_paths.values())
     )
 
+    # Date-range metrics (Phase 8G). A candidate "attempted" a range parse if
+    # the normalizer stamped either a success token in its history or an
+    # ambiguous-rejection warning; a value it simply couldn't read at all is
+    # not counted as a range attempt.
+    range_attempts = range_parsed = ambiguous_rejections = end_dates_in_attempts = 0
+    for c in candidates:
+        parsed = any(h.startswith(_RANGE_HISTORY_PREFIX) for h in c.transformation_history)
+        ambiguous = any(w.startswith(_AMBIGUOUS_RANGE_PREFIX) for w in c.warnings)
+        if parsed:
+            range_attempts += 1
+            range_parsed += 1
+            if c.end_date is not None:
+                end_dates_in_attempts += 1
+        elif ambiguous:
+            range_attempts += 1
+            ambiguous_rejections += 1
+    range_count = sum(1 for c in candidates if c.end_date is not None)
+    range_parse_success_rate = _ratio(range_parsed, range_attempts) if range_attempts else 1.0
+    end_date_success_rate = _ratio(end_dates_in_attempts, range_attempts) if range_attempts else 1.0
+
+    # Geographic-filter metrics, read from the provenance the pipeline stamped.
+    geo_considered = geo_included = geo_excluded = geo_missing = 0
+    for c in candidates:
+        outcome = _geo_outcome(c)
+        if outcome is None:
+            continue
+        geo_considered += 1
+        if outcome.startswith("missing"):
+            geo_missing += 1
+        if outcome in _GEO_DROP_OUTCOMES:
+            geo_excluded += 1
+        else:
+            geo_included += 1
+    geo_inclusion_rate = _ratio(geo_included, geo_considered) if geo_considered else 1.0
+
     return PreviewQualityResult(
         candidates_found=total,
         valid_count=len(valid),
@@ -96,6 +145,15 @@ def evaluate_preview_quality(
         pagination_truncated=truncated,
         detail_fetch_used=detail_fetches > 0,
         pages_fetched=pages_fetched,
+        range_count=range_count,
+        range_parse_success_rate=range_parse_success_rate,
+        end_date_success_rate=end_date_success_rate,
+        ambiguous_range_rejections=ambiguous_rejections,
+        geographic_considered=geo_considered,
+        geographic_included=geo_included,
+        geographic_excluded=geo_excluded,
+        geographic_missing=geo_missing,
+        geographic_inclusion_rate=geo_inclusion_rate,
     )
 
 
@@ -130,5 +188,11 @@ def meets_approval_bar(
     if quality.duplicate_rate > policy.max_duplicate_rate:
         reasons.append(
             f"duplicate rate {quality.duplicate_rate:.0%} above {policy.max_duplicate_rate:.0%}"
+        )
+    min_range = getattr(policy, "min_range_parse_success", 0.0)
+    if min_range and quality.range_parse_success_rate < min_range:
+        reasons.append(
+            f"date-range parse success {quality.range_parse_success_rate:.0%} "
+            f"below {min_range:.0%}"
         )
     return not reasons, reasons
