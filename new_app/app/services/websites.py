@@ -36,6 +36,14 @@ def transition_website(db: Session, website: Website, target_status: str) -> Web
         website.archived_at = datetime.now(UTC)
     db.commit()
     db.refresh(website)
+
+    # Keep the durable scheduler job in step with the lifecycle: leaving ACTIVE
+    # (deactivation, failing, archive) pauses future runs immediately; entering
+    # ACTIVE clears the pause. Events and history are untouched. Import lazily
+    # to avoid a models/service import cycle.
+    from app.services.scheduler import set_paused
+
+    set_paused(db, website.id, paused=target_status != ACTIVE)
     return website
 
 

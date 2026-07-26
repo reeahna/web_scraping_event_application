@@ -524,6 +524,33 @@ async def process_batch(
     )
 
 
+async def drain_onboarding_queue(db: Session, *, max_jobs: int = 25) -> int:
+    """Process outstanding queued onboarding jobs across all batches, bounded by
+    `max_jobs`. Runs the Phase 8C worker (`process_batch` -> `process_job`) from
+    the dedicated scheduler process rather than a web worker, so onboarding and
+    scheduled extraction share one background process. Returns jobs processed.
+
+    Only the single scheduler leader calls this, so no cross-process job claim
+    is needed; `process_job` already isolates each job's transaction."""
+    from sqlalchemy import distinct, select
+
+    from app.repositories.onboarding import get_batch
+
+    batch_ids = list(
+        db.scalars(select(distinct(OnboardingJob.batch_id)).where(OnboardingJob.status == QUEUED))
+    )
+    processed = 0
+    for batch_id in batch_ids:
+        if processed >= max_jobs:
+            break
+        batch = get_batch(db, batch_id)
+        if batch is None:
+            continue
+        progress = await process_batch(db, batch, limit=max_jobs - processed)
+        processed += progress.processed
+    return processed
+
+
 def refresh_batch_progress(
     db: Session,
     batch: OnboardingBatch,

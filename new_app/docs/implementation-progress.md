@@ -308,6 +308,66 @@ self-contained, round-trips up/down on a scratch DB, non-destructive.
 normalization + quality (6), the recurrence expander (15), the geographic filter
 (10), the pipeline steps (6), plus policy-gate cases added to the qualification
 suite; migration parity + configure + auto-onboarding suites pass. Ruff clean;
+full suite: 958 passed.
+
+**Commit:** `0d0fcba`.
+
+## Phase 10 — durable scheduler and background processing
+
+**Status:** complete.
+
+Automatic refresh of approved, active sources from a **dedicated scheduler
+process** (`python -m app.scheduler`), never one scheduler per web worker — the
+web app starts no scheduler at all. APScheduler drives the ticks; the durable
+source of truth is the database, so a crash/restart reconciles and resumes with
+nothing lost or double-run.
+
+**State (`app/models/scheduler.py`, migration `f4b2d90c1a57`).**
+`scheduler_job_state` (one row per scheduled site) is the per-site lock
+(running + holder + heartbeat), the durable schedule (next/last run, status), a
+cancel request, a scheduler-level pause, and a structural-failure counter.
+`scheduler_leader` is a single advisory row so exactly one process schedules
+even if two are started.
+
+**Service (`app/services/scheduler.py`).** Pure, unit-tested decision logic:
+eligibility (ACTIVE + active + not archived + active city + valid approved
+config + valid enabled schedule), stale-lock detection, next-run computation,
+plus the DB ops — atomic per-site `try_acquire` (no overlap; a stale lock is
+reclaimed), `release_lock`, `reclaim_stale_locks`, idempotent `reconcile`,
+`pause_city_sites`, leader election/heartbeat, and a health summary.
+
+**Runner (`app/services/scheduler_runner.py`).** Runs one extraction under the
+lock with bounded exponential-backoff retries, heartbeats, cooperative
+cancellation between attempts, structural-failure counting, and the
+re-onboarding trigger — all injectable so tests never touch the network.
+
+**Runtime (`app/scheduler/`).** `SchedulerRuntime` runs three ticks under
+leadership: a heartbeat (reclaim stale locks + periodic reconcile), a dispatcher
+(launch every due, eligible, not-running site with bounded concurrency), and an
+onboarding-queue drain (the Phase 8C worker runs here, not per web worker).
+`python -m app.scheduler` is the entry point with graceful SIGINT/SIGTERM
+shutdown (in-flight runs finish).
+
+**Post-failure re-onboarding (`app/services/scheduler_reonboarding.py`).** After
+repeated structural failures, rerun detection, refresh the draft, preview it,
+and notify reviewers with an approved-vs-detected comparison — the approved
+configuration is **never** silently replaced; re-approval stays explicit and
+audited.
+
+**Lifecycle.** Leaving ACTIVE (deactivation/failing/archive) pauses the job
+immediately (`transition_website` hook); city deactivation pauses all its sites
+via eligibility + the periodic reconcile. Events and history are untouched.
+
+**Admin controls (`app/routers/scheduler.py`).** `/admin/scheduler/health`,
+run-now (schedules immediately; never runs inline in the web request), cancel,
+pause, resume — all CSRF-protected (double-submit header) and permission-gated.
+
+**Dependency added:** `APScheduler>=3.10,<4`. Startup commands + the whole
+model documented in `docs/scheduler.md`.
+
+**Verification:** 5 schedule-config, 10 service, 7 runner, 6 admin-endpoint
+tests (33 new, minus one duplicate helper); migration round-trips on a scratch
+DB and parity holds; website transition/approval suites unaffected. Ruff clean;
 full suite: see below.
 
 **Commit:** (recorded with the next update).

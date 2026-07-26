@@ -23,6 +23,9 @@ dependencies = [
     "defusedxml>=0.7",
     # RRULE/RDATE/EXDATE expansion for the shared recurrence expander (Phase 8G).
     "python-dateutil>=2.9",
+    # Durable scheduler (Phase 10). Runs in a dedicated process, never per web
+    # worker; per-site timing/locks live in the database.
+    "APScheduler>=3.10,<4",
     # Restricted headless-browser fetch strategy (Phase 9) for client-rendered
     # pages that plain HTTP cannot resolve. Runs a closed action plan only, never
     # arbitrary JavaScript. Requires `playwright install chromium` after pip install.

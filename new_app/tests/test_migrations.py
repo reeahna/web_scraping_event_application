@@ -29,6 +29,8 @@ EXPECTED_TABLES = {
     "event_provenance",
     "unsupported_site_reports",
     "notifications",
+    "scheduler_job_state",
+    "scheduler_leader",
 }
 
 

@@ -29,6 +29,7 @@ from app.routers import (
     onboarding,
     public_events,
     registration,
+    scheduler,
     unsupported_reports,
     websites,
 )
@@ -42,7 +43,10 @@ STATIC_DIR = Path(__file__).resolve().parent / "static"
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # Phase 1: no scheduler, no scraping, no external network calls on startup.
+    # The web process deliberately starts NO scheduler and makes no external
+    # network calls on startup. Background scraping runs in a separate dedicated
+    # scheduler process (`python -m app.scheduler`), never per web worker — see
+    # app.scheduler and docs/scheduler.md.
     logger.info("New app starting up (env=%s, port=%s)", settings.app_env, settings.app_port)
     yield
     logger.info("New app shutting down")
@@ -75,3 +79,4 @@ app.include_router(unsupported_reports.router)
 app.include_router(notifications.router)
 app.include_router(auto_onboarding_policies.router)
 app.include_router(auto_onboarding_policies.decisions_router)
+app.include_router(scheduler.router)
