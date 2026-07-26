@@ -255,6 +255,30 @@
   This source did not clear the automatic bar. Review the evidence above, adjust the
   configuration if needed, and re-run preview before approving.
 </p>
+
+<h2>AI configuration assistant</h2>
+{% if ai_usage %}
+{% if ai_usage.enabled %}
+<p class="audit-meta">
+  Provider: {{ ai_usage.provider }} · {{ "healthy" if ai_usage.healthy else "unavailable" }} ·
+  requests today {{ ai_usage.daily_used }}/{{ ai_usage.daily_limit }},
+  this month {{ ai_usage.monthly_used }}/{{ ai_usage.monthly_limit }}.
+  A suggestion is deterministically previewed and validated, saved only as a draft, and still
+  requires review — the default policy denies AI-origin approval.
+</p>
+{% if can_test %}
+<form method="post" action="/admin/websites/{{ website.id }}/ai-suggest" class="inline-form">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token }}" />
+  <button type="submit" class="btn-secondary">Generate configuration suggestion</button>
+</form>
+{% endif %}
+{% else %}
+<p class="audit-meta">
+  The AI configuration assistant is disabled. Deterministic inference is the only
+  configuration source. {{ ai_usage.notes | join("; ") }}
+</p>
+{% endif %}
+{% endif %}
 {% endif %}
 {% endif %}
 {% endblock %}

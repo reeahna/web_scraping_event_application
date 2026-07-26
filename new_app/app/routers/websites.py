@@ -38,6 +38,8 @@ from app.schemas.extraction_config_forms import (
     configuration_to_form,
 )
 from app.schemas.website import WebsiteCreate, WebsiteUpdate
+from app.services.ai.provider import usage_status as ai_usage_status
+from app.services.ai_configuration import request_ai_configuration
 from app.services.audit import record_audit
 from app.services.auto_onboarding_execution import effective_decision
 from app.services.auto_onboarding_reevaluation import reevaluate_website
@@ -649,6 +651,7 @@ def onboarding_result_view(
             "result": inference,
             "decision": decision,
             "decision_effective": effective_decision(decision) if decision else None,
+            "ai_usage": ai_usage_status(),
             "can_approve": user_has_permission(db, current_user, "sites.approve"),
             "can_update": user_has_permission(db, current_user, "sites.update"),
             "can_test": user_has_permission(db, current_user, "sites.test"),
@@ -676,6 +679,56 @@ def website_decision_history(
             "can_test": user_has_permission(db, current_user, "sites.test"),
         },
     )
+
+
+@router.post("/{website_id}/ai-suggest")
+async def ai_suggest_configuration_view(
+    website_id: int,
+    request: Request,
+    db: DbSession,
+    correlation_id: CorrelationId,
+    ip_address: ClientIp,
+    current_user: TestSites,
+    csrf_token: str = Form(...),
+):
+    """Requests an AI configuration suggestion. It is stored only as a draft;
+    approval and activation remain human/policy decisions, and the default
+    policy denies AI-origin approval outright."""
+    verify_csrf(request, csrf_token)
+    website = get_website(db, website_id)
+    if website is None:
+        raise NotFoundError("Website not found")
+
+    outcome = await request_ai_configuration(
+        db, website, actor_id=current_user.id, correlation_id=correlation_id
+    )
+    record_audit(
+        db,
+        actor_id=current_user.id,
+        action="ai_configuration_requested",
+        entity_type="website",
+        entity_id=website.id,
+        after={"status": outcome.status, "provider": outcome.provider},
+        correlation_id=correlation_id,
+        ip_address=ip_address,
+    )
+    response = RedirectResponse(url=f"/admin/websites/{website.id}/onboarding", status_code=303)
+    messages = {
+        "disabled": "The AI configuration assistant is disabled.",
+        "no_suggestion": "The AI provider returned no usable suggestion.",
+        "invalid": "The AI suggestion failed validation and was not applied.",
+        "drafted": (
+            f"AI suggestion saved as draft v{outcome.configuration_version} and previewed "
+            f"({outcome.events_valid} valid). Review it before approving."
+        ),
+        "error": f"AI suggestion could not be produced: {outcome.detail}",
+    }
+    set_flash(
+        response,
+        messages.get(outcome.status, outcome.status),
+        "success" if outcome.status == "drafted" else "error",
+    )
+    return response
 
 
 @router.post("/{website_id}/reevaluate")

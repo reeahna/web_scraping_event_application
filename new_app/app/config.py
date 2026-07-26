@@ -52,6 +52,29 @@ class Settings(BaseSettings):
     # would instead loop until the batch drains.
     onboarding_jobs_per_request: int = 10
 
+    # Optional AI configuration assistant (app.services.ai). Disabled by
+    # default: the application is fully functional with no provider, and
+    # recurring extraction never depends on it. `ai_provider` selects the
+    # adapter ("disabled" | "echo"); real network adapters would be added
+    # here but require an explicitly-configured key, which development and
+    # tests never supply. Budgets are hard ceilings enforced before any call.
+    ai_enabled: bool = False
+    ai_provider: str = "disabled"
+    ai_api_key: str | None = None
+    ai_model: str = "unset"
+    ai_timeout_seconds: float = 20.0
+    ai_max_retries: int = 1
+    ai_daily_request_limit: int = 200
+    ai_monthly_request_limit: int = 3000
+    # Circuit breaker: after this many consecutive failures the provider is
+    # treated as unhealthy until the cooldown elapses.
+    ai_failure_threshold: int = 5
+    ai_cooldown_seconds: int = 300
+    # Bound on how much evidence may be sent, so a large page can never be
+    # forwarded wholesale to a third party.
+    ai_max_sample_cards: int = 6
+    ai_max_evidence_chars: int = 20000
+
     model_config = SettingsConfigDict(
         env_file=str(BASE_DIR / ".env"),
         env_file_encoding="utf-8",

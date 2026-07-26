@@ -72,5 +72,40 @@ inactive; approval and activation are separate service calls and separate audits
 reevaluation, batch policy) pass; full suite **827 passed, 0 failed** (~19 min); Ruff clean;
 migration round-trip verified on scratch DB. `app.db` upgraded `b2f4a7c91d05` → `d7a1c4e83b60`.
 
-**Commit:** `feat: add policy-controlled automatic onboarding` (hash recorded with the next
-phase update).
+**Commit:** `10910b0` — feat: add policy-controlled automatic onboarding.
+
+---
+
+## Phase 8E — optional AI-assisted configuration fallback
+
+**Status:** complete.
+
+**Summary.** When deterministic inference cannot produce a reliable draft, an optional AI
+provider may *suggest* a configuration. AI is a configuration assistant, never the scraper:
+the suggestion is schema-validated and safety-checked, stored only as a draft with
+`configuration_origin = ai_suggested`, previewed deterministically, and gated by the same
+Phase 8D policy (which denies AI-origin approval by default). The whole app works with AI
+disabled — the default — and recurring extraction after approval never calls the provider.
+
+**Components:** `app/services/ai/` (`types`, `provider` with `DisabledAIProvider` +
+`EchoAIProvider` + process-local budget/circuit-breaker, `evidence`, `suggestion`);
+`app/services/ai_configuration.py` (orchestration reusing detection, preview, and the 8D
+decision/execution services); AI settings in `config.py` (disabled by default, no key needed);
+`POST /admin/websites/{id}/ai-suggest` + usage/suggest panel on the onboarding review page.
+
+**Safety.** No network adapter exists — only `disabled` and an in-process `echo` for
+tests/dev; an unknown provider name falls back to disabled. Evidence is bounded and sanitized
+(`<script>`/`<style>`/`<iframe>` and non-structural attributes stripped, href query strings
+removed, no headers/cookies/IPs/personal data/full document). The suggestion validator
+requires the restricted `SiteConfiguration` schema (`extra="forbid"` rejects
+instruction-shaped keys), a registered+allowed pattern, SSRF-safe URLs, no request headers or
+body, and bounded pagination/detail limits. Nothing from a suggestion is executed. A drafted
+suggestion persists no Event rows and is never approved or activated by this path.
+
+**No migration.**
+
+**Verification:** 16 targeted tests pass (validator rejections, disabled-by-default, echo
+end-to-end draft-not-approved, no event persistence, provider failure, budget limit); Ruff
+clean; full suite: see below.
+
+**Commit:** (recorded with the next phase update).
