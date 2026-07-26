@@ -10,17 +10,25 @@ from dataclasses import dataclass
 
 from app.extraction.detection import (
     RELIABILITY_ORDER,
+    AlgoliaSearchDetector,
     EmbeddedJsonDetector,
+    IcsCalendarDetector,
     JsonLdDetector,
     LiveWhaleDetector,
     NextDataDetector,
     NuxtPayloadDetector,
     PatternDetector,
+    RssAtomDetector,
     StaticHtmlDetector,
     TheEventsCalendarDetector,
     WordPressRestDetector,
 )
 from app.extraction.inference.base import PatternConfigurationProposer
+from app.extraction.inference.proposers.feeds import (
+    AlgoliaSearchProposer,
+    IcsCalendarProposer,
+    RssAtomProposer,
+)
 from app.extraction.inference.proposers.generic_html import GenericHtmlCardsProposer
 from app.extraction.inference.proposers.json_scripts import (
     EmbeddedJsonProposer,
@@ -33,9 +41,13 @@ from app.extraction.inference.proposers.structured import (
     the_events_calendar_proposer,
     wordpress_rest_proposer,
 )
+from app.extraction.patterns.algolia_search import PATTERN_VERSION as _ALGOLIA_VERSION
+from app.extraction.patterns.algolia_search import AlgoliaSearchPattern
 from app.extraction.patterns.base import ExtractionPattern
 from app.extraction.patterns.embedded_json import PATTERN_VERSION as _EMBEDDED_VERSION
 from app.extraction.patterns.embedded_json import EmbeddedJsonPattern
+from app.extraction.patterns.ics_calendar import PATTERN_VERSION as _ICS_VERSION
+from app.extraction.patterns.ics_calendar import IcsCalendarPattern
 from app.extraction.patterns.jsonld import PATTERN_VERSION as _JSONLD_VERSION
 from app.extraction.patterns.jsonld import JsonLdEventPattern
 from app.extraction.patterns.livewhale_json import PATTERN_VERSION as _LW_VERSION
@@ -44,6 +56,8 @@ from app.extraction.patterns.next_data import PATTERN_VERSION as _NEXT_VERSION
 from app.extraction.patterns.next_data import NextDataPattern
 from app.extraction.patterns.nuxt_payload import PATTERN_VERSION as _NUXT_VERSION
 from app.extraction.patterns.nuxt_payload import NuxtPayloadPattern
+from app.extraction.patterns.rss_atom_events import PATTERN_VERSION as _RSS_VERSION
+from app.extraction.patterns.rss_atom_events import RssAtomEventsPattern
 from app.extraction.patterns.static_html import PATTERN_VERSION as _HTML_VERSION
 from app.extraction.patterns.static_html import StaticHtmlCardsPattern
 from app.extraction.patterns.the_events_calendar import PATTERN_VERSION as _TEC_VERSION
@@ -190,6 +204,45 @@ def build_default_registry() -> PatternRegistry:
             browser_required=False,
             supported_pagination=("none", "query_param"),
             proposer=EmbeddedJsonProposer(),
+        )
+    )
+    registry.register(
+        PatternRegistration(
+            name="ics_calendar",
+            detector=IcsCalendarDetector(),
+            extractor=IcsCalendarPattern(),
+            config_schema=SiteConfiguration,
+            priority=RELIABILITY_ORDER.index("ics_calendar"),
+            version=_ICS_VERSION,
+            browser_required=False,
+            supported_pagination=("none",),
+            proposer=IcsCalendarProposer(),
+        )
+    )
+    registry.register(
+        PatternRegistration(
+            name="rss_atom_events",
+            detector=RssAtomDetector(),
+            extractor=RssAtomEventsPattern(),
+            config_schema=SiteConfiguration,
+            priority=RELIABILITY_ORDER.index("rss_atom_events"),
+            version=_RSS_VERSION,
+            browser_required=False,
+            supported_pagination=("none", "query_param"),
+            proposer=RssAtomProposer(),
+        )
+    )
+    registry.register(
+        PatternRegistration(
+            name="algolia_search",
+            detector=AlgoliaSearchDetector(),
+            extractor=AlgoliaSearchPattern(),
+            config_schema=SiteConfiguration,
+            priority=RELIABILITY_ORDER.index("algolia_search"),
+            version=_ALGOLIA_VERSION,
+            browser_required=False,
+            supported_pagination=("none", "query_param"),
+            proposer=AlgoliaSearchProposer(),
         )
     )
     registry.register(

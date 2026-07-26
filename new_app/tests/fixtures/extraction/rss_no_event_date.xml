@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<rss version="2.0">
+  <channel>
+    <title>Blog</title>
+    <item><title>A post</title><link>https://blog.example.org/a</link><guid>b1</guid>
+      <pubDate>Mon, 01 Sep 2025 12:00:00 GMT</pubDate><description>Text</description></item>
+    <item><title>Another post</title><link>https://blog.example.org/b</link><guid>b2</guid>
+      <pubDate>Tue, 02 Sep 2025 12:00:00 GMT</pubDate><description>More</description></item>
+  </channel>
+</rss>

@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<feed xmlns="http://www.w3.org/2005/Atom">
+  <title>Venue Events</title>
+  <entry>
+    <title>Gallery Talk</title>
+    <link rel="alternate" href="https://venue.example.org/events/gallery-talk"/>
+    <id>atom-201</id>
+    <published>2025-09-01T12:00:00Z</published>
+    <start>2026-10-20</start>
+    <summary>A curator-led tour.</summary>
+  </entry>
+  <entry>
+    <title>Film Night</title>
+    <link rel="alternate" href="https://venue.example.org/events/film-night"/>
+    <id>atom-202</id>
+    <start>2026-11-02</start>
+    <summary>A restored classic.</summary>
+  </entry>
+</feed>

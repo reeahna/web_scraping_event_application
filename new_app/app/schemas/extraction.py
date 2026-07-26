@@ -53,6 +53,13 @@ class FetchConfig(BaseModel):
 
     method: Literal["GET", "POST"] = "GET"
     headers: dict[str, str] = {}
+    # Header name -> secret *reference* (e.g. "env:ALGOLIA_SEARCH_KEY"), never a
+    # raw secret. The value is resolved from the environment at request time
+    # (app.services.secrets) and added to the outbound headers; it is never
+    # stored here, logged, or written to any audit/provenance record. This is
+    # how a pattern that needs an API key (Algolia) authenticates without a
+    # credential ever living in the configuration.
+    secret_header_refs: dict[str, str] = {}
     query_params: dict[str, str] = {}
     json_body: dict[str, Any] | None = None
     timeout_seconds: float = 15.0
@@ -76,6 +83,24 @@ class FetchConfig(BaseModel):
             if key.strip().lower() in FORBIDDEN_HEADERS:
                 raise ValueError(f"Header '{key}' cannot be set via site configuration")
             _reject_env_var_reference(value, field_label=f"Header '{key}'")
+        return v
+
+    @field_validator("secret_header_refs")
+    @classmethod
+    def _validate_secret_header_refs(cls, v: dict[str, str]) -> dict[str, str]:
+        # Import here to avoid a schema->service import cycle.
+        from app.services.secrets import is_secret_ref
+
+        for key, ref in v.items():
+            if key.strip().lower() in FORBIDDEN_HEADERS:
+                raise ValueError(f"Header '{key}' cannot be set via site configuration")
+            if not is_secret_ref(ref):
+                # A raw secret here would be exactly the leak this field
+                # exists to prevent.
+                raise ValueError(
+                    f"secret_header_refs['{key}'] must be a reference like 'env:NAME', "
+                    "never a literal value"
+                )
         return v
 
     @field_validator("query_params")

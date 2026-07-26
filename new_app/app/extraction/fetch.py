@@ -47,6 +47,21 @@ def _merge_headers(configured: dict[str, str]) -> dict[str, str]:
     return merged
 
 
+def _resolve_secret_headers(config: FetchConfig) -> dict[str, str]:
+    """Resolves `secret_header_refs` (header -> env reference) into real
+    header values at request time. A reference whose variable is unset is
+    skipped rather than sent empty. The resolved values are used only here and
+    are never returned, logged, or stored."""
+    from app.services.secrets import resolve_secret_ref
+
+    resolved: dict[str, str] = {}
+    for header_name, ref in (config.secret_header_refs or {}).items():
+        value = resolve_secret_ref(ref)
+        if value:
+            resolved[header_name] = value
+    return resolved
+
+
 def _blocked_marker(status_code: int, body_sample: bytes) -> str | None:
     if status_code in (403, 429):
         return f"http_{status_code}"
@@ -103,6 +118,7 @@ class HttpFetchStrategy:
         redirect_history: list[str] = []
         current_url = request.url
         headers = _merge_headers(request.headers)
+        headers.update(_resolve_secret_headers(config))
         timeout = httpx.Timeout(
             connect=config.connect_timeout_seconds,
             read=config.read_timeout_seconds,

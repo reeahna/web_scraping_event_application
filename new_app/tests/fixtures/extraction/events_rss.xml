@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<rss version="2.0" xmlns:ev="http://purl.org/rss/1.0/modules/event/">
+  <channel>
+    <title>Venue Events</title>
+    <link>https://venue.example.org/events</link>
+    <item>
+      <title>Autumn Quartet</title>
+      <link>https://venue.example.org/events/autumn-quartet</link>
+      <guid>evt-101</guid>
+      <pubDate>Mon, 01 Sep 2025 12:00:00 GMT</pubDate>
+      <startdate>2026-10-06</startdate>
+      <description>An evening of chamber music.</description>
+      <category>Music</category>
+    </item>
+    <item>
+      <title>Winter Chorus</title>
+      <link>https://venue.example.org/events/winter-chorus</link>
+      <guid>evt-102</guid>
+      <pubDate>Tue, 02 Sep 2025 12:00:00 GMT</pubDate>
+      <startdate>2026-11-13</startdate>
+      <description>A holiday programme.</description>
+      <category>Music</category>
+    </item>
+    <item>
+      <title>Spring Recital</title>
+      <link>https://venue.example.org/events/spring-recital</link>
+      <guid>evt-103</guid>
+      <startdate>2027-03-07</startdate>
+      <description>Student soloists.</description>
+    </item>
+  </channel>
+</rss>

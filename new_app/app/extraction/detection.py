@@ -9,12 +9,19 @@ from __future__ import annotations
 
 import json
 import re
+import warnings as _warnings
 from typing import Protocol
 from urllib.parse import urljoin
 
-from bs4 import BeautifulSoup
+from bs4 import BeautifulSoup, XMLParsedAsHTMLWarning
 
 from app.extraction.types import FetchResponse, PatternDetectionResult
+
+# Every detector probes every response, so the HTML detectors necessarily run
+# BeautifulSoup's HTML parser over XML feeds (RSS/Atom/ICS). That is expected
+# and harmless — the feed patterns have their own XML/ICS parsers — so silence
+# the "you parsed XML as HTML" advisory rather than let it flood the logs.
+_warnings.filterwarnings("ignore", category=XMLParsedAsHTMLWarning)
 
 DETECTOR_VERSION = "1"
 MIN_PATTERN_CONFIDENCE = 0.6
@@ -34,6 +41,11 @@ RELIABILITY_ORDER: tuple[str, ...] = (
     "next_data",
     "nuxt_payload",
     "embedded_json",
+    # Feed/API patterns keyed on a distinctive response shape, so they rarely
+    # contend with the HTML detectors; all sit above generic_html_cards.
+    "ics_calendar",
+    "rss_atom_events",
+    "algolia_search",
     "generic_html_cards",
 )
 
@@ -571,15 +583,113 @@ class NuxtPayloadDetector:
     def detect(self, response: FetchResponse) -> PatternDetectionResult:
         if _access_denied_detected(response):
             return _blocked_result("access denied or challenge page detected")
-        from app.extraction.patterns.nuxt_payload import parse_nuxt_payload
+        from app.extraction.patterns.nuxt_payload import parse_nuxt_data_script
 
-        document = parse_nuxt_payload(response.text)
+        # Detection requires a Nuxt-specific signal (the __NUXT_DATA__ script);
+        # a bare JSON body has no such marker and must not be claimed here.
+        document = parse_nuxt_data_script(response.text)
         # A Nuxt page whose state is only a JS assignment (no parseable
         # payload) is browser_required, deferred to Phase 9 — never eval'd.
         browser_required = document is None and (
             "window.__NUXT__" in response.text or 'id="__nuxt"' in response.text
         )
         return _json_events_result("nuxt_payload", document, browser_required=browser_required)
+
+
+class IcsCalendarDetector:
+    def detect(self, response: FetchResponse) -> PatternDetectionResult:
+        if _access_denied_detected(response):
+            return _blocked_result("access denied or challenge page detected")
+        text = response.text
+        content_type = (response.content_type or "").lower()
+        looks_ics = "begin:vcalendar" in text[:2000].lower() or "text/calendar" in content_type
+        vevents = text.lower().count("begin:vevent")
+        if not looks_ics or vevents == 0:
+            return PatternDetectionResult(
+                pattern_name=None, confidence=0.0, evidence={"vevent_count": vevents},
+                discovered_endpoints=(), browser_required=False, warnings=(),
+                detector_version=DETECTOR_VERSION, needs_review=True,
+            )
+        return PatternDetectionResult(
+            pattern_name="ics_calendar",
+            confidence=0.9,
+            evidence={"vevent_count": vevents},
+            discovered_endpoints=(),
+            browser_required=False,
+            warnings=(),
+            detector_version=DETECTOR_VERSION,
+            needs_review=False,
+        )
+
+
+class RssAtomDetector:
+    def detect(self, response: FetchResponse) -> PatternDetectionResult:
+        if _access_denied_detected(response):
+            return _blocked_result("access denied or challenge page detected")
+        head = response.text[:4000].lower()
+        is_rss = "<rss" in head or "<rdf:rdf" in head
+        is_atom = "<feed" in head and "atom" in head
+        if not (is_rss or is_atom):
+            return PatternDetectionResult(
+                pattern_name=None, confidence=0.0, evidence={},
+                discovered_endpoints=(), browser_required=False, warnings=(),
+                detector_version=DETECTOR_VERSION, needs_review=True,
+            )
+        item_count = response.text.lower().count("<item") + response.text.lower().count("<entry")
+        if item_count == 0:
+            return PatternDetectionResult(
+                pattern_name=None, confidence=0.0, evidence={"item_count": 0},
+                discovered_endpoints=(), browser_required=False, warnings=(),
+                detector_version=DETECTOR_VERSION, needs_review=True,
+            )
+        # A feed is detectable, but a generic feed may carry no event date;
+        # that is resolved (often as needs_review) by the proposer/preview, not
+        # asserted here. Confidence is moderate to reflect that.
+        return PatternDetectionResult(
+            pattern_name="rss_atom_events",
+            confidence=0.72,
+            evidence={"feed_kind": "atom" if is_atom else "rss", "item_count": item_count},
+            discovered_endpoints=(),
+            browser_required=False,
+            warnings=(),
+            detector_version=DETECTOR_VERSION,
+            needs_review=False,
+        )
+
+
+class AlgoliaSearchDetector:
+    """Matches an Algolia *query response* — the direct case where the
+    configured endpoint returns `{"hits": [...], "nbHits": ...}`. A raw HTML
+    page merely using Algolia is not actionable without a key, so it is not
+    claimed here."""
+
+    def detect(self, response: FetchResponse) -> PatternDetectionResult:
+        if _access_denied_detected(response):
+            return _blocked_result("access denied or challenge page detected")
+        try:
+            payload = json.loads(response.text)
+        except (json.JSONDecodeError, ValueError):
+            payload = None
+        if (
+            isinstance(payload, dict)
+            and isinstance(payload.get("hits"), list)
+            and ("nbHits" in payload or "nbPages" in payload)
+        ):
+            return PatternDetectionResult(
+                pattern_name="algolia_search",
+                confidence=0.85,
+                evidence={"hit_count": len(payload["hits"]), "nb_pages": payload.get("nbPages")},
+                discovered_endpoints=(),
+                browser_required=False,
+                warnings=(),
+                detector_version=DETECTOR_VERSION,
+                needs_review=False,
+            )
+        return PatternDetectionResult(
+            pattern_name=None, confidence=0.0, evidence={},
+            discovered_endpoints=(), browser_required=False, warnings=(),
+            detector_version=DETECTOR_VERSION, needs_review=True,
+        )
 
 
 def run_detection(
@@ -593,6 +703,9 @@ def run_detection(
         "next_data": NextDataDetector(),
         "nuxt_payload": NuxtPayloadDetector(),
         "embedded_json": EmbeddedJsonDetector(),
+        "ics_calendar": IcsCalendarDetector(),
+        "rss_atom_events": RssAtomDetector(),
+        "algolia_search": AlgoliaSearchDetector(),
         "generic_html_cards": StaticHtmlDetector(),
     }
     results = {name: detector.detect(response) for name, detector in detectors.items()}

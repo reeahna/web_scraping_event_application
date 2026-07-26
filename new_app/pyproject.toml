@@ -16,6 +16,11 @@ dependencies = [
     "tzdata>=2024.1",
     "httpx>=0.27.0",
     "beautifulsoup4>=4.12.3",
+    # Maintained parsers for the ICS and RSS/Atom extraction patterns
+    # (Phase 8F). defusedxml parses all feed XML so entity-expansion and
+    # external-entity attacks are refused rather than processed.
+    "icalendar>=6.0",
+    "defusedxml>=0.7",
 ]
 
 [project.optional-dependencies]
@@ -36,6 +41,11 @@ select = ["E", "F", "I", "UP", "B", "SIM"]
 pythonpath = ["."]
 testpaths = ["tests"]
 asyncio_mode = "auto"
+filterwarnings = [
+    # Detectors probe every response, so HTML detectors parse XML feeds; the
+    # feed patterns have their own XML/ICS parsers, so this advisory is noise.
+    "ignore::bs4.XMLParsedAsHTMLWarning",
+]
 
 [tool.setuptools.packages.find]
 include = ["app*"]

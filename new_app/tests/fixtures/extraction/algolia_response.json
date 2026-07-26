@@ -1,0 +1,11 @@
+{
+  "hits": [
+    {"objectID": "a1", "title": "Jazz Evening", "url": "https://venue.example.org/e/jazz",
+     "start": "2026-10-06T20:00:00", "venue": "Club Room", "category": "Music"},
+    {"objectID": "a2", "title": "Poetry Slam", "url": "https://venue.example.org/e/poetry",
+     "start": "2026-10-13T19:00:00", "venue": "Cafe", "category": "Spoken Word"},
+    {"objectID": "a3", "title": "Craft Fair", "url": "https://venue.example.org/e/craft",
+     "start": "2026-10-20T10:00:00", "venue": "Hall", "category": "Community"}
+  ],
+  "nbHits": 3, "page": 0, "nbPages": 1, "hitsPerPage": 20
+}

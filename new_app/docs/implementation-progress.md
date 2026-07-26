@@ -149,11 +149,41 @@ browser-required, extraction, no-guess-without-root, proposer discovery, no
 hostname branching) + affected suites (registry, detection, onboarding review,
 inference, qualification) pass; Ruff clean; full suite: see below.
 
-**Commit:** (recorded with the next update).
+**Commit:** `602e641` — feat: add JSON-in-script extraction patterns.
 
 ### Part 2 — parser/API adapters: `ics_calendar`, `rss_atom_events`, `algolia_search`
 
-**Status:** not started. `icalendar` and `defusedxml` are installed in the venv
-(for maintained ICS parsing and entity-attack-safe feed XML); their pyproject
-declaration will land with part 2, which uses them. Algolia requires the
-search-only-key secret-reference abstraction.
+**Status:** complete. Registry now holds **11 patterns**.
+
+**Summary.** `ics_calendar` parses a VCALENDAR with the maintained `icalendar`
+library — folded lines, all-day (`VALUE=DATE`) events, TZID, cancelled events
+(flagged, never dropped), and recurrence rules preserved verbatim for the
+Phase 8G expander; UID is the identity, so events without a public URL still
+validate and dedup (canonical_url is not required). `rss_atom_events` parses
+RSS/Atom with `defusedxml` (entity-expansion/external-entity attacks refused),
+handles both `<item>` and `<entry>` by local name, and — deliberately — never
+uses the publication date as the event date: the start comes only from a
+configured element, so a generic news feed lands in review. `algolia_search`
+maps a query response's `hits`; querying authenticates via a **secret
+reference** (`fetch.secret_header_refs`, `env:NAME`) resolved at request time
+and never stored, logged, or audited — a raw key in that field is rejected by
+the schema. Its proposer refuses to propose an approvable config without a key
+reference (per "if safe key handling cannot be proven, leave needs_review").
+
+**Shared-core change:** `FetchConfig.secret_header_refs` + resolution in
+`HttpFetchStrategy` (`app/services/secrets.py`), so a credential can reach an
+outbound header without ever living in a `SiteConfiguration`.
+
+**Dependencies added:** `icalendar>=6.0`, `defusedxml>=0.7` (declared in
+pyproject; installed in the venv).
+
+**No migration.**
+
+**Verification:** 22 targeted feed/Algolia tests (incl. secret-ref resolution
+via mocked transport, raw-key rejection, publication-date-never-used) +
+affected registry/detection/SSRF suites pass; Ruff clean; full suite: see
+below. A greedy-JSON detection bug (nuxt claiming any JSON body, incl. an
+Algolia response) was found and fixed — nuxt detection now requires the
+`__NUXT_DATA__` marker.
+
+**Commit:** (recorded with the next update).

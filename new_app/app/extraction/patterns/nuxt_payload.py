@@ -46,6 +46,24 @@ _RAW_FIELDS = tuple(_DEFAULT_PATHS.keys())
 _EVENTS_ROOT_KEY = "events_root"
 
 
+def parse_nuxt_data_script(html: str) -> Any | None:
+    """The `__NUXT_DATA__` script's JSON, or None. Used by *detection*: unlike
+    `parse_nuxt_payload`, it never accepts a bare JSON body, because a raw JSON
+    document carries no Nuxt signal and would otherwise let this pattern claim
+    any JSON response (an Algolia result, say)."""
+    soup = BeautifulSoup(html, "html.parser")
+    script = soup.find("script", attrs={"id": "__NUXT_DATA__"})
+    if script is None:
+        return None
+    body = script.string or script.get_text()
+    if not body or not body.strip():
+        return None
+    try:
+        return json.loads(body)
+    except (json.JSONDecodeError, ValueError):
+        return None
+
+
 def parse_nuxt_payload(text: str) -> Any | None:
     """A strict-JSON Nuxt payload from a direct body or an application/json
     script. Returns None when the only state is a JS assignment — which the
