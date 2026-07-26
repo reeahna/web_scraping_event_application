@@ -75,6 +75,25 @@ class Settings(BaseSettings):
     ai_max_sample_cards: int = 6
     ai_max_evidence_chars: int = 20000
 
+    # Asynchronous geocoding (app.services.geocoding). Disabled by default: the
+    # application is fully functional without it and no live third-party
+    # request is ever made unless an administrator turns it on. `geocoding_provider`
+    # selects the adapter ("disabled" | "nominatim"). Nominatim needs no API
+    # key but requires a descriptive user agent and strict rate limiting per its
+    # usage policy — both enforced here rather than trusted to the caller.
+    geocoding_enabled: bool = False
+    geocoding_provider: str = "disabled"
+    geocoding_user_agent: str = "city-events-app/1.0 (contact: admin@example.com)"
+    geocoding_timeout_seconds: float = 10.0
+    geocoding_max_retries: int = 2
+    # Minimum seconds between outbound requests to the provider (Nominatim's
+    # public policy is at most one request per second).
+    geocoding_min_interval_seconds: float = 1.0
+    geocoding_failure_threshold: int = 5
+    geocoding_cooldown_seconds: int = 300
+    # How many events one background drain processes per tick.
+    geocoding_batch_size: int = 10
+
     model_config = SettingsConfigDict(
         env_file=str(BASE_DIR / ".env"),
         env_file_encoding="utf-8",

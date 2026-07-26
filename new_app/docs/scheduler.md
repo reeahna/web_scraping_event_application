@@ -63,6 +63,13 @@ This is a safety net, not a substitute for running a single instance.
   eligibility and the periodic reconcile). Events and history are preserved.
 - **Phase 8C onboarding** is drained from this same process (a third tick), so
   bulk onboarding is worker-compatible and does not run per web worker.
+- **Async geocoding (Phase 11)** is drained from this process too (a fourth
+  tick), and only when `geocoding_enabled` is set — the default makes no live
+  geocoding request. Results go to the event's `geocoded_*` columns (never the
+  immutable source coordinates or an administrator's correction), are cached by
+  normalized-address hash, and Nominatim is rate-limited (>= 1s between calls)
+  with a descriptive User-Agent per its usage policy. Admin controls live under
+  `/admin/geocoding` (status, and a per-event retry that only requeues).
 
 ## Admin controls
 

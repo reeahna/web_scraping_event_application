@@ -368,6 +368,53 @@ model documented in `docs/scheduler.md`.
 **Verification:** 5 schedule-config, 10 service, 7 runner, 6 admin-endpoint
 tests (33 new, minus one duplicate helper); migration round-trips on a scratch
 DB and parity holds; website transition/approval suites unaffected. Ruff clean;
-full suite: see below.
+full suite: 985 passed.
+
+**Commit:** `781677a`.
+
+## Phase 11 — asynchronous geocoding
+
+**Status:** complete.
+
+A provider interface plus a Nominatim adapter, drained in the background from
+the dedicated scheduler process. **Disabled by default** (Phase 8E pattern): no
+live third-party request is ever made unless an administrator turns it on, and
+tests inject a static provider.
+
+**Providers (`app/services/geocoding/provider.py`).** `DisabledGeocoder` (the
+default, reports unhealthy), `StaticGeocoder` (deterministic test double), and
+`NominatimGeocoder` — descriptive User-Agent, >=1s minimum interval per
+Nominatim policy, bounded timeout, retries, and a circuit breaker that trips
+after repeated failures. A hit returns a `GeocodeResult`, a confident no-match
+returns `None`, and a provider failure raises `ProviderUnavailable` — three
+outcomes the service maps to completed / needs_review / failed.
+
+**Service (`app/services/geocoding/service.py`).** Skip rules that never run:
+events with source coordinates, events with a protected administrator
+correction, and events with no usable address/venue (geo-filter-rejected events
+are never persisted, so never reach here). Results are cached by
+normalized-address hash (`geocode_cache`, positive and negative), written only
+to the event's derived `geocoded_*` columns, and status advances through
+pending -> completed / needs_review / failed / skipped. `retry_event_geocoding`
+requeues (but refuses a still-protected skip); `drain_geocoding_queue` processes
+a bounded batch and stops early if the provider goes unhealthy.
+
+**Model (migration `a1c8e6f4920d`).** `events` gains `geocoded_latitude/longitude`,
+`geocode_status`, `geocode_attempts`, `geocode_last_error`, `geocoded_at`; a new
+`geocode_cache` table. `public_latitude/longitude` now prefer correction ->
+source -> geocoded, so a geocoded coordinate shows only when there is nothing
+better and never shadows a correction.
+
+**Background + admin.** A geocoding drain tick runs in the scheduler process
+(only when enabled). `/admin/geocoding` exposes a status breakdown and a
+CSRF-protected, permission-gated per-event retry.
+
+**Config:** geocoding settings in `config.py` (disabled, no key needed). No new
+dependency (uses the existing `httpx`).
+
+**Verification:** 7 provider/helper, 9 service, 4 admin-endpoint tests (20 new);
+migration round-trips on a scratch DB and parity holds; public-events suite
+unaffected by the coordinate-preference change. Ruff clean; full suite: see
+below.
 
 **Commit:** (recorded with the next update).

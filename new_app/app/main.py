@@ -23,6 +23,7 @@ from app.routers import (
     cities,
     event_categories,
     events,
+    geocoding,
     health,
     home,
     notifications,
@@ -80,3 +81,4 @@ app.include_router(notifications.router)
 app.include_router(auto_onboarding_policies.router)
 app.include_router(auto_onboarding_policies.decisions_router)
 app.include_router(scheduler.router)
+app.include_router(geocoding.router)

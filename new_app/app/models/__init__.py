@@ -13,6 +13,7 @@ from app.models.event_category import EventCategory
 from app.models.event_provenance import EventProvenance
 from app.models.extraction_error import ExtractionError
 from app.models.extraction_run import ExtractionRun
+from app.models.geocode_cache import GeocodeCache
 from app.models.notification import Notification
 from app.models.onboarding_batch import OnboardingBatch
 from app.models.onboarding_job import OnboardingJob
@@ -39,6 +40,7 @@ __all__ = [
     "EventCategory",
     "EventProvenance",
     "ExtractionError",
+    "GeocodeCache",
     "ExtractionRun",
     "Notification",
     "OnboardingBatch",

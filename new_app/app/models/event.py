@@ -1,7 +1,7 @@
 from datetime import date, datetime, time
 from typing import TYPE_CHECKING
 
-from sqlalchemy import Boolean, Date, DateTime, Float, ForeignKey, String, Text, Time
+from sqlalchemy import Boolean, Date, DateTime, Float, ForeignKey, Integer, String, Text, Time
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.database import Base
@@ -56,6 +56,17 @@ class Event(Base, TimestampMixin):
 
     latitude: Mapped[float | None] = mapped_column(Float, default=None)
     longitude: Mapped[float | None] = mapped_column(Float, default=None)
+
+    # Geocoding (Phase 11). Derived coordinates, kept separate from the
+    # immutable source coordinates (latitude/longitude) and the administrator
+    # correction (corrected_latitude/longitude). Status drives the async queue:
+    # pending | completed | failed | skipped | needs_review.
+    geocoded_latitude: Mapped[float | None] = mapped_column(Float, default=None)
+    geocoded_longitude: Mapped[float | None] = mapped_column(Float, default=None)
+    geocode_status: Mapped[str] = mapped_column(String(32), default="pending", index=True)
+    geocode_attempts: Mapped[int] = mapped_column(Integer, default=0)
+    geocode_last_error: Mapped[str | None] = mapped_column(String(500), default=None)
+    geocoded_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), default=None)
 
     scraped_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), default=None)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
@@ -129,8 +140,17 @@ class Event(Base, TimestampMixin):
 
     @property
     def public_latitude(self) -> float | None:
-        return self.corrected_latitude if self.corrected_latitude is not None else self.latitude
+        # Preference: administrator correction > immutable source > geocoded.
+        if self.corrected_latitude is not None:
+            return self.corrected_latitude
+        if self.latitude is not None:
+            return self.latitude
+        return self.geocoded_latitude
 
     @property
     def public_longitude(self) -> float | None:
-        return self.corrected_longitude if self.corrected_longitude is not None else self.longitude
+        if self.corrected_longitude is not None:
+            return self.corrected_longitude
+        if self.longitude is not None:
+            return self.longitude
+        return self.geocoded_longitude

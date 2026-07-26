@@ -66,6 +66,7 @@ class SchedulerRuntime:
         # city deactivated through the web app) are picked up without a restart.
         self._heartbeats_between_reconciles = 10
         self._heartbeat_count = 0
+        self._geocoder = None  # built in start() when geocoding is enabled
 
     def start(self) -> None:
         db = self._session_factory()
@@ -100,6 +101,18 @@ class SchedulerRuntime:
             self._onboarding_tick, "interval", seconds=self._dispatch_interval,
             id="onboarding", max_instances=1, coalesce=True,
         )
+        # Async geocoding (Phase 11) drains from this process too, and only when
+        # a provider is actually enabled — the default makes no live call.
+        from app.config import get_settings
+        from app.services.geocoding import get_geocoder
+
+        settings = get_settings()
+        if settings.geocoding_enabled:
+            self._geocoder = get_geocoder(settings)
+            self._scheduler.add_job(
+                self._geocoding_tick, "interval", seconds=self._dispatch_interval,
+                id="geocoding", max_instances=1, coalesce=True,
+            )
         self._scheduler.start()
 
     async def _heartbeat_tick(self) -> None:
@@ -158,6 +171,24 @@ class SchedulerRuntime:
                 logger.info("drained %d onboarding job(s)", processed)
         except Exception as exc:  # noqa: BLE001
             logger.warning("onboarding drain failed: %s", exc)
+        finally:
+            db.close()
+
+    async def _geocoding_tick(self) -> None:
+        if not self._is_leader or self._geocoder is None:
+            return
+        from app.config import get_settings
+        from app.services.geocoding import drain_geocoding_queue
+
+        db = self._session_factory()
+        try:
+            processed = await drain_geocoding_queue(
+                db, self._geocoder, limit=get_settings().geocoding_batch_size
+            )
+            if processed:
+                logger.info("geocoded %d event(s)", processed)
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("geocoding drain failed: %s", exc)
         finally:
             db.close()
 
