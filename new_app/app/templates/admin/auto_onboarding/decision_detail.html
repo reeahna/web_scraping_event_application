@@ -1,0 +1,112 @@
+{% extends "admin_base.html" %}
+
+{% block title %}Decision #{{ decision.id }}{% endblock %}
+
+{% block admin_content %}
+<h1>Automatic-onboarding decision #{{ decision.id }}</h1>
+<p class="audit-meta">
+  <a href="/admin/websites/{{ decision.website_id }}">&laquo; Website #{{ decision.website_id }}</a>
+  {% if decision.onboarding_job_id %}
+  · <a href="/admin/onboarding/jobs/{{ decision.onboarding_job_id }}">Onboarding job #{{ decision.onboarding_job_id }}</a>
+  {% endif %}
+</p>
+
+<table>
+  <tbody>
+    <tr><th>Evaluated</th><td>{{ decision.created_at }}</td></tr>
+    <tr><th>Kind</th><td>{{ decision.decision_kind }}</td></tr>
+    <tr><th>Policy</th>
+      <td>{% if decision.policy %}
+        <a href="/admin/settings/onboarding-policies/{{ decision.policy_id }}">{{ decision.policy.name }}</a>
+        (v{{ decision.policy_version }}){% else %}none applied{% endif %}</td></tr>
+    <tr><th>Evaluation result</th><td><strong>{{ decision.final_decision.replace("_", " ") }}</strong></td></tr>
+    <tr><th>Outcome including actions</th><td><strong>{{ effective.replace("_", " ") }}</strong></td></tr>
+    <tr><th>Approval eligibility</th><td>{{ "Eligible" if decision.eligible_for_automatic_approval else "Not eligible" }}</td></tr>
+    <tr><th>Activation eligibility</th>
+      <td>{{ "Eligible (subject to re-check after approval)" if decision.eligible_for_automatic_activation else "Not eligible" }}</td></tr>
+    <tr><th>Detected pattern</th>
+      <td>{{ decision.detected_pattern or "—" }}
+        {% if decision.detector_confidence %}(confidence {{ "%.2f"|format(decision.detector_confidence) }}){% endif %}</td></tr>
+    <tr><th>Configuration origin</th><td>{{ decision.configuration_origin or "unknown" }}</td></tr>
+    <tr><th>Configuration version</th><td>{{ decision.configuration_version or "—" }}</td></tr>
+    <tr><th>Preview run</th>
+      <td>{% if decision.preview_run_id %}
+        <a href="/admin/websites/{{ decision.website_id }}/runs/{{ decision.preview_run_id }}">Run #{{ decision.preview_run_id }}</a>
+        ({{ decision.preview_status }}){% else %}—{% endif %}</td></tr>
+    <tr><th>Submitted by</th>
+      <td>{% if decision.submitted_by %}{{ decision.submitted_by.email }}{% else %}—{% endif %}
+        <span class="audit-meta">(recorded for audit; the submitter did not approve anything)</span></td></tr>
+    <tr><th>Acted as</th><td>{{ decision.system_actor_type }}</td></tr>
+    {% if decision.reevaluates_decision_id %}
+    <tr><th>Re-evaluates</th>
+      <td><a href="/admin/onboarding/decisions/{{ decision.reevaluates_decision_id }}">decision #{{ decision.reevaluates_decision_id }}</a>
+        — that decision is preserved unchanged</td></tr>
+    {% endif %}
+  </tbody>
+</table>
+
+<h2>Rules that passed</h2>
+{% if decision.reasons_passed %}
+<ul>{% for reason in decision.reasons_passed %}<li>{{ reason }}</li>{% endfor %}</ul>
+{% else %}
+<p class="audit-meta">None recorded.</p>
+{% endif %}
+
+<h2>Rules that failed</h2>
+{% if decision.reasons_failed %}
+<ul>{% for reason in decision.reasons_failed %}<li>{{ reason }}</li>{% endfor %}</ul>
+<p class="audit-meta">
+  Manual approval remains available: if the ordinary approval requirements pass, a user with
+  the approve permission can still approve this source, and that will be recorded as a human
+  action.
+</p>
+{% else %}
+<p class="audit-meta">Every evaluated rule passed.</p>
+{% endif %}
+
+<h2>Metrics evaluated</h2>
+{% if decision.metrics_snapshot %}
+<table>
+  <thead><tr><th>Metric</th><th>Observed</th><th>Threshold</th></tr></thead>
+  <tbody>
+    {% for key, value in decision.metrics_snapshot.items() %}
+    <tr>
+      <td>{{ key.replace("_", " ") }}</td>
+      <td>{{ value }}</td>
+      <td>
+        {%- set minimum = decision.thresholds_snapshot.get("minimum_" ~ key) -%}
+        {%- set maximum = decision.thresholds_snapshot.get("maximum_" ~ key) -%}
+        {% if minimum is not none %}at least {{ minimum }}
+        {% elif maximum is not none %}at most {{ maximum }}
+        {% else %}—{% endif %}
+      </td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% else %}
+<p class="audit-meta">No metrics were evaluated.</p>
+{% endif %}
+
+<h2>Actions taken</h2>
+{% if results %}
+<table>
+  <thead><tr><th>Action</th><th>Attempted</th><th>Result</th><th>Config version</th><th>Actor</th><th>When</th><th>Error</th></tr></thead>
+  <tbody>
+    {% for result in results %}
+    <tr>
+      <td>{{ result.action_type }}</td>
+      <td>{{ "Yes" if result.attempted else "No" }}</td>
+      <td>{{ "Succeeded" if result.succeeded else "Did not succeed" }}</td>
+      <td>{{ result.configuration_version or "—" }}</td>
+      <td>{{ result.actor_type }}{% if result.actor_label %} ({{ result.actor_label }}){% endif %}</td>
+      <td>{{ result.created_at }}</td>
+      <td>{{ result.error or "—" }}</td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% else %}
+<p class="audit-meta">No action was attempted for this decision.</p>
+{% endif %}
+{% endblock %}

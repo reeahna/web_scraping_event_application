@@ -1,0 +1,55 @@
+{% extends "admin_base.html" %}
+
+{% block title %}Decision history — {{ website.name }}{% endblock %}
+
+{% block admin_content %}
+<h1>Automatic-onboarding decisions — {{ website.name }}</h1>
+<p class="audit-meta">
+  <a href="/admin/websites/{{ website.id }}">&laquo; Back to {{ website.name }}</a>
+  · <a href="/admin/websites/{{ website.id }}/onboarding">Onboarding review</a>
+</p>
+<p class="audit-meta">
+  Decisions are append-only. Re-evaluating adds a new entry and leaves every earlier one exactly
+  as it was recorded, under the policy version in force at the time.
+</p>
+
+{% if can_test %}
+<form method="post" action="/admin/websites/{{ website.id }}/reevaluate" class="inline-form">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token }}" />
+  <button type="submit">Re-evaluate under the current policy</button>
+</form>
+<p class="audit-meta">
+  Re-evaluation reuses the existing preview only when it matches the current draft version;
+  otherwise a fresh preview runs first. It never deactivates a live website.
+</p>
+{% endif %}
+
+{% if decisions %}
+<table>
+  <thead>
+    <tr><th>When</th><th>Kind</th><th>Policy</th><th>Evaluation</th><th>Outcome</th>
+      <th>Config version</th><th>Re-evaluates</th><th></th></tr>
+  </thead>
+  <tbody>
+    {% for decision in decisions %}
+    <tr>
+      <td>{{ decision.created_at }}</td>
+      <td>{{ decision.decision_kind }}</td>
+      <td>{% if decision.policy %}
+        <a href="/admin/settings/onboarding-policies/{{ decision.policy_id }}">{{ decision.policy.name }}</a>
+        v{{ decision.policy_version }}{% else %}none{% endif %}</td>
+      <td>{{ decision.final_decision.replace("_", " ") }}</td>
+      <td><strong>{{ effective[decision.id].replace("_", " ") }}</strong></td>
+      <td>{{ decision.configuration_version or "—" }}</td>
+      <td>{% if decision.reevaluates_decision_id %}
+        <a href="/admin/onboarding/decisions/{{ decision.reevaluates_decision_id }}">#{{ decision.reevaluates_decision_id }}</a>
+        {% else %}—{% endif %}</td>
+      <td><a href="/admin/onboarding/decisions/{{ decision.id }}">Explain</a></td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% else %}
+<p class="audit-meta">No automatic-onboarding decisions have been recorded for this website.</p>
+{% endif %}
+{% endblock %}

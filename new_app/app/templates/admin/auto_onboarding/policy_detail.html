@@ -1,0 +1,121 @@
+{% extends "admin_base.html" %}
+
+{% block title %}{{ policy.name }}{% endblock %}
+
+{% block admin_content %}
+<h1>{{ policy.name }}
+  {% if policy.is_global_default %}<span class="badge badge-active">global default</span>{% endif %}
+  {% if not policy.active %}<span class="badge badge-pending">inactive</span>{% endif %}
+</h1>
+<p class="audit-meta"><a href="/admin/settings/onboarding-policies">&laquo; All policies</a></p>
+
+<table>
+  <tbody>
+    <tr><th>Version</th><td>v{{ policy.version }}</td></tr>
+    <tr><th>Description</th><td>{{ policy.description or "—" }}</td></tr>
+    <tr><th>Automatic configuration</th><td>{{ "Enabled" if policy.automatic_configuration_enabled else "Disabled" }}</td></tr>
+    <tr><th>Automatic preview</th><td>{{ "Enabled" if policy.automatic_preview_enabled else "Disabled" }}</td></tr>
+    <tr><th>Automatic approval</th>
+      <td>{{ "Enabled" if policy.automatic_approval_enabled else "Disabled" }}</td></tr>
+    <tr><th>Automatic activation</th>
+      <td>{{ "Enabled" if policy.automatic_activation_enabled else "Disabled" }}</td></tr>
+    <tr><th>Allowed patterns</th>
+      <td>{% if policy.allowed_pattern_names %}{{ policy.allowed_pattern_names | join(", ") }}
+        {% else %}none — no source can qualify{% endif %}</td></tr>
+    <tr><th>Generic HTML cards</th><td>{{ "Allowed" if policy.allow_generic_html_cards else "Denied" }}</td></tr>
+    <tr><th>Browser-required sources</th><td>{{ "Allowed" if policy.allow_browser_required else "Denied" }}</td></tr>
+    <tr><th>AI-origin configurations</th><td>{{ "Allowed" if policy.allow_ai_origin else "Denied" }}</td></tr>
+    <tr><th>Decisions recorded</th><td>{{ decision_count }}</td></tr>
+    <tr><th>Created by</th><td>{{ policy.created_by.email if policy.created_by else "—" }}</td></tr>
+    <tr><th>Last updated by</th><td>{{ policy.updated_by.email if policy.updated_by else "—" }}</td></tr>
+  </tbody>
+</table>
+
+<div class="form-actions">
+  <a href="/admin/settings/onboarding-policies/{{ policy.id }}/edit"><button type="button">Edit</button></a>
+  <form method="post" action="/admin/settings/onboarding-policies/{{ policy.id }}/status" class="inline-form">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}" />
+    <input type="hidden" name="active" value="{{ 'false' if policy.active else 'true' }}" />
+    <button type="submit" class="btn-secondary">{{ "Deactivate" if policy.active else "Activate" }}</button>
+  </form>
+  {% if not policy.is_global_default and policy.active %}
+  <form method="post" action="/admin/settings/onboarding-policies/{{ policy.id }}/global-default" class="inline-form"
+        onsubmit="return confirm('Make this the global default policy? The current default will be demoted.');">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}" />
+    <button type="submit" class="btn-secondary">Make global default</button>
+  </form>
+  {% endif %}
+</div>
+
+<h2>City assignments</h2>
+<p class="audit-meta">
+  A city may be assigned to at most one policy. An assigned city uses this policy instead of the
+  global default; if this policy is deactivated, that city has no applicable policy at all rather
+  than silently falling back.
+</p>
+{% if assigned_city_ids %}
+<ul>
+  {% for city in cities if city.id in assigned_city_ids %}
+  <li>{{ city.name }}
+    <form method="post" action="/admin/settings/onboarding-policies/{{ policy.id }}/cities" class="inline-form">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}" />
+      <input type="hidden" name="city_id" value="{{ city.id }}" />
+      <input type="hidden" name="action" value="remove" />
+      <button type="submit" class="btn-secondary">Remove</button>
+    </form>
+  </li>
+  {% endfor %}
+</ul>
+{% else %}
+<p class="audit-meta">No cities are assigned to this policy.</p>
+{% endif %}
+
+<form method="post" action="/admin/settings/onboarding-policies/{{ policy.id }}/cities" class="inline-form">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token }}" />
+  <select name="city_id" required>
+    {% for city in cities if city.id not in assigned_city_ids %}
+    <option value="{{ city.id }}">{{ city.name }}</option>
+    {% endfor %}
+  </select>
+  <button type="submit">Assign city</button>
+</form>
+
+<h2>Submitting-role restriction</h2>
+<p class="audit-meta">
+  When set, only submissions from users holding one of these roles are eligible. Roles are
+  evaluated at submission time and recorded on the decision, so a later role change never
+  rewrites history. Selecting none means any submitter.
+</p>
+<form method="post" action="/admin/settings/onboarding-policies/{{ policy.id }}/roles" class="admin-form">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token }}" />
+  {% for role in roles %}
+  <label class="checkbox-label">
+    <input type="checkbox" name="role_ids" value="{{ role.id }}"
+           {% if role.id in assigned_role_ids %}checked{% endif %} />
+    {{ role.name }}
+  </label>
+  {% endfor %}
+  <div class="form-actions"><button type="submit">Save role restrictions</button></div>
+</form>
+
+<h2>Recent decisions</h2>
+{% if decisions %}
+<table>
+  <thead><tr><th>When</th><th>Website</th><th>Policy version</th><th>Evaluation</th><th>Outcome</th><th></th></tr></thead>
+  <tbody>
+    {% for decision in decisions %}
+    <tr>
+      <td>{{ decision.created_at }}</td>
+      <td><a href="/admin/websites/{{ decision.website_id }}">#{{ decision.website_id }}</a></td>
+      <td>v{{ decision.policy_version }}</td>
+      <td>{{ decision.final_decision.replace("_", " ") }}</td>
+      <td>{{ effective[decision.id].replace("_", " ") }}</td>
+      <td><a href="/admin/onboarding/decisions/{{ decision.id }}">Explain</a></td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% else %}
+<p class="audit-meta">No decisions have been made under this policy yet.</p>
+{% endif %}
+{% endblock %}

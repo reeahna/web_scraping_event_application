@@ -1,0 +1,41 @@
+{% extends "admin_base.html" %}
+
+{% block title %}Automatic onboarding policies{% endblock %}
+
+{% block admin_content %}
+<h1>Automatic onboarding policies</h1>
+<p class="audit-meta">
+  A policy decides whether a source may be approved — and separately activated — without a
+  human. Automatic approval and activation are off unless a policy explicitly enables them.
+</p>
+
+<div class="form-actions">
+  <a href="/admin/settings/onboarding-policies/new"><button type="button">New policy</button></a>
+</div>
+
+<table>
+  <thead>
+    <tr>
+      <th>Name</th><th>State</th><th>Version</th><th>Auto approve</th><th>Auto activate</th>
+      <th>Allowed patterns</th><th>Cities</th><th>Decisions</th><th></th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for policy in policies %}
+    <tr>
+      <td>{{ policy.name }}{% if policy.is_global_default %}
+        <span class="badge badge-active">global default</span>{% endif %}</td>
+      <td>{{ "Active" if policy.active else "Inactive" }}</td>
+      <td>v{{ policy.version }}</td>
+      <td>{{ "Yes" if policy.automatic_approval_enabled else "No" }}</td>
+      <td>{{ "Yes" if policy.automatic_activation_enabled else "No" }}</td>
+      <td>{% if policy.allowed_pattern_names %}{{ policy.allowed_pattern_names | join(", ") }}
+        {% else %}none{% endif %}</td>
+      <td>{{ city_counts[policy.id] }}</td>
+      <td>{{ decision_counts[policy.id] }}</td>
+      <td><a href="/admin/settings/onboarding-policies/{{ policy.id }}">Details</a></td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% endblock %}

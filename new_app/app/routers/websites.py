@@ -16,6 +16,10 @@ from app.extraction.inference.policy import READY_FOR_APPROVAL as INFERENCE_READ
 from app.extraction.registry import REGISTRY
 from app.models.event import Event
 from app.models.user import User
+from app.repositories.auto_onboarding import (
+    latest_decision_for_website,
+    list_decisions_for_website,
+)
 from app.repositories.city import list_cities
 from app.repositories.extraction_run import get_extraction_run, list_extraction_runs_for_website
 from app.repositories.onboarding import find_website_match
@@ -35,6 +39,8 @@ from app.schemas.extraction_config_forms import (
 )
 from app.schemas.website import WebsiteCreate, WebsiteUpdate
 from app.services.audit import record_audit
+from app.services.auto_onboarding_execution import effective_decision
+from app.services.auto_onboarding_reevaluation import reevaluate_website
 from app.services.extraction_runs import preview_extraction, run_detection, run_extraction
 from app.services.onboarding_automation import detect_and_configure
 from app.services.rbac import require_permission, user_has_permission
@@ -633,6 +639,7 @@ def onboarding_result_view(
         raise NotFoundError("Website not found")
 
     inference = (website.proposed_pattern or {}).get("inference")
+    decision = latest_decision_for_website(db, website.id)
     return render(
         request,
         "admin/websites/onboarding.html",
@@ -640,12 +647,78 @@ def onboarding_result_view(
             "current_user": current_user,
             "website": website,
             "result": inference,
+            "decision": decision,
+            "decision_effective": effective_decision(decision) if decision else None,
             "can_approve": user_has_permission(db, current_user, "sites.approve"),
             "can_update": user_has_permission(db, current_user, "sites.update"),
             "can_test": user_has_permission(db, current_user, "sites.test"),
             "ready_outcome": INFERENCE_READY,
         },
     )
+
+
+@router.get("/{website_id}/decisions", response_class=HTMLResponse)
+def website_decision_history(
+    website_id: int, request: Request, current_user: ViewSites, db: DbSession
+):
+    website = get_website(db, website_id)
+    if website is None:
+        raise NotFoundError("Website not found")
+    decisions = list_decisions_for_website(db, website.id, limit=50)
+    return render(
+        request,
+        "admin/auto_onboarding/decision_history.html",
+        {
+            "current_user": current_user,
+            "website": website,
+            "decisions": decisions,
+            "effective": {d.id: effective_decision(d) for d in decisions},
+            "can_test": user_has_permission(db, current_user, "sites.test"),
+        },
+    )
+
+
+@router.post("/{website_id}/reevaluate")
+async def reevaluate_website_view(
+    website_id: int,
+    request: Request,
+    db: DbSession,
+    correlation_id: CorrelationId,
+    ip_address: ClientIp,
+    current_user: TestSites,
+    csrf_token: str = Form(...),
+):
+    """Re-runs the current policy. Appends a new decision; never edits the
+    previous one, and never deactivates a live website."""
+    verify_csrf(request, csrf_token)
+    website = get_website(db, website_id)
+    if website is None:
+        raise NotFoundError("Website not found")
+
+    result = await reevaluate_website(
+        db, website, actor_id=current_user.id, correlation_id=correlation_id
+    )
+    record_audit(
+        db,
+        actor_id=current_user.id,
+        action="auto_onboarding_reevaluated",
+        entity_type="website",
+        entity_id=website.id,
+        after={
+            "decision_id": result.decision.id,
+            "previous_decision_id": result.previous_decision_id,
+            "preview_reused": result.preview_reused,
+        },
+        correlation_id=correlation_id,
+        ip_address=ip_address,
+    )
+    response = RedirectResponse(url=f"/admin/websites/{website.id}/decisions", status_code=303)
+    set_flash(
+        response,
+        f"Re-evaluated: {result.decision.final_decision.replace('_', ' ')}.",
+        "success",
+    )
+    return response
 
 
 @router.post("/{website_id}/preview-extraction")

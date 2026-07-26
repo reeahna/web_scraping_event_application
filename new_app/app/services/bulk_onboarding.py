@@ -36,7 +36,10 @@ from datetime import UTC, datetime
 
 from sqlalchemy.orm import Session
 
+from app.core import auto_onboarding as auto_policy
 from app.core.onboarding_jobs import (
+    AUTOMATICALLY_ACTIVATED,
+    AUTOMATICALLY_APPROVED,
     BATCH_COMPLETED,
     BLOCKED,
     CANCELLED,
@@ -92,6 +95,8 @@ from app.services.rbac import users_with_permission
 # words, but they are different enums owned by different layers, so the
 # mapping is explicit rather than implied by a string equality.
 _OUTCOME_TO_STATUS: dict[str, str] = {
+    auto_policy.AUTOMATICALLY_APPROVED: AUTOMATICALLY_APPROVED,
+    auto_policy.AUTOMATICALLY_ACTIVATED: AUTOMATICALLY_ACTIVATED,
     inference_policy.READY_FOR_APPROVAL: READY_FOR_APPROVAL,
     inference_policy.NEEDS_REVIEW: NEEDS_REVIEW,
     inference_policy.UNSUPPORTED: UNSUPPORTED,
@@ -112,6 +117,18 @@ def _now() -> datetime:
     return datetime.now(UTC)
 
 
+def _submitter_role_ids(db: Session, user_id: int | None) -> frozenset[int]:
+    """Role ids held by the submitter *at processing time*, recorded on the
+    decision so a later role change cannot rewrite history. Roles are read by
+    id, never by display name."""
+    if user_id is None:
+        return frozenset()
+    from app.models.user_role import UserRole
+
+    rows = db.query(UserRole.role_id).filter(UserRole.user_id == user_id).all()
+    return frozenset(row[0] for row in rows)
+
+
 def create_batch_from_submission(
     db: Session,
     parsed: ParsedSubmission,
@@ -121,6 +138,7 @@ def create_batch_from_submission(
     default_timezone: str | None,
     redetect_existing: bool,
     source_kind: str,
+    selected_policy_id: int | None = None,
     correlation_id: str | None = None,
 ) -> OnboardingBatch:
     """Turns a parsed submission into a batch plus one queued job per valid
@@ -134,6 +152,7 @@ def create_batch_from_submission(
         default_timezone=default_timezone,
         redetect_existing=redetect_existing,
         source_kind=source_kind,
+        selected_policy_id=selected_policy_id,
         correlation_id=correlation_id,
     )
 
@@ -416,7 +435,15 @@ async def process_job(
     job.current_step = DETECTING
     db.commit()
     try:
-        result = await detect_and_configure(db, website, correlation_id=correlation_id)
+        result = await detect_and_configure(
+            db,
+            website,
+            correlation_id=correlation_id,
+            submitted_by_user_id=job.submitted_by_user_id,
+            onboarding_job_id=job.id,
+            onboarding_batch_id=job.batch_id,
+            submitter_role_ids=_submitter_role_ids(db, job.submitted_by_user_id),
+        )
     except Exception as exc:
         db.rollback()
         _fail(job, f"Automatic configuration failed: {type(exc).__name__}: {exc}")
@@ -525,6 +552,8 @@ def _notify_batch_completed(
     50-URL submission must not produce 50 notifications."""
     counts = status_counts(db, batch.id)
     ready = counts.get(READY_FOR_APPROVAL, 0)
+    auto_approved = counts.get(AUTOMATICALLY_APPROVED, 0)
+    auto_activated = counts.get(AUTOMATICALLY_ACTIVATED, 0)
     problems = (
         counts.get(FAILED, 0)
         + counts.get(BLOCKED, 0)
@@ -537,6 +566,48 @@ def _notify_batch_completed(
         f"{count} {status.replace('_', ' ')}" for status, count in sorted(counts.items())
     )
 
+    # One summary per automatic outcome, not one per source. A batch that
+    # auto-approved (or auto-activated) sources says so once.
+    if auto_approved:
+        notify(
+            db,
+            notification_type="onboarding_batch_auto_approved",
+            severity=SEVERITY_INFO,
+            title=f"Onboarding batch #{batch.id}: {auto_approved} source(s) automatically approved",
+            message=(
+                f"Batch #{batch.id} automatically approved {auto_approved} source(s) under the "
+                f"applicable policy. They remain inactive until activated. Outcomes: {summary}."
+            ),
+            recipients=recipients,
+            related_resource_type="onboarding_batch",
+            related_resource_id=batch.id,
+            action_url=action_url,
+            dedup_fingerprint=build_dedup_fingerprint(
+                "onboarding_batch_auto_approved", str(batch.id), str(auto_approved)
+            ),
+            correlation_id=correlation_id,
+        )
+    if auto_activated:
+        notify(
+            db,
+            notification_type="onboarding_batch_auto_activated",
+            severity=SEVERITY_INFO,
+            title=(
+                f"Onboarding batch #{batch.id}: {auto_activated} source(s) automatically activated"
+            ),
+            message=(
+                f"Batch #{batch.id} automatically activated {auto_activated} source(s), which are "
+                f"now publicly live. Outcomes: {summary}."
+            ),
+            recipients=recipients,
+            related_resource_type="onboarding_batch",
+            related_resource_id=batch.id,
+            action_url=action_url,
+            dedup_fingerprint=build_dedup_fingerprint(
+                "onboarding_batch_auto_activated", str(batch.id), str(auto_activated)
+            ),
+            correlation_id=correlation_id,
+        )
     if ready:
         notify(
             db,

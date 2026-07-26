@@ -48,6 +48,23 @@ def seed_defaults(db: Session) -> None:
     roles = seed_roles(db)
     seed_role_permissions(db, roles, permissions)
     seed_event_categories(db)
+    seed_auto_onboarding_policy(db)
+
+
+def seed_auto_onboarding_policy(db: Session):
+    """Seeds the conservative default automatic-onboarding policy.
+
+    Guarded by a live table check for the same reason seed_event_categories
+    is: historical migrations call seed_defaults(), and a revision that
+    predates this table must not be made to query it.
+    """
+    inspector = inspect(db.get_bind())
+    if "auto_onboarding_policies" not in inspector.get_table_names():
+        return None
+
+    from app.repositories.auto_onboarding import ensure_default_policy
+
+    return ensure_default_policy(db)
 
 
 def seed_event_categories(db: Session) -> dict[str, EventCategory]:

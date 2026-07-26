@@ -18,6 +18,7 @@ from app.routers import (
     account,
     admin,
     auth,
+    auto_onboarding_policies,
     categorization_rules,
     cities,
     event_categories,
@@ -72,3 +73,5 @@ app.include_router(event_categories.router)
 app.include_router(categorization_rules.router)
 app.include_router(unsupported_reports.router)
 app.include_router(notifications.router)
+app.include_router(auto_onboarding_policies.router)
+app.include_router(auto_onboarding_policies.decisions_router)

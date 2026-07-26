@@ -12,6 +12,7 @@
 </p>
 
 {{ field_error(errors, "submission") }}
+{{ field_error(errors, "policy_id") }}
 
 {% if parsed and parsed.rejected %}
 <h2>Rows that will be skipped</h2>
@@ -63,6 +64,24 @@
     Any other column is ignored. Extraction configuration cannot be uploaded.
     If a CSV is attached it takes precedence over the pasted URLs.
   </p>
+
+  {% if can_select_policy %}
+  <label for="policy_id">Automatic-onboarding policy (optional override)</label>
+  <select id="policy_id" name="policy_id">
+    <option value="">Use each city's policy, or the global default</option>
+    {% for policy in policies %}
+    <option value="{{ policy.id }}">
+      {{ policy.name }}{% if policy.automatic_approval_enabled %} — auto-approve{% endif %}{% if policy.automatic_activation_enabled %} + auto-activate{% endif %}
+    </option>
+    {% endfor %}
+  </select>
+  {{ field_error(errors, "policy_id") }}
+  <p class="audit-meta">
+    Overrides city and global-default resolution for this batch only. Selecting a policy is an
+    input to evaluation, not an authorization: each source still has to satisfy that policy's
+    own rules.
+  </p>
+  {% endif %}
 
   <label class="checkbox-label">
     <input type="checkbox" name="redetect_existing" />

@@ -48,6 +48,12 @@ class Website(Base, TimestampMixin):
     proposed_pattern: Mapped[dict[str, Any] | None] = mapped_column(JSON, default=None)
     approved_pattern: Mapped[dict[str, Any] | None] = mapped_column(JSON, default=None)
     configuration: Mapped[dict[str, Any] | None] = mapped_column(JSON, default=None)
+    # How the current draft `configuration` was produced (see
+    # app.core.auto_onboarding.CONFIGURATION_ORIGINS). An automatic-onboarding
+    # policy can refuse to approve anything it did not deterministically
+    # derive itself, so this must be recorded by whoever saves the draft
+    # rather than guessed at afterwards. None = unknown/pre-Phase-8D.
+    configuration_origin: Mapped[str | None] = mapped_column(String(48), default=None)
     schedule_config: Mapped[dict[str, Any] | None] = mapped_column(JSON, default=None)
 
     approved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), default=None)

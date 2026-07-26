@@ -1,4 +1,11 @@
 from app.models.audit_log import AuditLog
+from app.models.auto_onboarding_action_result import AutoOnboardingActionResult
+from app.models.auto_onboarding_decision import AutoOnboardingDecision
+from app.models.auto_onboarding_policy import (
+    AutoOnboardingPolicy,
+    AutoOnboardingPolicyCity,
+    AutoOnboardingPolicyRole,
+)
 from app.models.categorization_rule import CategorizationRule
 from app.models.city import City
 from app.models.event import Event
@@ -20,6 +27,11 @@ from app.models.website import Website
 
 __all__ = [
     "AuditLog",
+    "AutoOnboardingActionResult",
+    "AutoOnboardingDecision",
+    "AutoOnboardingPolicy",
+    "AutoOnboardingPolicyCity",
+    "AutoOnboardingPolicyRole",
     "CategorizationRule",
     "City",
     "Event",

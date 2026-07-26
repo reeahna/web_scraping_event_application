@@ -23,6 +23,12 @@ PREVIEWING = "previewing"
 
 # --- Terminal outcomes -----------------------------------------------------
 READY_FOR_APPROVAL = "ready_for_approval"
+# Phase 8D. A job outcome, not a Website lifecycle state: `automatically_
+# approved` means the website is approved and still inactive, and
+# `automatically_activated` means it reached ACTIVE through the transition
+# service.
+AUTOMATICALLY_APPROVED = "automatically_approved"
+AUTOMATICALLY_ACTIVATED = "automatically_activated"
 NEEDS_REVIEW = "needs_review"
 UNSUPPORTED = "unsupported"
 BLOCKED = "blocked"
@@ -42,6 +48,8 @@ PROCESSING_STATUSES: tuple[str, ...] = (
 
 TERMINAL_STATUSES: tuple[str, ...] = (
     READY_FOR_APPROVAL,
+    AUTOMATICALLY_APPROVED,
+    AUTOMATICALLY_ACTIVATED,
     NEEDS_REVIEW,
     UNSUPPORTED,
     BLOCKED,

@@ -34,6 +34,7 @@ def create_batch(
     default_timezone: str | None,
     redetect_existing: bool,
     source_kind: str,
+    selected_policy_id: int | None = None,
     correlation_id: str | None = None,
 ) -> OnboardingBatch:
     batch = OnboardingBatch(
@@ -42,6 +43,7 @@ def create_batch(
         default_timezone=default_timezone,
         redetect_existing=redetect_existing,
         source_kind=source_kind,
+        selected_policy_id=selected_policy_id,
         status=BATCH_OPEN,
         correlation_id=correlation_id,
     )

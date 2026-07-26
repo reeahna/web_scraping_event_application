@@ -109,6 +109,24 @@
 </table>
 {% endif %}
 
+{% if decision %}
+<h2>Automatic onboarding decision</h2>
+<table>
+  <tbody>
+    <tr><th>Policy</th>
+      <td>{% if decision.policy %}
+        <a href="/admin/settings/onboarding-policies/{{ decision.policy_id }}">{{ decision.policy.name }}</a>
+        (v{{ decision.policy_version }}){% else %}no applicable policy — manual review{% endif %}</td></tr>
+    <tr><th>Evaluation</th><td>{{ decision.final_decision.replace("_", " ") }}</td></tr>
+    <tr><th>Outcome including actions</th><td><strong>{{ decision_effective.replace("_", " ") }}</strong></td></tr>
+  </tbody>
+</table>
+<p class="audit-meta">
+  <a href="/admin/onboarding/decisions/{{ decision.id }}">Full decision explanation</a>
+  {% if job.website %}· <a href="/admin/websites/{{ job.website_id }}/decisions">Decision history</a>{% endif %}
+</p>
+{% endif %}
+
 <h2>Next step</h2>
 <div class="form-actions">
   {% if job.website %}

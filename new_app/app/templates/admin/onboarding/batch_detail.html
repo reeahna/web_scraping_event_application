@@ -14,6 +14,10 @@
     <tr><th>Default timezone</th><td>{{ batch.default_timezone or "(each city's timezone)" }}</td></tr>
     <tr><th>Source</th><td>{{ batch.source_kind }}</td></tr>
     <tr><th>Re-detect existing</th><td>{{ "Yes" if batch.redetect_existing else "No" }}</td></tr>
+    {% if batch.selected_policy_id %}
+    <tr><th>Policy override</th>
+      <td><a href="/admin/settings/onboarding-policies/{{ batch.selected_policy_id }}">policy #{{ batch.selected_policy_id }}</a></td></tr>
+    {% endif %}
     <tr><th>Status</th><td>{{ batch.status }} — {{ batch.completed_count }} / {{ batch.valid_count }} complete</td></tr>
     <tr><th>Outcomes</th>
       <td>{% for status, count in counts.items() %}{{ status.replace("_", " ") }}: {{ count }}{% if not loop.last %} · {% endif %}{% endfor %}</td></tr>
@@ -55,6 +59,9 @@
         <a href="/admin/onboarding/jobs/{{ job.id }}">Details</a>
         {% if job.website %}
         · <a href="/admin/websites/{{ job.website.id }}/onboarding">Review</a>
+        {% endif %}
+        {% if decision_ids[job.id] %}
+        · <a href="/admin/onboarding/decisions/{{ decision_ids[job.id] }}">Decision</a>
         {% endif %}
       </td>
     </tr>

@@ -26,6 +26,12 @@ from datetime import UTC, datetime
 
 from sqlalchemy.orm import Session
 
+from app.core.auto_onboarding import (
+    AUTOMATICALLY_ACTIVATED,
+    AUTOMATICALLY_APPROVED,
+    ORIGIN_DETERMINISTIC_GENERIC_HTML,
+    ORIGIN_DETERMINISTIC_STRUCTURED,
+)
 from app.core.onboarding import NEEDS_REVIEW as ONBOARDING_NEEDS_REVIEW
 from app.core.onboarding import can_transition
 from app.extraction.fetch import content_type_allowed
@@ -46,9 +52,23 @@ from app.extraction.inference.types import (
 )
 from app.extraction.registry import REGISTRY
 from app.extraction.types import EventCandidate, ExtractionResult, FetchRequest
+from app.models.extraction_run import ExtractionRun
+from app.models.onboarding_batch import OnboardingBatch
 from app.models.website import Website
+from app.repositories.auto_onboarding import (
+    policy_city_ids,
+    policy_role_ids,
+    resolve_policy,
+)
 from app.schemas.extraction import FetchConfig
 from app.services import extraction_runs
+from app.services.auto_onboarding_decision import (
+    AutoOnboardingDecisionService,
+    DecisionContext,
+    snapshot_policy,
+)
+from app.services.auto_onboarding_execution import execute_decision
+from app.services.auto_onboarding_persistence import record_decision
 from app.services.website_configuration import save_draft_configuration
 from app.services.websites import transition_website
 
@@ -86,6 +106,11 @@ class AutoOnboardingResult:
     blocking_reasons: tuple[str, ...]
     valid_samples: tuple[EventCandidate, ...] = ()
     rejected_samples: tuple[tuple[EventCandidate, tuple[str, ...]], ...] = ()
+    # Phase 8D. `decision` is the immutable policy evaluation; `execution`
+    # records what, if anything, was done about it. Both are None when no
+    # configuration was produced, since there is nothing to evaluate.
+    decision: object | None = None
+    execution: object | None = None
 
     def as_dict(self) -> dict:
         return {
@@ -141,6 +166,10 @@ async def detect_and_configure(
     *,
     correlation_id: str | None = None,
     policy: AutoOnboardingPolicy = DEFAULT_POLICY,
+    submitted_by_user_id: int | None = None,
+    onboarding_job_id: int | None = None,
+    onboarding_batch_id: int | None = None,
+    submitter_role_ids: frozenset[int] = frozenset(),
 ) -> AutoOnboardingResult:
     detection_outcome = await extraction_runs.run_detection_detailed(
         db, website, correlation_id=correlation_id
@@ -165,6 +194,15 @@ async def detect_and_configure(
         return _finish(db, website, detection_outcome.result, inference, None, None, ())
 
     save_draft_configuration(db, website, inference.configuration)
+    # Record how this draft was produced, so an automatic-approval policy can
+    # refuse to approve anything it did not deterministically derive itself.
+    website.configuration_origin = (
+        ORIGIN_DETERMINISTIC_GENERIC_HTML
+        if inference.configuration.pattern_name == "generic_html_cards"
+        else ORIGIN_DETERMINISTIC_STRUCTURED
+    )
+    db.commit()
+
     preview = await extraction_runs.preview_extraction_detailed(
         db, website, correlation_id=correlation_id
     )
@@ -190,6 +228,29 @@ async def detect_and_configure(
     blocking = tuple(
         [*(f"missing required field: {f}" for f in inference.missing_required_fields), *reasons]
     )
+
+    # --- Phase 8D: policy evaluation, then any action it permits ----------
+    # Placed here, in the single orchestration path, so the bulk queue and the
+    # single-site "Detect and configure" button both get it without either
+    # re-running detection or preview to obtain a decision.
+    decision, execution = await _evaluate_and_execute_policy(
+        db,
+        website,
+        detection_outcome=detection_outcome,
+        inference=inference,
+        preview=preview,
+        submitted_by_user_id=submitted_by_user_id,
+        onboarding_job_id=onboarding_job_id,
+        onboarding_batch_id=onboarding_batch_id,
+        submitter_role_ids=submitter_role_ids,
+        correlation_id=correlation_id,
+    )
+    if execution is not None:
+        if execution.activated:
+            outcome = AUTOMATICALLY_ACTIVATED
+        elif execution.approved:
+            outcome = AUTOMATICALLY_APPROVED
+
     return _finish(
         db,
         website,
@@ -201,7 +262,92 @@ async def detect_and_configure(
         valid_samples=preview.valid_samples,
         rejected_samples=preview.rejected_samples,
         outcome_override=outcome,
+        decision=decision,
+        execution=execution,
     )
+
+
+async def _evaluate_and_execute_policy(
+    db: Session,
+    website: Website,
+    *,
+    detection_outcome,
+    inference: InferenceResult,
+    preview,
+    submitted_by_user_id: int | None,
+    onboarding_job_id: int | None,
+    onboarding_batch_id: int | None,
+    submitter_role_ids: frozenset[int],
+    correlation_id: str | None,
+):
+    """Resolves the applicable policy, records an immutable decision, and
+    carries out whatever it permits. Always records a decision — including
+    "no applicable policy" and every denial — because a source that did not
+    qualify is exactly the case an administrator later needs to explain."""
+    # A batch may carry an explicit policy override (whose selection was
+    # permission-checked at submission time); otherwise resolution is the
+    # ordinary city -> global default precedence.
+    selected_policy_id = None
+    if onboarding_batch_id is not None:
+        batch = db.get(OnboardingBatch, onboarding_batch_id)
+        selected_policy_id = batch.selected_policy_id if batch is not None else None
+    policy = resolve_policy(db, city_id=website.city_id, selected_policy_id=selected_policy_id)
+    snapshot = (
+        snapshot_policy(
+            policy,
+            city_ids=policy_city_ids(db, policy.id),
+            role_ids=policy_role_ids(db, policy.id),
+        )
+        if policy is not None
+        else None
+    )
+
+    preview_run = (
+        db.get(ExtractionRun, preview.result.run_id) if preview.result.run_id else None
+    )
+    context = DecisionContext(
+        policy=snapshot,
+        website_id=website.id,
+        website_is_archived=website.archived_at is not None,
+        website_onboarding_status=website.onboarding_status,
+        city_id=website.city_id,
+        city_is_active=bool(website.city and website.city.is_active),
+        detected_pattern=inference.pattern_name,
+        detector_confidence=inference.detection_confidence,
+        detection_status=detection_outcome.result.status,
+        browser_required=detection_outcome.detection.browser_required,
+        blocked=preview.result.status == "blocked",
+        registered_patterns=frozenset(REGISTRY.names()),
+        configuration=inference.configuration,
+        configuration_origin=website.configuration_origin,
+        configuration_version=website.configuration_version,
+        preview_run_id=preview.result.run_id,
+        preview_status=preview.result.status,
+        preview_configuration_version=(
+            preview_run.configuration_version if preview_run else None
+        ),
+        quality=preview.quality,
+        warnings=tuple(preview.result.warnings),
+        missing_required_fields=tuple(inference.missing_required_fields),
+        field_candidates=tuple(c.as_dict() for c in inference.field_candidates),
+        date_format_candidates=tuple(c.as_dict() for c in inference.date_format_candidates),
+        detail_enrichment_used=bool(preview.quality and preview.quality.detail_fetch_used),
+        submitted_by_user_id=submitted_by_user_id,
+        submitter_role_ids=submitter_role_ids,
+    )
+
+    result = AutoOnboardingDecisionService().evaluate(context)
+    decision = record_decision(
+        db,
+        result,
+        website=website,
+        onboarding_job_id=onboarding_job_id,
+        onboarding_batch_id=onboarding_batch_id,
+        submitted_by_user_id=submitted_by_user_id,
+        correlation_id=correlation_id,
+    )
+    execution = execute_decision(db, decision, website=website, correlation_id=correlation_id)
+    return decision, execution
 
 
 async def _resolve_detail_probe(
@@ -253,6 +399,8 @@ def _finish(
     valid_samples: tuple[EventCandidate, ...] = (),
     rejected_samples: tuple[tuple[EventCandidate, tuple[str, ...]], ...] = (),
     outcome_override: str | None = None,
+    decision=None,
+    execution=None,
 ) -> AutoOnboardingResult:
     outcome = outcome_override or inference.outcome
     result = AutoOnboardingResult(
@@ -264,6 +412,8 @@ def _finish(
         blocking_reasons=blocking,
         valid_samples=valid_samples,
         rejected_samples=rejected_samples,
+        decision=decision,
+        execution=execution,
     )
     _record(website, result)
 

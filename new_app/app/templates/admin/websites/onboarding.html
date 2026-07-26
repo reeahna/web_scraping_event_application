@@ -200,6 +200,37 @@
 {% endif %}
 {% endif %}
 
+{% if decision %}
+<h2>Automatic onboarding policy</h2>
+<table>
+  <tbody>
+    <tr><th>Policy</th>
+      <td>{% if decision.policy %}
+        <a href="/admin/settings/onboarding-policies/{{ decision.policy_id }}">{{ decision.policy.name }}</a>
+        (v{{ decision.policy_version }}){% else %}no applicable policy — manual review{% endif %}</td></tr>
+    <tr><th>Evaluation</th><td>{{ decision.final_decision.replace("_", " ") }}</td></tr>
+    <tr><th>Outcome including actions</th><td><strong>{{ decision_effective.replace("_", " ") }}</strong></td></tr>
+    <tr><th>Approval eligibility</th>
+      <td>{{ "Eligible" if decision.eligible_for_automatic_approval else "Not eligible" }}</td></tr>
+    <tr><th>Activation eligibility</th>
+      <td>{{ "Eligible, re-checked after approval" if decision.eligible_for_automatic_activation else "Not eligible" }}</td></tr>
+    <tr><th>Configuration origin</th><td>{{ decision.configuration_origin or "unknown" }}</td></tr>
+  </tbody>
+</table>
+{% if decision.reasons_failed %}
+<h3>Why automatic approval was denied</h3>
+<ul>{% for reason in decision.reasons_failed %}<li>{{ reason }}</li>{% endfor %}</ul>
+<p class="audit-meta">
+  Manual approval is still available below if the ordinary approval rules pass — it will be
+  recorded as a human action, not an automatic one.
+</p>
+{% endif %}
+<p class="audit-meta">
+  <a href="/admin/onboarding/decisions/{{ decision.id }}">Full decision explanation</a>
+  · <a href="/admin/websites/{{ website.id }}/decisions">Decision history</a>
+</p>
+{% endif %}
+
 <h2>Next step</h2>
 <div class="form-actions">
   {% if can_approve %}

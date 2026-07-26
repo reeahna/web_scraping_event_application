@@ -36,6 +36,14 @@ class OnboardingBatch(Base):
         ForeignKey("cities.id", ondelete="SET NULL"), default=None
     )
     default_timezone: Mapped[str | None] = mapped_column(String(64), default=None)
+    # Optional batch-level policy override. Only a settings.manage user may
+    # select a policy that enables automatic approval or activation (enforced
+    # at submission time) — the selected policy is an *input* to system
+    # evaluation, never an authorization token, so it grants the submitter
+    # nothing the policy's own rules don't already permit.
+    selected_policy_id: Mapped[int | None] = mapped_column(
+        ForeignKey("auto_onboarding_policies.id", ondelete="SET NULL"), default=None
+    )
     # Off by default: an existing website's approved configuration is never
     # re-detected unless the administrator explicitly asked for it.
     redetect_existing: Mapped[bool] = mapped_column(Boolean, default=False)

@@ -28,6 +28,7 @@ from app.core.onboarding_jobs import (
 from app.core.templating import render
 from app.dependencies import ClientIp, CorrelationId, DbSession
 from app.models.user import User
+from app.repositories.auto_onboarding import decision_for_job, get_policy, list_policies
 from app.repositories.city import list_cities
 from app.repositories.onboarding import (
     get_batch,
@@ -38,6 +39,7 @@ from app.repositories.onboarding import (
 )
 from app.schemas.city import _VALID_TIMEZONES
 from app.services.audit import record_audit
+from app.services.auto_onboarding_execution import effective_decision
 from app.services.bulk_onboarding import (
     cancel_job,
     create_batch_from_submission,
@@ -76,10 +78,16 @@ def _limits() -> SubmissionLimits:
 
 def _submission_context(request: Request, current_user: User, db, **extra) -> dict:
     settings = get_settings()
+    # Only a settings.manage user may pick a policy at submission time (and
+    # only such a policy could enable approval anyway); everyone else gets
+    # the ordinary city -> global default resolution with no selector shown.
+    can_select_policy = user_has_permission(db, current_user, "settings.manage")
     return {
         "current_user": current_user,
         "cities": list_cities(db, active_only=False),
         "timezones": sorted(_VALID_TIMEZONES),
+        "can_select_policy": can_select_policy,
+        "policies": list_policies(db, active_only=True) if can_select_policy else [],
         "limits": {
             "urls": settings.onboarding_max_urls_per_batch,
             "csv_rows": settings.onboarding_max_csv_rows,
@@ -113,6 +121,7 @@ async def onboard_submit(
     city_id: str = Form(""),
     default_timezone: str = Form(""),
     redetect_existing: str | None = Form(None),
+    policy_id: str = Form(""),
     csv_file: UploadFile | None = File(None),  # noqa: B008
     csrf_token: str = Form(...),
 ):
@@ -142,6 +151,23 @@ async def onboard_submit(
     if default_timezone and default_timezone not in _VALID_TIMEZONES:
         errors["default_timezone"] = f"'{default_timezone}' is not a recognized IANA timezone."
 
+    # A batch-level policy override is only honoured when it exists and — if it
+    # enables automatic approval or activation — the submitter holds
+    # settings.manage. Selecting a permissive policy must never be a way for a
+    # submit-only user to grant themselves approval power.
+    selected_policy_id = int(policy_id) if policy_id else None
+    if selected_policy_id is not None and not errors:
+        policy = get_policy(db, selected_policy_id)
+        if policy is None:
+            errors["policy_id"] = "The selected onboarding policy no longer exists."
+        elif (
+            policy.automatic_approval_enabled or policy.automatic_activation_enabled
+        ) and not user_has_permission(db, current_user, "settings.manage"):
+            errors["policy_id"] = (
+                "Selecting a policy that enables automatic approval or activation requires "
+                "the settings.manage permission."
+            )
+
     if errors:
         return render(
             request,
@@ -165,6 +191,7 @@ async def onboard_submit(
         default_timezone=default_timezone or None,
         redetect_existing=redetect_existing is not None,
         source_kind=source_kind,
+        selected_policy_id=selected_policy_id,
         correlation_id=correlation_id,
     )
     record_audit(
@@ -219,6 +246,7 @@ def batch_detail(batch_id: int, request: Request, current_user: ViewSites, db: D
     if batch is None:
         raise NotFoundError("Onboarding batch not found")
     jobs = list_jobs_for_batch(db, batch.id)
+    decision_ids = {job.id: _decision_id_for_job(db, job.id) for job in jobs}
     return render(
         request,
         "admin/onboarding/batch_detail.html",
@@ -226,6 +254,7 @@ def batch_detail(batch_id: int, request: Request, current_user: ViewSites, db: D
             "current_user": current_user,
             "batch": batch,
             "jobs": jobs,
+            "decision_ids": decision_ids,
             "counts": status_counts(db, batch.id),
             "remaining": sum(1 for job in jobs if job.completed_at is None),
             "ready_status": READY_FOR_APPROVAL,
@@ -233,6 +262,11 @@ def batch_detail(batch_id: int, request: Request, current_user: ViewSites, db: D
             "can_process": user_has_permission(db, current_user, "sites.test"),
         },
     )
+
+
+def _decision_id_for_job(db, job_id: int) -> int | None:
+    decision = decision_for_job(db, job_id)
+    return decision.id if decision is not None else None
 
 
 @router.post("/admin/onboarding/batches/{batch_id}/process")
@@ -270,6 +304,7 @@ def job_detail(job_id: int, request: Request, current_user: ViewSites, db: DbSes
     if job is None:
         raise NotFoundError("Onboarding job not found")
     inference = ((job.website.proposed_pattern or {}) if job.website else {}).get("inference")
+    decision = decision_for_job(db, job.id)
     return render(
         request,
         "admin/onboarding/job_detail.html",
@@ -277,6 +312,8 @@ def job_detail(job_id: int, request: Request, current_user: ViewSites, db: DbSes
             "current_user": current_user,
             "job": job,
             "inference": inference,
+            "decision": decision,
+            "decision_effective": effective_decision(decision) if decision else None,
             "ready_status": READY_FOR_APPROVAL,
             "retryable": RETRYABLE_STATUSES,
             "can_retry": user_has_permission(db, current_user, "sites.test"),

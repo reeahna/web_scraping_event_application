@@ -1,0 +1,104 @@
+{% extends "admin_base.html" %}
+{% from "admin/_macros.html" import field_error %}
+
+{% block title %}{{ "Edit policy" if mode == "edit" else "New policy" }}{% endblock %}
+
+{% macro value_of(policy, field, default_boolean=false) %}{% if policy %}{{ policy[field] }}{% endif %}{% endmacro %}
+
+{% block admin_content %}
+<h1>{{ "Edit " + policy.name if mode == "edit" else "New automatic-onboarding policy" }}</h1>
+<p class="audit-meta">
+  <a href="/admin/settings/onboarding-policies">&laquo; All policies</a>
+</p>
+
+<form method="post"
+      action="{{ ('/admin/settings/onboarding-policies/' ~ policy.id) if mode == 'edit' else '/admin/settings/onboarding-policies' }}"
+      class="admin-form">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token }}" />
+
+  <h2>Identity</h2>
+  <label for="name">Policy name</label>
+  <input type="text" id="name" name="name" required maxlength="255"
+         value="{{ policy.name if policy else '' }}" />
+  {{ field_error(errors, "name") }}
+
+  <label for="description">Description</label>
+  <textarea id="description" name="description" rows="2">{{ policy.description or "" if policy else "" }}</textarea>
+
+  <label class="checkbox-label">
+    <input type="checkbox" name="active" {% if not policy or policy.active %}checked{% endif %} />
+    Active
+  </label>
+
+  <h2>Allowed patterns</h2>
+  <p class="audit-meta">
+    Only these extraction patterns may ever be approved automatically. An empty selection means
+    no source qualifies, whatever the other settings say.
+  </p>
+  {% for name in pattern_names %}
+  <label class="checkbox-label">
+    <input type="checkbox" name="allowed_pattern_names" value="{{ name }}"
+           {% if policy and name in (policy.allowed_pattern_names or []) %}checked{% endif %} />
+    {{ name }}
+  </label>
+  {% endfor %}
+
+  {% for section_title, fields in sections %}
+  <h2>{{ section_title }}</h2>
+  {% if section_title.startswith("Generic HTML") %}
+  <p class="audit-meta">
+    A generic HTML configuration is inferred from markup with no schema behind it, so it carries
+    a higher bar than the structured patterns.
+  </p>
+  {% endif %}
+  {% for field in fields %}
+    {% if field in boolean_fields %}
+    <label class="checkbox-label">
+      <input type="checkbox" name="{{ field }}" {% if policy and policy[field] %}checked{% endif %} />
+      {{ field.replace("_", " ") }}
+    </label>
+    {% elif field in percentage_fields %}
+    <label for="{{ field }}">{{ field.replace("_", " ") }} (0–1)</label>
+    <input type="number" id="{{ field }}" name="{{ field }}" step="0.01" min="0" max="1"
+           value="{{ policy[field] if policy else '' }}" />
+    {% else %}
+    <label for="{{ field }}">{{ field.replace("_", " ") }}</label>
+    <input type="number" id="{{ field }}" name="{{ field }}" step="1" min="0"
+           value="{{ policy[field] if policy else '' }}" />
+    {% endif %}
+    {{ field_error(errors, field) }}
+  {% endfor %}
+  {% endfor %}
+
+  <h2>Confirmations</h2>
+  <div class="placeholder-note">
+    <p>
+      <strong>Enabling automatic approval</strong> lets qualifying sources have their
+      configuration approved with no human review. Type
+      <code>{{ approval_phrase }}</code> to confirm.
+    </p>
+    <label for="confirm_approval">Confirm automatic approval</label>
+    <input type="text" id="confirm_approval" name="confirm_approval"
+           placeholder="{{ approval_phrase }}" autocomplete="off" />
+  </div>
+  <div class="placeholder-note">
+    <p>
+      <strong>Enabling automatic activation</strong> is a bigger step: qualifying sources may
+      become publicly active without any human looking at them first. Type
+      <code>{{ activation_phrase }}</code> to confirm.
+    </p>
+    <label for="confirm_activation">Confirm automatic activation</label>
+    <input type="text" id="confirm_activation" name="confirm_activation"
+           placeholder="{{ activation_phrase }}" autocomplete="off" />
+  </div>
+  <p class="audit-meta">
+    A confirmation phrase is only required when you are switching one of these on. Leaving them
+    blank keeps the current setting.
+  </p>
+
+  <div class="form-actions">
+    <button type="submit">{{ "Save policy" if mode == "edit" else "Create policy" }}</button>
+    <a href="/admin/settings/onboarding-policies"><button type="button" class="btn-secondary">Cancel</button></a>
+  </div>
+</form>
+{% endblock %}

@@ -4,6 +4,7 @@ from typing import TYPE_CHECKING
 from sqlalchemy import DateTime, ForeignKey, String, Text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
+from app.core.auto_onboarding import ACTOR_USER
 from app.database import Base
 from app.models.base import utcnow
 
@@ -20,6 +21,13 @@ class AuditLog(Base):
     user_id: Mapped[int | None] = mapped_column(
         ForeignKey("users.id", ondelete="SET NULL"), default=None
     )
+    # Distinguishes "a person did this" from "the application did this
+    # because an administrator-authored policy permitted it". Without it a
+    # system action is indistinguishable from an entry whose actor was later
+    # deleted. There is no system User row, no credentials and no session —
+    # see app.core.auto_onboarding.
+    actor_type: Mapped[str] = mapped_column(String(16), default=ACTOR_USER)
+    actor_label: Mapped[str | None] = mapped_column(String(64), default=None)
     action: Mapped[str] = mapped_column(String(255))
     entity_type: Mapped[str | None] = mapped_column(String(100), default=None)
     entity_id: Mapped[int | None] = mapped_column(default=None)
