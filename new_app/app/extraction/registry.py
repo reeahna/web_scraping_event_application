@@ -10,8 +10,11 @@ from dataclasses import dataclass
 
 from app.extraction.detection import (
     RELIABILITY_ORDER,
+    EmbeddedJsonDetector,
     JsonLdDetector,
     LiveWhaleDetector,
+    NextDataDetector,
+    NuxtPayloadDetector,
     PatternDetector,
     StaticHtmlDetector,
     TheEventsCalendarDetector,
@@ -19,6 +22,11 @@ from app.extraction.detection import (
 )
 from app.extraction.inference.base import PatternConfigurationProposer
 from app.extraction.inference.proposers.generic_html import GenericHtmlCardsProposer
+from app.extraction.inference.proposers.json_scripts import (
+    EmbeddedJsonProposer,
+    NextDataProposer,
+    NuxtPayloadProposer,
+)
 from app.extraction.inference.proposers.structured import (
     JsonLdEventProposer,
     livewhale_proposer,
@@ -26,10 +34,16 @@ from app.extraction.inference.proposers.structured import (
     wordpress_rest_proposer,
 )
 from app.extraction.patterns.base import ExtractionPattern
+from app.extraction.patterns.embedded_json import PATTERN_VERSION as _EMBEDDED_VERSION
+from app.extraction.patterns.embedded_json import EmbeddedJsonPattern
 from app.extraction.patterns.jsonld import PATTERN_VERSION as _JSONLD_VERSION
 from app.extraction.patterns.jsonld import JsonLdEventPattern
 from app.extraction.patterns.livewhale_json import PATTERN_VERSION as _LW_VERSION
 from app.extraction.patterns.livewhale_json import LiveWhalePattern
+from app.extraction.patterns.next_data import PATTERN_VERSION as _NEXT_VERSION
+from app.extraction.patterns.next_data import NextDataPattern
+from app.extraction.patterns.nuxt_payload import PATTERN_VERSION as _NUXT_VERSION
+from app.extraction.patterns.nuxt_payload import NuxtPayloadPattern
 from app.extraction.patterns.static_html import PATTERN_VERSION as _HTML_VERSION
 from app.extraction.patterns.static_html import StaticHtmlCardsPattern
 from app.extraction.patterns.the_events_calendar import PATTERN_VERSION as _TEC_VERSION
@@ -137,6 +151,45 @@ def build_default_registry() -> PatternRegistry:
             browser_required=False,
             supported_pagination=("none", "query_param", "next_link"),
             proposer=JsonLdEventProposer(),
+        )
+    )
+    registry.register(
+        PatternRegistration(
+            name="next_data",
+            detector=NextDataDetector(),
+            extractor=NextDataPattern(),
+            config_schema=SiteConfiguration,
+            priority=RELIABILITY_ORDER.index("next_data"),
+            version=_NEXT_VERSION,
+            browser_required=False,
+            supported_pagination=("none", "query_param"),
+            proposer=NextDataProposer(),
+        )
+    )
+    registry.register(
+        PatternRegistration(
+            name="nuxt_payload",
+            detector=NuxtPayloadDetector(),
+            extractor=NuxtPayloadPattern(),
+            config_schema=SiteConfiguration,
+            priority=RELIABILITY_ORDER.index("nuxt_payload"),
+            version=_NUXT_VERSION,
+            browser_required=False,
+            supported_pagination=("none", "query_param"),
+            proposer=NuxtPayloadProposer(),
+        )
+    )
+    registry.register(
+        PatternRegistration(
+            name="embedded_json",
+            detector=EmbeddedJsonDetector(),
+            extractor=EmbeddedJsonPattern(),
+            config_schema=SiteConfiguration,
+            priority=RELIABILITY_ORDER.index("embedded_json"),
+            version=_EMBEDDED_VERSION,
+            browser_required=False,
+            supported_pagination=("none", "query_param"),
+            proposer=EmbeddedJsonProposer(),
         )
     )
     registry.register(

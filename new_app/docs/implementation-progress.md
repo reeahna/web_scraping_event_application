@@ -108,4 +108,52 @@ suggestion persists no Event rows and is never approved or activated by this pat
 end-to-end draft-not-approved, no event persistence, provider failure, budget limit); Ruff
 clean; full suite: see below.
 
-**Commit:** (recorded with the next phase update).
+**Commit:** `965e04f` — feat: add optional AI configuration fallback.
+
+---
+
+## Phase 8F — remaining structured extraction patterns
+
+Delivered in two verified commits because the phase is large (six new adapters,
+one atomic set would be an unreliable single stretch). Both parts are coherent
+units: the JSON-in-script family (no new dependency, shared infrastructure),
+then the parser/API adapters.
+
+### Part 1 — JSON-in-script family: `embedded_json`, `next_data`, `nuxt_payload`
+
+**Status:** complete.
+
+**Summary.** Three patterns that parse strict JSON already in the page and read
+the event list from a config-provided or discovered `events_root`. Nothing is
+ever executed: `embedded_json` reads `<script type="application/json">`,
+`next_data` reads the `__NEXT_DATA__` block, `nuxt_payload` reads a
+`_payload.json` body or the `__NUXT_DATA__` script — and a Nuxt page whose
+state is only a `window.__NUXT__ = (function…)` assignment is marked
+`browser_required` (deferred to Phase 9), never eval'd. A shared, bounded,
+deterministic finder (`inference/json_events.py`) locates the event array by
+*scoring* every array of objects on event-like keys (title + date), so a nav
+array is never mistaken for events; the proposers reuse it to discover
+`events_root` and map fields from a real sample object.
+
+**Components:** `patterns/embedded_json.py`, `patterns/next_data.py`,
+`patterns/nuxt_payload.py`; `inference/json_events.py`;
+`inference/proposers/json_scripts.py`; three detectors + reliability-order
+entries in `detection.py`; registry wiring (registry now holds 8 patterns).
+
+**No migration.** Registry now: wordpress_rest, the_events_calendar,
+livewhale_json, json_ld_event, next_data, nuxt_payload, embedded_json,
+generic_html_cards.
+
+**Verification:** 16 targeted tests (finder scoring, detection incl.
+browser-required, extraction, no-guess-without-root, proposer discovery, no
+hostname branching) + affected suites (registry, detection, onboarding review,
+inference, qualification) pass; Ruff clean; full suite: see below.
+
+**Commit:** (recorded with the next update).
+
+### Part 2 — parser/API adapters: `ics_calendar`, `rss_atom_events`, `algolia_search`
+
+**Status:** not started. `icalendar` and `defusedxml` are installed in the venv
+(for maintained ICS parsing and entity-attack-safe feed XML); their pyproject
+declaration will land with part 2, which uses them. Algolia requires the
+search-only-key secret-reference abstraction.

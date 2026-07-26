@@ -44,7 +44,7 @@ def test_unknown_pattern_rejected():
         registry.get("does_not_exist")
 
 
-def test_default_registry_has_exactly_five_patterns():
+def test_default_registry_has_the_expected_patterns():
     registry = build_default_registry()
     assert set(registry.names()) == {
         "json_ld_event",
@@ -52,7 +52,13 @@ def test_default_registry_has_exactly_five_patterns():
         "wordpress_rest",
         "the_events_calendar",
         "livewhale_json",
+        # Phase 8F JSON-in-script family
+        "next_data",
+        "nuxt_payload",
+        "embedded_json",
     }
+    # Every registered pattern is automatically configurable.
+    assert all(registry.get(name).proposer is not None for name in registry.names())
 
 
 # --- SiteConfiguration validation ------------------------------------------

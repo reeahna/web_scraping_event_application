@@ -29,8 +29,18 @@ RELIABILITY_ORDER: tuple[str, ...] = (
     "livewhale_json",
     "wordpress_rest",
     "json_ld_event",
+    # JSON-in-script patterns sit above generic HTML (structured data beats
+    # scraping markup) but below json_ld_event, which owns schema.org.
+    "next_data",
+    "nuxt_payload",
+    "embedded_json",
     "generic_html_cards",
 )
+
+# A minimum event-like rate a JSON-in-script detector needs to claim a match,
+# so a page that merely happens to embed some JSON is not mistaken for an
+# event source.
+_JSON_EVENTS_MIN_CONFIDENCE = 0.7
 
 _CHALLENGE_MARKERS = ("cloudflare", "access denied", "are you a robot", "captcha")
 _JS_FRAMEWORK_MARKERS = ("__NEXT_DATA__", 'id="__nuxt"', "ng-version", "data-reactroot")
@@ -486,6 +496,92 @@ class LiveWhaleDetector:
         )
 
 
+def _json_events_result(
+    pattern_name: str, document: object, *, browser_required: bool = False
+) -> PatternDetectionResult:
+    """Shared detection result for the JSON-in-script patterns: a match only
+    when the parsed document contains an array scoring as an event list."""
+    from app.extraction.inference.json_events import find_event_arrays
+
+    candidates = find_event_arrays(document) if document is not None else []
+    best = candidates[0] if candidates else None
+    if best is None or best.event_like_rate < _JSON_EVENTS_MIN_CONFIDENCE:
+        return PatternDetectionResult(
+            pattern_name=None,
+            confidence=0.0,
+            evidence={"event_arrays_found": len(candidates)},
+            discovered_endpoints=(),
+            browser_required=browser_required,
+            warnings=(),
+            detector_version=DETECTOR_VERSION,
+            needs_review=True,
+        )
+    confidence = min(0.9, 0.6 + 0.3 * best.event_like_rate)
+    return PatternDetectionResult(
+        pattern_name=pattern_name,
+        confidence=confidence,
+        evidence={
+            "events_root": best.path,
+            "array_size": best.size,
+            "event_like_rate": best.event_like_rate,
+            "sample_keys": list(best.sample_keys),
+        },
+        discovered_endpoints=(),
+        browser_required=False,
+        warnings=(),
+        detector_version=DETECTOR_VERSION,
+        needs_review=confidence < MIN_PATTERN_CONFIDENCE,
+    )
+
+
+class EmbeddedJsonDetector:
+    def detect(self, response: FetchResponse) -> PatternDetectionResult:
+        if _access_denied_detected(response):
+            return _blocked_result("access denied or challenge page detected")
+        import json as _json
+
+        soup = BeautifulSoup(response.text, "html.parser")
+        best_doc = None
+        best_len = -1
+        for script in soup.find_all("script", attrs={"type": "application/json"}):
+            text = script.string or script.get_text()
+            if not text or not text.strip():
+                continue
+            try:
+                doc = _json.loads(text)
+            except (_json.JSONDecodeError, ValueError):
+                continue
+            # Prefer the largest JSON block, which is most likely to carry the
+            # event list; each is still scored on its merits below.
+            if len(text) > best_len:
+                best_doc, best_len = doc, len(text)
+        return _json_events_result("embedded_json", best_doc)
+
+
+class NextDataDetector:
+    def detect(self, response: FetchResponse) -> PatternDetectionResult:
+        if _access_denied_detected(response):
+            return _blocked_result("access denied or challenge page detected")
+        from app.extraction.patterns.next_data import parse_next_data
+
+        return _json_events_result("next_data", parse_next_data(response.text))
+
+
+class NuxtPayloadDetector:
+    def detect(self, response: FetchResponse) -> PatternDetectionResult:
+        if _access_denied_detected(response):
+            return _blocked_result("access denied or challenge page detected")
+        from app.extraction.patterns.nuxt_payload import parse_nuxt_payload
+
+        document = parse_nuxt_payload(response.text)
+        # A Nuxt page whose state is only a JS assignment (no parseable
+        # payload) is browser_required, deferred to Phase 9 — never eval'd.
+        browser_required = document is None and (
+            "window.__NUXT__" in response.text or 'id="__nuxt"' in response.text
+        )
+        return _json_events_result("nuxt_payload", document, browser_required=browser_required)
+
+
 def run_detection(
     response: FetchResponse, *, min_confidence: float = MIN_PATTERN_CONFIDENCE
 ) -> PatternDetectionResult:
@@ -494,6 +590,9 @@ def run_detection(
         "livewhale_json": LiveWhaleDetector(),
         "wordpress_rest": WordPressRestDetector(),
         "json_ld_event": JsonLdDetector(),
+        "next_data": NextDataDetector(),
+        "nuxt_payload": NuxtPayloadDetector(),
+        "embedded_json": EmbeddedJsonDetector(),
         "generic_html_cards": StaticHtmlDetector(),
     }
     results = {name: detector.detect(response) for name, detector in detectors.items()}
