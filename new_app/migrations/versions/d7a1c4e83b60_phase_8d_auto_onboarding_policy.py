@@ -81,7 +81,9 @@ def upgrade() -> None:
         _bool_column("automatic_approval_enabled", "0"),
         _bool_column("automatic_activation_enabled", "0"),
         # Pattern and configuration-origin controls
-        sa.Column("allowed_pattern_names", sa.JSON(), nullable=False, server_default=sa.text("'[]'")),
+        sa.Column(
+            "allowed_pattern_names", sa.JSON(), nullable=False, server_default=sa.text("'[]'")
+        ),
         _bool_column("allow_generic_html_cards", "0"),
         _bool_column("allow_browser_required", "0"),
         _bool_column("allow_ai_origin", "0"),

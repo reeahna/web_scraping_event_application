@@ -155,7 +155,9 @@ def upgrade() -> None:
         "ix_onboarding_jobs_normalized_url", "onboarding_jobs", ["normalized_url"], unique=False
     )
     op.create_index("ix_onboarding_jobs_status", "onboarding_jobs", ["status"], unique=False)
-    op.create_index("ix_onboarding_jobs_website_id", "onboarding_jobs", ["website_id"], unique=False)
+    op.create_index(
+        "ix_onboarding_jobs_website_id", "onboarding_jobs", ["website_id"], unique=False
+    )
     op.create_index(
         "ix_onboarding_jobs_correlation_id", "onboarding_jobs", ["correlation_id"], unique=False
     )

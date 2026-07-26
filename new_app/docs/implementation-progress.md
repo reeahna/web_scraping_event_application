@@ -186,4 +186,59 @@ below. A greedy-JSON detection bug (nuxt claiming any JSON body, incl. an
 Algolia response) was found and fixed — nuxt detection now requires the
 `__NUXT_DATA__` marker.
 
+**Commit:** `3b41497` (part 2); `602e641` (part 1, JSON-in-script patterns).
+
+## Phase 9 — restricted headless-browser fetch strategy
+
+**Status:** complete.
+
+Adds a Playwright chromium fetch strategy for client-rendered pages that plain
+HTTP cannot resolve. It is a *fetch strategy*, not a scraper: it renders the
+page, captures the rendered HTML plus any JSON the page fetched, and hands both
+to the ordinary PatternRegistry detection/extraction — no site-specific logic,
+no new dispatch path.
+
+**Closed action plan (`app/schemas/browser.py`).** A browser plan is data, not
+code: a discriminated union of `wait_for_selector`, `network_idle`, `click`,
+`load_more`, `scroll`, and `dismiss_banner` — no field anywhere accepts a
+Python/JS snippet, an `evaluate` expression, a path, or a command. Every count
+and timeout is capped by a validator (`_MAX_TIMEOUT_MS`, `_MAX_CLICKS`,
+`_MAX_SCROLLS`, `_MAX_ACTIONS`, `_MAX_TOTAL_MS`), so a plan cannot scroll or
+wait forever. `dismiss_banner` only closes an overlay — it never accepts terms
+or grants consent.
+
+**Strategy (`app/extraction/browser.py`).** Safety is enforced in the strategy,
+not trusted to the caller: the initial URL is SSRF-validated before launch, and
+a route interceptor re-validates every subrequest — private/loopback/non-http(s)
+targets are aborted, so a rendered page cannot pivot to internal services.
+Downloads, popups/new windows, and service workers are disabled; media is
+blocked by default. A challenge/login wall (Cloudflare, CAPTCHA, "checking your
+browser", "sign in to continue") or a 401/403/429 is detected and reported as
+`blocked_reason` — never solved, bypassed, or submitted to. The browser,
+context, and pages are always torn down in a `finally` block. The SSRF host
+check is indirected through `_host_allowed` so tests can permit a local fixture
+server without weakening the production default.
+
+**Observation (`app/services/browser_observation.py`).** `render_and_observe`
+runs the existing `run_detection` over both the rendered HTML and each observed
+JSON response, and prefers a structured API: if the page's own JSON endpoint
+detects as an event source it is chosen over the rendered HTML, because a
+reusable API is cheaper and more stable than re-rendering on every scheduled
+run (`chosen_source` = `structured_api` | `rendered_html`).
+
+**Dependency added:** `playwright>=1.47` (declared in pyproject; installed in
+the venv, `playwright install chromium` run).
+
+**No migration.**
+
+**Verification:** 9 Phase 9 tests drive the *real* headless chromium against a
+local fixture HTTP server (no live third-party requests, per the master
+prompt): JS-rendered cards captured and detected as `generic_html_cards`; a
+page's Algolia-shaped JSON endpoint preferred over rendered HTML; a challenge
+page reported blocked (nothing captured); a private URL refused before launch;
+plan schema rejects unknown actions and enforces caps; a second render succeeds
+(clean teardown). Tests skip with a clear reason if chromium is unavailable, so
+the suite stays green on machines without the binary. Ruff clean; full suite:
+see below.
+
 **Commit:** (recorded with the next update).

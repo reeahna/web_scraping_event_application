@@ -21,6 +21,10 @@ dependencies = [
     # external-entity attacks are refused rather than processed.
     "icalendar>=6.0",
     "defusedxml>=0.7",
+    # Restricted headless-browser fetch strategy (Phase 9) for client-rendered
+    # pages that plain HTTP cannot resolve. Runs a closed action plan only, never
+    # arbitrary JavaScript. Requires `playwright install chromium` after pip install.
+    "playwright>=1.47",
 ]
 
 [project.optional-dependencies]
