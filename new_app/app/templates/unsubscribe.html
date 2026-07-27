@@ -1,0 +1,19 @@
+{% extends "base.html" %}
+
+{% block title %}Unsubscribe — New City Events{% endblock %}
+
+{% block content %}
+<div class="page-container narrow-container">
+  <h1>Email alerts</h1>
+  {% if valid %}
+  <p>Turn off email alerts for this account. In-app alerts are not affected, and you can turn email back on any time from your alert preferences.</p>
+  <form method="post" action="/alerts/unsubscribe" class="inline-form">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}" />
+    <input type="hidden" name="token" value="{{ token }}" />
+    <button type="submit" class="nav-button">Turn off email alerts</button>
+  </form>
+  {% else %}
+  <p>This unsubscribe link is not valid or has expired. If you’re logged in, you can manage alerts from <a href="/account/alerts">your alert preferences</a>.</p>
+  {% endif %}
+</div>
+{% endblock %}

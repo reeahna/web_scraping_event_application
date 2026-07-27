@@ -745,6 +745,7 @@ async def run_extraction(
         if existing is not None:
             event = update_event(db, existing, candidate)
             events_updated += 1
+            _fire_alerts(db, event, new=False, cancelled=candidate.is_cancelled)
         else:
             event = create_event_from_candidate(
                 db,
@@ -754,6 +755,7 @@ async def run_extraction(
                 source=website.source_display_name or website.name,
             )
             events_inserted += 1
+            _fire_alerts(db, event, new=True, cancelled=candidate.is_cancelled)
 
         # A missing-geography "needs_review" outcome keeps the event but routes
         # it to a human rather than silently trusting it.
@@ -797,6 +799,26 @@ async def run_extraction(
         errors=tuple(errors),
         evidence={},
     )
+
+
+def _fire_alerts(db: Session, event, *, new: bool, cancelled: bool) -> None:
+    """Generate registered-user alerts for a persisted event. Best-effort and
+    fully isolated: an alert failure must never affect the extraction run."""
+    try:
+        from app.services import alerts
+
+        if cancelled:
+            alerts.on_event_change(db, event, kind="cancelled")
+        elif new:
+            alerts.on_new_event(db, event)
+        else:
+            alerts.on_event_change(db, event, kind="updated")
+    except Exception as exc:  # noqa: BLE001 - alerts never break extraction
+        from app.core.logging import get_logger
+
+        get_logger("extraction.alerts").warning(
+            "alert generation failed for event %s: %s", getattr(event, "id", "?"), exc
+        )
 
 
 def _update_website_health(

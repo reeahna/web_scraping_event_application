@@ -75,6 +75,17 @@ def event_detail(event_id: int, request: Request, current_user: OptionalCurrentU
     if admin_access and event.website_id is not None:
         latest_run = get_latest_successful_run_for_website(db, event.website_id)
 
+    is_saved = False
+    is_following_city = False
+    if current_user is not None:
+        from app.services import engagement
+
+        is_saved = engagement.is_event_saved(db, user_id=current_user.id, event_id=event.id)
+        if event.city_id is not None:
+            is_following_city = engagement.is_following(
+                db, user_id=current_user.id, follow_type="city", target_id=event.city_id
+            )
+
     return render(
         request,
         "public_event_detail.html",
@@ -84,5 +95,7 @@ def event_detail(event_id: int, request: Request, current_user: OptionalCurrentU
             "can_access_admin": admin_access,
             "latest_run": latest_run,
             "fallback_image_url": get_settings().public_fallback_image_url,
+            "is_saved": is_saved,
+            "is_following_city": is_following_city,
         },
     )

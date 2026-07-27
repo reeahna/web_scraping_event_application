@@ -23,6 +23,12 @@ from app.models.role_permission import RolePermission
 from app.models.scheduler import SchedulerJobState, SchedulerLeader
 from app.models.unsupported_site_report import UnsupportedSiteReport
 from app.models.user import User
+from app.models.user_engagement import (
+    AlertDelivery,
+    AlertPreference,
+    SavedEvent,
+    UserFollow,
+)
 from app.models.user_role import UserRole
 from app.models.user_session import UserSession
 from app.models.website import Website
@@ -55,4 +61,8 @@ __all__ = [
     "UserRole",
     "UserSession",
     "Website",
+    "SavedEvent",
+    "UserFollow",
+    "AlertPreference",
+    "AlertDelivery",
 ]

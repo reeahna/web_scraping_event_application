@@ -1,0 +1,55 @@
+{% extends "base.html" %}
+
+{% block title %}Alert preferences — New City Events{% endblock %}
+
+{% block content %}
+<div class="page-container">
+  <h1>Alert preferences</h1>
+  <p class="hero-subtext">Choose how you hear about events. <a href="/account/saved">Your saved events</a></p>
+
+  <form method="post" action="/account/alerts" class="filter-form filter-form-stacked">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}" />
+
+    <fieldset class="pref-group">
+      <legend>Channels</legend>
+      <label class="checkbox-label">
+        <input type="checkbox" name="in_app_enabled" value="1"{% if prefs.in_app_enabled %} checked{% endif %} />
+        In-app alerts
+      </label>
+      <label class="checkbox-label">
+        <input type="checkbox" name="email_enabled" value="1"{% if prefs.email_enabled %} checked{% endif %} />
+        Email alerts
+      </label>
+    </fieldset>
+
+    <fieldset class="pref-group">
+      <legend>What to alert me about</legend>
+      <label class="checkbox-label">
+        <input type="checkbox" name="notify_new_events" value="1"{% if prefs.notify_new_events %} checked{% endif %} />
+        New events in cities/categories/sources I follow
+      </label>
+      <label class="checkbox-label">
+        <input type="checkbox" name="notify_reminders" value="1"{% if prefs.notify_reminders %} checked{% endif %} />
+        Reminders for events I saved
+      </label>
+      <label class="checkbox-label">
+        <input type="checkbox" name="notify_updates" value="1"{% if prefs.notify_updates %} checked{% endif %} />
+        Updates and cancellations for saved events
+      </label>
+    </fieldset>
+
+    <div class="filter-field">
+      <label for="frequency">Email frequency</label>
+      <select id="frequency" name="frequency">
+        {% for value, label in [("immediate", "Immediately"), ("daily", "Daily digest"), ("weekly", "Weekly digest"), ("off", "Off")] %}
+        <option value="{{ value }}"{% if prefs.frequency == value %} selected{% endif %}>{{ label }}</option>
+        {% endfor %}
+      </select>
+    </div>
+
+    <div class="filter-actions">
+      <button type="submit">Save preferences</button>
+    </div>
+  </form>
+</div>
+{% endblock %}

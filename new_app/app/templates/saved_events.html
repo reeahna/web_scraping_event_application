@@ -1,0 +1,41 @@
+{% extends "base.html" %}
+
+{% block title %}Saved events — New City Events{% endblock %}
+
+{% block content %}
+<div class="page-container">
+  <h1>Your saved events</h1>
+  <p class="hero-subtext"><a href="/account/alerts">Manage alert preferences</a></p>
+
+  {% if events %}
+  <div class="event-grid">
+    {% for event in events %}
+    <div class="event-card event-card-static">
+      <a class="event-card-link" href="/events/{{ event.id }}">
+        <div class="event-card-body">
+          {% if event.effective_category %}<span class="badge badge-pending">{{ event.effective_category.name }}</span>{% endif %}
+          <h2>{{ event.title }}</h2>
+          <div class="event-card-meta">
+            <span class="event-card-date">{{ event.start_date | human_date }}{% if event.start_time %} · {{ event.start_time | human_time }}{% endif %}</span>
+            <span>{{ event.public_venue or 'Venue TBD' }}</span>
+            <span>{{ event.city.name if event.city else '—' }}</span>
+          </div>
+        </div>
+      </a>
+      <form method="post" action="/account/unsave/{{ event.id }}" class="inline-form">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}" />
+        <input type="hidden" name="next" value="/account/saved" />
+        <button type="submit" class="nav-button">Remove</button>
+      </form>
+    </div>
+    {% endfor %}
+  </div>
+  {% else %}
+  <div class="empty-state">
+    <h2>No saved events yet</h2>
+    <p>Browse events and tap “Save event” to keep them here.</p>
+    <a href="/" class="filter-clear-link">Find events</a>
+  </div>
+  {% endif %}
+</div>
+{% endblock %}

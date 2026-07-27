@@ -32,6 +32,10 @@ EXPECTED_TABLES = {
     "scheduler_job_state",
     "scheduler_leader",
     "geocode_cache",
+    "saved_events",
+    "user_follows",
+    "alert_preferences",
+    "alert_deliveries",
 }
 
 

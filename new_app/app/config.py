@@ -102,6 +102,14 @@ class Settings(BaseSettings):
     public_map_tile_url: str = "https://tile.openstreetmap.org/{z}/{x}/{y}.png"
     public_map_attribution: str = "© OpenStreetMap contributors"
 
+    # Email delivery for alerts (Phase 13). Off by default: no email is ever
+    # sent unless explicitly enabled AND a real backend is configured. The
+    # built-in backends are "noop" (records nothing) and "console" (logs). A
+    # real SMTP/API backend would be added here behind explicit credentials.
+    email_enabled: bool = False
+    email_backend: str = "noop"
+    email_from: str = "alerts@example.com"
+
     model_config = SettingsConfigDict(
         env_file=str(BASE_DIR / ".env"),
         env_file_encoding="utf-8",

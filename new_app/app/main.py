@@ -21,6 +21,7 @@ from app.routers import (
     auto_onboarding_policies,
     categorization_rules,
     cities,
+    engagement,
     event_categories,
     events,
     geocoding,
@@ -82,3 +83,4 @@ app.include_router(auto_onboarding_policies.router)
 app.include_router(auto_onboarding_policies.decisions_router)
 app.include_router(scheduler.router)
 app.include_router(geocoding.router)
+app.include_router(engagement.router)

@@ -20,6 +20,35 @@
         {{ event.start_date | human_date_long }}{% if event.end_date and event.end_date != event.start_date %} &ndash; {{ event.end_date | human_date_long }}{% endif %}
         {% if event.start_time %}<br />{{ event.start_time | human_time }}{% if event.end_time %} &ndash; {{ event.end_time | human_time }}{% endif %}{% endif %}
       </p>
+      {% if current_user %}
+      <div class="event-detail-actions">
+        {% if is_saved %}
+        <form method="post" action="/account/unsave/{{ event.id }}" class="inline-form">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token }}" />
+          <input type="hidden" name="next" value="/events/{{ event.id }}" />
+          <button type="submit" class="nav-button">★ Saved — remove</button>
+        </form>
+        {% else %}
+        <form method="post" action="/account/save/{{ event.id }}" class="inline-form">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token }}" />
+          <input type="hidden" name="next" value="/events/{{ event.id }}" />
+          <button type="submit" class="nav-button">☆ Save event</button>
+        </form>
+        {% endif %}
+        {% if event.city %}
+        <form method="post" action="/account/follow" class="inline-form">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token }}" />
+          <input type="hidden" name="follow_type" value="city" />
+          <input type="hidden" name="target_id" value="{{ event.city.id }}" />
+          <input type="hidden" name="action" value="{{ 'unfollow' if is_following_city else 'follow' }}" />
+          <input type="hidden" name="next" value="/events/{{ event.id }}" />
+          <button type="submit" class="nav-button">{% if is_following_city %}Following {{ event.city.name }}{% else %}Follow {{ event.city.name }}{% endif %}</button>
+        </form>
+        {% endif %}
+      </div>
+      {% else %}
+      <p class="event-detail-signin"><a href="/auth/login">Log in</a> to save events and follow cities.</p>
+      {% endif %}
     </header>
 
     <div class="event-detail-grid">

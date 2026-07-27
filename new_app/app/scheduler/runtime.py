@@ -113,6 +113,12 @@ class SchedulerRuntime:
                 self._geocoding_tick, "interval", seconds=self._dispatch_interval,
                 id="geocoding", max_instances=1, coalesce=True,
             )
+        # Registered-user alert maintenance (Phase 13): saved-event reminders
+        # and batched email digests. Runs from this process too.
+        self._scheduler.add_job(
+            self._alerts_tick, "interval", seconds=self._dispatch_interval,
+            id="alerts", max_instances=1, coalesce=True,
+        )
         self._scheduler.start()
 
     async def _heartbeat_tick(self) -> None:
@@ -189,6 +195,20 @@ class SchedulerRuntime:
                 logger.info("geocoded %d event(s)", processed)
         except Exception as exc:  # noqa: BLE001
             logger.warning("geocoding drain failed: %s", exc)
+        finally:
+            db.close()
+
+    async def _alerts_tick(self) -> None:
+        if not self._is_leader:
+            return
+        from app.services.alerts import send_pending_digests, send_saved_event_reminders
+
+        db = self._session_factory()
+        try:
+            send_saved_event_reminders(db)
+            send_pending_digests(db)
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("alerts tick failed: %s", exc)
         finally:
             db.close()
 

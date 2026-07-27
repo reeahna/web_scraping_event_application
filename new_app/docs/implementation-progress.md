@@ -461,6 +461,52 @@ view; tests never execute it).
 **Verification:** 11 new tests (search, source, recurrence, presets, city page,
 recurrence-parent exclusion, map coords-only, map payload has no sensitive
 fields, geocoded-coordinate preference, map container render); existing
-home/public suites unaffected. Ruff clean; full suite: see below.
+home/public suites unaffected. Ruff clean; full suite: 1016 passed.
+
+**Commit:** `6d45344`.
+
+## Phase 13 — saved events, followed cities, and alerts
+
+**Status:** complete.
+
+Registered-user engagement, entirely per-user and privacy-scoped — no route
+reads or writes another user's data, and registered users retain zero
+administrative permissions.
+
+**Model (migration `b7e2f5a4c318`).** `saved_events`, `user_follows` (a
+polymorphic city/category/source follow), `alert_preferences` (channels,
+frequency, per-type toggles, an unsubscribe token), and `alert_deliveries` (a
+ledger whose unique `(user, alert_key, channel)` is what prevents duplicate
+alerts across re-scrapes and retried digests).
+
+**Services.** `engagement` (save/unsave, follow/unfollow, followers,
+preferences, token unsubscribe); `email` (a pluggable `EmailSender` — default
+`NoopEmailSender` sends nothing, plus console/memory backends — so no real
+email is ever sent unless enabled AND a backend is configured); `alerts`
+(generation + delivery). In-app alerts reuse the notification system with a
+per-user fingerprint; a follower with no stored preferences gets sensible
+defaults (in-app on, email off).
+
+**Alerts covered.** New events in a followed city/category/source; cancellation
+and update alerts to users who saved the event; day-before reminders for saved
+events. Immediate email sends now; daily/weekly queue as pending and are
+batched into one digest per period. Everything deduped by the ledger.
+
+**Wiring.** `run_extraction` fires new-event/update/cancellation alerts on
+persist (best-effort, isolated — an alert failure never affects the run). The
+scheduler process runs an alerts tick (reminders + digests).
+
+**UI.** Save/unsave and follow-city buttons on the event detail page, a saved-
+events page, an alert-preferences page, and a token-based public unsubscribe
+page (email only; in-app untouched). All state-changing posts are CSRF-protected
+and PRG-redirected.
+
+**Config:** email settings (disabled, noop backend). No new dependency.
+
+**Verification:** 6 engagement, 6 alerts, 7 endpoint tests (19 new) covering
+idempotency, privacy between users, dedup, preference-off, digest batching,
+cancellation/reminder alerts, CSRF, and login requirements; migration
+round-trips on a scratch DB; extraction suite unaffected by the alert hook.
+Ruff clean; full suite: see below.
 
 **Commit:** (recorded with the next update).
