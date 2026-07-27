@@ -414,7 +414,53 @@ dependency (uses the existing `httpx`).
 
 **Verification:** 7 provider/helper, 9 service, 4 admin-endpoint tests (20 new);
 migration round-trips on a scratch DB and parity holds; public-events suite
-unaffected by the coordinate-preference change. Ruff clean; full suite: see
-below.
+unaffected by the coordinate-preference change. Ruff clean; full suite: 1005
+passed.
+
+**Commit:** `32665b2`.
+
+## Phase 12 — complete public event experience
+
+**Status:** complete.
+
+Extends the existing polished, responsive homepage into the full public
+experience without disturbing its styling.
+
+**Filters + shareable URLs (`app/routers/home.py`, `repositories/public_events.py`).**
+A single `_Filters` parser drives the list route, the city route, and the map
+endpoint identically: text search (title/venue/description), city, category,
+source, one-time/recurring, explicit date range, and `Today` / `This weekend`
+presets (a preset serializes as `?preset=...` so the URL stays tidy and
+self-contained). Every control is a GET field and every link carries the
+current query string, so any view is shareable.
+
+**City picker + city pages.** `/city/{slug}` pins a city and reuses the same
+rendering; the homepage shows a city picker when no city is selected.
+
+**Map (`/events/map`, `static/js/event-map.js`).** A `view=list|map` toggle;
+the map is progressive enhancement over the always-rendered list (the
+accessible non-map equivalent). Leaflet + MarkerCluster (CDN) plot OpenStreetMap
+tiles with clustering and keyboard-accessible popups built via the DOM (never
+string-interpolated HTML). The `/events/map` JSON carries only visible, matching
+events that have usable coordinates and only safe fields — no provenance, raw
+records, configuration, or correction history. Tile URL/attribution and a
+fallback image are configurable.
+
+**Occurrence-aware.** `_base_public_query` excludes recurrence parents, so a
+series never renders a parent card alongside its occurrence cards; only
+concrete occurrences and single events appear. Public coordinates follow the
+correction -> source -> geocoded preference.
+
+**Accessibility.** Search landmark, labeled controls, heading hierarchy, empty
+alt on decorative fallbacks, `aria-current` on the active view, and the list as
+the full non-map equivalent.
+
+**No migration, no new dependency** (Leaflet is loaded from CDN only in map
+view; tests never execute it).
+
+**Verification:** 11 new tests (search, source, recurrence, presets, city page,
+recurrence-parent exclusion, map coords-only, map payload has no sensitive
+fields, geocoded-coordinate preference, map container render); existing
+home/public suites unaffected. Ruff clean; full suite: see below.
 
 **Commit:** (recorded with the next update).

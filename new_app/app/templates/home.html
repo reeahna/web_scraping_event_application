@@ -2,7 +2,16 @@
 
 {% block title %}New City Events — Find Events Near You{% endblock %}
 
+{% block head_extra %}
+{% if filters.view == "map" %}
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+<link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.css" />
+<link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.Default.css" />
+{% endif %}
+{% endblock %}
+
 {% block content %}
+{% set sep = "&" if query_string else "" %}
 <section class="hero">
   <div class="hero-inner">
     <h1>Find events near you</h1>
@@ -15,8 +24,22 @@
 </section>
 
 <div class="page-container">
+  {% if not selected_city and cities %}
+  <nav class="city-picker" aria-label="Choose a city">
+    <span class="city-picker-label">Cities:</span>
+    {% for city in cities %}
+    <a class="city-picker-link" href="/city/{{ city.slug }}">{{ city.name }}</a>
+    {% endfor %}
+  </nav>
+  {% endif %}
+
   <section class="filter-panel" aria-label="Filter events">
-    <form method="get" action="/" class="filter-form">
+    <form method="get" action="{{ base_path }}" class="filter-form" role="search">
+      <div class="filter-field filter-field-search">
+        <label for="q">Search</label>
+        <input type="search" id="q" name="q" value="{{ filters.q }}" placeholder="Title or venue" />
+      </div>
+      {% if not selected_city %}
       <div class="filter-field">
         <label for="city_id">City</label>
         <select id="city_id" name="city_id">
@@ -26,6 +49,7 @@
           {% endfor %}
         </select>
       </div>
+      {% endif %}
       <div class="filter-field">
         <label for="category_id">Category</label>
         <select id="category_id" name="category_id">
@@ -33,6 +57,23 @@
           {% for category in categories %}
           <option value="{{ category.id }}"{% if filters.category_id == category.id %} selected{% endif %}>{{ category.name }}</option>
           {% endfor %}
+        </select>
+      </div>
+      <div class="filter-field">
+        <label for="source_id">Source</label>
+        <select id="source_id" name="source_id">
+          <option value="">All sources</option>
+          {% for source in sources %}
+          <option value="{{ source.id }}"{% if filters.source_id == source.id %} selected{% endif %}>{{ source.source_display_name or source.name }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="filter-field">
+        <label for="recurrence">Type</label>
+        <select id="recurrence" name="recurrence">
+          <option value="">All events</option>
+          <option value="single"{% if filters.recurrence == "single" %} selected{% endif %}>One-time</option>
+          <option value="recurring"{% if filters.recurrence == "recurring" %} selected{% endif %}>Recurring</option>
         </select>
       </div>
       <div class="filter-field">
@@ -49,13 +90,32 @@
           Upcoming only
         </label>
       </div>
+      {% if filters.view == "map" %}<input type="hidden" name="view" value="map" />{% endif %}
       <div class="filter-actions">
         <button type="submit">Filter</button>
-        <a href="/" class="filter-clear-link">Clear filters</a>
+        <a href="{{ base_path }}" class="filter-clear-link">Clear filters</a>
       </div>
     </form>
+    <div class="filter-presets" aria-label="Quick date filters">
+      <a class="filter-preset{% if filters.preset == 'today' %} filter-preset-active{% endif %}" href="{{ base_path }}?preset=today{% if filters.view == 'map' %}&view=map{% endif %}">Today</a>
+      <a class="filter-preset{% if filters.preset == 'weekend' %} filter-preset-active{% endif %}" href="{{ base_path }}?preset=weekend{% if filters.view == 'map' %}&view=map{% endif %}">This weekend</a>
+    </div>
   </section>
 
+  <div class="view-toggle" role="group" aria-label="Choose list or map view">
+    <a class="view-toggle-option{% if filters.view != 'map' %} view-toggle-active{% endif %}" href="{{ base_path }}?{{ query_string }}{{ sep }}view=list"{% if filters.view != 'map' %} aria-current="true"{% endif %}>List</a>
+    <a class="view-toggle-option{% if filters.view == 'map' %} view-toggle-active{% endif %}" href="{{ base_path }}?{{ query_string }}{{ sep }}view=map"{% if filters.view == 'map' %} aria-current="true"{% endif %}>Map</a>
+  </div>
+
+  {% if filters.view == "map" %}
+  <section class="map-section" aria-label="Map of events">
+    <div id="event-map" class="event-map" data-map-url="/events/map?{{ query_string }}"
+         data-tile-url="{{ map_tile_url }}" data-attribution="{{ map_attribution }}"></div>
+    <p class="map-note">Showing events with a known location. The full list below includes every matching event.</p>
+  </section>
+  {% endif %}
+
+  <h2 class="results-heading" id="results">{{ total }} event{{ 's' if total != 1 else '' }}</h2>
   {% if events %}
   <div class="event-grid">
     {% for event in events %}
@@ -63,6 +123,10 @@
       {% if event.image_url %}
       <div class="event-card-image">
         <img src="{{ event.image_url }}" alt="{{ event.title }}" loading="lazy" />
+      </div>
+      {% elif fallback_image_url %}
+      <div class="event-card-image">
+        <img src="{{ fallback_image_url }}" alt="" loading="lazy" />
       </div>
       {% else %}
       <div class="event-card-image event-card-image-fallback" aria-hidden="true">
@@ -75,9 +139,10 @@
       {% endif %}
       <div class="event-card-body">
         {% if event.effective_category %}<span class="badge badge-pending">{{ event.effective_category.name }}</span>{% endif %}
-        <h2>{{ event.title }}</h2>
+        {% if event.recurrence_parent_id %}<span class="badge badge-muted">Recurring</span>{% endif %}
+        <h3>{{ event.title }}</h3>
         <div class="event-card-meta">
-          <span class="event-card-date">{{ event.start_date | human_date }}{% if event.start_time %} · {{ event.start_time | human_time }}{% endif %}</span>
+          <span class="event-card-date">{{ event.start_date | human_date }}{% if event.start_time %} · {{ event.start_time | human_time }}{% endif %}{% if event.end_date and event.end_date != event.start_date %} – {{ event.end_date | human_date }}{% endif %}</span>
           <span>{{ event.public_venue or 'Venue TBD' }}</span>
           <span>{{ event.city.name if event.city else '—' }}</span>
         </div>
@@ -91,17 +156,15 @@
   </div>
 
   <nav class="pagination" aria-label="Pagination">
-    <span class="pagination-count">{{ total }} event{{ 's' if total != 1 else '' }}</span>
     <span class="pagination-links">
-      {% set qs = "city_id=" ~ (filters.city_id or "") ~ "&category_id=" ~ (filters.category_id or "") ~ "&upcoming_only=" ~ ("1" if filters.upcoming_only else "") ~ "&date_from=" ~ filters.date_from ~ "&date_to=" ~ filters.date_to %}
       {% if page > 1 %}
-      <a href="/?{{ qs }}&page={{ page - 1 }}">&larr; Previous</a>
+      <a href="{{ base_path }}?{{ query_string }}{{ sep }}page={{ page - 1 }}{% if filters.view == 'map' %}&view=map{% endif %}">&larr; Previous</a>
       {% else %}
       <span class="pagination-disabled">&larr; Previous</span>
       {% endif %}
       <span class="pagination-current">Page {{ page }}</span>
       {% if has_next %}
-      <a href="/?{{ qs }}&page={{ page + 1 }}">Next &rarr;</a>
+      <a href="{{ base_path }}?{{ query_string }}{{ sep }}page={{ page + 1 }}{% if filters.view == 'map' %}&view=map{% endif %}">Next &rarr;</a>
       {% else %}
       <span class="pagination-disabled">Next &rarr;</span>
       {% endif %}
@@ -114,10 +177,18 @@
       <path d="M3 9h18" />
       <path d="M8 3v4M16 3v4" />
     </svg>
-    <h2>No events match these filters</h2>
+    <h3>No events match these filters</h3>
     <p>Try widening your date range or clearing filters to see everything upcoming.</p>
-    <a href="/" class="filter-clear-link">Clear filters</a>
+    <a href="{{ base_path }}" class="filter-clear-link">Clear filters</a>
   </div>
   {% endif %}
 </div>
+{% endblock %}
+
+{% block scripts %}
+{% if filters.view == "map" %}
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script src="https://unpkg.com/leaflet.markercluster@1.5.3/dist/leaflet.markercluster.js"></script>
+<script src="/static/js/event-map.js" defer></script>
+{% endif %}
 {% endblock %}

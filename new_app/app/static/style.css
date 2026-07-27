@@ -1200,3 +1200,105 @@ button:hover {
     text-align: center;
   }
 }
+
+/* --- Phase 12: public event experience (city picker, presets, view toggle, map) --- */
+.city-picker {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  align-items: center;
+  margin-bottom: var(--space-4);
+}
+.city-picker-label {
+  color: var(--muted);
+  font-size: 0.9rem;
+  font-weight: 600;
+}
+.city-picker-link {
+  display: inline-block;
+  padding: var(--space-1) var(--space-3);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-pill);
+  background: var(--surface);
+  color: var(--text);
+  text-decoration: none;
+  font-size: 0.9rem;
+}
+.city-picker-link:hover,
+.city-picker-link:focus-visible {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.filter-field-search {
+  flex: 1 1 220px;
+}
+.filter-presets {
+  display: flex;
+  gap: var(--space-2);
+  margin-top: var(--space-3);
+}
+.filter-preset {
+  padding: var(--space-1) var(--space-3);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-pill);
+  background: var(--surface);
+  color: var(--text);
+  text-decoration: none;
+  font-size: 0.9rem;
+}
+.filter-preset-active,
+.filter-preset:hover,
+.filter-preset:focus-visible {
+  background: var(--accent-soft);
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.view-toggle {
+  display: inline-flex;
+  margin: var(--space-5) 0 var(--space-4);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-pill);
+  overflow: hidden;
+}
+.view-toggle-option {
+  padding: var(--space-2) var(--space-5);
+  color: var(--text);
+  text-decoration: none;
+  font-weight: 600;
+  font-size: 0.9rem;
+}
+.view-toggle-active {
+  background: var(--accent);
+  color: #fff;
+}
+
+.results-heading {
+  font-size: 1.1rem;
+  margin: var(--space-4) 0;
+}
+
+.map-section {
+  margin-bottom: var(--space-5);
+}
+.event-map {
+  height: 460px;
+  width: 100%;
+  border-radius: var(--radius-lg);
+  border: 1px solid var(--border);
+  box-shadow: var(--shadow-sm);
+  z-index: 0;
+}
+.map-note {
+  color: var(--muted);
+  font-size: 0.85rem;
+  margin-top: var(--space-2);
+}
+.map-popup strong a {
+  color: var(--accent);
+}
+.badge-muted {
+  background: var(--accent-soft);
+  color: var(--muted);
+}

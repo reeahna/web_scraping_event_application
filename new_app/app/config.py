@@ -94,6 +94,14 @@ class Settings(BaseSettings):
     # How many events one background drain processes per tick.
     geocoding_batch_size: int = 10
 
+    # Public UI (Phase 12). A configurable fallback image shown on event cards
+    # and detail pages that have no image; None uses the built-in inline icon.
+    public_fallback_image_url: str | None = None
+    # OpenStreetMap raster tile template for the Leaflet map. Overridable so an
+    # operator can point at their own tile server / attribution.
+    public_map_tile_url: str = "https://tile.openstreetmap.org/{z}/{x}/{y}.png"
+    public_map_attribution: str = "© OpenStreetMap contributors"
+
     model_config = SettingsConfigDict(
         env_file=str(BASE_DIR / ".env"),
         env_file_encoding="utf-8",

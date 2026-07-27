@@ -6,6 +6,7 @@
   <meta name="description" content="Find local events — concerts, theater, festivals, and more." />
   <title>{% block title %}New City Events{% endblock %}</title>
   <link rel="stylesheet" href="/static/style.css" />
+  {% block head_extra %}{% endblock %}
 </head>
 <body>
   <a class="skip-link" href="#main-content">Skip to content</a>
@@ -48,5 +49,6 @@
       <p class="site-footer-copyright">&copy; {{ current_year() }} New City Events</p>
     </div>
   </footer>
+  {% block scripts %}{% endblock %}
 </body>
 </html>
