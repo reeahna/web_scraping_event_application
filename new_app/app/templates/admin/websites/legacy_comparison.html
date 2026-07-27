@@ -1,0 +1,84 @@
+{% extends "admin_base.html" %}
+
+{% block title %}Legacy comparison — {{ website.name }}{% endblock %}
+
+{% block admin_content %}
+<p class="breadcrumb"><a href="/admin/websites/{{ website.id }}">&laquo; Back to source</a></p>
+<h1>Legacy comparison — {{ website.name }}</h1>
+<p class="audit-meta">Current migration status: <strong>{{ website.legacy_migration_status }}</strong>{% if website.legacy_migrated_at %} (migrated {{ website.legacy_migrated_at }}){% endif %}</p>
+
+<form method="get" action="/admin/websites/{{ website.id }}/legacy-comparison" class="filter-form">
+  <div class="filter-field">
+    <label for="legacy_source">Legacy source name</label>
+    <input type="text" id="legacy_source" name="legacy_source" value="{{ legacy_source }}" />
+  </div>
+  <div class="filter-actions"><button type="submit">Run comparison</button></div>
+</form>
+
+{% if error %}
+<p class="form-error">{{ error }}</p>
+{% elif report %}
+{% if not report.legacy_available %}
+<p class="banner banner-warning">The legacy source could not be read; it has been recorded as <strong>unavailable</strong>. The new engine's preview is still shown below.</p>
+{% endif %}
+<section aria-label="Comparison summary">
+  <h2>Summary</h2>
+  <ul class="inline-stats">
+    <li>Legacy: <strong>{{ report.legacy_count }}</strong></li>
+    <li>New: <strong>{{ report.new_count }}</strong></li>
+    <li>Matched: <strong>{{ report.matched_count }}</strong></li>
+    <li>Field diffs: <strong>{{ report.field_difference_count }}</strong></li>
+    <li>Legacy-only: <strong>{{ report.legacy_only|length }}</strong></li>
+    <li>New-only: <strong>{{ report.new_only|length }}</strong></li>
+    <li>Likely duplicates: <strong>{{ report.likely_duplicate_keys|length }}</strong></li>
+    <li>New invalid: <strong>{{ report.new_invalid|length }}</strong></li>
+  </ul>
+</section>
+
+{% if report.matched %}
+<section aria-label="Field differences">
+  <h2>Matched with field differences</h2>
+  <table>
+    <thead><tr><th>Title</th><th>Date</th><th>Differing fields</th></tr></thead>
+    <tbody>
+      {% for pair in report.matched if pair.field_differences %}
+      <tr>
+        <td>{{ pair.new.title or pair.legacy.title }}</td>
+        <td>{{ pair.new.start_date or '—' }}</td>
+        <td>{{ pair.field_differences|join(', ') }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</section>
+{% endif %}
+
+<section aria-label="Legacy-only and new-only">
+  <h2>Legacy-only ({{ report.legacy_only|length }})</h2>
+  {% if report.legacy_only %}
+  <ul>{% for e in report.legacy_only[:50] %}<li>{{ e.title }} — {{ e.start_date or '—' }}</li>{% endfor %}</ul>
+  {% else %}<p class="empty-inline">None — the new engine covered every legacy event.</p>{% endif %}
+  <h2>New-only ({{ report.new_only|length }})</h2>
+  {% if report.new_only %}
+  <ul>{% for e in report.new_only[:50] %}<li>{{ e.title }} — {{ e.start_date or '—' }}</li>{% endfor %}</ul>
+  {% else %}<p class="empty-inline">None.</p>{% endif %}
+</section>
+{% else %}
+<p class="empty-inline">Enter a legacy source name and run the comparison.</p>
+{% endif %}
+
+<section aria-label="Migration status">
+  <h2>Mark migration status</h2>
+  <p class="audit-meta">After reviewing the comparison, record the outcome. This never changes live extraction.</p>
+  <form method="post" action="/admin/websites/{{ website.id }}/legacy-comparison/status" class="inline-form">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}" />
+    <input type="hidden" name="legacy_source" value="{{ legacy_source }}" />
+    <select name="status" aria-label="Migration status">
+      <option value="pending">Pending</option>
+      <option value="migrated">Migrated</option>
+      <option value="unavailable">Unavailable</option>
+    </select>
+    <button type="submit" class="nav-button">Save status</button>
+  </form>
+</section>
+{% endblock %}

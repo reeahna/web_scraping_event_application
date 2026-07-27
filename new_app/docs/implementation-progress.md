@@ -588,6 +588,43 @@ activity tables with genuine empty states, and audit-log pagination.
 
 **Verification:** 6 tests (empty state, seeded counts incl. recurrence/geo
 markers, audit-payload redaction, AI-usage carries no key, permission gating,
-admin render). Ruff clean; full suite: see below.
+admin render). Ruff clean; full suite: 1055 passed.
+
+**Commit:** `a3d4529`.
+
+## Phase 16 — legacy comparison and source migration
+
+**Status:** complete.
+
+A comparison workflow that pits the new engine's preview against a legacy
+source's events. `legacy_app` stays strictly read-only: the legacy events
+database is opened `mode=ro`, no legacy scraper is run, no legacy row is written,
+and no scheduler is started.
+
+**Engine (`app/services/legacy_comparison.py`).** `compare_events` is pure and
+pattern-independent: given normalized `ComparableEvent`s from each side it
+reports matched pairs (with per-field differences over title/date/end/time/
+venue/address/url/category/image/recurrence), legacy-only, new-only, likely
+duplicates (repeated match keys), and validation differences (new candidates
+that would not persist). `read_legacy_events` reads one source's events from
+`legacy_app/events.db` read-only and raises `LegacyUnavailable` (recorded, never
+fatal) when it cannot. `run_comparison` ties the new preview to the legacy read.
+
+**Migration status (migration `d5f1a3c8b940`).** `websites` gains
+`legacy_migration_status` (pending | migrated | unavailable), `legacy_source_name`,
+and `legacy_migrated_at`; `set_migration_status` records the review outcome
+without ever touching live extraction. A legacy source that no longer reads is
+marked unavailable rather than blocking the phase.
+
+**Admin (`app/routers/legacy_comparison.py`).** A comparison view (runs the new
+preview + reads legacy, shows the full diff with empty states) and a
+CSRF-protected status control.
+
+**Verification:** 11 tests — matched/legacy-only/new-only, field differences,
+likely duplicates, validation differences, recurrence difference, read-only
+reader returns real data, the reader's connection cannot write (INSERT raises
+on the `mode=ro` handle), missing DB is unavailable, candidate mapping, status
+persistence, and the status endpoint; migration round-trips on a scratch DB.
+Ruff clean; full suite: see below.
 
 **Commit:** (recorded with the next update).

@@ -73,5 +73,15 @@ class Website(Base, TimestampMixin):
     # Prerequisite (along with events) for safely deleting the website's city.
     archived_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), default=None)
 
+    # Legacy migration (Phase 16): status is pending | migrated | unavailable.
+    # `legacy_source_name` maps this website to the legacy events DB `source`
+    # value so a comparison can find its legacy events. Never affects live
+    # extraction; purely a migration-review record.
+    legacy_migration_status: Mapped[str] = mapped_column(String(16), default="pending")
+    legacy_source_name: Mapped[str | None] = mapped_column(String(255), default=None)
+    legacy_migrated_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), default=None
+    )
+
     city: Mapped["City | None"] = relationship(back_populates="websites")
     events: Mapped[list["Event"]] = relationship(back_populates="website")
