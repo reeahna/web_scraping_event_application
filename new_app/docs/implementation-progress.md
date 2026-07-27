@@ -555,6 +555,39 @@ base. **Dependency added:** `Authlib>=1.3`.
 unverified-email conflict, returning-identity, disabled-user rejection,
 missing-email, provider enable/disable, disabled-provider 404, full flow mints a
 session, bad-state/missing-code fail safely; migration round-trips on a scratch
-DB; login suite unaffected. Ruff clean; full suite: see below.
+DB; login suite unaffected. Ruff clean; full suite: 1049 passed.
+
+**Commit:** `cadc3f0`.
+
+## Phase 15 — operational dashboard and reporting
+
+**Status:** complete.
+
+One read-only admin view (`GET /admin/reports`, gated on `reports.view`)
+aggregating system health.
+
+**Service (`app/services/reporting.py`).** `build_operational_report` computes,
+with bounded queries: sources by onboarding status; the onboarding queue;
+geocoding statuses; top-line counts (active/failing/needs-review sources,
+failed/blocked runs, validation errors, unsupported reports, drift proposals,
+geocoding failures, duplicate queue); recurrence truncations and geography
+exclusions (scanned from a bounded window of recent run warnings); scheduler
+health; AI usage; and short recent lists of runs, validation errors,
+automatic-onboarding decisions, the duplicate queue, notifications, unsupported
+reports, and a paginated audit log.
+
+**Redaction.** Only counts and safe fields are surfaced — never secrets, API
+keys, cookies, auth headers, OAuth tokens, provider credentials, raw source
+content, audit before/after payloads, or other users' preferences. (A test
+seeds a secret-bearing audit row and asserts nothing sensitive appears.)
+
+**UI.** A metric-card grid, scheduler/AI health, status breakdowns, recent-
+activity tables with genuine empty states, and audit-log pagination.
+
+**No migration, no new dependency.**
+
+**Verification:** 6 tests (empty state, seeded counts incl. recurrence/geo
+markers, audit-payload redaction, AI-usage carries no key, permission gating,
+admin render). Ruff clean; full suite: see below.
 
 **Commit:** (recorded with the next update).

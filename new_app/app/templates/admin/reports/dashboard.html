@@ -1,0 +1,125 @@
+{% extends "admin_base.html" %}
+
+{% block title %}Operational dashboard — Admin{% endblock %}
+
+{% block admin_content %}
+<h1>Operational dashboard</h1>
+<p class="audit-meta">Generated {{ report.generated_at }}. Counts and recent activity only — no secrets or raw source content are shown.</p>
+
+<section aria-label="Key metrics">
+  <div class="metric-grid">
+    {% for key, label in [
+      ("active_sources", "Active sources"),
+      ("failing_sources", "Failing sources"),
+      ("needs_review_sources", "Needs review"),
+      ("onboarding_pending", "Onboarding queued"),
+      ("runs_failed", "Failed/blocked runs"),
+      ("validation_errors", "Validation errors"),
+      ("unsupported_reports", "Unsupported reports"),
+      ("drift_proposals", "Drift proposals"),
+      ("geocoding_failed", "Geocoding failed"),
+      ("geocoding_needs_review", "Geocoding review"),
+      ("duplicate_queue", "Duplicate queue"),
+      ("recurrence_truncations", "Recurrence truncations"),
+      ("geography_exclusions", "Geography exclusions")
+    ] %}
+    <div class="metric-card">
+      <span class="metric-value">{{ report.counts.get(key, 0) }}</span>
+      <span class="metric-label">{{ label }}</span>
+    </div>
+    {% endfor %}
+  </div>
+</section>
+
+<section aria-label="Scheduler and AI health">
+  <h2>Scheduler &amp; workers</h2>
+  <table><tbody>
+    <tr><th>Leader</th><td>{{ report.scheduler.leader_holder or '—' }} ({{ 'fresh' if report.scheduler.leader_is_fresh else 'stale' }})</td></tr>
+    <tr><th>Scheduled / running / paused</th><td>{{ report.scheduler.scheduled_count }} / {{ report.scheduler.running_count }} / {{ report.scheduler.paused_count }}</td></tr>
+    <tr><th>AI provider</th><td>{{ report.ai_usage.provider }} — {{ 'enabled' if report.ai_usage.enabled else 'disabled' }}{% if report.ai_usage.enabled %}, {{ 'healthy' if report.ai_usage.healthy else 'unhealthy' }}, {{ report.ai_usage.daily_used }} today / {{ report.ai_usage.monthly_used }} this month{% endif %}</td></tr>
+  </tbody></table>
+</section>
+
+<section aria-label="Sources by status">
+  <h2>Sources by status</h2>
+  {% if report.sources_by_status %}
+  <ul class="inline-stats">{% for status, count in report.sources_by_status.items() %}<li>{{ status }}: <strong>{{ count }}</strong></li>{% endfor %}</ul>
+  {% else %}<p class="empty-inline">No sources yet.</p>{% endif %}
+  <h2>Onboarding queue</h2>
+  {% if report.onboarding_queue %}
+  <ul class="inline-stats">{% for status, count in report.onboarding_queue.items() %}<li>{{ status }}: <strong>{{ count }}</strong></li>{% endfor %}</ul>
+  {% else %}<p class="empty-inline">The onboarding queue is empty.</p>{% endif %}
+  <h2>Geocoding</h2>
+  {% if report.geocoding %}
+  <ul class="inline-stats">{% for status, count in report.geocoding.items() %}<li>{{ status }}: <strong>{{ count }}</strong></li>{% endfor %}</ul>
+  {% else %}<p class="empty-inline">No geocoding activity.</p>{% endif %}
+</section>
+
+{% macro recent_table(title, rows, columns, empty) %}
+<section aria-label="{{ title }}">
+  <h2>{{ title }}</h2>
+  {% if rows %}
+  <table>
+    <thead><tr>{% for _, header in columns %}<th>{{ header }}</th>{% endfor %}</tr></thead>
+    <tbody>
+      {% for row in rows %}
+      <tr>{% for keyname, _ in columns %}<td>{{ row.get(keyname) if row.get(keyname) is not none else '—' }}</td>{% endfor %}</tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% else %}<p class="empty-inline">{{ empty }}</p>{% endif %}
+</section>
+{% endmacro %}
+
+{{ recent_table("Recent extraction runs", report.recent_runs,
+   [("id","#"),("website_id","Site"),("pattern","Pattern"),("run_type","Type"),("status","Status"),("events_valid","Valid"),("events_rejected","Rejected"),("started_at","Started")],
+   "No extraction runs yet.") }}
+
+{{ recent_table("Recent validation errors", report.recent_errors,
+   [("id","#"),("run_id","Run"),("stage","Stage"),("error_code","Code"),("message","Message"),("created_at","When")],
+   "No validation errors recorded.") }}
+
+{{ recent_table("Recent automatic-onboarding decisions", report.recent_decisions,
+   [("id","#"),("website_id","Site"),("final_decision","Decision"),("detected_pattern","Pattern"),("origin","Origin"),("created_at","When")],
+   "No automatic-onboarding decisions yet.") }}
+
+{{ recent_table("Duplicate queue", report.recent_duplicates,
+   [("id","#"),("title","Title"),("start_date","Date")],
+   "No possible duplicates awaiting review.") }}
+
+{{ recent_table("Recent notifications", report.recent_notifications,
+   [("id","#"),("type","Type"),("severity","Severity"),("title","Title"),("created_at","When")],
+   "No notifications yet.") }}
+
+{{ recent_table("Recent unsupported-site reports", report.recent_unsupported,
+   [("id","#"),("status","Status"),("created_at","When")],
+   "No unsupported-site reports.") }}
+
+<section aria-label="Recent audit log">
+  <h2>Recent audit log</h2>
+  {% if report.recent_audits %}
+  <table>
+    <thead><tr><th>#</th><th>Action</th><th>Entity</th><th>Actor</th><th>Detail</th><th>When</th></tr></thead>
+    <tbody>
+      {% for a in report.recent_audits %}
+      <tr>
+        <td>{{ a.id }}</td>
+        <td>{{ a.action }}</td>
+        <td>{{ a.entity_type or '—' }}{% if a.entity_id %} #{{ a.entity_id }}{% endif %}</td>
+        <td>{{ a.actor_label or a.actor_type }}</td>
+        <td>{{ a.detail or '—' }}</td>
+        <td>{{ a.created_at }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  <nav class="pagination" aria-label="Audit pagination">
+    <span class="pagination-links">
+      {% if report.audit_page > 1 %}<a href="/admin/reports?audit_page={{ report.audit_page - 1 }}">&larr; Newer</a>{% else %}<span class="pagination-disabled">&larr; Newer</span>{% endif %}
+      <span class="pagination-current">Page {{ report.audit_page }}</span>
+      {% if report.audit_has_next %}<a href="/admin/reports?audit_page={{ report.audit_page + 1 }}">Older &rarr;</a>{% else %}<span class="pagination-disabled">Older &rarr;</span>{% endif %}
+    </span>
+  </nav>
+  {% else %}<p class="empty-inline">No audit entries yet.</p>{% endif %}
+</section>
+{% endblock %}

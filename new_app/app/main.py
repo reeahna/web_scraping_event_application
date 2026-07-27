@@ -32,6 +32,7 @@ from app.routers import (
     onboarding,
     public_events,
     registration,
+    reporting,
     scheduler,
     unsupported_reports,
     websites,
@@ -86,3 +87,4 @@ app.include_router(auto_onboarding_policies.decisions_router)
 app.include_router(scheduler.router)
 app.include_router(geocoding.router)
 app.include_router(engagement.router)
+app.include_router(reporting.router)
