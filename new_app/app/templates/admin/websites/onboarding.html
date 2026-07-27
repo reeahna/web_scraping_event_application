@@ -20,7 +20,9 @@
 {% else %}
 
 {% set inference = result.inference %}
-{% set quality = result.quality %}
+{# Normalized so older snapshots (missing Phase 8G range/geo metrics) render
+   safely — absent metrics stay distinguishable from evaluated zeros. #}
+{% set quality = quality_view(result.quality) %}
 
 <h2>Result</h2>
 <table>
@@ -146,26 +148,32 @@
 <table>
   <tbody>
     <tr><th>Candidates found</th><td>{{ quality.candidates_found }}</td></tr>
-    <tr><th>Valid</th><td>{{ quality.valid_count }} ({{ "%.0f%%"|format(quality.valid_percentage * 100) }})</td></tr>
-    <tr><th>Rejected</th><td>{{ quality.rejected_count }} ({{ "%.0f%%"|format(quality.rejected_percentage * 100) }})</td></tr>
+    <tr><th>Valid</th><td>{{ quality.valid_count }} ({{ quality.valid_percentage | pct }})</td></tr>
+    <tr><th>Rejected</th><td>{{ quality.rejected_count }} ({{ quality.rejected_percentage | pct }})</td></tr>
     <tr><th>Required-field coverage</th>
       <td>{% for field, value in quality.required_field_coverage.items() %}
-        {{ field }}: {{ "%.0f%%"|format(value * 100) }}{% if not loop.last %} · {% endif %}
+        {{ field }}: {{ value | pct }}{% if not loop.last %} · {% endif %}
         {% endfor %}</td></tr>
-    <tr><th>Date parse success</th><td>{{ "%.0f%%"|format(quality.date_parse_success_rate * 100) }}</td></tr>
+    <tr><th>Date parse success</th><td>{{ quality.date_parse_success_rate | pct }}</td></tr>
     <tr><th>Date ranges</th>
-      <td>{{ quality.range_count }} multi-day ·
-        parse success {{ "%.0f%%"|format(quality.range_parse_success_rate * 100) }} ·
-        end-date success {{ "%.0f%%"|format(quality.end_date_success_rate * 100) }}
-        {% if quality.ambiguous_range_rejections %} · {{ quality.ambiguous_range_rejections }} ambiguous rejected{% endif %}</td></tr>
-    {% if quality.geographic_considered %}
+      <td>{% if quality.range_applicable %}
+        {{ quality.range_candidate_count or 0 }} multi-day ·
+        {% if quality.range_metrics_recorded %}
+        parse success {{ quality.range_parse_success_rate | pct }} ·
+        end-date success {{ quality.end_date_parse_success_rate | pct }}
+        {% else %}
+        parse success not recorded
+        {% endif %}
+        {% if quality.ambiguous_range_rejection_count %} · {{ quality.ambiguous_range_rejection_count }} ambiguous rejected{% endif %}
+        {% else %}not applicable{% endif %}</td></tr>
+    {% if quality.geographic_configured %}
     <tr><th>Geographic filter</th>
-      <td>inclusion {{ "%.0f%%"|format(quality.geographic_inclusion_rate * 100) }}
-        ({{ quality.geographic_included }} of {{ quality.geographic_considered }}) ·
-        {{ quality.geographic_excluded }} excluded · {{ quality.geographic_missing }} missing geography</td></tr>
+      <td>inclusion {{ quality.geographic_inclusion_rate | pct }}
+        ({{ quality.geographic_included or 0 }} of {{ quality.geographic_considered }}) ·
+        {{ quality.geographic_excluded or 0 }} excluded · {{ quality.geographic_missing or 0 }} missing geography</td></tr>
     {% endif %}
-    <tr><th>URL validity</th><td>{{ "%.0f%%"|format(quality.url_validity_rate * 100) }}</td></tr>
-    <tr><th>Duplicate rate</th><td>{{ "%.0f%%"|format(quality.duplicate_rate * 100) }}</td></tr>
+    <tr><th>URL validity</th><td>{{ quality.url_validity_rate | pct }}</td></tr>
+    <tr><th>Duplicate rate</th><td>{{ quality.duplicate_rate | pct }}</td></tr>
     <tr><th>Warnings</th><td>{{ quality.warning_count }}</td></tr>
     <tr><th>Pages fetched</th><td>{{ quality.pages_fetched }}{% if quality.pagination_truncated %} (truncated at the configured cap){% endif %}</td></tr>
     <tr><th>Detail pages used</th><td>{{ "Yes" if quality.detail_fetch_used else "No" }}</td></tr>

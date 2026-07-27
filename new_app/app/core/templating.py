@@ -9,6 +9,7 @@ from fastapi.templating import Jinja2Templates
 
 from app.core.csrf import get_or_create_csrf_token, set_csrf_cookie
 from app.core.formatting import human_date, human_date_long, human_time
+from app.services.quality_presentation import format_percent, quality_view
 
 TEMPLATES_DIR = Path(__file__).resolve().parent.parent / "templates"
 templates = Jinja2Templates(directory=str(TEMPLATES_DIR))
@@ -16,6 +17,12 @@ templates = Jinja2Templates(directory=str(TEMPLATES_DIR))
 templates.env.filters["human_date"] = human_date
 templates.env.filters["human_date_long"] = human_date_long
 templates.env.filters["human_time"] = human_time
+# `pct` renders a 0..1 rate null-safely ('—' when absent, '0%' when a real
+# zero); `quality_view` normalizes a persisted/partial quality snapshot so
+# templates can distinguish absent metrics from evaluated zeros (Phase 8G
+# metrics are missing from older snapshots).
+templates.env.filters["pct"] = format_percent
+templates.env.globals["quality_view"] = quality_view
 
 FLASH_COOKIE = "flash"
 
