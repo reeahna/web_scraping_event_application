@@ -18,6 +18,8 @@
         <a href="/">Events</a>
         {% if current_user %}
           {% if can_access_admin %}<a href="/admin">Admin</a>{% endif %}
+          <a href="/account/saved">Saved</a>
+          <a href="/account/alerts">Alerts</a>
           <a href="/account">My Account</a>
           <form method="post" action="/auth/logout" class="inline-form">
             <input type="hidden" name="csrf_token" value="{{ csrf_token }}" />

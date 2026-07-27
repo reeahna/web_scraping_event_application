@@ -33,3 +33,42 @@ jobs:
           DATABASE_URL="sqlite:///$RUNNER_TEMP/ci.db" python -m alembic upgrade head
       - name: Tests
         run: python -m pytest -q
+
+  # Exercises the PostgreSQL path (models + migrations + suite) that production
+  # uses. The default `test` job runs on SQLite; this one asserts the app is
+  # Postgres-clean.
+  postgres:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: new_app
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: events
+          POSTGRES_PASSWORD: events
+          POSTGRES_DB: events_test
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U events"
+          --health-interval 10s --health-timeout 5s --health-retries 5
+    env:
+      DATABASE_URL: postgresql+psycopg://events:events@localhost:5432/events_test
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+      - name: Install
+        run: |
+          python -m pip install --upgrade pip
+          pip install ".[dev]" "psycopg[binary]>=3.1"
+          python -m playwright install --with-deps chromium
+      - name: Migrations against PostgreSQL
+        run: |
+          python -m alembic upgrade head
+          python -m alembic downgrade base
+          python -m alembic upgrade head
+      - name: Tests against PostgreSQL
+        run: python -m pytest -q

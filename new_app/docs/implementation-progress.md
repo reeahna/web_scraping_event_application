@@ -708,3 +708,24 @@ ready, security headers present, oversized request rejected, liveness +
 readiness). Ruff clean; full suite: 1081 passed.
 
 **Commit:** `8e88706`.
+
+## Post-plan follow-ups (production polish)
+
+Optional in-repo hardening after the master plan, none of which required
+external services:
+
+- **Redis rate-limit backend** (`app/services/rate_limit.py`): a pluggable
+  `RateLimitBackend` — in-memory (dev) and a shared Redis fixed-window counter
+  (INCR+EXPIRE), selected by `RATE_LIMIT_BACKEND`/`REDIS_URL`. Clears the
+  `/health/ready` in-process-limiter blocker in production. Deps: `redis>=5`
+  (lazy import) + `fakeredis` (dev, used in tests — no server needed).
+- **Navigation**: admin nav gained a **Reports** link; the public nav gained
+  **Saved** and **Alerts** links for logged-in users.
+- **PostgreSQL CI job** (`.github/workflows/ci.yml`): a second job runs
+  migrations round-trip + the full suite against a real PostgreSQL service, so
+  the production DB path is asserted in CI. (Config only — not executed in this
+  environment; the local suite runs on SQLite.)
+
+**Verification:** 5 rate-limit backend tests (in-memory + Redis via fakeredis +
+selection); nav-affected admin/public/login suites unaffected. Ruff clean; full
+suite: see the commit.
