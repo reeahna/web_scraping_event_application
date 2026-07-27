@@ -625,6 +625,42 @@ likely duplicates, validation differences, recurrence difference, read-only
 reader returns real data, the reader's connection cannot write (INSERT raises
 on the `mode=ro` handle), missing DB is unavailable, candidate mapping, status
 persistence, and the status endpoint; migration round-trips on a scratch DB.
-Ruff clean; full suite: see below.
+Ruff clean; full suite: 1066 passed.
+
+**Commit:** `5ccff88`.
+
+## Phase 17 — optional AI event enrichment
+
+**Status:** complete.
+
+Advisory-only AI enrichment reusing the Phase 8E disabled-by-default posture
+and its budget + circuit-breaker tracker. AI may suggest a category (for
+uncategorized events), tags, a short summary, an audience, a family-friendly
+flag, duplicate candidates, and extraction-error summaries. It may NOT invent
+dates/times/venues/addresses/URLs, approve/activate/publish/delete, change
+permissions, override validation, or run code — the service only ever writes to
+`event_enrichments`, never an event's authoritative fields.
+
+**Schema + model (migration `e8b3f2c05a19`).** `EnrichmentSuggestion` is a
+closed, bounded structured-output model with no field for any prohibited value.
+`event_enrichments` stores the suggestion, cached by `(event_id,
+prompt_version, input_hash)`.
+
+**Service (`app/services/ai_enrichment.py`).** `enrich_event` runs only on
+unresolved (uncategorized) events, sends a minimized public-fields-only input,
+gates on the shared budget/circuit breaker, validates the structured output,
+drops a category suggestion not in the active taxonomy, caches by input hash +
+prompt version, and returns None (never raises) when disabled/over-budget/
+failed — so an AI failure can never fail extraction or public display.
+`summarize_extraction_errors` covers the error-summary task; `mark_enrichment`
+records a human's applied/rejected decision. The default provider is disabled;
+tests inject an echo/mock provider.
+
+**Verification:** 10 tests — disabled produces nothing, echo suggestion stored,
+result cached (a later failing provider still returns the cache), hallucinated
+category dropped by taxonomy, resolved events never sent, authoritative fields
+never touched, AI failure returns None and trips the circuit, error summary,
+tag bounding, status marking; migration round-trips on a scratch DB. Ruff
+clean; full suite: see below.
 
 **Commit:** (recorded with the next update).

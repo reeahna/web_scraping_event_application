@@ -38,6 +38,7 @@ EXPECTED_TABLES = {
     "alert_deliveries",
     "external_identities",
     "oauth_login_states",
+    "event_enrichments",
 }
 
 
