@@ -28,7 +28,12 @@ from app.core.onboarding_jobs import (
 from app.core.templating import render
 from app.dependencies import ClientIp, CorrelationId, DbSession
 from app.models.user import User
-from app.repositories.auto_onboarding import decision_for_job, get_policy, list_policies
+from app.repositories.auto_onboarding import (
+    decision_for_job,
+    get_policy,
+    list_policies,
+    newest_decision_ids_for_jobs,
+)
 from app.repositories.city import list_cities
 from app.repositories.onboarding import (
     get_batch,
@@ -246,7 +251,10 @@ def batch_detail(batch_id: int, request: Request, current_user: ViewSites, db: D
     if batch is None:
         raise NotFoundError("Onboarding batch not found")
     jobs = list_jobs_for_batch(db, batch.id)
-    decision_ids = {job.id: _decision_id_for_job(db, job.id) for job in jobs}
+    # Always a dict (empty when there are no jobs or no decisions yet, e.g. an
+    # older batch created before decision records existed); one query for all
+    # visible jobs rather than one per job. The template uses `.get(job.id)`.
+    decision_ids = newest_decision_ids_for_jobs(db, [job.id for job in jobs])
     return render(
         request,
         "admin/onboarding/batch_detail.html",
@@ -262,11 +270,6 @@ def batch_detail(batch_id: int, request: Request, current_user: ViewSites, db: D
             "can_process": user_has_permission(db, current_user, "sites.test"),
         },
     )
-
-
-def _decision_id_for_job(db, job_id: int) -> int | None:
-    decision = decision_for_job(db, job_id)
-    return decision.id if decision is not None else None
 
 
 @router.post("/admin/onboarding/batches/{batch_id}/process")

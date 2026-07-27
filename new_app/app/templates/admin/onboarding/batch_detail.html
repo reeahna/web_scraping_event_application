@@ -60,8 +60,8 @@
         {% if job.website %}
         · <a href="/admin/websites/{{ job.website.id }}/onboarding">Review</a>
         {% endif %}
-        {% if decision_ids[job.id] %}
-        · <a href="/admin/onboarding/decisions/{{ decision_ids[job.id] }}">Decision</a>
+        {% if decision_ids.get(job.id) %}
+        · <a href="/admin/onboarding/decisions/{{ decision_ids.get(job.id) }}">Decision</a>
         {% endif %}
       </td>
     </tr>

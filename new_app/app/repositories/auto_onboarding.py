@@ -12,6 +12,9 @@ resolver's signature leaves room for it rather than pretending it exists.
 
 from __future__ import annotations
 
+from collections.abc import Iterable
+
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.core.auto_onboarding import (
@@ -231,6 +234,29 @@ def decision_for_job(db: Session, job_id: int) -> AutoOnboardingDecision | None:
         .order_by(AutoOnboardingDecision.id.desc())
         .first()
     )
+
+
+def newest_decision_ids_for_jobs(db: Session, job_ids: Iterable[int]) -> dict[int, int]:
+    """Map each onboarding job to its newest decision id, for a set of jobs, in
+    a single query — avoiding one query per job when rendering a batch.
+
+    "Newest" is the highest decision id, which matches `decision_for_job`'s
+    `id.desc()` ordering: decisions are append-only with monotonically
+    increasing ids, so the max id is deterministically the latest applicable
+    decision. Read-only: this creates no decision records. Jobs with no
+    decision are simply absent from the result (so the caller uses `.get`)."""
+    ids = [job_id for job_id in job_ids if job_id is not None]
+    if not ids:
+        return {}
+    rows = db.execute(
+        select(
+            AutoOnboardingDecision.onboarding_job_id,
+            func.max(AutoOnboardingDecision.id),
+        )
+        .where(AutoOnboardingDecision.onboarding_job_id.in_(ids))
+        .group_by(AutoOnboardingDecision.onboarding_job_id)
+    ).all()
+    return {job_id: decision_id for job_id, decision_id in rows}
 
 
 # --- Action results ---------------------------------------------------------
