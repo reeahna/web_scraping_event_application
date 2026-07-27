@@ -13,7 +13,11 @@ from app.core.exceptions import (
     unhandled_exception_handler,
 )
 from app.core.logging import configure_logging, get_logger
-from app.core.middleware import CorrelationIdMiddleware
+from app.core.middleware import (
+    CorrelationIdMiddleware,
+    MaxBodySizeMiddleware,
+    SecurityHeadersMiddleware,
+)
 from app.routers import (
     account,
     admin,
@@ -59,6 +63,20 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(title=settings.app_name, lifespan=lifespan)
 app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
+
+# Middleware is applied in reverse registration order, so register the
+# correlation id last (outermost) and the request-size guard first.
+app.add_middleware(MaxBodySizeMiddleware, max_bytes=settings.max_request_bytes)
+if settings.security_headers_enabled:
+    app.add_middleware(
+        SecurityHeadersMiddleware,
+        csp=settings.content_security_policy,
+        behind_https=settings.behind_https,
+    )
+if settings.trusted_hosts:
+    from starlette.middleware.trustedhost import TrustedHostMiddleware
+
+    app.add_middleware(TrustedHostMiddleware, allowed_hosts=settings.trusted_hosts)
 app.add_middleware(CorrelationIdMiddleware)
 
 app.add_exception_handler(AppError, app_error_handler)

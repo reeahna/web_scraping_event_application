@@ -1,0 +1,76 @@
+# Local production-topology reference (Phase 18). NOT a deployment — it
+# documents the process split and lets you exercise the production shape
+# locally. Set real secrets via an env file; never commit them.
+#
+# Processes: web (N workers, no scheduler), exactly ONE scheduler, an optional
+# browser worker, PostgreSQL, and Redis (for shared rate limiting). The
+# scheduler process also drains the onboarding, geocoding, and alert queues, so
+# a separate generic "worker" is only needed to scale those out further.
+version: "3.9"
+
+x-app-env: &app-env
+  APP_ENV: production
+  DATABASE_URL: postgresql://events:${DB_PASSWORD:?set DB_PASSWORD}@db:5432/events
+  REDIS_URL: redis://redis:6379/0
+  RATE_LIMIT_BACKEND: redis
+  COOKIE_SECURE: "true"
+  BEHIND_HTTPS: "true"
+  TRUSTED_HOSTS: '["events.example.com"]'
+  LOCAL_LOGIN_ENABLED: "false"
+
+services:
+  db:
+    image: postgres:16
+    environment:
+      POSTGRES_USER: events
+      POSTGRES_PASSWORD: ${DB_PASSWORD:?set DB_PASSWORD}
+      POSTGRES_DB: events
+    volumes: ["pgdata:/var/lib/postgresql/data"]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U events"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  migrate:
+    build: .
+    command: ["python", "-m", "alembic", "upgrade", "head"]
+    environment: *app-env
+    depends_on:
+      db: {condition: service_healthy}
+
+  web:
+    build: .
+    command: ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--workers", "4"]
+    environment: *app-env
+    ports: ["8000:8000"]
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health/ready"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+    depends_on:
+      migrate: {condition: service_completed_successfully}
+      redis: {condition: service_healthy}
+
+  # Exactly ONE scheduler process. Do not scale this service above 1.
+  scheduler:
+    build: .
+    command: ["python", "-m", "app.scheduler"]
+    environment: *app-env
+    deploy:
+      replicas: 1
+    depends_on:
+      migrate: {condition: service_completed_successfully}
+      redis: {condition: service_healthy}
+
+volumes:
+  pgdata:

@@ -1,0 +1,28 @@
+# Deployment workflow TEMPLATE — intentionally disabled (`.disabled` suffix so
+# GitHub never runs it). It performs NO deployment as committed. Rename to
+# deploy.yml and fill in a real target/credentials only with explicit
+# authorization. See docs/deployment.md and docs/recovery.md (rollback).
+name: Deploy (template - disabled)
+
+on:
+  workflow_dispatch:
+    inputs:
+      confirm:
+        description: "Type DEPLOY to proceed"
+        required: true
+
+jobs:
+  deploy:
+    if: ${{ github.event.inputs.confirm == 'DEPLOY' }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build image
+        run: docker build -t city-events:${{ github.sha }} new_app
+      # - name: Run migrations (against the target DB)
+      #   run: docker run --rm --env-file .env city-events:${{ github.sha }} \
+      #        python -m alembic upgrade head
+      # - name: Deploy web + exactly one scheduler
+      #   run: echo "Fill in your platform's deploy step here (authorized only)."
+      # Rollback: redeploy the previous image tag and, only if a migration must
+      # be undone, run `alembic downgrade <prev>` — see docs/recovery.md.

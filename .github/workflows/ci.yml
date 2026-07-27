@@ -1,0 +1,35 @@
+name: CI
+
+# Lint + full test suite for new_app on every push and PR. This is CI only —
+# it never deploys. A deployment workflow template lives in
+# .github/workflows/deploy.yml.disabled (kept disabled on purpose).
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: new_app
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+      - name: Install
+        run: |
+          python -m pip install --upgrade pip
+          pip install ".[dev]"
+          python -m playwright install --with-deps chromium
+      - name: Ruff
+        run: ruff check .
+      - name: Migrations round-trip (scratch DB)
+        run: |
+          DATABASE_URL="sqlite:///$RUNNER_TEMP/ci.db" python -m alembic upgrade head
+          DATABASE_URL="sqlite:///$RUNNER_TEMP/ci.db" python -m alembic downgrade -1
+          DATABASE_URL="sqlite:///$RUNNER_TEMP/ci.db" python -m alembic upgrade head
+      - name: Tests
+        run: python -m pytest -q

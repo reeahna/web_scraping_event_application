@@ -22,6 +22,25 @@ class Settings(BaseSettings):
     # Secure flag requires HTTPS; keep False for local http:// dev, set True in production.
     cookie_secure: bool = False
 
+    # Production hardening (Phase 18). Defaults are development-safe; production
+    # readiness is asserted by app.core.production_checks and surfaced at
+    # /health/ready. `trusted_hosts` (when set) enables host-header validation;
+    # `security_headers_enabled` adds CSP/clickjacking/nosniff/referrer headers
+    # (and HSTS when behind HTTPS). `rate_limit_backend` selects the limiter
+    # store — "memory" (dev) or an external store ("redis"/"database") in prod.
+    trusted_hosts: list[str] = []
+    security_headers_enabled: bool = True
+    behind_https: bool = False
+    content_security_policy: str = (
+        "default-src 'self'; img-src 'self' data: https:; "
+        "style-src 'self' 'unsafe-inline' https://unpkg.com; "
+        "script-src 'self' https://unpkg.com; "
+        "connect-src 'self'; frame-ancestors 'none'; base-uri 'self'; form-action 'self'"
+    )
+    max_request_bytes: int = 2_000_000
+    rate_limit_backend: str = "memory"
+    redis_url: str | None = None
+
     # Public self-registration. Enabled by default in development; disable via
     # env var once real deployment/anti-abuse controls are in place.
     registration_enabled: bool = True

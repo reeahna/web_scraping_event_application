@@ -661,6 +661,50 @@ result cached (a later failing provider still returns the cache), hallucinated
 category dropped by taxonomy, resolved events never sent, authoritative fields
 never touched, AI failure returns None and trips the circuit, error summary,
 tag bounding, status marking; migration round-trips on a scratch DB. Ruff
-clean; full suite: see below.
+clean; full suite: 1076 passed.
+
+**Commit:** `98baeb8`.
+
+## Phase 18 — production hardening and deployment preparation
+
+**Status:** complete. **This completes the master implementation plan
+(Phases 8B–18).**
+
+Prepares for production without performing any deployment (no hosting, cloud
+accounts, DNS, certificates, live OAuth apps, or exposed secrets).
+
+**Config + readiness (`app/core/production_checks.py`).** Production-hardening
+settings (trusted hosts, security headers, HTTPS assumption, request-size cap,
+rate-limit backend, Redis URL). `production_blockers`/`is_production_ready` turn
+"not ready while it depends on SQLite / in-process rate limiting / dev cookies /
+no HTTPS / no trusted hosts" into a concrete checklist, surfaced at
+`/health/ready`.
+
+**Security (`app/core/middleware.py`).** `SecurityHeadersMiddleware` (CSP,
+X-Frame-Options DENY, nosniff, referrer policy, HSTS behind HTTPS),
+`MaxBodySizeMiddleware` (413 on oversized bodies), and `TrustedHostMiddleware`
+when hosts are configured. Existing CSRF, SSRF, session, and secret-reference
+protections documented in `docs/security.md`.
+
+**Observability.** `/health`, `/health/live`, and `/health/ready` (DB
+connectivity, scheduler leader freshness, AI provider health, production
+blockers); structured logging + correlation IDs (existing); the operational
+dashboard from Phase 15; safe metrics derived from both.
+
+**Artifacts.** `Dockerfile` (one image, role by command), `docker-compose.prod.yml`
+(web / single scheduler / Postgres / Redis / one-shot migrate), `.env.example`
+(annotated), `.github/workflows/ci.yml` (Ruff + migration round-trip + full
+suite), and a disabled deploy-workflow template.
+
+**Docs.** `architecture.md`, `operations.md`, `deployment.md`, `security.md`,
+`automatic-onboarding.md`, `extraction-patterns.md`, `recovery.md` — covering
+env vars, migrations/backup/restore/rollback, process split + single-scheduler
+ownership, Playwright/OAuth/AI/geocoder setup, retention (event/audit/evidence),
+secret rotation, incident recovery, and compliance (robots.txt, source terms,
+Nominatim policy, provider terms, privacy, deletion, retention).
+
+**Verification:** 5 tests (dev defaults not production-ready, hardened settings
+ready, security headers present, oversized request rejected, liveness +
+readiness). Ruff clean; full suite: see below.
 
 **Commit:** (recorded with the next update).
