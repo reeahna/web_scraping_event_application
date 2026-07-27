@@ -705,6 +705,6 @@ Nominatim policy, provider terms, privacy, deletion, retention).
 
 **Verification:** 5 tests (dev defaults not production-ready, hardened settings
 ready, security headers present, oversized request rejected, liveness +
-readiness). Ruff clean; full suite: see below.
+readiness). Ruff clean; full suite: 1081 passed.
 
-**Commit:** (recorded with the next update).
+**Commit:** `8e88706`.
