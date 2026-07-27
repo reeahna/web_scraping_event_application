@@ -30,6 +30,10 @@ dependencies = [
     # pages that plain HTTP cannot resolve. Runs a closed action plan only, never
     # arbitrary JavaScript. Requires `playwright install chromium` after pip install.
     "playwright>=1.47",
+    # External authentication (Phase 14). Authlib implements the OAuth/OIDC
+    # protocol — never hand-rolled. Providers are credential-gated and off by
+    # default; tests use a mocked provider.
+    "Authlib>=1.3",
 ]
 
 [project.optional-dependencies]

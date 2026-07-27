@@ -65,6 +65,8 @@ def _render_login(
     next_url: str | None = None,
 ) -> HTMLResponse:
     settings = get_settings()
+    from app.services.oauth_login import enabled_providers
+
     return render(
         request,
         "login.html",
@@ -73,6 +75,7 @@ def _render_login(
             "local_login_enabled": settings.local_login_enabled,
             "registration_enabled": settings.registration_enabled,
             "next": next_url or "",
+            "oauth_providers": enabled_providers(settings),
         },
         status_code=status_code,
     )

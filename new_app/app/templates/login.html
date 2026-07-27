@@ -28,6 +28,17 @@
     <button type="submit">Log in</button>
   </form>
 
+  {% if oauth_providers %}
+  <div class="oauth-options" aria-label="Sign in with an external account">
+    <p class="oauth-divider"><span>or continue with</span></p>
+    {% for provider in oauth_providers %}
+    <a class="oauth-button oauth-button-{{ provider }}" href="/auth/oauth/{{ provider }}{% if next %}?next={{ next|urlencode }}{% endif %}">
+      Continue with {{ provider|capitalize }}
+    </a>
+    {% endfor %}
+  </div>
+  {% endif %}
+
   {% if registration_enabled %}
   <p><a href="/register">Create Account</a></p>
   {% endif %}

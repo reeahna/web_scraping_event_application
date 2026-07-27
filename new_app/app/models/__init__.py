@@ -11,6 +11,7 @@ from app.models.city import City
 from app.models.event import Event
 from app.models.event_category import EventCategory
 from app.models.event_provenance import EventProvenance
+from app.models.external_identity import ExternalIdentity, OAuthLoginState
 from app.models.extraction_error import ExtractionError
 from app.models.extraction_run import ExtractionRun
 from app.models.geocode_cache import GeocodeCache
@@ -45,6 +46,8 @@ __all__ = [
     "Event",
     "EventCategory",
     "EventProvenance",
+    "ExternalIdentity",
+    "OAuthLoginState",
     "ExtractionError",
     "GeocodeCache",
     "ExtractionRun",

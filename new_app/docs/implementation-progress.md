@@ -507,6 +507,54 @@ and PRG-redirected.
 idempotency, privacy between users, dedup, preference-off, digest batching,
 cancellation/reminder alerts, CSRF, and login requirements; migration
 round-trips on a scratch DB; extraction suite unaffected by the alert hook.
-Ruff clean; full suite: see below.
+Ruff clean; full suite: 1034 passed.
+
+**Commit:** `98e6aa7`.
+
+## Phase 14 — OAuth and external identities
+
+**Status:** complete.
+
+Provider-independent external authentication built on **Authlib** (the protocol
+is never hand-rolled). Google, Microsoft, and Facebook are each configured
+independently and are enabled only when they have a client id AND secret, so
+the app starts with any or all disabled and never offers a provider without
+credentials. No real OAuth app is needed — tests use a mocked provider.
+
+**Model (migration `c9d4a1b6e072`).** `external_identities` links a local user
+to a provider account, unique on `(provider, subject)` — the duplicate-identity
+guard. It stores no third-party password and retains no provider tokens, only
+the subject, an optionally-verified email, and display fields.
+`oauth_login_states` holds the short-lived, one-time CSRF `state` + OIDC
+`nonce` server-side, so validation needs no session middleware.
+
+**Providers (`app/services/oauth/`).** A `ProviderSpec` per provider +
+`AuthlibProvider` (authorize-URL build, code→token exchange, userinfo fetch via
+Authlib) + `MockProvider` for tests. `is_provider_enabled` /
+`enabled_provider_names` gate on credentials.
+
+**Login (`app/services/oauth_login.py`).** `start_login` mints and stores state
++ nonce and returns the authorize URL; `complete_login` validates state
+(one-time, expiring, provider-matched), fetches the identity, and resolves the
+user with every required rule: disabled-user rejection, duplicate-identity
+protection, **safe account linking only on a provider-verified email**,
+unverified-email conflict refusal (never hijacks an existing account),
+missing-email rejection, and a local-only redirect allowlist. Session-fixation
+prevention is inherent — the callback mints a brand-new session token.
+
+**Routes (`app/routers/oauth.py`).** `/auth/oauth/{provider}` (start) and
+`/auth/oauth/{provider}/callback`; a disabled provider 404s; success mints a
+session, sets `last_login_at`, and audits; a failure is audited and returns to
+the login page. Login page shows "Continue with …" for enabled providers.
+
+**Config:** per-provider client id/secret (all empty by default) + redirect
+base. **Dependency added:** `Authlib>=1.3`.
+
+**Verification:** 10 service + 5 endpoint tests (15 new) — state validation
+(invalid/expired/one-time), new-user creation, verified-email linking,
+unverified-email conflict, returning-identity, disabled-user rejection,
+missing-email, provider enable/disable, disabled-provider 404, full flow mints a
+session, bad-state/missing-code fail safely; migration round-trips on a scratch
+DB; login suite unaffected. Ruff clean; full suite: see below.
 
 **Commit:** (recorded with the next update).

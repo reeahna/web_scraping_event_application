@@ -28,6 +28,7 @@ from app.routers import (
     health,
     home,
     notifications,
+    oauth,
     onboarding,
     public_events,
     registration,
@@ -66,6 +67,7 @@ app.include_router(home.router)
 app.include_router(public_events.router)
 app.include_router(health.router)
 app.include_router(auth.router)
+app.include_router(oauth.router)
 app.include_router(registration.router)
 app.include_router(account.router)
 app.include_router(admin.router)

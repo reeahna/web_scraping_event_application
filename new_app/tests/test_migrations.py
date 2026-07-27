@@ -36,6 +36,8 @@ EXPECTED_TABLES = {
     "user_follows",
     "alert_preferences",
     "alert_deliveries",
+    "external_identities",
+    "oauth_login_states",
 }
 
 

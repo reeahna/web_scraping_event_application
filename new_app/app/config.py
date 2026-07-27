@@ -110,6 +110,19 @@ class Settings(BaseSettings):
     email_backend: str = "noop"
     email_from: str = "alerts@example.com"
 
+    # External authentication (Phase 14). Each provider is independently
+    # configured and is considered ENABLED only when it has a client id AND
+    # secret — so the app starts fine with any or all disabled, and no provider
+    # is ever offered without credentials. No real OAuth app is required for
+    # development or tests (those use a mocked provider).
+    oauth_redirect_base_url: str = "http://localhost:8000"
+    google_client_id: str | None = None
+    google_client_secret: str | None = None
+    microsoft_client_id: str | None = None
+    microsoft_client_secret: str | None = None
+    facebook_client_id: str | None = None
+    facebook_client_secret: str | None = None
+
     model_config = SettingsConfigDict(
         env_file=str(BASE_DIR / ".env"),
         env_file_encoding="utf-8",
