@@ -36,10 +36,17 @@ and the site is not archived):
    (`app.extraction.browser`) — a closed action plan (no arbitrary JS), every
    navigation and subrequest SSRF-revalidated, downloads/popups blocked,
    challenge/login walls reported-not-solved, always torn down.
-2. `app.services.browser_observation.render_and_observe` re-runs the ordinary
-   `PatternRegistry` detection over the rendered HTML **and** any public JSON
-   the page fetched, and **prefers a reusable structured HTTP endpoint** over
-   re-rendering (so recurring extraction can use plain HTTP).
+2. `app.services.browser_observation.render_and_observe` *classifies and scores*
+   every response the page fetched (`app.extraction.structured_candidates`),
+   not just the ones an existing detector recognises. Third-party telemetry
+   (analytics, ad pixels, social beacons, map tiles) is filtered out by
+   registrable-domain comparison; first-party JSON is scored on event-likeness
+   (record arrays, event fields, ownership). A **qualifying first-party
+   structured event endpoint is preferred over rendered HTML** even when no
+   registered pattern recognises it yet — in which case recovery is told a
+   reusable pattern is needed rather than accepting a zero-result
+   `generic_html_cards` proposal. Selection order: qualifying extractable
+   structured endpoint → rendered HTML with a successful preview → review.
 3. `app.services.browser_recovery` then drives the same
    propose → draft → preview → Phase 8D policy pipeline the HTTP path uses.
    No Event row is persisted; only a draft configuration is written;

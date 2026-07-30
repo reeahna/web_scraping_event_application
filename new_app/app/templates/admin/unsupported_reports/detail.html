@@ -41,22 +41,65 @@
 <h2>Restricted browser recovery</h2>
 {% if report.browser_recovery %}
 {% set recovery = report.browser_recovery %}
+{% if recovery.new_pattern_needed %}
+<p class="badge badge-pending">A first-party structured event endpoint was found but no registered pattern can extract it — a reusable pattern is needed.</p>
+{% endif %}
 <table>
   <tbody>
     <tr><th>Attempted at</th><td>{{ recovery.attempted_at or "—" }}</td></tr>
     <tr><th>Recovery status</th><td>{{ recovery.status or "—" }}</td></tr>
     <tr><th>Rendered page status</th><td>{{ recovery.rendered_status or "—" }}</td></tr>
     <tr><th>Observed response types</th><td>{% if recovery.observed_response_types %}{{ recovery.observed_response_types | join(", ") }}{% else %}—{% endif %}</td></tr>
-    <tr><th>Discovered structured endpoints</th><td>{% if recovery.discovered_endpoints %}{% for e in recovery.discovered_endpoints %}<code>{{ e }}</code><br/>{% endfor %}{% else %}—{% endif %}</td></tr>
-    <tr><th>Chosen source</th><td>{{ recovery.chosen_source or "—" }}</td></tr>
-    <tr><th>Detector after rendering</th><td>{{ recovery.detected_pattern or "—" }}{% if recovery.detection_confidence is not none %} ({{ "%.2f"|format(recovery.detection_confidence) }}){% endif %}</td></tr>
+    <tr><th>Selected source</th><td>{{ recovery.chosen_source or "—" }}{% if recovery.selected_endpoint %} — <code>{{ recovery.selected_endpoint }}</code>{% endif %}</td></tr>
+    <tr><th>Why this source</th><td class="audit-meta">{{ recovery.selection_reason or "—" }}</td></tr>
+    <tr><th>Detector after rendering</th><td>{{ recovery.detected_pattern or "—" }}{% if recovery.get('detection_confidence') is not none %} ({{ "%.2f"|format(recovery.detection_confidence) }}){% endif %}</td></tr>
     <tr><th>Proposed pattern</th><td>{{ recovery.proposed_pattern or "—" }}</td></tr>
     <tr><th>Preview outcome</th><td>{{ recovery.preview_status or "—" }}</td></tr>
+    <tr><th>Ignored third-party endpoints</th><td>{{ recovery.ignored_endpoint_count or 0 }}</td></tr>
     <tr><th>Blocked / challenge</th><td>{{ recovery.blocked_reason or "None" }}</td></tr>
     <tr><th>Safe error summary</th><td class="audit-meta">{{ recovery.error_summary or "—" }}</td></tr>
   </tbody>
 </table>
-<p class="audit-meta">No cookies, credentials, authorization headers, tokens, or full response bodies are stored — only this bounded, redacted summary.</p>
+
+{% if recovery.candidate_event_endpoints %}
+<h3>Candidate event endpoints</h3>
+<table>
+  <thead><tr><th>Endpoint</th><th>Score</th><th>Top-level</th><th>Record array</th><th>Sample fields</th><th>Records</th></tr></thead>
+  <tbody>
+    {% for c in recovery.candidate_event_endpoints %}
+    <tr>
+      <td><code>{{ c.url }}</code></td>
+      <td>{{ "%.2f"|format(c.event_likeness_score) }}</td>
+      <td>{{ c.top_level_type }}</td>
+      <td>{{ c.record_array_path or "—" }}</td>
+      <td class="audit-meta">{% if c.sample_field_names %}{{ c.sample_field_names | join(", ") }}{% else %}—{% endif %}</td>
+      <td>{{ c.sample_record_count }}</td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% endif %}
+
+{% if recovery.rejected_candidates %}
+<h3>Rejected candidates</h3>
+<ul class="audit-meta">
+  {% for r in recovery.rejected_candidates %}
+  <li><code>{{ r.url }}</code> — {{ r.reason }}{% if r.score is defined %} (score {{ "%.2f"|format(r.score) }}){% endif %}</li>
+  {% endfor %}
+</ul>
+{% endif %}
+
+{% if recovery.ignored_endpoints %}
+<details>
+  <summary class="audit-meta">Ignored third-party endpoints ({{ recovery.ignored_endpoint_count }})</summary>
+  <ul class="audit-meta">
+    {% for i in recovery.ignored_endpoints %}
+    <li><code>{{ i.url }}</code> — {{ i.classification }}</li>
+    {% endfor %}
+  </ul>
+</details>
+{% endif %}
+<p class="audit-meta">Candidate event endpoints are kept distinct from ignored third-party telemetry, which is never presented as a viable event source. No cookies, credentials, authorization headers, tokens, raw query values, or full response bodies are stored — only this bounded, redacted summary.</p>
 {% else %}
 <p class="audit-meta">No restricted browser recovery has been attempted for this report.</p>
 {% endif %}

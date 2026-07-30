@@ -22,11 +22,34 @@ from app.models.event import Event
 from app.models.unsupported_site_report import UnsupportedSiteReport
 from app.services.browser_recovery import (
     RECOVERY_BLOCKED,
+    RECOVERY_NEEDS_REVIEW,
     RECOVERY_UNSUPPORTED,
     browser_retry_recovery,
 )
 
 from .extraction_helpers import html_handler, load_fixture, patched_http_fetch
+
+# A Simpleview-style first-party event API response no registered pattern knows.
+_SIMPLEVIEW_EVENTS = {
+    "docs": {
+        "count": 3,
+        "docs": [
+            {"title": "Autumn Quartet", "startDate": "2026-10-06",
+             "url": "/event/autumn/123/", "id": "123", "location": "Buskirk"},
+            {"title": "Winter Chorus", "startDate": "2026-11-13",
+             "url": "/event/winter/124/", "id": "124", "location": "Ivy Tech"},
+        ],
+    }
+}
+_FIND_URL = (
+    "https://example.com/includes/rest_v2/plugins_events_events_by_date/find/?token=SECRET"
+)
+_TELEMETRY = [
+    ("https://pixel.spotify.com/v1/track", {"ok": 1}),
+    ("https://ct.pinterest.com/v3/", {"ok": 1}),
+    ("https://maps.googleapis.com/maps/api/js/x", {"ok": 1}),
+]
+_SPA_SHELL = "<html><body><div id='app'></div></body></html>"
 
 LISTING_URL = "https://example.com/events"
 
@@ -72,6 +95,12 @@ def enable_browser(monkeypatch):
 
 
 @pytest.fixture
+def disable_browser(monkeypatch):
+    # Explicit, so the test is hermetic regardless of any local .env default.
+    monkeypatch.setattr(get_settings(), "browser_extraction_enabled", False, raising=False)
+
+
+@pytest.fixture
 def unsupported_site(db_session, make_city, make_website):
     def _make(*, archived: bool = False, status: str = "unsupported"):
         city = make_city()
@@ -101,7 +130,7 @@ def _event_count(db) -> int:
 # --- guards ------------------------------------------------------------------
 
 
-async def test_browser_retry_refused_when_disabled(db_session, unsupported_site):
+async def test_browser_retry_refused_when_disabled(db_session, unsupported_site, disable_browser):
     website = unsupported_site()
     with pytest.raises(AppError) as exc:
         await browser_retry_recovery(db_session, website, strategy=_rendered("<html></html>"))
@@ -236,6 +265,119 @@ async def test_recovery_preview_is_version_matched(db_session, unsupported_site,
     # Stale-preview protection: the preview run is stamped with the draft's
     # current configuration version.
     db_session.refresh(website)
+    assert preview.configuration_version == website.configuration_version
+
+
+# --- structured-source preference over rendered HTML ------------------------
+
+
+async def test_unextractable_first_party_endpoint_routes_to_review(
+    db_session, unsupported_site, enable_browser
+):
+    """The Website #4 case: a first-party event API is discovered but no
+    registered pattern can extract it. Recovery must route to review with the
+    candidate analysis — never a zero-result generic_html_cards proposal."""
+    website = unsupported_site()
+    observed = [(_FIND_URL, _SIMPLEVIEW_EVENTS), *_TELEMETRY]
+    result = await browser_retry_recovery(
+        db_session, website, strategy=_rendered(_SPA_SHELL, observed_json=observed)
+    )
+
+    assert result.status == RECOVERY_NEEDS_REVIEW
+    db_session.refresh(website)
+    assert website.onboarding_status == "needs_review"
+    assert website.configuration is None  # no generic draft forced
+    assert _event_count(db_session) == 0
+
+    rec = db_session.query(UnsupportedSiteReport).one().browser_recovery
+    assert rec["new_pattern_needed"] is True
+    assert rec["chosen_source"] == "rendered_html"
+    assert rec["selected_endpoint"] is None
+    candidates = rec["candidate_event_endpoints"]
+    assert len(candidates) == 1
+    assert candidates[0]["url"].endswith("/find/")
+    assert candidates[0]["record_array_path"] == "docs.docs"
+    # Query strings and secrets never persisted.
+    assert "SECRET" not in json.dumps(rec)
+    assert "token" not in candidates[0]["url"]
+    # Third-party telemetry ignored, never presented as a candidate.
+    assert rec["ignored_endpoint_count"] == 3
+    assert len(candidates) == 1
+    assert rec["rejected_candidates"]
+
+
+async def test_zero_result_generic_does_not_win_over_structured_candidate(
+    db_session, unsupported_site, enable_browser
+):
+    import httpx
+
+    website = unsupported_site()
+    cards = load_fixture("static_html_cards.html")
+
+    def _empty(request):
+        return httpx.Response(200, text="<html><body></body></html>",
+                              headers={"content-type": "text/html"})
+
+    # Rendered cards make generic_html_cards detect, but the recurring HTTP
+    # fetch yields nothing — a zero-result proposal that must not be accepted
+    # while an event-like structured candidate exists.
+    with patched_http_fetch(_empty):
+        result = await browser_retry_recovery(
+            db_session, website,
+            strategy=_rendered(cards, observed_json=[(_FIND_URL, _SIMPLEVIEW_EVENTS)]),
+        )
+
+    assert result.status == RECOVERY_NEEDS_REVIEW  # not "failed"
+    db_session.refresh(website)
+    assert website.onboarding_status == "needs_review"
+    assert website.approved_pattern is None
+    assert _event_count(db_session) == 0
+    assert db_session.query(UnsupportedSiteReport).one().browser_recovery["new_pattern_needed"]
+
+
+async def test_extractable_structured_endpoint_beats_rendered_html(
+    db_session, unsupported_site, enable_browser
+):
+    website = unsupported_site()
+    cards = load_fixture("static_html_cards.html")
+    observed = [(
+        "https://example.com/1/indexes/events/query",
+        json.loads(load_fixture("algolia_response.json")),
+    )]
+    await browser_retry_recovery(
+        db_session, website, strategy=_rendered(cards, observed_json=observed)
+    )
+
+    rec = db_session.query(UnsupportedSiteReport).one().browser_recovery
+    # The extractable structured API wins over rendered generic_html_cards.
+    assert rec["chosen_source"] == "structured_api"
+    assert rec["detected_pattern"] == "algolia_search"
+    assert rec["new_pattern_needed"] is False
+
+
+async def test_new_draft_supersedes_prior_failed_version(
+    db_session, unsupported_site, enable_browser
+):
+    website = unsupported_site()
+    # Simulate the historical failed generic_html_cards draft (version 1).
+    website.configuration = {"pattern_name": "generic_html_cards", "listing_url": LISTING_URL}
+    website.configuration_version = 1
+    db_session.add(website)
+    db_session.commit()
+
+    cards = load_fixture("static_html_cards.html")
+    with patched_http_fetch(html_handler("static_html_cards.html")):
+        await browser_retry_recovery(db_session, website, strategy=_rendered(cards))
+
+    db_session.refresh(website)
+    # A new version supersedes v1; the new preview references the new version.
+    assert website.configuration_version > 1
+    from app.repositories.extraction_run import list_extraction_runs_for_website
+
+    preview = next(
+        r for r in list_extraction_runs_for_website(db_session, website.id, limit=20)
+        if r.run_type == "preview"
+    )
     assert preview.configuration_version == website.configuration_version
 
 

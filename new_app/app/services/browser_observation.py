@@ -1,14 +1,21 @@
 """Turning a browser render into the ordinary detection/inference inputs.
 
 The restricted browser strategy gives back rendered HTML plus any JSON the page
-fetched. This service runs the *existing* PatternRegistry detection over both
-and prefers a structured API: if the page's own JSON endpoint detects as an
-event source, that is chosen over the rendered HTML, because a reusable API is
-cheaper and more stable than re-rendering the page on every scheduled run.
+fetched. A page fetches far more than its own event API — analytics, ad pixels,
+social beacons, map tiles, third-party widgets. This service therefore does not
+simply run detection over every response and take the best *detector* match:
+that let an unknown-format first-party event API lose to a zero-result
+rendered-HTML proposal, because only the HTML matched a registered pattern.
 
-Nothing site-specific happens here — detection is the same registry dispatch
-used everywhere else, just fed a browser-observed response instead of an HTTP
-one.
+Instead it *classifies and scores* observed responses (app.extraction
+.structured_candidates): third-party telemetry is filtered out, first-party
+JSON is scored on event-likeness (record arrays, event fields, ownership), and a
+qualifying structured event endpoint is preferred over rendered HTML — even when
+no registered pattern recognises it yet, in which case recovery is told a
+reusable pattern is needed rather than forcing generic HTML cards.
+
+Nothing site-specific happens here: the target is only ever compared against its
+own listing origin, and detection is the same registry dispatch used everywhere.
 """
 
 from __future__ import annotations
@@ -18,15 +25,19 @@ from dataclasses import dataclass, field
 
 from app.extraction.browser import BrowserFetchStrategy, BrowserRenderResult
 from app.extraction.detection import run_detection
+from app.extraction.structured_candidates import (
+    THIRD_PARTY_FUNCTIONAL,
+    THIRD_PARTY_TELEMETRY,
+    CandidateAnalysis,
+    analyze_response,
+)
 from app.extraction.types import FetchResponse, PatternDetectionResult
 from app.schemas.browser import BrowserPlan
 
-# Patterns that operate on a fetched JSON body (as opposed to markup). When the
-# page's own XHR/fetch reveals a response matching one of these, that response
-# is a reusable structured HTTP endpoint and is preferred over re-rendering the
-# page — which is the whole point of browser-assisted recovery. Kept as an
-# explicit allow-list (not "any confident match") so a spurious HTML-oriented
-# detector firing on a JSON body can never be chosen as the recurring source.
+# Patterns that operate on a fetched JSON body (as opposed to markup). A
+# structured event candidate is only treated as *extractable now* when one of
+# these recognises its body; otherwise it is a candidate that needs a new
+# reusable pattern, surfaced rather than silently dropped.
 _STRUCTURED_API_PATTERNS = frozenset(
     {
         "embedded_json",
@@ -64,6 +75,18 @@ class BrowserObservation:
     detection: PatternDetectionResult | None = None
     chosen_source: str | None = None  # "structured_api" | "rendered_html"
     warnings: tuple[str, ...] = ()
+    # Classified, scored observed responses.
+    candidate_endpoints: list[CandidateAnalysis] = field(default_factory=list)
+    ignored_endpoints: list[CandidateAnalysis] = field(default_factory=list)
+    other_first_party: list[CandidateAnalysis] = field(default_factory=list)
+    selected_endpoint: str | None = None
+    selection_reason: str | None = None
+    rejected_candidates: list[dict] = field(default_factory=list)
+    # A first-party event endpoint scored as a candidate but no registered
+    # pattern can extract it — recovery should route to review, not force
+    # rendered HTML.
+    unextracted_candidate: CandidateAnalysis | None = None
+    new_pattern_needed: bool = False
 
     @property
     def usable(self) -> bool:
@@ -85,35 +108,109 @@ async def render_and_observe(
     from app.extraction.browser import observed_json_as_text
 
     rendered = _response(result.rendered_html, result.final_url, "text/html")
-    api_responses = [
-        _response(text, api_url, "application/json")
-        for (api_url, _payload), text in zip(
-            result.observed_json, observed_json_as_text(result.observed_json), strict=False
+
+    # Classify + score every observed JSON response against the *listing* origin
+    # (not the render's final_url), then keep each analysis paired with a
+    # FetchResponse so detectors can run on the actual body.
+    analyses: list[tuple[CandidateAnalysis, FetchResponse]] = []
+    for (api_url, payload), text in zip(
+        result.observed_json, observed_json_as_text(result.observed_json), strict=False
+    ):
+        analysis = analyze_response(
+            url=api_url, payload=payload, listing_url=url, content_type="application/json",
+            raw_text=text,
         )
+        analyses.append((analysis, _response(text, api_url, "application/json")))
+
+    candidate_endpoints = [a for a, _ in analyses if a.is_event_candidate]
+    candidate_endpoints.sort(key=lambda a: a.event_likeness_score, reverse=True)
+    ignored_endpoints = [
+        a for a, _ in analyses
+        if a.classification in (THIRD_PARTY_FUNCTIONAL, THIRD_PARTY_TELEMETRY)
+    ]
+    other_first_party = [
+        a for a, _ in analyses
+        if a not in candidate_endpoints and a not in ignored_endpoints
     ]
 
-    # Prefer a structured API: the best-detecting observed JSON response wins
-    # over rendered HTML whenever it matches a JSON pattern.
-    best_api: tuple[FetchResponse, PatternDetectionResult] | None = None
-    for response in api_responses:
+    warnings: list[str] = list(result.warnings)
+    rejected: list[dict] = []
+
+    # Prefer the highest-scoring first-party event candidate that a registered
+    # pattern can actually extract.
+    best_extractable: tuple[FetchResponse, PatternDetectionResult, CandidateAnalysis] | None = None
+    for analysis in candidate_endpoints:
+        response = next(resp for a, resp in analyses if a is analysis)
         detection = run_detection(response)
-        if detection.pattern_name in _STRUCTURED_API_PATTERNS and (
-            best_api is None or detection.confidence > best_api[1].confidence
-        ):
-            best_api = (response, detection)
+        if detection.pattern_name in _STRUCTURED_API_PATTERNS:
+            best_extractable = (response, detection, analysis)
+            break
+        rejected.append(
+            {
+                "url": analysis.sanitized_url,
+                "score": round(analysis.event_likeness_score, 4),
+                "reason": "no registered pattern can extract this response shape",
+            }
+        )
 
     rendered_detection = run_detection(rendered)
+    api_responses = [resp for _, resp in analyses]
 
-    if best_api is not None:
-        chosen, detection, source = best_api[0], best_api[1], "structured_api"
-    else:
-        chosen, detection, source = rendered, rendered_detection, "rendered_html"
+    if best_extractable is not None:
+        chosen, detection, analysis = best_extractable
+        return BrowserObservation(
+            rendered_response=rendered,
+            api_responses=api_responses,
+            chosen_response=chosen,
+            detection=detection,
+            chosen_source="structured_api",
+            warnings=tuple(warnings),
+            candidate_endpoints=candidate_endpoints,
+            ignored_endpoints=ignored_endpoints,
+            other_first_party=other_first_party,
+            selected_endpoint=analysis.sanitized_url,
+            selection_reason=(
+                f"first-party structured event endpoint recognised by "
+                f"'{detection.pattern_name}' (event-likeness "
+                f"{analysis.event_likeness_score:.2f})"
+            ),
+            rejected_candidates=rejected,
+        )
+
+    # No extractable structured source. If a first-party event endpoint was
+    # nonetheless observed, say so loudly — a zero-result rendered-HTML proposal
+    # must not silently win over event-like structured data.
+    unextracted = candidate_endpoints[0] if candidate_endpoints else None
+    new_pattern_needed = unextracted is not None
+    if unextracted is not None:
+        warnings.append(
+            "a first-party event-like endpoint was observed but no registered pattern can "
+            "extract it - a reusable pattern is needed"
+        )
+        if rendered_detection.pattern_name:
+            warnings.append(
+                "rendered HTML was selected despite a higher-scoring structured candidate"
+            )
+
+    selection_reason = (
+        f"rendered HTML detected as '{rendered_detection.pattern_name}'"
+        if rendered_detection.pattern_name
+        else "no structured candidate was extractable and rendered HTML matched no pattern"
+    )
 
     return BrowserObservation(
         rendered_response=rendered,
         api_responses=api_responses,
-        chosen_response=chosen,
-        detection=detection,
-        chosen_source=source,
-        warnings=result.warnings,
+        chosen_response=rendered,
+        detection=rendered_detection,
+        chosen_source="rendered_html",
+        warnings=tuple(warnings),
+        candidate_endpoints=candidate_endpoints,
+        ignored_endpoints=ignored_endpoints,
+        other_first_party=other_first_party,
+        selected_endpoint=None,
+        selection_reason=selection_reason,
+        rejected_candidates=rejected,
+        unextracted_candidate=unextracted,
+        new_pattern_needed=new_pattern_needed,
     )

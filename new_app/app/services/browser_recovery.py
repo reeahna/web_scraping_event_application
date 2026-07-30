@@ -67,6 +67,7 @@ from app.services.websites import transition_website
 # no configuration was produced; the rest mirror the inference outcomes.
 RECOVERY_BLOCKED = "blocked"
 RECOVERY_UNSUPPORTED = "unsupported"
+RECOVERY_NEEDS_REVIEW = "needs_review"
 
 
 @dataclass(frozen=True)
@@ -90,6 +91,14 @@ def _evidence_base() -> dict:
         "rendered_status": None,
         "observed_response_types": [],
         "discovered_endpoints": [],
+        "candidate_event_endpoints": [],
+        "ignored_endpoint_count": 0,
+        "ignored_endpoints": [],
+        "selected_endpoint": None,
+        "selection_reason": None,
+        "rejected_candidates": [],
+        "response_shape": None,
+        "new_pattern_needed": False,
         "chosen_source": None,
         "detected_pattern": None,
         "detection_confidence": None,
@@ -102,7 +111,8 @@ def _evidence_base() -> dict:
 
 def _observation_evidence(evidence: dict, observation: BrowserObservation) -> None:
     """Fills the redacted evidence dict from an observation. Only bounded,
-    non-secret fields — never cookies, headers, credentials, tokens, or bodies."""
+    non-secret fields — never cookies, headers, credentials, tokens, bodies, or
+    raw query values (every URL is stored query-stripped)."""
     response_types: list[str] = []
     if observation.rendered_response is not None:
         response_types.append("rendered_html")
@@ -113,6 +123,30 @@ def _observation_evidence(evidence: dict, observation: BrowserObservation) -> No
     evidence["discovered_endpoints"] = [
         _strip_query(r.final_url) for r in observation.api_responses
     ]
+    # Candidate event endpoints and ignored third-party endpoints kept
+    # distinct, so telemetry is never presented as a viable event source.
+    evidence["candidate_event_endpoints"] = [
+        c.to_evidence() for c in observation.candidate_endpoints
+    ]
+    evidence["ignored_endpoints"] = [
+        {"url": c.sanitized_url, "origin": c.origin, "classification": c.classification}
+        for c in observation.ignored_endpoints
+    ]
+    evidence["ignored_endpoint_count"] = len(observation.ignored_endpoints)
+    evidence["selected_endpoint"] = observation.selected_endpoint
+    evidence["selection_reason"] = observation.selection_reason
+    evidence["rejected_candidates"] = observation.rejected_candidates
+    evidence["new_pattern_needed"] = observation.new_pattern_needed
+    top = observation.candidate_endpoints[0] if observation.candidate_endpoints else None
+    if top is not None:
+        evidence["response_shape"] = {
+            "top_level_type": top.top_level_type,
+            "top_level_keys": top.top_level_keys,
+            "record_array_path": top.record_array_path,
+            "sample_field_names": top.sample_field_names,
+            "sample_record_count": top.sample_record_count,
+            "event_likeness_score": round(top.event_likeness_score, 4),
+        }
     evidence["chosen_source"] = observation.chosen_source
     if observation.detection is not None:
         evidence["detected_pattern"] = observation.detection.pattern_name
@@ -164,6 +198,15 @@ async def browser_retry_recovery(
 
     # --- Rendered/observed, but no confident pattern ----------------------
     if observation.detection is None or observation.detection.pattern_name is None:
+        # A first-party structured event endpoint was found but nothing can
+        # extract it yet: that is a review item (a reusable pattern is needed),
+        # not "unsupported". Never silently unsupported when a candidate exists.
+        if observation.new_pattern_needed:
+            if can_transition(website.onboarding_status, ONBOARDING_NEEDS_REVIEW):
+                transition_website(db, website, ONBOARDING_NEEDS_REVIEW)
+            evidence["status"] = RECOVERY_NEEDS_REVIEW
+            _persist(db, website, evidence)
+            return BrowserRecoveryResult(status=RECOVERY_NEEDS_REVIEW, observation=observation)
         evidence["status"] = RECOVERY_UNSUPPORTED
         _persist(db, website, evidence)
         return BrowserRecoveryResult(status=RECOVERY_UNSUPPORTED, observation=observation)
@@ -217,9 +260,15 @@ async def browser_retry_recovery(
         db, website, correlation_id=correlation_id
     )
     ok, reasons = meets_approval_bar(preview.quality, policy, preview_status=preview.result.status)
+    # A zero-result rendered proposal must never win over an event-like
+    # structured candidate: when the preview produced nothing and a first-party
+    # event endpoint was observed, route to review (a reusable pattern is
+    # needed) rather than reporting an unexplained failure or accepting the
+    # empty draft.
+    zero_valid = preview.result.events_valid == 0
     if preview.result.status == "blocked":
         outcome = BLOCKED
-    elif inference.missing_required_fields:
+    elif inference.missing_required_fields or (zero_valid and observation.new_pattern_needed):
         outcome = NEEDS_REVIEW
     elif preview.result.status == "failed":
         outcome = FAILED

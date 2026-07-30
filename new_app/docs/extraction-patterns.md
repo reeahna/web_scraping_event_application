@@ -50,6 +50,27 @@ output).
   subrequests, challenge walls reported-not-solved, always torn down. Prefer a
   discovered structured API over rendered HTML.
 
+## Structured-source scoring (browser recovery)
+
+`app/extraction/structured_candidates.py` ranks browser-observed responses as
+event sources by *evidence*, not by whether a detector already knows the shape:
+same-registrable-domain ownership, an event-record array with event-like fields,
+and structural signals, minus penalties for telemetry/aggregate/empty shapes.
+This lets recovery prefer a first-party event API in an unknown format over a
+zero-result rendered-HTML proposal, and surface "a reusable pattern is needed"
+instead of forcing `generic_html_cards` onto JSON.
+
+**Deferred — `simpleview_events`.** Simpleview DMO sites expose a first-party
+event API (e.g. `…/includes/rest_v2/plugins_events_events_by_date/find/`). The
+scorer identifies and prefers it, but a *new pattern is added only once the
+response shape is confirmed from real observation* — never from the URL alone.
+Confirmation happens when an administrator runs the restricted-browser retry
+(which records the bounded response shape: record-array path, sample fields,
+counts); until then such a source lands in review with that analysis attached.
+The scoring/inspection machinery is generic and platform-agnostic, so adding
+`simpleview_events` later is a self-contained detector + proposer + extractor +
+fixtures with no hostname branching.
+
 ## Adding a pattern
 
 Add a detector + extractor to `app/extraction/patterns/`, register it in the
