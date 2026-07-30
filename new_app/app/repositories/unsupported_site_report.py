@@ -52,6 +52,23 @@ def create_unsupported_site_report(
     return report
 
 
+def set_browser_recovery(
+    db: Session, report: UnsupportedSiteReport, *, evidence: dict, run_id: int | None = None
+) -> UnsupportedSiteReport:
+    """Attaches (or replaces) the bounded browser-recovery summary on an
+    existing report and refreshes its last-seen tracking. Mirrors
+    record_report_occurrence's ownership of the report's own bookkeeping — the
+    caller (app.services.browser_recovery) decides what the redacted evidence
+    contains; this only writes it."""
+    report.browser_recovery = evidence
+    report.last_seen_at = datetime.now(UTC)
+    if run_id is not None:
+        report.latest_extraction_run_id = run_id
+    db.commit()
+    db.refresh(report)
+    return report
+
+
 def record_report_occurrence(
     db: Session, website_id: int, fingerprint: str, *, run_id: int | None = None
 ) -> UnsupportedSiteReport | None:

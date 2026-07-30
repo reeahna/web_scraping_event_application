@@ -89,6 +89,52 @@ class PatternRegistration:
     # configurable; a pattern without one simply falls back to the manual
     # configuration form instead of participating in automatic onboarding.
     proposer: PatternConfigurationProposer | None = None
+    # Presentation-only metadata, kept here (the single source of truth for a
+    # pattern) rather than hardcoded in a router or template. `classification`
+    # is a coarse family: "structured" (an API/feed/JSON source), "static"
+    # (scraped HTML markup), or "browser" (needs a rendered page).
+    display_name: str = ""
+    classification: str = "structured"
+
+    @property
+    def label(self) -> str:
+        return self.display_name or self.name
+
+    @property
+    def has_proposer(self) -> bool:
+        return self.proposer is not None
+
+
+def pattern_options(registry: PatternRegistry, evidence: dict | None = None) -> list[dict]:
+    """Registry-driven metadata for the manual pattern selector, in reliability
+    order. `evidence` is the per-detector `all_results` map from a detection
+    run (or None); a pattern is marked as having supporting evidence when its
+    detector produced a non-zero confidence on the current response.
+
+    Never hardcodes a pattern name — the roster and every field come from the
+    registry, so registering a pattern makes it appear automatically.
+    """
+    evidence = evidence or {}
+    options = []
+    for name in registry.names():
+        registration = registry.get(name)
+        detector_result = evidence.get(name)
+        confidence = (
+            detector_result.get("confidence") if isinstance(detector_result, dict) else None
+        )
+        options.append(
+            {
+                "name": name,
+                "display_name": registration.label,
+                "classification": registration.classification,
+                "has_proposer": registration.has_proposer,
+                "browser_required": registration.browser_required,
+                "evidence_confidence": confidence,
+                "has_evidence": bool(confidence),
+            }
+        )
+    options.sort(key=lambda option: registry.get(option["name"]).priority)
+    return options
 
 
 class PatternRegistry:
@@ -126,6 +172,8 @@ def build_default_registry() -> PatternRegistry:
             browser_required=False,
             supported_pagination=("none", "wordpress"),
             proposer=wordpress_rest_proposer(),
+            display_name="WordPress REST API",
+            classification="structured",
         )
     )
     registry.register(
@@ -139,6 +187,8 @@ def build_default_registry() -> PatternRegistry:
             browser_required=False,
             supported_pagination=("none", "tribe_rest"),
             proposer=the_events_calendar_proposer(),
+            display_name="The Events Calendar (Tribe)",
+            classification="structured",
         )
     )
     registry.register(
@@ -152,6 +202,8 @@ def build_default_registry() -> PatternRegistry:
             browser_required=False,
             supported_pagination=("none", "livewhale_offset"),
             proposer=livewhale_proposer(),
+            display_name="LiveWhale JSON feed",
+            classification="structured",
         )
     )
     registry.register(
@@ -165,6 +217,8 @@ def build_default_registry() -> PatternRegistry:
             browser_required=False,
             supported_pagination=("none", "query_param", "next_link"),
             proposer=JsonLdEventProposer(),
+            display_name="schema.org JSON-LD Event",
+            classification="structured",
         )
     )
     registry.register(
@@ -178,6 +232,8 @@ def build_default_registry() -> PatternRegistry:
             browser_required=False,
             supported_pagination=("none", "query_param"),
             proposer=NextDataProposer(),
+            display_name="Next.js __NEXT_DATA__",
+            classification="structured",
         )
     )
     registry.register(
@@ -191,6 +247,8 @@ def build_default_registry() -> PatternRegistry:
             browser_required=False,
             supported_pagination=("none", "query_param"),
             proposer=NuxtPayloadProposer(),
+            display_name="Nuxt __NUXT_DATA__",
+            classification="structured",
         )
     )
     registry.register(
@@ -204,6 +262,8 @@ def build_default_registry() -> PatternRegistry:
             browser_required=False,
             supported_pagination=("none", "query_param"),
             proposer=EmbeddedJsonProposer(),
+            display_name="Embedded JSON (<script>)",
+            classification="structured",
         )
     )
     registry.register(
@@ -217,6 +277,8 @@ def build_default_registry() -> PatternRegistry:
             browser_required=False,
             supported_pagination=("none",),
             proposer=IcsCalendarProposer(),
+            display_name="iCalendar / ICS feed",
+            classification="structured",
         )
     )
     registry.register(
@@ -230,6 +292,8 @@ def build_default_registry() -> PatternRegistry:
             browser_required=False,
             supported_pagination=("none", "query_param"),
             proposer=RssAtomProposer(),
+            display_name="RSS / Atom feed",
+            classification="structured",
         )
     )
     registry.register(
@@ -243,6 +307,8 @@ def build_default_registry() -> PatternRegistry:
             browser_required=False,
             supported_pagination=("none", "query_param"),
             proposer=AlgoliaSearchProposer(),
+            display_name="Algolia search API",
+            classification="structured",
         )
     )
     registry.register(
@@ -256,6 +322,8 @@ def build_default_registry() -> PatternRegistry:
             browser_required=False,
             supported_pagination=("none", "query_param", "next_link"),
             proposer=GenericHtmlCardsProposer(),
+            display_name="Generic HTML cards",
+            classification="static",
         )
     )
     return registry

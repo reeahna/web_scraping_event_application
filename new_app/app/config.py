@@ -59,6 +59,14 @@ class Settings(BaseSettings):
     # semantics inconsistently across events from different cities.
     app_timezone: str = "UTC"
 
+    # Restricted browser-assisted recovery (app.services.browser_recovery).
+    # Off by default: the restricted Playwright fetch strategy exists but is
+    # never invoked unless an administrator turns this on for the deployment.
+    # When off, the "Retry with restricted browser detection" action is hidden
+    # and the recovery service refuses to launch a browser — so installing the
+    # feature changes no source's behaviour until it is explicitly enabled.
+    browser_extraction_enabled: bool = False
+
     # Bulk source onboarding (app.services.bulk_onboarding). Caps exist so a
     # single submission can't queue an unbounded amount of outbound fetching,
     # and so a synchronous processing request stays responsive.

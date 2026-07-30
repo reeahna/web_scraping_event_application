@@ -15,7 +15,13 @@
     </tr>
     <tr><th>Base URL</th><td><a href="{{ website.base_url }}" target="_blank" rel="noopener"><code>{{ website.base_url }}</code></a></td></tr>
     <tr><th>Event listing URL</th><td>{{ website.event_listing_url or "—" }}</td></tr>
-    <tr><th>Timezone override</th><td>{{ website.timezone_override or "(uses city timezone)" }}</td></tr>
+    <tr><th>Timezone override</th>
+      <td>{{ website.timezone_override or "(uses city timezone)" }}
+        {% if timezone_dst_warning %}
+        <br/><span class="badge badge-pending">DST warning</span>
+        <span class="audit-meta">{{ timezone_dst_warning }} Changing the stored timezone
+          requires an explicit edit and does not rewrite existing event timestamps.</span>
+        {% endif %}</td></tr>
     <tr><th>Requires JS</th><td>{{ "Yes" if website.requires_js else "No" }}</td></tr>
     <tr><th>Active</th><td>{{ "Yes" if website.is_active else "No" }}</td></tr>
     <tr><th>Events</th><td>{{ event_count }}</td></tr>
@@ -76,10 +82,30 @@
       <td>{{ "%.2f"|format(detection.confidence) }} (threshold {{ "%.2f"|format(min_pattern_confidence) }})
         {% if detection.confidence < min_pattern_confidence %}<span class="badge badge-pending">below threshold — review recommended</span>
         {% elif detection.pattern_name %}<span class="badge badge-active">high confidence</span>{% endif %}</td></tr>
-    <tr><th>Why it won</th><td>Highest confidence among detectors clearing the threshold, ties broken by reliability order (wordpress_rest &gt; json_ld_event &gt; generic_html_cards).</td></tr>
+    <tr><th>How the winner is chosen</th>
+      <td>
+        {% if detection.pattern_name %}
+        <code>{{ detection.pattern_name }}</code> had the highest confidence among the detectors
+        clearing the {{ "%.2f"|format(min_pattern_confidence) }} threshold. Ties break by the
+        registry reliability order (below) — never by any site-specific rule.
+        {% elif detection_winner %}
+        <code>{{ detection_winner }}</code> was the strongest candidate but fell below the
+        {{ "%.2f"|format(min_pattern_confidence) }} threshold, so no pattern was selected
+        automatically and the source was routed to review.
+        {% else %}
+        No detector qualified — no pattern reached the {{ "%.2f"|format(min_pattern_confidence) }}
+        confidence threshold on this response, so there is no winner or tie-break to explain.
+        {% endif %}
+      </td></tr>
+    <tr><th>Registry reliability order</th>
+      <td class="audit-meta">{% for name in reliability_order %}<code>{{ name }}</code>{% if not loop.last %} › {% endif %}{% endfor %}</td></tr>
     <tr><th>Detector version</th><td>{{ detection.detector_version }}</td></tr>
     <tr><th>Discovered endpoints</th><td>{% if detection.discovered_endpoints %}{% for e in detection.discovered_endpoints %}<code>{{ e }}</code><br/>{% endfor %}{% else %}—{% endif %}</td></tr>
-    <tr><th>Browser required</th><td>{{ "Yes — Playwright support is deferred" if detection.browser_required else "No" }}</td></tr>
+    <tr><th>Browser required</th>
+      <td>{% if detection.browser_required %}Yes — ordinary HTTP fetch cannot see the events.
+        {% if browser_extraction_enabled %}Try restricted browser detection below.{% else %}
+        Restricted browser detection is disabled for this deployment.{% endif %}
+        {% else %}No{% endif %}</td></tr>
     <tr><th>Warnings</th><td>{% if detection.warnings %}{{ detection.warnings | join(", ") }}{% else %}None{% endif %}</td></tr>
     <tr><th>Detected at</th><td>{{ detection.detected_at }}</td></tr>
     {% if latest_detection_run %}
@@ -105,21 +131,89 @@
   </tbody>
 </table>
 {% else %}
-<p class="audit-meta">No competing detector results recorded.</p>
+<p class="audit-meta">No detector evidence was recorded for this run.</p>
+{% endif %}
+
+{% if website.onboarding_status in ("unsupported", "needs_review") %}
+<h3>Automatic recovery</h3>
+{% if website_is_archived %}
+<p class="audit-meta">This website is archived — recovery actions are unavailable.</p>
+{% elif browser_extraction_enabled and can_test %}
+<p class="audit-meta">
+  When ordinary HTTP detection fails, restricted browser detection renders the page in a
+  locked-down headless browser, observes the rendered HTML and any public JSON/feed responses,
+  re-runs every registry detector automatically, and prefers a reusable structured HTTP endpoint
+  when one is found — then drafts, previews and scores a configuration without persisting any
+  events. No HTML inspection or manual pattern choice is required first.
+</p>
+<form method="post" action="/admin/websites/{{ website.id }}/browser-retry" class="inline-form"
+      onsubmit="return confirm('Retry detection for {{ website.name }} using the restricted browser?');">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token }}" />
+  <button type="submit">Retry with restricted browser detection</button>
+</form>
+{% elif not browser_extraction_enabled %}
+<p class="audit-meta">
+  Restricted browser detection is disabled for this deployment
+  (<code>BROWSER_EXTRACTION_ENABLED</code> is off), so automatic browser-assisted recovery is
+  unavailable. The advanced manual pattern selector below remains as a fallback.
+</p>
+{% endif %}
+
+{% if latest_browser_recovery %}
+{% set recovery = latest_browser_recovery %}
+<table>
+  <tbody>
+    <tr><th>Latest browser retry</th><td>{{ recovery.attempted_at or "—" }}</td></tr>
+    <tr><th>Recovery status</th><td>{{ recovery.status or "—" }}</td></tr>
+    <tr><th>Rendered page</th><td>{{ recovery.rendered_status or "—" }}</td></tr>
+    <tr><th>Observed response types</th><td>{% if recovery.observed_response_types %}{{ recovery.observed_response_types | join(", ") }}{% else %}—{% endif %}</td></tr>
+    <tr><th>Structured endpoints</th><td>{% if recovery.discovered_endpoints %}{% for e in recovery.discovered_endpoints %}<code>{{ e }}</code><br/>{% endfor %}{% else %}—{% endif %}</td></tr>
+    <tr><th>Chosen source</th><td>{{ recovery.chosen_source or "—" }}</td></tr>
+    <tr><th>Proposed pattern</th><td>{{ recovery.proposed_pattern or "—" }}</td></tr>
+    <tr><th>Preview</th><td>{{ recovery.preview_status or "—" }}</td></tr>
+    <tr><th>Blocked / challenge</th><td>{{ recovery.blocked_reason or "None" }}</td></tr>
+    <tr><th>Notes</th><td class="audit-meta">{{ recovery.error_summary or "—" }}</td></tr>
+  </tbody>
+</table>
+{% endif %}
 {% endif %}
 
 {% if website.onboarding_status in ("draft", "unsupported", "needs_review") and can_update %}
-<h3>Manually select a pattern</h3>
-<form method="post" action="/admin/websites/{{ website.id }}/select-pattern" class="inline-form">
-  <input type="hidden" name="csrf_token" value="{{ csrf_token }}" />
-  <select name="pattern_name" required>
-    {% for name in pattern_names %}
-    <option value="{{ name }}">{{ name }}</option>
-    {% endfor %}
-  </select>
-  <button type="submit" class="btn-secondary">Select pattern</button>
-</form>
-<p class="audit-meta">Manual selection still requires preview and approval — it never bypasses either.</p>
+<details>
+  <summary><strong>Advanced:</strong> manually select an extraction pattern</summary>
+  <p class="audit-meta">
+    A fallback for when automatic recovery cannot resolve the source. Choosing a pattern only
+    saves a <em>draft</em> — it still requires preview, validation and normal approval, and never
+    activates the source on its own. Patterns and their evidence come from the pattern registry.
+  </p>
+  <form method="post" action="/admin/websites/{{ website.id }}/select-pattern" class="admin-form">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}" />
+    <label for="pattern_name">Pattern</label>
+    <select id="pattern_name" name="pattern_name" required>
+      <option value="" selected disabled>Choose a pattern…</option>
+      {% for option in pattern_options %}
+      <option value="{{ option.name }}">
+        {{ option.display_name }} ({{ option.name }}) — {{ option.classification }}{% if option.has_evidence %}, evidence {{ "%.2f"|format(option.evidence_confidence) }}{% endif %}
+      </option>
+      {% endfor %}
+    </select>
+    <button type="submit" class="btn-secondary">Select pattern (draft only)</button>
+  </form>
+  <table>
+    <thead><tr><th>Pattern</th><th>Registered name</th><th>Type</th><th>Auto-proposer</th><th>Evidence on this response</th></tr></thead>
+    <tbody>
+      {% for option in pattern_options %}
+      <tr>
+        <td>{{ option.display_name }}</td>
+        <td><code>{{ option.name }}</code></td>
+        <td>{{ option.classification }}</td>
+        <td>{{ "Yes" if option.has_proposer else "No" }}</td>
+        <td>{% if option.has_evidence %}{{ "%.2f"|format(option.evidence_confidence) }}{% else %}—{% endif %}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</details>
 {% endif %}
 {% else %}
 <p class="audit-meta">No detection has been run yet.</p>

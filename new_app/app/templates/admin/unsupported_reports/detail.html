@@ -38,6 +38,29 @@
 <p class="audit-meta">None recorded.</p>
 {% endif %}
 
+<h2>Restricted browser recovery</h2>
+{% if report.browser_recovery %}
+{% set recovery = report.browser_recovery %}
+<table>
+  <tbody>
+    <tr><th>Attempted at</th><td>{{ recovery.attempted_at or "—" }}</td></tr>
+    <tr><th>Recovery status</th><td>{{ recovery.status or "—" }}</td></tr>
+    <tr><th>Rendered page status</th><td>{{ recovery.rendered_status or "—" }}</td></tr>
+    <tr><th>Observed response types</th><td>{% if recovery.observed_response_types %}{{ recovery.observed_response_types | join(", ") }}{% else %}—{% endif %}</td></tr>
+    <tr><th>Discovered structured endpoints</th><td>{% if recovery.discovered_endpoints %}{% for e in recovery.discovered_endpoints %}<code>{{ e }}</code><br/>{% endfor %}{% else %}—{% endif %}</td></tr>
+    <tr><th>Chosen source</th><td>{{ recovery.chosen_source or "—" }}</td></tr>
+    <tr><th>Detector after rendering</th><td>{{ recovery.detected_pattern or "—" }}{% if recovery.detection_confidence is not none %} ({{ "%.2f"|format(recovery.detection_confidence) }}){% endif %}</td></tr>
+    <tr><th>Proposed pattern</th><td>{{ recovery.proposed_pattern or "—" }}</td></tr>
+    <tr><th>Preview outcome</th><td>{{ recovery.preview_status or "—" }}</td></tr>
+    <tr><th>Blocked / challenge</th><td>{{ recovery.blocked_reason or "None" }}</td></tr>
+    <tr><th>Safe error summary</th><td class="audit-meta">{{ recovery.error_summary or "—" }}</td></tr>
+  </tbody>
+</table>
+<p class="audit-meta">No cookies, credentials, authorization headers, tokens, or full response bodies are stored — only this bounded, redacted summary.</p>
+{% else %}
+<p class="audit-meta">No restricted browser recovery has been attempted for this report.</p>
+{% endif %}
+
 <h2>Administrator notes</h2>
 <pre>{{ report.admin_notes or "No notes yet." }}</pre>
 

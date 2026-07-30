@@ -43,6 +43,11 @@ class UnsupportedSiteReport(Base):
     json_ld_presence: Mapped[bool] = mapped_column(Boolean, default=False)
     pagination_indicators: Mapped[dict[str, Any] | None] = mapped_column(JSON, default=None)
     access_denied_or_challenge_detected: Mapped[bool] = mapped_column(Boolean, default=False)
+    # Bounded, redacted summary of the most recent restricted-browser recovery
+    # attempt (app.services.browser_recovery). Never stores cookies, headers,
+    # credentials, tokens, or full response bodies — only what an administrator
+    # needs to understand the outcome. Null until a browser retry is run.
+    browser_recovery: Mapped[dict[str, Any] | None] = mapped_column(JSON, default=None)
     failure_reason: Mapped[str | None] = mapped_column(String(500), default=None)
     fingerprint: Mapped[str] = mapped_column(String(64), index=True)
     status: Mapped[str] = mapped_column(String(16), default="open")

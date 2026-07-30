@@ -21,7 +21,23 @@ from app.extraction.detection import run_detection
 from app.extraction.types import FetchResponse, PatternDetectionResult
 from app.schemas.browser import BrowserPlan
 
-_JSON_PATTERNS = frozenset({"embedded_json", "next_data", "nuxt_payload", "algolia_search"})
+# Patterns that operate on a fetched JSON body (as opposed to markup). When the
+# page's own XHR/fetch reveals a response matching one of these, that response
+# is a reusable structured HTTP endpoint and is preferred over re-rendering the
+# page — which is the whole point of browser-assisted recovery. Kept as an
+# explicit allow-list (not "any confident match") so a spurious HTML-oriented
+# detector firing on a JSON body can never be chosen as the recurring source.
+_STRUCTURED_API_PATTERNS = frozenset(
+    {
+        "embedded_json",
+        "next_data",
+        "nuxt_payload",
+        "algolia_search",
+        "wordpress_rest",
+        "the_events_calendar",
+        "livewhale_json",
+    }
+)
 
 
 def _response(body: str, final_url: str, content_type: str) -> FetchResponse:
@@ -81,7 +97,7 @@ async def render_and_observe(
     best_api: tuple[FetchResponse, PatternDetectionResult] | None = None
     for response in api_responses:
         detection = run_detection(response)
-        if detection.pattern_name in _JSON_PATTERNS and (
+        if detection.pattern_name in _STRUCTURED_API_PATTERNS and (
             best_api is None or detection.confidence > best_api[1].confidence
         ):
             best_api = (response, detection)

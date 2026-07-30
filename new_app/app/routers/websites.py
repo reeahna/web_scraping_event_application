@@ -5,15 +5,17 @@ from fastapi import APIRouter, Depends, Form, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
 from pydantic import ValidationError
 
+from app.config import get_settings
 from app.core.csrf import verify_csrf
 from app.core.exceptions import AppError, NotFoundError
 from app.core.flash import set_flash
 from app.core.onboarding import ALLOWED_TRANSITIONS, ONBOARDING_STATES, TRANSITION_PERMISSIONS
 from app.core.templating import render
+from app.core.timezones import dst_warning
 from app.dependencies import ClientIp, CorrelationId, CurrentUser, DbSession
-from app.extraction.detection import MIN_PATTERN_CONFIDENCE
+from app.extraction.detection import MIN_PATTERN_CONFIDENCE, RELIABILITY_ORDER
 from app.extraction.inference.policy import READY_FOR_APPROVAL as INFERENCE_READY
-from app.extraction.registry import REGISTRY
+from app.extraction.registry import REGISTRY, pattern_options
 from app.models.event import Event
 from app.models.user import User
 from app.repositories.auto_onboarding import (
@@ -43,6 +45,7 @@ from app.services.ai_configuration import request_ai_configuration
 from app.services.audit import record_audit
 from app.services.auto_onboarding_execution import effective_decision
 from app.services.auto_onboarding_reevaluation import reevaluate_website
+from app.services.browser_recovery import browser_retry_recovery
 from app.services.extraction_runs import preview_extraction, run_detection, run_extraction
 from app.services.onboarding_automation import detect_and_configure
 from app.services.rbac import require_permission, user_has_permission
@@ -317,8 +320,18 @@ def website_detail(website_id: int, request: Request, current_user: ViewSites, d
     extraction_runs = list_extraction_runs_for_website(db, website.id, limit=20)
     latest_detection_run = next((r for r in extraction_runs if r.run_type == "detection"), None)
     latest_preview_run = next((r for r in extraction_runs if r.run_type == "preview"), None)
-    detection_evidence = (website.proposed_pattern or {}).get("detection", {}).get("evidence", {})
+    detection = (website.proposed_pattern or {}).get("detection", {})
+    detection_evidence = (detection or {}).get("evidence", {})
     all_detector_results = (detection_evidence or {}).get("all_results", {})
+    # A winner exists only when some detector actually matched this response;
+    # the detector-explanation UI keys its "why it won" prose off this so it
+    # never invents a winner or tie-break story when nothing qualified.
+    detection_winner = (detection_evidence or {}).get("winner")
+    reports = list_reports_for_website(db, website.id, limit=20)
+    latest_browser_recovery = next(
+        (r.browser_recovery for r in reports if r.browser_recovery), None
+    )
+    settings = get_settings()
 
     return render(
         request,
@@ -331,13 +344,20 @@ def website_detail(website_id: int, request: Request, current_user: ViewSites, d
             "can_update": user_has_permission(db, current_user, "sites.update"),
             "can_delete": user_has_permission(db, current_user, "sites.delete"),
             "can_approve": user_has_permission(db, current_user, "sites.approve"),
+            "can_test": user_has_permission(db, current_user, "sites.test"),
             "extraction_runs": extraction_runs,
-            "unsupported_reports": list_reports_for_website(db, website.id, limit=20),
+            "unsupported_reports": reports,
             "latest_detection_run": latest_detection_run,
             "latest_preview_run": latest_preview_run,
             "all_detector_results": all_detector_results,
-            "pattern_names": REGISTRY.names(),
+            "detection_winner": detection_winner,
+            "pattern_options": pattern_options(REGISTRY, all_detector_results),
+            "reliability_order": list(RELIABILITY_ORDER),
             "min_pattern_confidence": MIN_PATTERN_CONFIDENCE,
+            "browser_extraction_enabled": settings.browser_extraction_enabled,
+            "website_is_archived": website.archived_at is not None,
+            "timezone_dst_warning": dst_warning(website.timezone_override),
+            "latest_browser_recovery": latest_browser_recovery,
         },
     )
 
@@ -629,6 +649,52 @@ async def detect_and_configure_view(
         )
     level = "success" if result.outcome == INFERENCE_READY else "error"
     set_flash(response, summary, level)
+    return response
+
+
+@router.post("/{website_id}/browser-retry")
+async def browser_retry_view(
+    website_id: int,
+    request: Request,
+    db: DbSession,
+    correlation_id: CorrelationId,
+    ip_address: ClientIp,
+    current_user: TestSites,
+    csrf_token: str = Form(...),
+):
+    """Advanced-fallback recovery: render the listing once in the restricted
+    browser, re-run detection, and drive the ordinary propose/preview/policy
+    pipeline. Permission-gated (sites.test) and CSRF-protected; refuses when
+    browser extraction is disabled or the website is archived (both enforced
+    in the service). Never approves or activates on its own."""
+    verify_csrf(request, csrf_token)
+    website = get_website(db, website_id)
+    if website is None:
+        raise NotFoundError("Website not found")
+
+    settings = get_settings()
+    if not settings.browser_extraction_enabled:
+        raise AppError("Restricted browser detection is disabled for this deployment.", 409)
+
+    result = await browser_retry_recovery(
+        db, website, correlation_id=correlation_id, submitted_by_user_id=current_user.id
+    )
+    record_audit(
+        db,
+        actor_id=current_user.id,
+        action="website_browser_retry",
+        entity_type="website",
+        entity_id=website.id,
+        after={
+            "recovery_status": result.status,
+            "onboarding_status": website.onboarding_status,
+            "configuration_version": website.configuration_version,
+        },
+        correlation_id=correlation_id,
+        ip_address=ip_address,
+    )
+    response = RedirectResponse(url=f"/admin/websites/{website.id}", status_code=303)
+    set_flash(response, f"Restricted browser retry: {result.status.replace('_', ' ')}")
     return response
 
 
