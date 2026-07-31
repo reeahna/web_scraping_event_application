@@ -50,6 +50,15 @@ _STRUCTURED_API_PATTERNS = frozenset(
     }
 )
 
+# The single, authoritative outcome of an observation. Downstream recovery
+# branches on this and nothing else, so an unextractable structured candidate
+# can never be mistaken for a rendered-HTML selection.
+OUTCOME_STRUCTURED_SELECTED = "structured_selected"
+OUTCOME_STRUCTURED_PATTERN_NEEDED = "structured_pattern_needed"
+OUTCOME_RENDERED_SELECTED = "rendered_selected"
+OUTCOME_BLOCKED = "blocked"
+OUTCOME_NO_SOURCE = "no_source"
+
 
 def _response(body: str, final_url: str, content_type: str) -> FetchResponse:
     raw = body.encode("utf-8")
@@ -68,12 +77,16 @@ def _response(body: str, final_url: str, content_type: str) -> FetchResponse:
 
 @dataclass
 class BrowserObservation:
+    outcome: str = OUTCOME_NO_SOURCE
     blocked_reason: str | None = None
     rendered_response: FetchResponse | None = None
     api_responses: list[FetchResponse] = field(default_factory=list)
+    # Set ONLY when a source is actually selected for extraction
+    # (structured_selected / rendered_selected). For structured_pattern_needed
+    # and no_source it is None, so a caller cannot accidentally extract from it.
     chosen_response: FetchResponse | None = None
     detection: PatternDetectionResult | None = None
-    chosen_source: str | None = None  # "structured_api" | "rendered_html"
+    chosen_source: str | None = None  # "structured_api" | "rendered_html" | None
     warnings: tuple[str, ...] = ()
     # Classified, scored observed responses.
     candidate_endpoints: list[CandidateAnalysis] = field(default_factory=list)
@@ -103,7 +116,11 @@ async def render_and_observe(
     result: BrowserRenderResult = await strategy.render(url, plan)
 
     if result.blocked_reason is not None:
-        return BrowserObservation(blocked_reason=result.blocked_reason, warnings=result.warnings)
+        return BrowserObservation(
+            outcome=OUTCOME_BLOCKED,
+            blocked_reason=result.blocked_reason,
+            warnings=result.warnings,
+        )
 
     from app.extraction.browser import observed_json_as_text
 
@@ -153,12 +170,13 @@ async def render_and_observe(
             }
         )
 
-    rendered_detection = run_detection(rendered)
     api_responses = [resp for _, resp in analyses]
 
+    # 1. Extractable first-party structured event endpoint — the best case.
     if best_extractable is not None:
         chosen, detection, analysis = best_extractable
         return BrowserObservation(
+            outcome=OUTCOME_STRUCTURED_SELECTED,
             rendered_response=rendered,
             api_responses=api_responses,
             chosen_response=chosen,
@@ -177,28 +195,52 @@ async def render_and_observe(
             rejected_candidates=rejected,
         )
 
-    # No extractable structured source. If a first-party event endpoint was
-    # nonetheless observed, say so loudly — a zero-result rendered-HTML proposal
-    # must not silently win over event-like structured data.
-    unextracted = candidate_endpoints[0] if candidate_endpoints else None
-    new_pattern_needed = unextracted is not None
-    if unextracted is not None:
+    # 2. A qualifying first-party event endpoint exists but no registered
+    # pattern can extract it. This is NOT a rendered-HTML selection: a reusable
+    # pattern is needed. chosen_response/detection stay None so recovery cannot
+    # extract or propose from it, and rendered HTML is never selected here.
+    if candidate_endpoints:
+        top = candidate_endpoints[0]
         warnings.append(
             "a first-party event-like endpoint was observed but no registered pattern can "
             "extract it - a reusable pattern is needed"
         )
-        if rendered_detection.pattern_name:
-            warnings.append(
-                "rendered HTML was selected despite a higher-scoring structured candidate"
-            )
+        return BrowserObservation(
+            outcome=OUTCOME_STRUCTURED_PATTERN_NEEDED,
+            rendered_response=rendered,  # retained for diagnostics only
+            api_responses=api_responses,
+            chosen_response=None,
+            detection=None,
+            chosen_source=None,
+            warnings=tuple(warnings),
+            candidate_endpoints=candidate_endpoints,
+            ignored_endpoints=ignored_endpoints,
+            other_first_party=other_first_party,
+            selected_endpoint=top.sanitized_url,
+            selection_reason=(
+                f"first-party structured event endpoint <{top.sanitized_url}> is preferred "
+                f"(event-likeness {top.event_likeness_score:.2f}) but no registered pattern "
+                f"supports its response shape yet"
+            ),
+            rejected_candidates=rejected,
+            unextracted_candidate=top,
+            new_pattern_needed=True,
+        )
 
-    selection_reason = (
-        f"rendered HTML detected as '{rendered_detection.pattern_name}'"
-        if rendered_detection.pattern_name
-        else "no structured candidate was extractable and rendered HTML matched no pattern"
+    # 3. No structured candidate at all — only now may rendered HTML be
+    # considered, and it still goes through the ordinary proposal + preview.
+    rendered_detection = run_detection(rendered)
+    outcome = (
+        OUTCOME_RENDERED_SELECTED if rendered_detection.pattern_name else OUTCOME_NO_SOURCE
     )
-
+    selection_reason = (
+        f"no structured candidate observed; rendered HTML detected as "
+        f"'{rendered_detection.pattern_name}'"
+        if rendered_detection.pattern_name
+        else "no structured candidate and rendered HTML matched no pattern"
+    )
     return BrowserObservation(
+        outcome=outcome,
         rendered_response=rendered,
         api_responses=api_responses,
         chosen_response=rendered,
@@ -211,6 +253,4 @@ async def render_and_observe(
         selected_endpoint=None,
         selection_reason=selection_reason,
         rejected_candidates=rejected,
-        unextracted_candidate=unextracted,
-        new_pattern_needed=new_pattern_needed,
     )

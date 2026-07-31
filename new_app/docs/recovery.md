@@ -41,17 +41,22 @@ and the site is not archived):
    not just the ones an existing detector recognises. Third-party telemetry
    (analytics, ad pixels, social beacons, map tiles) is filtered out by
    registrable-domain comparison; first-party JSON is scored on event-likeness
-   (record arrays, event fields, ownership). A **qualifying first-party
-   structured event endpoint is preferred over rendered HTML** even when no
-   registered pattern recognises it yet — in which case recovery is told a
-   reusable pattern is needed rather than accepting a zero-result
-   `generic_html_cards` proposal. Selection order: qualifying extractable
-   structured endpoint → rendered HTML with a successful preview → review.
-3. `app.services.browser_recovery` then drives the same
-   propose → draft → preview → Phase 8D policy pipeline the HTTP path uses.
-   No Event row is persisted; only a draft configuration is written;
-   `configuration_version` bumps; approval/activation stay policy-gated (off by
-   default) — a recovered source lands in `needs_review` for a human to approve.
+   (record arrays, event fields, ownership). It returns **one explicit
+   outcome** — `structured_selected`, `structured_pattern_needed`,
+   `rendered_selected`, `blocked`, or `no_source` — so recovery never has to
+   infer the source from a contradictory mix of flags.
+3. `app.services.browser_recovery` branches on that outcome:
+   - `structured_selected` / `rendered_selected` → the ordinary
+     propose → draft → preview → Phase 8D policy pipeline (no Event row; a draft
+     is written; `configuration_version` bumps; approval/activation stay
+     policy-gated). A recovered source lands in `needs_review` for a human.
+   - `structured_pattern_needed` → a qualifying first-party event endpoint was
+     found but no registered pattern can extract it. Recovery records the
+     candidate analysis and keeps the source in `needs_review` **without**
+     proposing `generic_html_cards`, writing a draft, running a preview, or
+     bumping `configuration_version`. Equivalent retries are idempotent (a
+     bounded candidate fingerprint gates re-recording; only an attempt counter
+     advances), so a source cannot accumulate failed generic drafts.
 
 Blocked outcomes (CAPTCHA, Cloudflare, login wall, SSRF, timeout) are recorded
 on the source's unsupported-site report (`browser_recovery`, a bounded/redacted

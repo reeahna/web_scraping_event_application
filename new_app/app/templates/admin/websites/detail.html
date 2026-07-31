@@ -162,7 +162,9 @@
 {% if latest_browser_recovery %}
 {% set recovery = latest_browser_recovery %}
 {% if recovery.new_pattern_needed %}
-<p class="badge badge-pending">Structured event endpoint found — needs a reusable pattern</p>
+<p class="badge badge-pending">Preferred structured event endpoint found</p>
+<p class="audit-meta">No registered extraction pattern supports this response shape yet — a reusable
+  pattern is required. No configuration draft or preview was created.{% if recovery.attempts and recovery.attempts > 1 %} Observed on {{ recovery.attempts }} retries.{% endif %}</p>
 {% endif %}
 <table>
   <tbody>
@@ -170,10 +172,13 @@
     <tr><th>Recovery status</th><td>{{ recovery.status or "—" }}</td></tr>
     <tr><th>Rendered page</th><td>{{ recovery.rendered_status or "—" }}</td></tr>
     <tr><th>Observed response types</th><td>{% if recovery.observed_response_types %}{{ recovery.observed_response_types | join(", ") }}{% else %}—{% endif %}</td></tr>
-    <tr><th>Chosen source</th><td>{{ recovery.chosen_source or "—" }}{% if recovery.selected_endpoint %} — <code>{{ recovery.selected_endpoint }}</code>{% endif %}</td></tr>
+    <tr><th>Selected / preferred source</th>
+      <td>{% if recovery.chosen_source %}{{ recovery.chosen_source }}{% if recovery.selected_endpoint %} — <code>{{ recovery.selected_endpoint }}</code>{% endif %}{% elif recovery.selected_endpoint %}preferred structured endpoint — <code>{{ recovery.selected_endpoint }}</code>{% else %}—{% endif %}</td></tr>
     <tr><th>Why this source</th><td class="audit-meta">{{ recovery.selection_reason or "—" }}</td></tr>
+    {% if recovery.proposed_pattern or not recovery.new_pattern_needed %}
     <tr><th>Proposed pattern</th><td>{{ recovery.proposed_pattern or "—" }}</td></tr>
     <tr><th>Preview</th><td>{{ recovery.preview_status or "—" }}</td></tr>
+    {% endif %}
     <tr><th>Ignored third-party endpoints</th><td>{{ recovery.ignored_endpoint_count or 0 }}</td></tr>
     <tr><th>Blocked / challenge</th><td>{{ recovery.blocked_reason or "None" }}</td></tr>
     <tr><th>Warnings</th><td class="audit-meta">{{ recovery.error_summary or "—" }}</td></tr>

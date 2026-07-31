@@ -19,6 +19,7 @@ of it on the source's unsupported-site report.
 
 from __future__ import annotations
 
+import hashlib
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from urllib.parse import urlsplit, urlunsplit
@@ -53,7 +54,12 @@ from app.repositories.unsupported_site_report import (
 )
 from app.schemas.browser import BrowserPlan
 from app.services import extraction_runs
-from app.services.browser_observation import BrowserObservation, render_and_observe
+from app.services.browser_observation import (
+    OUTCOME_BLOCKED,
+    OUTCOME_STRUCTURED_PATTERN_NEEDED,
+    BrowserObservation,
+    render_and_observe,
+)
 from app.services.onboarding_automation import (
     _evaluate_and_execute_policy,
     _fallback_timezone,
@@ -68,6 +74,9 @@ from app.services.websites import transition_website
 RECOVERY_BLOCKED = "blocked"
 RECOVERY_UNSUPPORTED = "unsupported"
 RECOVERY_NEEDS_REVIEW = "needs_review"
+# A qualifying first-party event endpoint was found but no registered pattern
+# can extract it. Distinct from the outcomes above: no draft/preview is run.
+RECOVERY_STRUCTURED_PATTERN_NEEDED = "structured_pattern_needed"
 
 
 @dataclass(frozen=True)
@@ -99,6 +108,9 @@ def _evidence_base() -> dict:
         "rejected_candidates": [],
         "response_shape": None,
         "new_pattern_needed": False,
+        "candidate_fingerprint": None,
+        "attempts": 1,
+        "last_attempt_at": None,
         "chosen_source": None,
         "detected_pattern": None,
         "detection_confidence": None,
@@ -161,6 +173,62 @@ def _persist(db: Session, website: Website, evidence: dict) -> None:
         set_browser_recovery(db, report, evidence=evidence)
 
 
+def _candidate_fingerprint(analysis) -> str:
+    """A bounded, deterministic identity for an unextractable candidate, so
+    equivalent retries are recognised as the same and don't re-record. Uses the
+    sanitized endpoint, response-shape signature, record-array path, a
+    sample-field-name signature, and a coarse event-likeness bucket."""
+    score_bucket = int(round(analysis.event_likeness_score * 10))
+    field_sig = ",".join(sorted(analysis.sample_field_names))
+    raw = "|".join(
+        [
+            analysis.sanitized_url,
+            analysis.top_level_type,
+            analysis.record_array_path or "",
+            field_sig,
+            str(score_bucket),
+        ]
+    )
+    return hashlib.sha256(raw.encode("utf-8")).hexdigest()[:16]
+
+
+def _handle_structured_pattern_needed(
+    db: Session, website: Website, observation: BrowserObservation, evidence: dict
+) -> BrowserRecoveryResult:
+    """A first-party event endpoint is preferred but no registered pattern can
+    extract it. Never proposes, drafts, previews, or bumps configuration_version
+    — it records the candidate analysis, keeps the source in review, and is
+    idempotent across equivalent retries."""
+    top = observation.candidate_endpoints[0]
+    fingerprint = _candidate_fingerprint(top)
+    evidence["status"] = RECOVERY_STRUCTURED_PATTERN_NEEDED
+    evidence["candidate_fingerprint"] = fingerprint
+    evidence["last_attempt_at"] = evidence["attempted_at"]
+
+    report = get_latest_report_for_website(db, website.id)
+    if report is not None:
+        # A fresh dict, not the stored object — reassigning the same instance
+        # would not mark the JSON column dirty and the update would be lost.
+        prior = dict(report.browser_recovery or {})
+        if prior.get("candidate_fingerprint") == fingerprint:
+            # Equivalent retry: bump attempt tracking only, leave the rest of
+            # the (identical) evidence untouched.
+            prior["attempts"] = int(prior.get("attempts", 1)) + 1
+            prior["last_attempt_at"] = evidence["attempted_at"]
+            set_browser_recovery(db, report, evidence=prior)
+        else:
+            evidence["attempts"] = 1
+            set_browser_recovery(db, report, evidence=evidence)
+
+    # Keep (or move to) review — a plausible source exists, it just needs a
+    # reusable pattern. configuration_version is deliberately never touched.
+    if can_transition(website.onboarding_status, ONBOARDING_NEEDS_REVIEW):
+        transition_website(db, website, ONBOARDING_NEEDS_REVIEW)
+    return BrowserRecoveryResult(
+        status=RECOVERY_STRUCTURED_PATTERN_NEEDED, observation=observation
+    )
+
+
 async def browser_retry_recovery(
     db: Session,
     website: Website,
@@ -185,8 +253,12 @@ async def browser_retry_recovery(
 
     evidence = _evidence_base()
 
+    # Branch on the single, authoritative observation outcome. Nothing infers
+    # the source from a combination of chosen_source/detection/new_pattern_needed
+    # that could contradict itself.
+
     # --- Blocked: challenge / CAPTCHA / login wall / SSRF / timeout --------
-    if observation.blocked_reason is not None:
+    if observation.outcome == OUTCOME_BLOCKED:
         evidence["status"] = RECOVERY_BLOCKED
         evidence["blocked_reason"] = observation.blocked_reason
         if observation.warnings:
@@ -196,22 +268,22 @@ async def browser_retry_recovery(
 
     _observation_evidence(evidence, observation)
 
-    # --- Rendered/observed, but no confident pattern ----------------------
+    # --- Structured event endpoint found, but no pattern can extract it ----
+    # Do NOT propose, draft, preview, or bump configuration_version. Idempotent.
+    if observation.outcome == OUTCOME_STRUCTURED_PATTERN_NEEDED:
+        return _handle_structured_pattern_needed(db, website, observation, evidence)
+
+    # --- No source at all -------------------------------------------------
     if observation.detection is None or observation.detection.pattern_name is None:
-        # A first-party structured event endpoint was found but nothing can
-        # extract it yet: that is a review item (a reusable pattern is needed),
-        # not "unsupported". Never silently unsupported when a candidate exists.
-        if observation.new_pattern_needed:
-            if can_transition(website.onboarding_status, ONBOARDING_NEEDS_REVIEW):
-                transition_website(db, website, ONBOARDING_NEEDS_REVIEW)
-            evidence["status"] = RECOVERY_NEEDS_REVIEW
-            _persist(db, website, evidence)
-            return BrowserRecoveryResult(status=RECOVERY_NEEDS_REVIEW, observation=observation)
         evidence["status"] = RECOVERY_UNSUPPORTED
         _persist(db, website, evidence)
         return BrowserRecoveryResult(status=RECOVERY_UNSUPPORTED, observation=observation)
 
-    # --- Usable: run the ordinary propose -> draft -> preview -> policy ----
+    # --- Selected source (structured_selected / rendered_selected): run the
+    #     ordinary propose -> draft -> preview -> policy pipeline ------------
+    # A source that browser detection can now read belongs in review, not left
+    # UNSUPPORTED. From UNSUPPORTED the only forward state is NEEDS_REVIEW, so
+    # approval stays a separate, permissioned step — recovery never activates.
     # A source that browser detection can now read belongs in review, not left
     # UNSUPPORTED. From UNSUPPORTED the only forward state is NEEDS_REVIEW, so
     # approval stays a separate, permissioned step — recovery never activates.
@@ -260,15 +332,13 @@ async def browser_retry_recovery(
         db, website, correlation_id=correlation_id
     )
     ok, reasons = meets_approval_bar(preview.quality, policy, preview_status=preview.result.status)
-    # A zero-result rendered proposal must never win over an event-like
-    # structured candidate: when the preview produced nothing and a first-party
-    # event endpoint was observed, route to review (a reusable pattern is
-    # needed) rather than reporting an unexplained failure or accepting the
-    # empty draft.
-    zero_valid = preview.result.events_valid == 0
+    # This path is only reached for a genuinely selected source (structured_api
+    # or rendered HTML with no competing structured candidate), so a failed
+    # preview here is a real failure — there is no unextractable candidate to
+    # defer to (that case never reaches this branch).
     if preview.result.status == "blocked":
         outcome = BLOCKED
-    elif inference.missing_required_fields or (zero_valid and observation.new_pattern_needed):
+    elif inference.missing_required_fields:
         outcome = NEEDS_REVIEW
     elif preview.result.status == "failed":
         outcome = FAILED

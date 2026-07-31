@@ -219,16 +219,27 @@ def test_unsupported_review_pages_return_200(
     assert client.get(f"/admin/websites/{website.id}/onboarding").status_code == 200
 
 
+_FIND = (
+    "https://www.visitbloomington.com/includes/rest_v2/plugins_events_events_by_date/find/"
+)
+
+
 def _recovery_evidence() -> dict:
     return {
         "attempted_at": "2026-07-30T00:00:00+00:00",
-        "status": "needs_review",
+        "status": "structured_pattern_needed",
         "rendered_status": 200,
         "observed_response_types": ["rendered_html", "json"],
-        "chosen_source": "rendered_html",
-        "selected_endpoint": None,
-        "selection_reason": "rendered HTML detected as 'generic_html_cards'",
+        "chosen_source": None,
+        "selected_endpoint": _FIND,
+        "selection_reason": (
+            f"first-party structured event endpoint <{_FIND}> is preferred "
+            "(event-likeness 0.91) but no registered pattern supports its response shape yet"
+        ),
         "new_pattern_needed": True,
+        "candidate_fingerprint": "ad79fb93c435382b",
+        "attempts": 2,
+        "last_attempt_at": "2026-07-30T01:00:00+00:00",
         "ignored_endpoint_count": 3,
         "candidate_event_endpoints": [
             {
@@ -250,7 +261,7 @@ def _recovery_evidence() -> dict:
              "plugins_events_events_by_date/find/",
              "score": 0.91, "reason": "no registered pattern can extract this response shape"},
         ],
-        "preview_status": "failed",
+        "preview_status": None,
         "proposed_pattern": None,
         "detected_pattern": None,
         "detection_confidence": None,
@@ -308,9 +319,16 @@ def test_report_detail_separates_candidates_from_ignored(
     assert "Candidate event endpoints" in body
     assert "plugins_events_events_by_date/find/" in body
     assert "docs.docs" in body
-    # Selection reason and the "needs a reusable pattern" warning surfaced.
-    assert "reusable pattern is needed" in body
-    assert "rendered HTML detected as" in body
+    # The explicit structured_pattern_needed messaging is shown.
+    assert "Preferred structured event endpoint found" in body
+    assert "No registered extraction pattern supports this response shape yet" in body
+    assert "is preferred" in body
+    # It must NOT present a generic proposal or a preview row (rendered HTML
+    # remains only as a diagnostic "observed response type").
+    assert "preferred structured endpoint" in body
+    assert "generic_html_cards" not in body
+    assert "Proposed pattern" not in body
+    assert "Preview outcome" not in body
     # Ignored third-party count shown; telemetry not offered as a candidate.
     assert "Ignored third-party endpoints" in body
     # Rejected candidates and their reasons displayed.
@@ -340,7 +358,8 @@ def test_website_detail_shows_recovery_candidates(
 
     body = client.get(f"/admin/websites/{website.id}").text
     assert "Candidate event endpoints" in body
-    assert "needs a reusable pattern" in body
+    assert "Preferred structured event endpoint found" in body
+    assert "No registered extraction pattern supports this response shape yet" in body
     assert "plugins_events_events_by_date/find/" in body
 
 

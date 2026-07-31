@@ -22,12 +22,21 @@ from app.models.event import Event
 from app.models.unsupported_site_report import UnsupportedSiteReport
 from app.services.browser_recovery import (
     RECOVERY_BLOCKED,
-    RECOVERY_NEEDS_REVIEW,
+    RECOVERY_STRUCTURED_PATTERN_NEEDED,
     RECOVERY_UNSUPPORTED,
     browser_retry_recovery,
 )
 
 from .extraction_helpers import html_handler, load_fixture, patched_http_fetch
+
+
+def _preview_count(db, website_id) -> int:
+    from app.repositories.extraction_run import list_extraction_runs_for_website
+
+    return sum(
+        1 for r in list_extraction_runs_for_website(db, website_id, limit=50)
+        if r.run_type == "preview"
+    )
 
 # A Simpleview-style first-party event API response no registered pattern knows.
 _SIMPLEVIEW_EVENTS = {
@@ -275,64 +284,120 @@ async def test_unextractable_first_party_endpoint_routes_to_review(
     db_session, unsupported_site, enable_browser
 ):
     """The Website #4 case: a first-party event API is discovered but no
-    registered pattern can extract it. Recovery must route to review with the
-    candidate analysis — never a zero-result generic_html_cards proposal."""
+    registered pattern can extract it. The outcome is a distinct
+    structured_pattern_needed — never a rendered-HTML/generic_html_cards
+    proposal — and it touches no draft, preview, or configuration_version."""
     website = unsupported_site()
+    starting_version = website.configuration_version
     observed = [(_FIND_URL, _SIMPLEVIEW_EVENTS), *_TELEMETRY]
     result = await browser_retry_recovery(
         db_session, website, strategy=_rendered(_SPA_SHELL, observed_json=observed)
     )
 
-    assert result.status == RECOVERY_NEEDS_REVIEW
+    assert result.status == RECOVERY_STRUCTURED_PATTERN_NEEDED
+    # Rendered HTML is not selected and its detection is not exposed.
+    assert result.observation.chosen_source is None
+    assert result.observation.detection is None
     db_session.refresh(website)
     assert website.onboarding_status == "needs_review"
-    assert website.configuration is None  # no generic draft forced
+    assert website.configuration is None  # no draft created
+    assert website.configuration_version == starting_version  # version unchanged
+    assert _preview_count(db_session, website.id) == 0  # no preview run
     assert _event_count(db_session) == 0
 
     rec = db_session.query(UnsupportedSiteReport).one().browser_recovery
+    assert rec["status"] == RECOVERY_STRUCTURED_PATTERN_NEEDED
     assert rec["new_pattern_needed"] is True
-    assert rec["chosen_source"] == "rendered_html"
-    assert rec["selected_endpoint"] is None
+    assert rec["chosen_source"] is None
+    assert rec["proposed_pattern"] is None
+    assert rec["preview_status"] is None
+    assert rec["selected_endpoint"].endswith("/find/")
     candidates = rec["candidate_event_endpoints"]
     assert len(candidates) == 1
-    assert candidates[0]["url"].endswith("/find/")
     assert candidates[0]["record_array_path"] == "docs.docs"
     # Query strings and secrets never persisted.
     assert "SECRET" not in json.dumps(rec)
     assert "token" not in candidates[0]["url"]
     # Third-party telemetry ignored, never presented as a candidate.
     assert rec["ignored_endpoint_count"] == 3
-    assert len(candidates) == 1
     assert rec["rejected_candidates"]
 
 
-async def test_zero_result_generic_does_not_win_over_structured_candidate(
+async def test_proposer_not_called_for_structured_pattern_needed(
+    db_session, unsupported_site, enable_browser, monkeypatch
+):
+    from app.services import browser_recovery
+
+    def _boom(*args, **kwargs):  # pragma: no cover - must never run
+        raise AssertionError("save_draft_configuration must not be called")
+
+    monkeypatch.setattr(browser_recovery, "save_draft_configuration", _boom)
+    website = unsupported_site()
+    result = await browser_retry_recovery(
+        db_session, website,
+        strategy=_rendered(_SPA_SHELL, observed_json=[(_FIND_URL, _SIMPLEVIEW_EVENTS)]),
+    )
+    assert result.status == RECOVERY_STRUCTURED_PATTERN_NEEDED
+
+
+async def test_structured_pattern_needed_retries_are_idempotent(
     db_session, unsupported_site, enable_browser
 ):
-    import httpx
-
     website = unsupported_site()
-    cards = load_fixture("static_html_cards.html")
+    observed = [(_FIND_URL, _SIMPLEVIEW_EVENTS), *_TELEMETRY]
 
-    def _empty(request):
-        return httpx.Response(200, text="<html><body></body></html>",
-                              headers={"content-type": "text/html"})
-
-    # Rendered cards make generic_html_cards detect, but the recurring HTTP
-    # fetch yields nothing — a zero-result proposal that must not be accepted
-    # while an event-like structured candidate exists.
-    with patched_http_fetch(_empty):
-        result = await browser_retry_recovery(
-            db_session, website,
-            strategy=_rendered(cards, observed_json=[(_FIND_URL, _SIMPLEVIEW_EVENTS)]),
-        )
-
-    assert result.status == RECOVERY_NEEDS_REVIEW  # not "failed"
+    await browser_retry_recovery(
+        db_session, website, strategy=_rendered(_SPA_SHELL, observed_json=observed)
+    )
     db_session.refresh(website)
-    assert website.onboarding_status == "needs_review"
-    assert website.approved_pattern is None
+    version_after_first = website.configuration_version
+    first = db_session.query(UnsupportedSiteReport).one().browser_recovery
+    assert first["attempts"] == 1
+
+    # An equivalent retry must not bump the version, create a preview, or add a
+    # duplicate report — only the attempt counter advances.
+    await browser_retry_recovery(
+        db_session, website, strategy=_rendered(_SPA_SHELL, observed_json=observed)
+    )
+    db_session.refresh(website)
+    assert website.configuration_version == version_after_first
+    assert _preview_count(db_session, website.id) == 0
+    assert db_session.query(UnsupportedSiteReport).count() == 1
+    second = db_session.query(UnsupportedSiteReport).one().browser_recovery
+    assert second["attempts"] == 2
+    assert second["candidate_fingerprint"] == first["candidate_fingerprint"]
+
+
+async def test_production_orchestration_prefers_structured_over_generic(
+    db_session, unsupported_site, enable_browser
+):
+    """find JSON (high score) + aggregate JSON + rendered HTML that matches
+    generic_html_cards + no pattern for find. The structured candidate wins;
+    generic_html_cards never drafts or previews."""
+    website = unsupported_site()
+    starting_version = website.configuration_version
+    cards = load_fixture("static_html_cards.html")  # would match generic_html_cards
+    observed = [
+        (_FIND_URL, _SIMPLEVIEW_EVENTS),
+        ("https://example.com/includes/rest_v2/plugins_events_events/aggregate/",
+         {"aggregations": {"categories": {"Music": 10}}, "total": 3}),
+    ]
+    result = await browser_retry_recovery(
+        db_session, website, strategy=_rendered(cards, observed_json=observed)
+    )
+
+    assert result.status == RECOVERY_STRUCTURED_PATTERN_NEEDED
+    db_session.refresh(website)
+    rec = db_session.query(UnsupportedSiteReport).one().browser_recovery
+    assert rec["selected_endpoint"].endswith("/find/")
+    assert rec["chosen_source"] is None  # rendered HTML did not win
+    assert rec["proposed_pattern"] is None
+    assert website.configuration is None
+    assert website.configuration_version == starting_version
+    assert _preview_count(db_session, website.id) == 0
     assert _event_count(db_session) == 0
-    assert db_session.query(UnsupportedSiteReport).one().browser_recovery["new_pattern_needed"]
+    # The aggregate endpoint is not a candidate (below threshold).
+    assert len(rec["candidate_event_endpoints"]) == 1
 
 
 async def test_extractable_structured_endpoint_beats_rendered_html(
