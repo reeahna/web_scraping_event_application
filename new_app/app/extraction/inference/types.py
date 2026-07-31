@@ -97,6 +97,12 @@ class ProposalContext:
     # round returned `detail_probe_url`; the proposer itself never fetches,
     # so the second round stays a pure function of data it was handed.
     detail_documents: dict[str, str] = dataclasses_field(default_factory=dict)
+    # Bounded, redacted request metadata for the selected endpoint, captured by
+    # the browser observation layer (method, request content-type, bounded JSON
+    # body, safe query-param names). None on the ordinary HTTP path. Never
+    # carries cookies, auth, tokens, or arbitrary headers. A proposer may use it
+    # to replay a POST-only endpoint through the closed FetchConfig schema.
+    request_metadata: dict[str, Any] | None = None
 
 
 @dataclass(frozen=True)

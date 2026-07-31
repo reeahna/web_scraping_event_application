@@ -1,0 +1,8 @@
+{
+  "aggregations": {
+    "categories": {"Music": 18, "Performing Arts": 12, "Family": 7},
+    "months": {"2026-10": 20, "2026-11": 14}
+  },
+  "total": 42,
+  "facets": ["categories", "months", "regions"]
+}

@@ -52,6 +52,7 @@ def test_default_registry_has_the_expected_patterns():
         "wordpress_rest",
         "the_events_calendar",
         "livewhale_json",
+        "simpleview_events",
         # Phase 8F JSON-in-script family
         "next_data",
         "nuxt_payload",

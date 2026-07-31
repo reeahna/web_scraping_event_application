@@ -74,6 +74,7 @@ class ConfigurationInferenceService:
         listing_url: str,
         fallback_timezone: str | None,
         detail_documents: dict[str, str] | None = None,
+        request_metadata: dict | None = None,
     ) -> ProposalContext:
         return ProposalContext(
             response=response,
@@ -82,6 +83,7 @@ class ConfigurationInferenceService:
             fallback_timezone=fallback_timezone,
             policy=self._policy,
             detail_documents=dict(detail_documents or {}),
+            request_metadata=request_metadata,
         )
 
     def propose(self, context: ProposalContext) -> ConfigurationProposal | InferenceResult:

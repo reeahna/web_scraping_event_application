@@ -1,0 +1,79 @@
+{
+  "docs": {
+    "count": 42,
+    "docs": [
+      {
+        "recid": "sv-1001",
+        "_id": "5f2a1b001",
+        "accountId": "acct-9",
+        "title": "Autumn Quartet",
+        "startDate": "2026-10-06T19:00:00-04:00",
+        "endDate": "2026-10-06T21:00:00-04:00",
+        "url": "/event/autumn-quartet/1001/",
+        "location": {"name": "Buskirk-Chumley Theater"},
+        "city": "Bloomington",
+        "latitude": 39.1653,
+        "longitude": -86.5264,
+        "categories": [{"name": "Music"}, {"name": "Performing Arts"}],
+        "media_raw": {"url": "https://cdn.example.org/img/autumn.jpg"},
+        "recurType": "none",
+        "recurrence": null
+      },
+      {
+        "recid": "sv-1002",
+        "_id": "5f2a1b002",
+        "title": "Winter Chorus",
+        "startDate": "2026-11-13",
+        "endDate": "2026-11-13",
+        "url": "https://visit.example.org/event/winter-chorus/1002/",
+        "location": "Ivy Tech Auditorium",
+        "city": "Bloomington",
+        "latitude": 39.1700,
+        "longitude": -86.5300,
+        "categories": ["Music", "Music", "Choral"],
+        "media_raw": [{"url": "https://cdn.example.org/img/winter.jpg"}],
+        "recurType": "weekly",
+        "recurrence": {"freq": "WEEKLY", "interval": 1}
+      },
+      {
+        "recid": "sv-1003",
+        "_id": "5f2a1b003",
+        "title": "Spring Recital",
+        "startDate": "2027-03-07",
+        "url": "/event/spring-recital/1003/"
+      },
+      {
+        "recid": "sv-1004",
+        "_id": "5f2a1b004",
+        "title": "Craft Fair",
+        "date": "2027-05-01",
+        "url": "/event/craft-fair/1004/",
+        "location": {"unexpectedShape": true},
+        "media_raw": {"url": "javascript:alert(1)"}
+      },
+      {
+        "recid": "sv-1005",
+        "_id": "5f2a1b005",
+        "title": "Bad Coordinates",
+        "startDate": "2027-06-01",
+        "url": "/event/bad-coords/1005/",
+        "latitude": 999.0,
+        "longitude": 12.0
+      },
+      {
+        "recid": "sv-1006",
+        "_id": "5f2a1b006",
+        "title": "No Date Event",
+        "url": "/event/no-date/1006/"
+      },
+      {
+        "recid": "sv-1001",
+        "_id": "5f2a1b001b",
+        "title": "Autumn Quartet (duplicate listing)",
+        "startDate": "2026-10-06T19:00:00-04:00",
+        "url": "/event/autumn-quartet-dup/1001/"
+      },
+      "not-a-record-object"
+    ]
+  }
+}

@@ -47,6 +47,7 @@ _STRUCTURED_API_PATTERNS = frozenset(
         "wordpress_rest",
         "the_events_calendar",
         "livewhale_json",
+        "simpleview_events",
     }
 )
 
@@ -94,6 +95,9 @@ class BrowserObservation:
     other_first_party: list[CandidateAnalysis] = field(default_factory=list)
     selected_endpoint: str | None = None
     selection_reason: str | None = None
+    # Bounded, redacted request metadata for the selected/preferred endpoint,
+    # for safe recurring HTTP replay by the proposer.
+    selected_request_metadata: dict | None = None
     rejected_candidates: list[dict] = field(default_factory=list)
     # A first-party event endpoint scored as a candidate but no registered
     # pattern can extract it — recovery should route to review, not force
@@ -135,7 +139,7 @@ async def render_and_observe(
     ):
         analysis = analyze_response(
             url=api_url, payload=payload, listing_url=url, content_type="application/json",
-            raw_text=text,
+            raw_text=text, request_meta=result.observed_requests.get(api_url),
         )
         analyses.append((analysis, _response(text, api_url, "application/json")))
 
@@ -192,6 +196,7 @@ async def render_and_observe(
                 f"'{detection.pattern_name}' (event-likeness "
                 f"{analysis.event_likeness_score:.2f})"
             ),
+            selected_request_metadata=analysis.request_metadata,
             rejected_candidates=rejected,
         )
 
@@ -222,6 +227,7 @@ async def render_and_observe(
                 f"(event-likeness {top.event_likeness_score:.2f}) but no registered pattern "
                 f"supports its response shape yet"
             ),
+            selected_request_metadata=top.request_metadata,
             rejected_candidates=rejected,
             unextracted_candidate=top,
             new_pattern_needed=True,

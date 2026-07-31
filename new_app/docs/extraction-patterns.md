@@ -7,7 +7,7 @@ executable content). The pipeline is: fetch → detect → extract → normalize
 validate → dedup, and it is deterministic (identical input + config → identical
 output).
 
-## Registered patterns (11)
+## Registered patterns (12)
 
 | Pattern | Source shape |
 |---------|--------------|
@@ -16,6 +16,7 @@ output).
 | `generic_html_cards` | inferred repeated HTML cards (higher approval bar) |
 | `the_events_calendar` | The Events Calendar (Tribe) REST |
 | `livewhale_json` | LiveWhale JSON feed |
+| `simpleview_events` | Simpleview DMO event API (`docs.docs` records) |
 | `ics_calendar` | iCalendar/ICS feed (UID identity; RRULE preserved) |
 | `rss_atom_events` | RSS/Atom (never uses pubDate as the event date) |
 | `embedded_json` | JSON embedded in a `<script>` |
@@ -60,16 +61,20 @@ This lets recovery prefer a first-party event API in an unknown format over a
 zero-result rendered-HTML proposal, and surface "a reusable pattern is needed"
 instead of forcing `generic_html_cards` onto JSON.
 
-**Deferred — `simpleview_events`.** Simpleview DMO sites expose a first-party
-event API (e.g. `…/includes/rest_v2/plugins_events_events_by_date/find/`). The
-scorer identifies and prefers it, but a *new pattern is added only once the
-response shape is confirmed from real observation* — never from the URL alone.
-Confirmation happens when an administrator runs the restricted-browser retry
-(which records the bounded response shape: record-array path, sample fields,
-counts); until then such a source lands in review with that analysis attached.
-The scoring/inspection machinery is generic and platform-agnostic, so adding
-`simpleview_events` later is a self-contained detector + proposer + extractor +
-fixtures with no hostname branching.
+**`simpleview_events`.** Simpleview DMO sites expose a first-party event API
+(e.g. `…/includes/rest_v2/plugins_events_events_by_date/find/`) returning a
+nested `docs.docs` record array. The detector matches on that structure — a
+record array whose objects carry a stable id (`recid`→`_id`→`id`), an event
+date (`startDate`/`date`/`endDate`), and a title — never on a URL, the word
+"events", or a footer. `recid` is the dedup identity; the extractor maps
+`config.json_paths` (root at `json_paths["events_root"]`, default `docs.docs`),
+resolves relative detail URLs against the origin, ignores unsafe media URLs, and
+preserves recurrence verbatim (never expanded). The aggregate/facet endpoint is
+never treated as an event source. Request replay is single-response by default
+(pagination left to configure once confirmed); a browser-observed POST body is
+replayed only through the closed `FetchConfig` schema, and an observed query
+token is never persisted. No hostname/domain/institution literal appears in the
+pattern — it is generic across Simpleview deployments.
 
 ## Adding a pattern
 

@@ -105,6 +105,10 @@ def _evidence_base() -> dict:
         "ignored_endpoints": [],
         "selected_endpoint": None,
         "selection_reason": None,
+        "request_method": None,
+        "query_param_names": [],
+        "record_array_path": None,
+        "source_id_field": None,
         "rejected_candidates": [],
         "response_shape": None,
         "new_pattern_needed": False,
@@ -163,6 +167,16 @@ def _observation_evidence(evidence: dict, observation: BrowserObservation) -> No
     if observation.detection is not None:
         evidence["detected_pattern"] = observation.detection.pattern_name
         evidence["detection_confidence"] = observation.detection.confidence
+        # run_detection nests each detector's own evidence under all_results;
+        # the winner's carries record_path / id_field.
+        det_evidence = observation.detection.evidence or {}
+        winner = det_evidence.get("winner")
+        winner_evidence = (det_evidence.get("all_results", {}) or {}).get(winner, {})
+        evidence["record_array_path"] = winner_evidence.get("record_path")
+        evidence["source_id_field"] = winner_evidence.get("id_field")
+    meta = observation.selected_request_metadata or {}
+    evidence["request_method"] = meta.get("method")
+    evidence["query_param_names"] = meta.get("query_param_names") or []
     if observation.warnings:
         evidence["error_summary"] = ", ".join(observation.warnings[:10])
 
@@ -298,6 +312,7 @@ async def browser_retry_recovery(
         detection=detection,
         listing_url=chosen.final_url,
         fallback_timezone=_fallback_timezone(website),
+        request_metadata=observation.selected_request_metadata,
     )
     proposal = service.propose(context)
     detection_result = _synthetic_detection_result(observation, listing_url)

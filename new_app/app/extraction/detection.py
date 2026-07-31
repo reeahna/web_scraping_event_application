@@ -34,6 +34,9 @@ MIN_PATTERN_CONFIDENCE = 0.6
 RELIABILITY_ORDER: tuple[str, ...] = (
     "the_events_calendar",
     "livewhale_json",
+    # Simpleview's event API has a highly distinctive nested docs.docs shape,
+    # so it rarely contends; placed with the other specific structured APIs.
+    "simpleview_events",
     "wordpress_rest",
     "json_ld_event",
     # JSON-in-script patterns sit above generic HTML (structured data beats
@@ -692,12 +695,119 @@ class AlgoliaSearchDetector:
         )
 
 
+_SIMPLEVIEW_ID_KEYS = ("recid", "_id", "id")
+_SIMPLEVIEW_DATE_KEYS = ("startDate", "date", "endDate")
+
+
+def _simpleview_records(payload: object) -> list[dict] | None:
+    """The event-record array of a Simpleview response, at `docs.docs` (an
+    outer `docs` object wrapping the inner `docs` list) or a bare `docs` list.
+    Returns None when the shape is absent — never guesses from an unrelated
+    array."""
+    if not isinstance(payload, dict):
+        return None
+    docs = payload.get("docs")
+    if isinstance(docs, dict) and isinstance(docs.get("docs"), list):
+        inner = docs["docs"]
+    elif isinstance(docs, list):
+        inner = docs
+    else:
+        return None
+    return [r for r in inner if isinstance(r, dict)]
+
+
+def _looks_like_simpleview_event(record: dict) -> bool:
+    has_id = any(
+        isinstance(record.get(k), (str, int)) and str(record.get(k)).strip()
+        for k in _SIMPLEVIEW_ID_KEYS
+    )
+    has_date = any(record.get(k) for k in _SIMPLEVIEW_DATE_KEYS)
+    has_title = bool(record.get("title"))
+    return has_id and has_date and has_title
+
+
+class SimpleviewEventsDetector:
+    """Matches a Simpleview event *API response* by its structure — a nested
+    `docs.docs` record array whose objects carry a stable id (recid/_id/id), an
+    event date (startDate/date/endDate), and a title. Deliberately does NOT
+    match on a URL containing `rest_v2`, the word "events", a Simpleview footer,
+    or a single generic JSON object; the shape is the whole signal."""
+
+    def detect(self, response: FetchResponse) -> PatternDetectionResult:
+        if _access_denied_detected(response):
+            return _blocked_result("access denied or challenge page detected")
+        try:
+            payload = json.loads(response.text)
+        except (json.JSONDecodeError, ValueError):
+            return PatternDetectionResult(
+                pattern_name=None, confidence=0.0, evidence={},
+                discovered_endpoints=(), browser_required=False, warnings=(),
+                detector_version=DETECTOR_VERSION, needs_review=False,
+            )
+
+        records = _simpleview_records(payload)
+        if records is None:
+            # No docs.docs array at all (e.g. the aggregate/facet endpoint).
+            return PatternDetectionResult(
+                pattern_name=None, confidence=0.0, evidence={},
+                discovered_endpoints=(), browser_required=False, warnings=(),
+                detector_version=DETECTOR_VERSION, needs_review=False,
+            )
+        if not records:
+            # The shape is right but there are no records — say so honestly
+            # rather than claim a confident match.
+            return PatternDetectionResult(
+                pattern_name=None, confidence=0.0,
+                evidence={"record_path": "docs.docs", "record_count": 0},
+                discovered_endpoints=(), browser_required=False,
+                warnings=("simpleview_docs_empty",),
+                detector_version=DETECTOR_VERSION, needs_review=True,
+            )
+
+        sample = records[:5]
+        event_like = [r for r in sample if _looks_like_simpleview_event(r)]
+        if not event_like or len(event_like) < (len(sample) + 1) // 2:
+            # A docs.docs array that isn't event-like is not a Simpleview event
+            # source — no false positive on generic nested JSON.
+            return PatternDetectionResult(
+                pattern_name=None, confidence=0.0,
+                evidence={"record_path": "docs.docs", "event_like_sample": len(event_like)},
+                discovered_endpoints=(), browser_required=False, warnings=(),
+                detector_version=DETECTOR_VERSION, needs_review=False,
+            )
+
+        first = event_like[0]
+        id_field = next((k for k in _SIMPLEVIEW_ID_KEYS if first.get(k) not in (None, "")), None)
+        docs_meta = payload.get("docs") if isinstance(payload.get("docs"), dict) else {}
+        total = docs_meta.get("count") if isinstance(docs_meta, dict) else None
+        confidence = round(min(0.92, 0.7 + 0.05 * len(event_like)), 4)
+        return PatternDetectionResult(
+            pattern_name="simpleview_events",
+            confidence=confidence,
+            evidence={
+                "json_shape_match": True,
+                "record_path": "docs.docs",
+                "record_count": len(records),
+                "sample_event_count": len(event_like),
+                "id_field": id_field,
+                "total_count_metadata": total,
+                "request_replay": "single_response_http",
+            },
+            discovered_endpoints=(response.final_url,),
+            browser_required=False,
+            warnings=() if total is not None else ("simpleview_pagination_unconfirmed",),
+            detector_version=DETECTOR_VERSION,
+            needs_review=False,
+        )
+
+
 def run_detection(
     response: FetchResponse, *, min_confidence: float = MIN_PATTERN_CONFIDENCE
 ) -> PatternDetectionResult:
     detectors: dict[str, PatternDetector] = {
         "the_events_calendar": TheEventsCalendarDetector(),
         "livewhale_json": LiveWhaleDetector(),
+        "simpleview_events": SimpleviewEventsDetector(),
         "wordpress_rest": WordPressRestDetector(),
         "json_ld_event": JsonLdDetector(),
         "next_data": NextDataDetector(),

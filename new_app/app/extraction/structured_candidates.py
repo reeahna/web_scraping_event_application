@@ -232,6 +232,21 @@ class CandidateAnalysis:
     event_likeness_score: float = 0.0
     score_reasons: list[str] = field(default_factory=list)
     reject_reason: str | None = None
+    # Bounded, redacted request/response metadata for recurring HTTP replay.
+    request_method: str | None = None
+    request_content_type: str | None = None
+    request_body: str | None = None
+    query_param_names: list[str] = field(default_factory=list)
+    response_status: int | None = None
+
+    @property
+    def request_metadata(self) -> dict:
+        return {
+            "method": self.request_method,
+            "request_content_type": self.request_content_type,
+            "request_body": self.request_body,
+            "query_param_names": list(self.query_param_names),
+        }
 
     @property
     def is_event_candidate(self) -> bool:
@@ -256,6 +271,10 @@ class CandidateAnalysis:
             "event_likeness_score": round(self.event_likeness_score, 4),
             "score_reasons": self.score_reasons,
             "reject_reason": self.reject_reason,
+            "request_method": self.request_method,
+            "request_content_type": self.request_content_type,
+            "query_param_names": list(self.query_param_names),
+            "response_status": self.response_status,
         }
 
 
@@ -330,9 +349,11 @@ def analyze_response(
     listing_url: str,
     content_type: str = "application/json",
     raw_text: str = "",
+    request_meta: dict | None = None,
 ) -> CandidateAnalysis:
     """Classify and score a single observed JSON response into a bounded,
-    persistable analysis. Never stores the body."""
+    persistable analysis. Never stores the response body. `request_meta` is the
+    browser's bounded request metadata for this URL, if any."""
     origin = registrable_domain(url)
     first_party = same_registrable_domain(url, listing_url)
     byte_size = len(raw_text.encode("utf-8")) if raw_text else len(json.dumps(payload, default=str))
@@ -357,6 +378,15 @@ def analyze_response(
         top_level_type=top_level_type,
         top_level_keys=top_level_keys,
     )
+
+    if request_meta:
+        analysis.request_method = request_meta.get("method")
+        analysis.request_content_type = request_meta.get("request_content_type")
+        body = request_meta.get("request_body")
+        analysis.request_body = body if isinstance(body, str) else None
+        names = request_meta.get("query_param_names")
+        analysis.query_param_names = list(names) if isinstance(names, list) else []
+        analysis.response_status = request_meta.get("response_status")
 
     if byte_size > _MAX_INSPECT_BYTES:
         analysis.classification = THIRD_PARTY_FUNCTIONAL if not first_party else FIRST_PARTY_OTHER

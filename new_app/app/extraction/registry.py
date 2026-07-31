@@ -19,6 +19,7 @@ from app.extraction.detection import (
     NuxtPayloadDetector,
     PatternDetector,
     RssAtomDetector,
+    SimpleviewEventsDetector,
     StaticHtmlDetector,
     TheEventsCalendarDetector,
     WordPressRestDetector,
@@ -35,6 +36,7 @@ from app.extraction.inference.proposers.json_scripts import (
     NextDataProposer,
     NuxtPayloadProposer,
 )
+from app.extraction.inference.proposers.simpleview import simpleview_events_proposer
 from app.extraction.inference.proposers.structured import (
     JsonLdEventProposer,
     livewhale_proposer,
@@ -58,6 +60,8 @@ from app.extraction.patterns.nuxt_payload import PATTERN_VERSION as _NUXT_VERSIO
 from app.extraction.patterns.nuxt_payload import NuxtPayloadPattern
 from app.extraction.patterns.rss_atom_events import PATTERN_VERSION as _RSS_VERSION
 from app.extraction.patterns.rss_atom_events import RssAtomEventsPattern
+from app.extraction.patterns.simpleview_events import PATTERN_VERSION as _SIMPLEVIEW_VERSION
+from app.extraction.patterns.simpleview_events import SimpleviewEventsPattern
 from app.extraction.patterns.static_html import PATTERN_VERSION as _HTML_VERSION
 from app.extraction.patterns.static_html import StaticHtmlCardsPattern
 from app.extraction.patterns.the_events_calendar import PATTERN_VERSION as _TEC_VERSION
@@ -203,6 +207,23 @@ def build_default_registry() -> PatternRegistry:
             supported_pagination=("none", "livewhale_offset"),
             proposer=livewhale_proposer(),
             display_name="LiveWhale JSON feed",
+            classification="structured",
+        )
+    )
+    registry.register(
+        PatternRegistration(
+            name="simpleview_events",
+            detector=SimpleviewEventsDetector(),
+            extractor=SimpleviewEventsPattern(),
+            config_schema=SiteConfiguration,
+            priority=RELIABILITY_ORDER.index("simpleview_events"),
+            version=_SIMPLEVIEW_VERSION,
+            browser_required=False,
+            # Pagination is not yet confirmed for the find endpoint; single
+            # response by default, with query_param available once confirmed.
+            supported_pagination=("none", "query_param"),
+            proposer=simpleview_events_proposer(),
+            display_name="Simpleview Events API",
             classification="structured",
         )
     )

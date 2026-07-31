@@ -38,11 +38,12 @@ def _preview_count(db, website_id) -> int:
         if r.run_type == "preview"
     )
 
-# A Simpleview-style first-party event API response no registered pattern knows.
-_SIMPLEVIEW_EVENTS = {
-    "docs": {
-        "count": 3,
-        "docs": [
+# A first-party event API in a shape NO registered pattern knows (not docs.docs,
+# not algolia hits, etc.) — event-like enough to score as a candidate but
+# unextractable, so it exercises the structured_pattern_needed path.
+_UNKNOWN_EVENT_API = {
+    "results": {
+        "items": [
             {"title": "Autumn Quartet", "startDate": "2026-10-06",
              "url": "/event/autumn/123/", "id": "123", "location": "Buskirk"},
             {"title": "Winter Chorus", "startDate": "2026-11-13",
@@ -50,9 +51,7 @@ _SIMPLEVIEW_EVENTS = {
         ],
     }
 }
-_FIND_URL = (
-    "https://example.com/includes/rest_v2/plugins_events_events_by_date/find/?token=SECRET"
-)
+_FIND_URL = "https://example.com/api/events/search/?token=SECRET"
 _TELEMETRY = [
     ("https://pixel.spotify.com/v1/track", {"ok": 1}),
     ("https://ct.pinterest.com/v3/", {"ok": 1}),
@@ -84,13 +83,14 @@ def _blocked(reason: str) -> _FakeStrategy:
     )
 
 
-def _rendered(html: str, observed_json=None) -> _FakeStrategy:
+def _rendered(html: str, observed_json=None, observed_requests=None) -> _FakeStrategy:
     return _FakeStrategy(
         BrowserRenderResult(
             final_url=LISTING_URL,
             rendered_html=html,
             status_code=200,
             observed_json=observed_json or [],
+            observed_requests=observed_requests or {},
         )
     )
 
@@ -289,7 +289,7 @@ async def test_unextractable_first_party_endpoint_routes_to_review(
     proposal — and it touches no draft, preview, or configuration_version."""
     website = unsupported_site()
     starting_version = website.configuration_version
-    observed = [(_FIND_URL, _SIMPLEVIEW_EVENTS), *_TELEMETRY]
+    observed = [(_FIND_URL, _UNKNOWN_EVENT_API), *_TELEMETRY]
     result = await browser_retry_recovery(
         db_session, website, strategy=_rendered(_SPA_SHELL, observed_json=observed)
     )
@@ -311,10 +311,10 @@ async def test_unextractable_first_party_endpoint_routes_to_review(
     assert rec["chosen_source"] is None
     assert rec["proposed_pattern"] is None
     assert rec["preview_status"] is None
-    assert rec["selected_endpoint"].endswith("/find/")
+    assert rec["selected_endpoint"].endswith("/search/")
     candidates = rec["candidate_event_endpoints"]
     assert len(candidates) == 1
-    assert candidates[0]["record_array_path"] == "docs.docs"
+    assert candidates[0]["record_array_path"] == "results.items"
     # Query strings and secrets never persisted.
     assert "SECRET" not in json.dumps(rec)
     assert "token" not in candidates[0]["url"]
@@ -335,7 +335,7 @@ async def test_proposer_not_called_for_structured_pattern_needed(
     website = unsupported_site()
     result = await browser_retry_recovery(
         db_session, website,
-        strategy=_rendered(_SPA_SHELL, observed_json=[(_FIND_URL, _SIMPLEVIEW_EVENTS)]),
+        strategy=_rendered(_SPA_SHELL, observed_json=[(_FIND_URL, _UNKNOWN_EVENT_API)]),
     )
     assert result.status == RECOVERY_STRUCTURED_PATTERN_NEEDED
 
@@ -344,7 +344,7 @@ async def test_structured_pattern_needed_retries_are_idempotent(
     db_session, unsupported_site, enable_browser
 ):
     website = unsupported_site()
-    observed = [(_FIND_URL, _SIMPLEVIEW_EVENTS), *_TELEMETRY]
+    observed = [(_FIND_URL, _UNKNOWN_EVENT_API), *_TELEMETRY]
 
     await browser_retry_recovery(
         db_session, website, strategy=_rendered(_SPA_SHELL, observed_json=observed)
@@ -378,7 +378,7 @@ async def test_production_orchestration_prefers_structured_over_generic(
     starting_version = website.configuration_version
     cards = load_fixture("static_html_cards.html")  # would match generic_html_cards
     observed = [
-        (_FIND_URL, _SIMPLEVIEW_EVENTS),
+        (_FIND_URL, _UNKNOWN_EVENT_API),
         ("https://example.com/includes/rest_v2/plugins_events_events/aggregate/",
          {"aggregations": {"categories": {"Music": 10}}, "total": 3}),
     ]
@@ -389,7 +389,7 @@ async def test_production_orchestration_prefers_structured_over_generic(
     assert result.status == RECOVERY_STRUCTURED_PATTERN_NEEDED
     db_session.refresh(website)
     rec = db_session.query(UnsupportedSiteReport).one().browser_recovery
-    assert rec["selected_endpoint"].endswith("/find/")
+    assert rec["selected_endpoint"].endswith("/search/")
     assert rec["chosen_source"] is None  # rendered HTML did not win
     assert rec["proposed_pattern"] is None
     assert website.configuration is None
@@ -446,6 +446,62 @@ async def test_new_draft_supersedes_prior_failed_version(
     assert preview.configuration_version == website.configuration_version
 
 
+async def test_browser_recovery_selects_simpleview_and_drafts_next_version(
+    db_session, unsupported_site, enable_browser
+):
+    """With the pattern registered, an observed Simpleview find response is now
+    extractable: recovery selects simpleview_events, drafts a new configuration
+    version (preserving the prior failed generic version), and previews it —
+    no rendered_html/generic_html_cards, no Event rows."""
+    website = unsupported_site()
+    website.timezone_override = "America/Indiana/Indianapolis"
+    # Simulate the historical failed generic_html_cards draft at version 5.
+    website.configuration = {"pattern_name": "generic_html_cards", "listing_url": LISTING_URL}
+    website.configuration_version = 5
+    db_session.add(website)
+    db_session.commit()
+
+    find_url = "https://example.com/includes/rest_v2/plugins_events_events_by_date/find/?token=X"
+    find_payload = json.loads(load_fixture("simpleview_events_page1.json"))
+    strategy = _rendered(
+        _SPA_SHELL,
+        observed_json=[(find_url, find_payload)],
+        observed_requests={find_url: {"method": "GET", "query_param_names": ["token"],
+                                      "response_status": 200}},
+    )
+    # Preview re-fetches the (query-stripped) endpoint over HTTP.
+    with patched_http_fetch(html_handler("simpleview_events_page1.json", "application/json")):
+        result = await browser_retry_recovery(db_session, website, strategy=strategy)
+
+    db_session.refresh(website)
+    assert result.observation.chosen_source == "structured_api"
+    assert result.observation.detection.pattern_name == "simpleview_events"
+    # A new draft version supersedes v5; v5 is preserved (not mutated).
+    assert website.configuration_version == 6
+    assert website.configuration["pattern_name"] == "simpleview_events"
+    assert website.approved_pattern is None  # policy off — never auto-approved
+    assert website.is_active is False
+    assert _event_count(db_session) == 0
+
+    from app.repositories.extraction_run import list_extraction_runs_for_website
+
+    preview = next(
+        r for r in list_extraction_runs_for_website(db_session, website.id, limit=20)
+        if r.run_type == "preview"
+    )
+    assert preview.configuration_version == 6
+
+    rec = db_session.query(UnsupportedSiteReport).one().browser_recovery
+    assert rec["new_pattern_needed"] is False
+    assert rec["chosen_source"] == "structured_api"
+    assert rec["proposed_pattern"] == "simpleview_events"
+    assert rec["record_array_path"] == "docs.docs"
+    assert rec["source_id_field"] == "recid"
+    assert rec["request_method"] == "GET"
+    # Query names recorded, token value never persisted anywhere.
+    assert "token" not in json.dumps(website.configuration)
+
+
 # --- registry-driven selector metadata --------------------------------------
 
 
@@ -453,7 +509,7 @@ def test_pattern_options_cover_the_registry_without_hardcoding():
     options = pattern_options(REGISTRY)
     names = [o["name"] for o in options]
     assert set(names) == set(REGISTRY.names())
-    assert len(names) == 11
+    assert len(names) == 12
     assert "wordpress_rest" in names
     # Not preselected / not privileged: first by reliability order is the most
     # specific structured pattern, never wordpress_rest by default.

@@ -53,12 +53,22 @@ _ALLOWED_SCHEMES = frozenset({"http", "https", "data", "about", "blob"})
 _BLOCKED_RESOURCE_TYPES = frozenset({"image", "media", "font"})
 
 
+# Bound on a captured request body — enough to template a filter, never a
+# whole upload.
+_MAX_REQUEST_BODY_CHARS = 4_000
+
+
 @dataclass
 class BrowserRenderResult:
     final_url: str
     rendered_html: str
     status_code: int
     observed_json: list[tuple[str, object]] = field(default_factory=list)
+    # url -> bounded, redacted request/response metadata for JSON responses, for
+    # safe recurring HTTP replay. Never cookies, auth, tokens, or arbitrary
+    # headers; only the method, request content-type, a bounded request body,
+    # safe query-param names, and the response status/content-type.
+    observed_requests: dict[str, dict] = field(default_factory=dict)
     blocked_reason: str | None = None
     warnings: tuple[str, ...] = ()
 
@@ -111,6 +121,7 @@ class BrowserFetchStrategy:
         from playwright.async_api import async_playwright
 
         observed_json: list[tuple[str, object]] = []
+        observed_requests: dict[str, dict] = {}
         warnings: list[str] = []
 
         async with async_playwright() as pw:
@@ -126,7 +137,9 @@ class BrowserFetchStrategy:
                 # New windows/popups are closed immediately rather than
                 # followed.
                 context.on("page", lambda p: _safe_close(p))
-                await self._install_guards(context, plan, observed_json, warnings)
+                await self._install_guards(
+                    context, plan, observed_json, observed_requests, warnings
+                )
 
                 response = await page.goto(url, wait_until="domcontentloaded")
                 status = response.status if response is not None else 0
@@ -148,6 +161,7 @@ class BrowserFetchStrategy:
                     rendered_html=html,
                     status_code=status,
                     observed_json=observed_json,
+                    observed_requests=observed_requests,
                     warnings=tuple(warnings),
                 )
             except Exception as exc:  # noqa: BLE001 - a render failure must not crash the app
@@ -161,7 +175,9 @@ class BrowserFetchStrategy:
                 await _safe_close_context(context)
                 await _safe_close_browser(browser)
 
-    async def _install_guards(self, context, plan, observed_json, warnings) -> None:
+    async def _install_guards(
+        self, context, plan, observed_json, observed_requests, warnings
+    ) -> None:
         allowed_hosts: dict[str, bool] = {}
 
         async def route_handler(route):
@@ -199,6 +215,7 @@ class BrowserFetchStrategy:
                     return
                 if len(observed_json) < 20:
                     observed_json.append((response.url, payload))
+                    _capture_request_meta(response, ctype, observed_requests)
 
             context.on("response", lambda r: _fire(on_response(r)))
 
@@ -234,6 +251,33 @@ class BrowserFetchStrategy:
                 if element is not None:
                     await element.click()
                     break
+
+
+def _capture_request_meta(response, response_content_type: str, observed_requests: dict) -> None:
+    """Bounded, redacted request/response metadata for one JSON response — for
+    safe recurring HTTP replay. Records only the method, the request
+    content-type, a bounded request body, safe query-param NAMES (never values,
+    which may carry tokens), and the response status/content-type. Never
+    cookies, auth headers, tokens, or arbitrary request headers."""
+    try:
+        request = response.request
+        req_headers = request.headers or {}
+        body = request.post_data
+        if isinstance(body, str) and len(body) > _MAX_REQUEST_BODY_CHARS:
+            body = None  # oversized bodies are dropped, not truncated-and-trusted
+        query_names = sorted(
+            {p.split("=", 1)[0] for p in urlsplit(request.url).query.split("&") if p}
+        )
+        observed_requests[response.url] = {
+            "method": request.method,
+            "request_content_type": req_headers.get("content-type"),
+            "request_body": body,
+            "query_param_names": query_names,
+            "response_status": response.status,
+            "response_content_type": response_content_type,
+        }
+    except Exception:  # noqa: BLE001 - metadata capture must never break a render
+        return
 
 
 def _fire(coro) -> None:

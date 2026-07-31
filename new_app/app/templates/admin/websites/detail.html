@@ -177,6 +177,9 @@
     <tr><th>Why this source</th><td class="audit-meta">{{ recovery.selection_reason or "—" }}</td></tr>
     {% if recovery.proposed_pattern or not recovery.new_pattern_needed %}
     <tr><th>Proposed pattern</th><td>{{ recovery.proposed_pattern or "—" }}</td></tr>
+    <tr><th>Request method</th><td>{{ recovery.request_method or "—" }}</td></tr>
+    <tr><th>Record-array path</th><td>{{ recovery.record_array_path or "—" }}</td></tr>
+    <tr><th>Source-ID field</th><td>{{ recovery.source_id_field or "—" }}</td></tr>
     <tr><th>Preview</th><td>{{ recovery.preview_status or "—" }}</td></tr>
     {% endif %}
     <tr><th>Ignored third-party endpoints</th><td>{{ recovery.ignored_endpoint_count or 0 }}</td></tr>

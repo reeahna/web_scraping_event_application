@@ -282,8 +282,8 @@ def _propose_from(response):
     return service.propose(context)
 
 
-def test_all_eleven_patterns_are_registered_with_proposers():
+def test_all_patterns_are_registered_with_proposers():
     names = set(REGISTRY.names())
-    assert {"ics_calendar", "rss_atom_events", "algolia_search"} <= names
-    assert len(names) == 11
+    assert {"ics_calendar", "rss_atom_events", "algolia_search", "simpleview_events"} <= names
+    assert len(names) == 12
     assert all(REGISTRY.get(n).proposer is not None for n in names)
