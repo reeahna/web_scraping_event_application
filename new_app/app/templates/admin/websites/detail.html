@@ -269,7 +269,7 @@
   <h3>Detector evidence</h3>
   <table>
     <tbody>
-      <tr><th>Selected pattern</th><td>{{ detection.pattern_name or "none" }} ({{ "%.2f"|format(detection.confidence) }}, threshold {{ "%.2f"|format(min_pattern_confidence) }})</td></tr>
+      <tr><th>Selected pattern</th><td>{{ detection.pattern_name or "none" }}{% if detection.get('confidence') is not none %} ({{ "%.2f"|format(detection.confidence) }}, threshold {{ "%.2f"|format(min_pattern_confidence) }}){% endif %}</td></tr>
       <tr><th>Registry reliability order</th><td class="audit-meta">{% for name in reliability_order %}<code>{{ name }}</code>{% if not loop.last %} › {% endif %}{% endfor %}</td></tr>
       <tr><th>Discovered endpoints</th><td>{% if detection.discovered_endpoints %}{% for e in detection.discovered_endpoints %}<code>{{ e }}</code><br/>{% endfor %}{% else %}—{% endif %}</td></tr>
       <tr><th>Browser required</th><td>{{ "Yes" if detection.browser_required else "No" }}</td></tr>
@@ -301,7 +301,7 @@
     <thead><tr><th>Candidate endpoint</th><th>Score</th><th>Record array</th><th>Records</th></tr></thead>
     <tbody>
       {% for c in recovery.candidate_event_endpoints %}
-      <tr><td><code>{{ c.url }}</code></td><td>{{ "%.2f"|format(c.event_likeness_score) }}</td><td>{{ c.record_array_path or "—" }}</td><td>{{ c.sample_record_count }}</td></tr>
+      <tr><td><code>{{ c.url }}</code></td><td>{% if c.get('event_likeness_score') is not none %}{{ "%.2f"|format(c.event_likeness_score) }}{% else %}—{% endif %}</td><td>{{ c.record_array_path or "—" }}</td><td>{{ c.sample_record_count }}</td></tr>
       {% endfor %}
     </tbody>
   </table>

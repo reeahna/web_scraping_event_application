@@ -376,3 +376,133 @@ def test_detail_hides_privileged_controls_for_readonly_user(
     assert resp.status_code == 200
     # An editor without delete permission sees no Danger zone.
     assert "Danger zone" not in resp.text
+
+
+# --- context wiring + preview-backed states ---------------------------------
+
+
+def _add_preview_run(db, website, *, version, status, valid, found=None, rejected=0):
+    from app.models.extraction_run import ExtractionRun
+
+    run = ExtractionRun(
+        website_id=website.id, configuration_version=version, pattern_name="simpleview_events",
+        run_type="preview", status=status, source_url="https://e/x",
+        events_found=found if found is not None else valid, events_valid=valid,
+        events_rejected=rejected, started_at=datetime.now(UTC),
+    )
+    db.add(run)
+    db.commit()
+    return run
+
+
+def _drafted_website(db, make_city, make_website, name, *, version=6, pattern="simpleview_events"):
+    website = make_website(make_city(), name=name)
+    website.onboarding_status = "detected"
+    website.configuration = {"pattern_name": pattern, "api_endpoint": "https://e/x"}
+    website.configuration_version = version
+    website.proposed_pattern = {"detection": {"pattern_name": pattern}}
+    db.add(website)
+    db.commit()
+    return website
+
+
+def test_workflow_is_in_render_context_as_view_model(
+    client, make_super_admin, make_city, make_website, login, db_session, monkeypatch
+):
+    """The exact guard against the reported 500: the detail render must always
+    receive a WebsiteWorkflow under the key 'workflow'."""
+    import app.routers.websites as mod
+    from app.services.website_workflow import WebsiteWorkflow
+
+    _login_admin(client, make_super_admin, login, "wf-ctx@example.com")
+    website = make_website(make_city(), name="Ctx Site")
+
+    captured: dict = {}
+    real_render = mod.render
+
+    def _spy(request, template_name, context=None, **kw):
+        if template_name == "admin/websites/detail.html":
+            captured["context"] = context
+        return real_render(request, template_name, context, **kw)
+
+    monkeypatch.setattr(mod, "render", _spy)
+    assert client.get(f"/admin/websites/{website.id}").status_code == 200
+    assert "workflow" in captured["context"]
+    assert isinstance(captured["context"]["workflow"], WebsiteWorkflow)
+    # Exactly one primary action object (never a collection).
+    from app.services.website_workflow import WorkflowAction
+
+    primary = captured["context"]["workflow"].primary_action
+    assert primary is None or isinstance(primary, WorkflowAction)
+
+
+def test_detail_renders_unsupported(
+    client, make_super_admin, make_city, make_website, login, db_session
+):
+    _login_admin(client, make_super_admin, login, "wf-uns@example.com")
+    website = make_website(make_city(), name="Unsupported Site")
+    website.onboarding_status = "unsupported"
+    website.proposed_pattern = {"detection": {"pattern_name": None}}
+    db_session.add(website)
+    db_session.commit()
+    assert client.get(f"/admin/websites/{website.id}").status_code == 200
+
+
+def test_detail_renders_failed_preview(
+    client, make_super_admin, make_city, make_website, login, db_session
+):
+    _login_admin(client, make_super_admin, login, "wf-fp@example.com")
+    website = _drafted_website(db_session, make_city, make_website, "Failed Preview Site")
+    _add_preview_run(db_session, website, version=6, status="failed", valid=0)
+    body = client.get(f"/admin/websites/{website.id}").text
+    assert "Fix configuration" in body
+    assert "Approve configuration" not in body
+
+
+def test_detail_renders_ready_for_approval(
+    client, make_super_admin, make_city, make_website, login, db_session
+):
+    _login_admin(client, make_super_admin, login, "wf-ready@example.com")
+    website = _drafted_website(db_session, make_city, make_website, "Ready Site")
+    _add_preview_run(db_session, website, version=6, status="success", valid=5, found=6, rejected=1)
+    body = client.get(f"/admin/websites/{website.id}").text
+    assert body.count("Approve configuration") >= 1
+
+
+def test_detail_renders_approved_inactive(
+    client, make_super_admin, make_city, make_website, login, db_session
+):
+    _login_admin(client, make_super_admin, login, "wf-ai@example.com")
+    website = make_website(
+        make_city(), name="Approved Inactive",
+        approved_pattern={"pattern_name": "simpleview_events", "api_endpoint": "https://e"},
+        active_configuration_version=6,
+    )
+    website.onboarding_status = "approved"
+    db_session.add(website)
+    db_session.commit()
+    body = client.get(f"/admin/websites/{website.id}").text
+    assert "Activate source" in body
+
+
+def test_detail_renders_needs_review_without_recovery_evidence(
+    client, make_super_admin, make_city, make_website, login, db_session
+):
+    # needs_review with NO browser-recovery evidence and no draft — must not crash.
+    _login_admin(client, make_super_admin, login, "wf-nr@example.com")
+    website = make_website(make_city(), name="No Recovery Site")
+    website.onboarding_status = "needs_review"
+    website.proposed_pattern = {"detection": {"pattern_name": None}}
+    db_session.add(website)
+    db_session.commit()
+    assert client.get(f"/admin/websites/{website.id}").status_code == 200
+
+
+def test_detail_renders_preview_without_quality_data(
+    client, make_super_admin, make_city, make_website, login, db_session
+):
+    # A draft with a preview run but NO inference/quality summary must not crash.
+    _login_admin(client, make_super_admin, login, "wf-nq@example.com")
+    website = _drafted_website(db_session, make_city, make_website, "No Quality Site")
+    _add_preview_run(db_session, website, version=6, status="success", valid=3)
+    assert client.get(f"/admin/websites/{website.id}").status_code == 200
