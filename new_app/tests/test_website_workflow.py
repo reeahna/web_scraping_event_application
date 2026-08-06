@@ -506,3 +506,122 @@ def test_detail_renders_preview_without_quality_data(
     website = _drafted_website(db_session, make_city, make_website, "No Quality Site")
     _add_preview_run(db_session, website, version=6, status="success", valid=3)
     assert client.get(f"/admin/websites/{website.id}").status_code == 200
+
+
+# --- polish: single primary, grouped errors, lifecycle, relabel -------------
+
+
+def test_view_model_groups_repeated_preview_errors():
+    from types import SimpleNamespace as _NS
+
+    preview = _NS(
+        configuration_version=6, status="failed", events_valid=0, events_found=5,
+        events_rejected=5,
+        error_summary=(
+            "candidate[0]: a parseable start date is required; "
+            "candidate[1]: a parseable start date is required; "
+            "candidate[2]: a parseable start date is required; "
+            "candidate[3]: a parseable start date is required; "
+            "candidate[4]: canonical URL is required"
+        ),
+    )
+    wf = _wf(_drafted("simpleview_events"), preview=preview, next_states=["archived"])
+    assert wf.preview_error_groups[0] == ("a parseable start date is required", 4)
+    assert ("canonical URL is required", 1) in wf.preview_error_groups
+    # Raw errors are preserved for the technical view, not discarded.
+    assert len(wf.preview_raw_errors) == 5
+
+
+def test_move_to_approved_hidden_when_not_approvable():
+    # needs_review with a failed historical draft: approval is blocked, so the
+    # 'approved' lifecycle jump is filtered out and explained.
+    w = _website(
+        onboarding_status="needs_review",
+        configuration={"pattern_name": "generic_html_cards"},
+        configuration_version=5,
+        proposed_pattern={"detection": {"pattern_name": None}},
+    )
+    rec = {"new_pattern_needed": True, "selected_endpoint": "/x/find/", "proposed_pattern": None}
+    wf = _wf(w, recovery=rec, next_states=["approved", "unsupported", "archived"])
+    labels = [a.label for a in wf.lifecycle_actions]
+    assert not any("approved" in label.lower() for label in labels)
+    assert any("not approvable" in note for note in wf.lifecycle_notes)
+
+
+def test_historical_config_secondary_relabelled():
+    w = _website(
+        onboarding_status="needs_review",
+        configuration={"pattern_name": "generic_html_cards"},
+        configuration_version=5,
+        proposed_pattern={"detection": {"pattern_name": None}},
+    )
+    rec = {"new_pattern_needed": True, "proposed_pattern": None}
+    wf = _wf(w, recovery=rec, next_states=["archived"])
+    labels = [a.label for a in wf.secondary_actions]
+    assert "Inspect failed configuration" in labels
+    assert "Review configuration" not in labels
+
+
+def test_detail_renders_exactly_one_primary_styled_action(
+    client, make_super_admin, make_city, make_website, login, db_session
+):
+    from app.models.unsupported_site_report import UnsupportedSiteReport
+
+    _login_admin(client, make_super_admin, login, "wf-1p@example.com")
+    website = make_website(make_city(), name="One Primary Site")
+    website.onboarding_status = "needs_review"
+    website.configuration = {"pattern_name": "generic_html_cards", "listing_url": "https://e/x"}
+    website.configuration_version = 5
+    website.proposed_pattern = {"detection": {"pattern_name": None}}
+    db_session.add(website)
+    db_session.add(
+        UnsupportedSiteReport(
+            website_id=website.id, submitted_url="https://e/x", fingerprint="fp",
+            browser_recovery={"new_pattern_needed": True, "status": "structured_pattern_needed",
+                              "selected_endpoint": "/x/find/", "proposed_pattern": None},
+        )
+    )
+    db_session.commit()
+
+    body = client.get(f"/admin/websites/{website.id}").text
+    # Exactly one primary-styled action control on the whole page.
+    assert body.count("wf-primary") == 1
+    # The retry action itself appears exactly twice: the header primary and the
+    # one contextual button in the recovery card (prose mentions don't count).
+    assert body.count(f"/admin/websites/{website.id}/browser-retry") == 2
+    # 'Move to approved' contradiction removed; explanation shown.
+    assert "Lifecycle approval is unavailable" in body
+    # Historical action relabelled.
+    assert "Inspect failed configuration" in body
+
+
+def test_detail_renders_grouped_preview_errors(
+    client, make_super_admin, make_city, make_website, login, db_session
+):
+    _login_admin(client, make_super_admin, login, "wf-ge@example.com")
+    website = _drafted_website(db_session, make_city, make_website, "Grouped Errors Site")
+    run = _add_preview_run(db_session, website, version=6, status="failed", valid=0, found=5)
+    run.error_summary = (
+        "candidate[0]: a parseable start date is required; "
+        "candidate[1]: a parseable start date is required; "
+        "candidate[2]: canonical URL is required"
+    )
+    db_session.commit()
+
+    body = client.get(f"/admin/websites/{website.id}").text
+    assert "2 candidates — a parseable start date is required." in body
+    assert "1 candidate — canonical URL is required." in body
+    assert "View technical validation details" in body
+
+
+def test_detail_recovery_not_attempted_message(
+    client, make_super_admin, make_city, make_website, login, db_session
+):
+    _login_admin(client, make_super_admin, login, "wf-na@example.com")
+    website = make_website(make_city(), name="No Recovery Yet")
+    website.onboarding_status = "needs_review"
+    website.proposed_pattern = {"detection": {"pattern_name": None}}
+    db_session.add(website)
+    db_session.commit()
+    body = client.get(f"/admin/websites/{website.id}").text
+    assert "Automatic browser recovery has not been attempted yet." in body

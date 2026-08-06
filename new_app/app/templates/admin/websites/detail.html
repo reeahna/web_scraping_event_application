@@ -31,8 +31,7 @@
       · {{ event_count }} event(s)
       · Last successful import: {{ website.last_success_at or "never" }}
     </p>
-    <p class="wf-summary"><strong>{{ workflow.headline }}.</strong>
-      <span class="wf-explain">{{ workflow.explanation }}</span></p>
+    <p class="wf-summary"><strong>{{ workflow.headline }}.</strong></p>
   </div>
   <div class="wf-header-actions">
     {% if workflow.primary_action %}{{ action_button(workflow.primary_action, csrf_token) }}{% endif %}
@@ -59,11 +58,10 @@
   {% if workflow.config_warning %}
   <div class="wf-warn"><strong>Historical draft:</strong> {{ workflow.config_warning }}</div>
   {% endif %}
-  {% if workflow.primary_action %}
-  <div class="wf-card-cta">{{ action_button(workflow.primary_action, csrf_token) }}</div>
-  {% elif workflow.current_step is none and website.onboarding_status == "archived" %}
+  {% if not workflow.primary_action and workflow.current_step is none and website.onboarding_status == "archived" %}
   <p class="audit-meta">No workflow action is available for an archived source.</p>
   {% endif %}
+  <p class="audit-meta">The next action is in the page header{% if workflow.show_recovery_card %} and the Automatic recovery card{% endif %}.</p>
 </section>
 
 {# ---------- 3. Current configuration ---------- #}
@@ -93,11 +91,10 @@
     </tbody>
   </table>
   <div class="wf-card-cta">
-    {% if website.configuration and can_update %}<a href="/admin/websites/{{ website.id }}/configure" class="wf-secondary">Review configuration</a>{% endif %}
-    {% if workflow.current_step == "preview" and workflow.primary_action %}{{ action_button(workflow.primary_action, csrf_token) }}{% endif %}
+    {% if website.configuration and can_update %}<a href="/admin/websites/{{ website.id }}/configure" class="wf-muted">{{ "Inspect failed configuration" if workflow.config_is_failed_historical else "Review configuration" }}</a>{% endif %}
   </div>
   {% else %}
-  <p class="placeholder-note">No configuration yet. {{ workflow.explanation }}</p>
+  <p class="placeholder-note">No configuration has been produced yet.</p>
   {% endif %}
 </section>
 
@@ -112,12 +109,22 @@
       <tr><th>Configuration version used</th><td>{{ latest_preview_run.configuration_version }}{% if not workflow.preview_matches_current %} <span class="badge badge-pending">does not match current v{{ website.configuration_version }}</span>{% endif %}</td></tr>
       <tr><th>Found / valid / rejected</th><td>{{ latest_preview_run.events_found }} / {{ latest_preview_run.events_valid }} / {{ latest_preview_run.events_rejected }}</td></tr>
       <tr><th>Warnings</th><td>{% if latest_preview_run.warnings %}{{ latest_preview_run.warnings | join(", ") }}{% else %}None{% endif %}</td></tr>
-      <tr><th>Errors (first 5)</th><td>{{ latest_preview_run.error_summary or "None" }}</td></tr>
+      {% if workflow.preview_error_groups %}
+      <tr><th>Validation errors</th><td>
+        <ul>{% for message, count in workflow.preview_error_groups %}<li>{{ count }} candidate{{ "s" if count != 1 else "" }} — {{ message }}.</li>{% endfor %}</ul>
+      </td></tr>
+      {% endif %}
       {% if inference and inference.quality %}
       <tr><th>Quality</th><td class="audit-meta">valid {{ "%.0f"|format((inference.quality.valid_percentage or 0) * 100) }}%, date-parse {{ "%.0f"|format((inference.quality.date_parse_success_rate or 0) * 100) }}%, URLs {{ "%.0f"|format((inference.quality.url_validity_rate or 0) * 100) }}%</td></tr>
       {% endif %}
     </tbody>
   </table>
+  {% if workflow.preview_raw_errors %}
+  <details>
+    <summary>View technical validation details</summary>
+    <ul class="audit-meta">{% for e in workflow.preview_raw_errors %}<li>{{ e }}</li>{% endfor %}</ul>
+  </details>
+  {% endif %}
   {% else %}
   <p class="placeholder-note">No preview has been run for the current configuration.</p>
   {% endif %}
@@ -133,7 +140,7 @@
     <form method="post" action="/admin/websites/{{ website.id }}/approve-configuration" class="inline-form"
           onsubmit="return confirm('Approve the configuration for {{ website.name }}?');">
       <input type="hidden" name="csrf_token" value="{{ csrf_token }}" />
-      <button type="submit" class="wf-primary">Approve configuration</button>
+      <button type="submit" class="wf-secondary">Approve configuration</button>
     </form>
     <a href="/admin/websites/{{ website.id }}/onboarding" class="wf-secondary">Review preview results</a>
   </div>
@@ -165,14 +172,14 @@
     </tbody>
   </table>
   {% else %}
-  <p class="placeholder-note">No automatic recovery has been attempted for this source yet.</p>
+  <p class="placeholder-note">Automatic browser recovery has not been attempted yet.{% if website.proposed_pattern %} Ordinary automatic detection has already run — see Detector evidence under Advanced tools.{% endif %}</p>
   {% endif %}
   <div class="wf-card-cta">
     {% if browser_extraction_enabled and can_test and not website_is_archived %}
     <form method="post" action="/admin/websites/{{ website.id }}/browser-retry" class="inline-form"
           onsubmit="return confirm('Retry detection for {{ website.name }} using the restricted browser?');">
       <input type="hidden" name="csrf_token" value="{{ csrf_token }}" />
-      <button type="submit" class="wf-primary">Retry automatic recovery</button>
+      <button type="submit" class="wf-secondary">Retry automatic recovery</button>
     </form>
     <span class="audit-meta">Automatic recovery can create and preview a new configuration.</span>
     {% elif not browser_extraction_enabled %}
@@ -203,7 +210,7 @@
   <div class="wf-card-cta">
     <form method="post" action="/admin/websites/{{ website.id }}/run-extraction" class="inline-form">
       <input type="hidden" name="csrf_token" value="{{ csrf_token }}" />
-      <button type="submit" class="wf-primary">Run event import</button>
+      <button type="submit" class="wf-secondary">Run event import</button>
     </form>
   </div>
   {% endif %}
@@ -337,10 +344,13 @@
 {% endif %}
 
 {# ---------- 9. Lifecycle controls ---------- #}
-{% if workflow.lifecycle_actions %}
+{% if workflow.lifecycle_actions or workflow.lifecycle_notes %}
 <section class="wf-card" aria-labelledby="wf-lifecycle">
   <h2 id="wf-lifecycle">Lifecycle controls</h2>
   <p class="audit-meta">Lifecycle status (<strong>{{ website.onboarding_status }}</strong>) is distinct from configuration approval and from active event-import status.</p>
+  {% for note in workflow.lifecycle_notes %}
+  <p class="audit-meta">{{ note }}</p>
+  {% endfor %}
   <div class="wf-card-cta">
     {% for a in workflow.lifecycle_actions %}
     <span>

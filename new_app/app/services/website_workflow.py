@@ -65,6 +65,7 @@ class WebsiteWorkflow:
     primary_action: WorkflowAction | None
     secondary_actions: list[WorkflowAction] = field(default_factory=list)
     lifecycle_actions: list[WorkflowAction] = field(default_factory=list)
+    lifecycle_notes: list[str] = field(default_factory=list)
     advanced_actions: list[WorkflowAction] = field(default_factory=list)
     danger_actions: list[WorkflowAction] = field(default_factory=list)
     approval_blockers: list[str] = field(default_factory=list)
@@ -73,6 +74,10 @@ class WebsiteWorkflow:
     config_warning: str | None = None
     preview_matches_current: bool = False
     preview_status_label: str = "No preview yet"
+    # Grouped validation errors (message, count) for the preview card, plus the
+    # original raw candidate-level errors for the collapsed technical view.
+    preview_error_groups: list[tuple[str, int]] = field(default_factory=list)
+    preview_raw_errors: list[str] = field(default_factory=list)
     show_recovery_card: bool = False
     warnings: list[str] = field(default_factory=list)
 
@@ -83,6 +88,11 @@ _LIFECYCLE_LABELS = {
     "detected": ("Move to detected", "Mark detection as complete."),
     "needs_review": ("Move to needs review", "Mark the source for administrator review."),
     "unsupported": ("Move to unsupported", "Mark the source as not currently supported."),
+    "approved": (
+        "Fast-track lifecycle to approved",
+        "Advanced: sets the lifecycle status directly. The guided 'Approve "
+        "configuration' action is preferred.",
+    ),
     "inactive": ("Deactivate", "Stop scheduled imports; keep the approved configuration."),
     "failing": ("Move to failing", "Mark the source as failing."),
     "archived": ("Archive", "Disable normal processing while preserving history."),
@@ -109,6 +119,27 @@ def _preview_status_label(preview, matches: bool) -> str:
 
 def _def(url_id: int, path: str) -> str:
     return f"/admin/websites/{url_id}/{path}"
+
+
+def _group_preview_errors(preview) -> tuple[list[tuple[str, int]], list[str]]:
+    """Group a preview run's semicolon-joined `error_summary` by message so the
+    card can show '4 candidates: no parseable start date' instead of one long
+    paragraph. Returns (grouped, raw); the raw list is preserved for the
+    collapsed technical view. Never discards the original errors."""
+    if preview is None or not getattr(preview, "error_summary", None):
+        return [], []
+    raw = [part.strip() for part in preview.error_summary.split(";") if part.strip()]
+    counts: dict[str, int] = {}
+    order: list[str] = []
+    for item in raw:
+        # Drop the "candidate[N]: " prefix so identical errors group together.
+        message = item.split(":", 1)[1].strip() if item.startswith("candidate[") else item
+        if message not in counts:
+            counts[message] = 0
+            order.append(message)
+        counts[message] += 1
+    grouped = sorted(((m, counts[m]) for m in order), key=lambda mc: (-mc[1], mc[0]))
+    return grouped, raw
 
 
 def build_website_workflow(
@@ -342,9 +373,14 @@ def build_website_workflow(
     if can_update:
         secondary.append(action("Edit website", "edit", method="get", style="secondary"))
         if has_draft:
-            secondary.append(
-                action("Review configuration", "configure", method="get", style="muted")
+            # A failed/historical draft is inspected, not "reviewed" toward
+            # approval — the label must not imply it is progressing.
+            review_label = (
+                "Inspect failed configuration"
+                if config_is_failed_historical
+                else "Review configuration"
             )
+            secondary.append(action(review_label, "configure", method="get", style="muted"))
 
     # --- per-step states ----------------------------------------------------
     completion = {
@@ -399,9 +435,19 @@ def build_website_workflow(
 
     # --- lifecycle / advanced / danger actions ------------------------------
     lifecycle: list[WorkflowAction] = []
+    lifecycle_notes: list[str] = []
     for target in next_states:
         if target == primary_status_target:
             continue  # activation is surfaced as the primary, don't duplicate
+        # Never present a direct "Move to approved" lifecycle jump while the
+        # configuration is not approvable — it contradicts the approval blockers.
+        # Presentation filtering only; the server transition rule is unchanged.
+        if target == "approved" and not approval_allowed:
+            lifecycle_notes.append(
+                "Lifecycle approval is unavailable while the current configuration "
+                "is not approvable."
+            )
+            continue
         label, effect = _LIFECYCLE_LABELS.get(
             target, (f"Move to {target}", "Change the lifecycle status.")
         )
@@ -444,6 +490,8 @@ def build_website_workflow(
     if config_is_failed_historical:
         warnings.append("The stored configuration is historical and should not be approved.")
 
+    preview_error_groups, preview_raw_errors = _group_preview_errors(preview)
+
     return WebsiteWorkflow(
         current_step=current_step,
         steps=steps,
@@ -452,6 +500,7 @@ def build_website_workflow(
         primary_action=primary,
         secondary_actions=secondary,
         lifecycle_actions=lifecycle,
+        lifecycle_notes=lifecycle_notes,
         advanced_actions=advanced,
         danger_actions=danger,
         approval_blockers=approval_blockers,
@@ -460,6 +509,8 @@ def build_website_workflow(
         config_warning=config_warning,
         preview_matches_current=preview_matches,
         preview_status_label=_preview_status_label(preview, preview_matches),
+        preview_error_groups=preview_error_groups,
+        preview_raw_errors=preview_raw_errors,
         show_recovery_card=show_recovery_card,
         warnings=warnings,
     )
