@@ -3,7 +3,7 @@
 The legacy scraper rendered the events page in a real browser and parsed
 `.item[data-type='events']` DOM cards (title / mini-date-container / thumb),
 because the events are injected client-side by JS that calls an edge-protected
-API. This ports that behavior generally: render_mode="browser" renders the page
+API. This ports that behavior generally: execution_strategy="browser" renders the page
 via the restricted browser and hands the HTML to the generic_html_cards
 pattern. Nothing here is site-specific — selectors and formats are config data.
 """
@@ -56,7 +56,7 @@ def _card_config() -> SiteConfiguration:
         pattern_name="generic_html_cards",
         listing_url=URL,
         timezone=TZ,
-        render_mode="browser",
+        execution_strategy="browser",
         event_container_selector=".item[data-type='events']",
         field_selectors={
             "title": {"kind": "css", "selector": "a.title"},
@@ -140,7 +140,7 @@ def _settings(browser_enabled: bool):
 def test_strategy_selection_http_by_default():
     from app.extraction.fetch import HttpFetchStrategy
 
-    config = _card_config().model_copy(update={"render_mode": "http"})
+    config = _card_config().model_copy(update={"execution_strategy": "http"})
     assert isinstance(_build_fetch_strategy(config), HttpFetchStrategy)
 
 
@@ -198,6 +198,161 @@ def test_rendered_cards_blocked_render_yields_no_events():
     outcome = _run(config, fetch)
     assert len(outcome.outcomes) == 0
     assert outcome.last_response.blocked_reason == "edge_protection:http_403"
+
+
+# --- structured-response browser extraction (approach B) ---------------------
+
+API = "https://www.visitbloomington.com/includes/rest_v2/plugins_events_events_by_date/find/"
+PAGE = "https://events.example.org/events/this-weekend/"
+
+
+class _FakeObservingBrowser:
+    """Returns pre-baked observed JSON responses (as the real render captures
+    from the page's own XHRs) without launching a browser. Records the URL it
+    was asked to navigate to."""
+
+    def __init__(self, observed, *, status: int = 200, blocked: str | None = None):
+        self._observed = observed
+        self._status = status
+        self._blocked = blocked
+        self.navigated_to = None
+
+    async def render(self, url: str, plan=None) -> BrowserRenderResult:
+        self.navigated_to = url
+        return BrowserRenderResult(
+            final_url=url, rendered_html="<html></html>", status_code=self._status,
+            observed_json=self._observed, blocked_reason=self._blocked,
+        )
+
+
+def _sv_payload(n: int) -> dict:
+    records = [
+        {
+            "recid": str(1000 + i), "title": f"Event {i}",
+            "startDate": "2026-10-06", "url": f"/event/e{i}/{1000 + i}/",
+        }
+        for i in range(n)
+    ]
+    return {"docs": {"count": n, "docs": records}}
+
+
+def _structured_config() -> SiteConfiguration:
+    return SiteConfiguration(
+        pattern_name="simpleview_events", listing_url=PAGE, api_endpoint=API,
+        execution_strategy="browser", timezone=TZ,
+        event_container_selector=".item[data-type='events']",
+        json_paths={"events_root": "docs.docs"},
+        pagination={"strategy": "none"}, max_detail_fetches=0,
+    )
+
+
+def _structured_strategy(browser):
+    from app.extraction.browser import BrowserStructuredResponseFetchStrategy
+
+    return BrowserStructuredResponseFetchStrategy(
+        source_page_url=PAGE, endpoint_match=API, browser=browser
+    )
+
+
+def test_structured_strategy_captures_endpoint_and_rejects_telemetry():
+    observed = [
+        ("https://pixels.spotify.com/v1/ingest", {"response": "ok"}),
+        ("https://www.google-analytics.com/g/collect?tid=1", {"x": 1}),
+        (API + "?json=%7B%7D&token=PUBTOKEN", _sv_payload(3)),
+    ]
+    browser = _FakeObservingBrowser(observed)
+    resp = asyncio.run(_structured_strategy(browser).fetch(FetchRequest(url=API), FetchConfig()))
+    # Navigated to the *source page*, never the API directly.
+    assert browser.navigated_to == PAGE
+    assert resp.content_type == "application/json"
+    body = __import__("json").loads(resp.text)
+    assert list(body["docs"]["docs"][0]) == ["recid", "title", "startDate", "url"]
+    assert resp.blocked_reason is None
+
+
+def test_structured_strategy_no_matching_response_is_honest():
+    observed = [("https://www.google-analytics.com/g/collect", {"x": 1})]
+    resp = asyncio.run(
+        _structured_strategy(_FakeObservingBrowser(observed)).fetch(
+            FetchRequest(url=API), FetchConfig()
+        )
+    )
+    assert resp.blocked_reason == "browser_no_structured_response"
+    # Never surfaces a spurious http_403 from a path that was not taken.
+    assert "403" not in (resp.blocked_reason or "")
+
+
+def test_structured_strategy_passes_through_block():
+    browser = _FakeObservingBrowser([], blocked="edge_protection:http_403", status=403)
+    resp = asyncio.run(_structured_strategy(browser).fetch(FetchRequest(url=API), FetchConfig()))
+    assert resp.blocked_reason == "edge_protection:http_403"
+
+
+def test_structured_pipeline_extracts_docs_docs_twelve_records():
+    config = _structured_config()
+    browser = _FakeObservingBrowser([(API + "?token=X", _sv_payload(12))])
+    fetch = _structured_strategy(browser)
+    outcome = _run(config, fetch)
+    valid = [(c, r) for c, r in outcome.outcomes if r.is_valid]
+    assert len(outcome.outcomes) == 12  # all docs.docs records reached normalization
+    assert len(valid) == 12
+    assert outcome.last_response.content_type == "application/json"
+    assert outcome.last_response.final_url.split("?")[0] == API
+
+
+def test_strategy_selection_structured_browser():
+    from app.extraction.browser import BrowserStructuredResponseFetchStrategy
+
+    with patch("app.services.extraction_runs.get_settings", return_value=_settings(True)):
+        strategy = _build_fetch_strategy(_structured_config())
+    assert isinstance(strategy, BrowserStructuredResponseFetchStrategy)
+
+
+def test_preview_browser_config_does_not_call_http_recipe_executor():
+    # A browser config must never hit the HTTP RequestRecipe executor.
+    config = _structured_config()
+    browser = _FakeObservingBrowser([(API + "?token=X", _sv_payload(3))])
+    with patch("app.services.extraction_runs.render_recipe") as recipe_spy:
+        _run(config, _structured_strategy(browser))
+    recipe_spy.assert_not_called()
+
+
+# --- browser safety properties (source-level, no live browser) ---------------
+
+
+def _browser_source() -> str:
+    import inspect
+
+    import app.extraction.browser as mod
+
+    return inspect.getsource(mod)
+
+
+def test_response_listeners_registered_before_navigation():
+    src = _browser_source()
+    # Guards (which register the response listener) are installed before the
+    # first navigation, so the event XHR is never missed.
+    assert src.index("_install_guards") < src.index("page.goto")
+
+
+def test_browser_context_closed_in_finally_and_no_persistent_state():
+    src = _browser_source()
+    assert "finally:" in src
+    assert "_safe_close_context" in src and "_safe_close_browser" in src
+    # No persistent profile / stored cookies between runs.
+    assert "storage_state" not in src
+    assert "user_data_dir" not in src
+
+
+def test_browser_plan_timeouts_are_bounded():
+    # The closed plan schema caps every wait, so a config cannot ask the browser
+    # to wait indefinitely.
+    import pydantic
+
+    from app.schemas.browser import WaitForSelectorAction
+
+    with pytest.raises(pydantic.ValidationError):
+        WaitForSelectorAction(selector=".x", timeout_ms=10_000_000)
 
 
 # --- year-inference transform ------------------------------------------------

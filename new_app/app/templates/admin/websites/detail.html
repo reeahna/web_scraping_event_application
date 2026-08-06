@@ -86,16 +86,22 @@
       {% endif %}
       <tr><th>Timezone</th><td>{{ website.timezone_override or "(uses city timezone)" }}
         {% if timezone_dst_warning %}<br/><span class="badge badge-pending">DST</span> <span class="audit-meta">{{ timezone_dst_warning }}</span>{% endif %}</td></tr>
+      <tr><th>Execution strategy</th><td>{% if workflow.execution_strategy == "browser" %}<span class="badge badge-pending">Browser</span> <span class="audit-meta">renders the source page in a restricted browser</span>{% else %}HTTP{% endif %}</td></tr>
+      <tr><th>Browser required</th><td>{{ "Yes" if workflow.browser_required else "No" }}</td></tr>
       <tr><th>Matching preview</th><td>{{ workflow.preview_status_label }}{% if latest_preview_run %} (used config v{{ latest_preview_run.configuration_version }}){% endif %}</td></tr>
       <tr><th>Approval status</th><td>{% if website.approved_pattern %}Approved{% elif workflow.approval_blockers %}Not approvable yet{% else %}Ready to approve{% endif %}</td></tr>
     </tbody>
   </table>
-  {% if workflow.recipe_summary %}
+  {% if workflow.execution_strategy == "browser" %}
+  <p class="audit-meta">Scheduled imports for this source run in a restricted headless browser
+    (the events only load after client-side rendering, or the data API is edge-protected).</p>
+  {% endif %}
+  {% if workflow.recipe_summary and workflow.execution_strategy != "browser" %}
   {% set r = workflow.recipe_summary %}
   <details class="wf-recipe">
     <summary>Captured request recipe <span class="badge badge-muted">advanced</span></summary>
-    <p class="audit-meta">This source needs its full structured request replayed for
-      scheduled imports (no browser). Values are never shown — only their shape.</p>
+    <p class="audit-meta">This source replays its full structured request over HTTP for
+      scheduled imports. Values are never shown — only their shape.</p>
     <table>
       <tbody>
         <tr><th>Method</th><td><code>{{ r.method }}</code></td></tr>

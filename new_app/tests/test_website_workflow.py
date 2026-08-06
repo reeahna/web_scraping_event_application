@@ -294,6 +294,20 @@ def test_recipe_summary_none_without_recipe():
     assert _wf(_drafted("simpleview_events")).recipe_summary is None
 
 
+def test_browser_execution_strategy_surfaced():
+    w = _drafted("simpleview_events", version=11)
+    w.configuration = {"pattern_name": "simpleview_events", "execution_strategy": "browser"}
+    wf = _wf(w, preview=_preview(11, "success", 12))
+    assert wf.execution_strategy == "browser"
+    assert wf.browser_required is True
+
+
+def test_http_execution_strategy_is_default():
+    wf = _wf(_drafted("simpleview_events"))
+    assert wf.execution_strategy == "http"
+    assert wf.browser_required is False
+
+
 def test_recipe_config_not_historical_after_matching_successful_preview():
     # A recipe-bearing draft whose matching preview succeeded must stay the
     # current, approvable draft -- never demoted to failed/historical.

@@ -87,6 +87,11 @@ class WebsiteWorkflow:
     # *names* only, never raw values) for the collapsed diagnostics panel.
     # None unless the current configuration carries a request recipe.
     recipe_summary: dict | None = None
+    # Which transport the current configuration runs on ("http" | "browser") and
+    # whether a browser is required. Drives the honest "Browser required" line
+    # and the execution-strategy display.
+    execution_strategy: str = "http"
+    browser_required: bool = False
 
 
 _LIFECYCLE_LABELS = {
@@ -525,6 +530,13 @@ def build_website_workflow(
 
     preview_error_groups, preview_raw_errors = _group_preview_errors(preview)
     recipe_summary = _recipe_summary(website)
+    current_config = website.configuration or website.approved_pattern or {}
+    execution_strategy = (
+        current_config.get("execution_strategy", "http")
+        if isinstance(current_config, dict)
+        else "http"
+    )
+    browser_required = execution_strategy == "browser" or detection_browser_required
 
     return WebsiteWorkflow(
         current_step=current_step,
@@ -549,4 +561,6 @@ def build_website_workflow(
         show_recovery_card=show_recovery_card,
         warnings=warnings,
         recipe_summary=recipe_summary,
+        execution_strategy=execution_strategy,
+        browser_required=browser_required,
     )

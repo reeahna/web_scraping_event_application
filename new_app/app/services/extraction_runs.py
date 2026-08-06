@@ -37,7 +37,10 @@ from app.core.onboarding import (
     UNSUPPORTED,
 )
 from app.core.onboarding import can_transition as _can_transition
-from app.extraction.browser import BrowserRenderFetchStrategy
+from app.extraction.browser import (
+    BrowserRenderFetchStrategy,
+    BrowserStructuredResponseFetchStrategy,
+)
 from app.extraction.dedup import dedupe_within_run
 from app.extraction.detail_pages import enrich_with_detail_pages
 from app.extraction.detection import run_detection as detect_patterns
@@ -544,12 +547,15 @@ async def _execute_pipeline(
     # legacy endpoint/fetch config does. Both feed the same normalize/validate
     # tail below, and both are used by preview AND import (this is the single
     # shared execution path — parameter building never forks per run type).
-    if config.request_recipe is not None:
+    if config.execution_strategy == "http" and config.request_recipe is not None:
         first_response, response, max_events_reached = await _fetch_recipe_pages(
             config, pattern, fetch, all_candidates, warnings, response_hash_by_page,
             fallback_timezone=fallback_timezone,
         )
     else:
+        # Browser execution and ordinary HTTP both fetch a single response here
+        # (browser captures the page's own JSON / rendered HTML); only an HTTP
+        # request-recipe walks pages via _fetch_recipe_pages above.
         first_response, response, max_events_reached = await _fetch_legacy_pages(
             config, pattern, fetch, all_candidates, warnings, response_hash_by_page,
         )
@@ -651,16 +657,42 @@ class _DisabledBrowserFetchStrategy:
         )
 
 
+def _is_structured_browser(config: SiteConfiguration) -> bool:
+    """A browser config is *structured* (capture the page's own JSON response to
+    a configured endpoint) rather than *rendered-HTML* when its pattern is a
+    structured one and it names the endpoint to capture. Generic — decided from
+    the pattern registry classification, never a hostname."""
+    if not config.api_endpoint:
+        return False
+    try:
+        return REGISTRY.get(config.pattern_name).classification == "structured"
+    except Exception:  # noqa: BLE001 - an unknown pattern is not structured-browser
+        return False
+
+
 def _build_fetch_strategy(config: SiteConfiguration) -> FetchStrategy:
-    """Select the transport for this configuration. "browser" render mode uses
-    the restricted headless browser (gated by the deployment flag); everything
-    else uses the ordinary normalized HTTP client. Both feed the identical
-    extraction pipeline."""
-    if config.render_mode == "browser":
-        if not get_settings().browser_extraction_enabled:
-            return _DisabledBrowserFetchStrategy()
-        return BrowserRenderFetchStrategy(plan=_browser_plan_for(config))
-    return HttpFetchStrategy()
+    """Select the transport for this configuration, from the stored
+    execution_strategy — never inferred at runtime:
+
+    - "http"  -> the ordinary normalized HTTP client (RequestRecipe or listing).
+    - "browser" + structured -> navigate the source page and capture the page's
+      own JSON response to the configured endpoint (docs.docs et al.).
+    - "browser" + otherwise  -> render the source page and extract its HTML.
+
+    Browser transports are gated by the deployment flag; when disabled they
+    block (never a silent HTTP fallback). All feed the identical pipeline."""
+    if config.execution_strategy != "browser":
+        return HttpFetchStrategy()
+    if not get_settings().browser_extraction_enabled:
+        return _DisabledBrowserFetchStrategy()
+    plan = _browser_plan_for(config)
+    if _is_structured_browser(config):
+        return BrowserStructuredResponseFetchStrategy(
+            source_page_url=config.listing_url or config.api_endpoint or "",
+            endpoint_match=config.api_endpoint or "",
+            plan=plan,
+        )
+    return BrowserRenderFetchStrategy(plan=plan)
 
 
 async def preview_extraction(

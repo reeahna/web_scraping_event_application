@@ -19,6 +19,7 @@ of it on the source's unsupported-site report.
 
 from __future__ import annotations
 
+import dataclasses
 import hashlib
 from dataclasses import dataclass
 from datetime import UTC, datetime
@@ -243,6 +244,59 @@ def _handle_structured_pattern_needed(
     )
 
 
+_EDGE_BLOCK_PREFIX = "edge_protection:"
+# The fields that make one recovery configuration materially the same as
+# another — a proposal matching the previous version on all of these (with no
+# new evidence) is a duplicate and is not persisted again.
+_RECOVERY_DUP_KEYS = (
+    "pattern_name",
+    "api_endpoint",
+    "execution_strategy",
+    "request_recipe",
+    "listing_url",
+)
+
+
+def _preview_edge_blocked(preview) -> bool:
+    """True when a preview was blocked specifically by edge/WAF protection — the
+    signal that a normalized HTTP replay cannot reach a source the browser can."""
+    return preview.result.status == "blocked" and any(
+        str(w).startswith(_EDGE_BLOCK_PREFIX) for w in preview.result.warnings
+    )
+
+
+def _structured_endpoint_config(config) -> bool:
+    """True when the config names a structured JSON endpoint (its pattern is a
+    registered structured one) — eligible for browser structured-response
+    capture. Decided from the registry, never a hostname."""
+    if not config.api_endpoint:
+        return False
+    try:
+        return REGISTRY.get(config.pattern_name).classification == "structured"
+    except Exception:  # noqa: BLE001 - unknown pattern is simply not eligible
+        return False
+
+
+def _browser_structured_config(config, *, source_page_url: str):
+    """Rebuild a structured HTTP config as a browser structured-capture config:
+    navigate the source page and read the page's own JSON response to the
+    endpoint. The HTTP request recipe is dropped; the extractor is unchanged."""
+    return config.model_copy(
+        update={
+            "execution_strategy": "browser",
+            "listing_url": source_page_url,
+            "request_recipe": None,
+        }
+    )
+
+
+def _same_recovery_config(existing: dict | None, proposed) -> bool:
+    if not isinstance(existing, dict):
+        return False
+    dumped = proposed.model_dump(mode="json")
+    return all(existing.get(key) == dumped.get(key) for key in _RECOVERY_DUP_KEYS)
+
+
 async def browser_retry_recovery(
     db: Session,
     website: Website,
@@ -262,6 +316,12 @@ async def browser_retry_recovery(
     listing_url = website.event_listing_url or website.base_url
     if not listing_url:
         raise AppError("Website has no listing URL or base URL to detect against.", 409)
+
+    # Snapshot the configuration this recovery starts from, so we can detect a
+    # browser fallback that would merely duplicate an existing version.
+    previous_configuration = (
+        dict(website.configuration) if isinstance(website.configuration, dict) else None
+    )
 
     observation = await render_and_observe(listing_url, plan=plan, strategy=strategy)
 
@@ -346,6 +406,25 @@ async def browser_retry_recovery(
     preview = await extraction_runs.preview_extraction_detailed(
         db, website, correlation_id=correlation_id
     )
+
+    # If the HTTP replay of a structured endpoint was rejected by edge/bot
+    # protection but the browser itself observed the event data, the source is
+    # browser-required: rebuild it as an execution_strategy="browser" structured
+    # capture (navigate the page, read its own JSON response) and preview that
+    # via the browser transport — never propose another HTTP-only replay.
+    if _preview_edge_blocked(preview) and _structured_endpoint_config(inference.configuration):
+        browser_config = _browser_structured_config(
+            inference.configuration, source_page_url=listing_url
+        )
+        if not _same_recovery_config(previous_configuration, browser_config):
+            save_draft_configuration(db, website, browser_config)
+            website.configuration_origin = ORIGIN_DETERMINISTIC_STRUCTURED
+            db.commit()
+            inference = dataclasses.replace(inference, configuration=browser_config)
+            preview = await extraction_runs.preview_extraction_detailed(
+                db, website, correlation_id=correlation_id
+            )
+
     ok, reasons = meets_approval_bar(preview.quality, policy, preview_status=preview.result.status)
     # This path is only reached for a genuinely selected source (structured_api
     # or rendered HTML with no competing structured candidate), so a failed

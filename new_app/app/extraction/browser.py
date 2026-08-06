@@ -349,6 +349,90 @@ class BrowserRenderFetchStrategy:
         )
 
 
+class BrowserStructuredResponseFetchStrategy:
+    """A `FetchStrategy` that navigates the *source page* in the restricted
+    browser and returns the page's own JSON response to a configured endpoint as
+    an application/json `FetchResponse` — so the ordinary structured extractor
+    (e.g. simpleview_events reading docs.docs) runs against it.
+
+    This is the preferred browser mode when recovery already identified an
+    event-like JSON endpoint that a normalized HTTP client cannot reach (the
+    site's edge/bot protection only lets the request through from inside a real
+    browser session). We never call the API directly — the page's own JavaScript
+    issues the request with whatever the edge requires; we only *observe* the
+    response the browser already received.
+
+    `source_page_url` is navigated to; `endpoint_match` is a path/URL substring
+    that selects the event response among all observed responses (telemetry and
+    third-party responses are rejected). `_browser` is a testability seam."""
+
+    def __init__(
+        self,
+        *,
+        source_page_url: str,
+        endpoint_match: str,
+        plan: BrowserPlan | None = None,
+        browser: BrowserFetchStrategy | None = None,
+    ) -> None:
+        self._source_page_url = source_page_url
+        self._endpoint_match = endpoint_match
+        self._plan = plan
+        self._browser = browser or BrowserFetchStrategy()
+
+    def _match_signature(self) -> str:
+        # Compare on path only — the observed URL carries a query (token, json)
+        # the configured endpoint does not, and matching on the query would never
+        # hit. An empty path falls back to the whole configured string.
+        path = urlsplit(self._endpoint_match).path
+        return path or self._endpoint_match
+
+    def _select(self, observed: list[tuple[str, object]]) -> tuple[str, object] | None:
+        from app.extraction.structured_candidates import is_telemetry
+
+        signature = self._match_signature()
+        for url, payload in observed:
+            if signature and signature not in url:
+                continue
+            if is_telemetry(url):
+                continue
+            if isinstance(payload, (dict, list)):
+                return url, payload
+        return None
+
+    async def fetch(self, request: FetchRequest, config: FetchConfig) -> FetchResponse:
+        import json as _json
+
+        result = await self._browser.render(self._source_page_url, self._plan)
+        if result.blocked_reason is not None:
+            body = b""
+            return FetchResponse(
+                request_url=self._source_page_url, final_url=result.final_url,
+                status_code=result.status_code, headers={}, content_type=None, body=body,
+                redirect_history=(), body_hash=hashlib.sha256(body).hexdigest(),
+                elapsed_seconds=0.0, blocked_reason=result.blocked_reason,
+            )
+        selected = self._select(result.observed_json)
+        if selected is None:
+            body = b""
+            # The page rendered but never produced the configured event response
+            # — an honest, distinct failure (not an http_403 from a path we did
+            # not take).
+            return FetchResponse(
+                request_url=self._source_page_url, final_url=result.final_url,
+                status_code=result.status_code, headers={}, content_type=None, body=body,
+                redirect_history=(), body_hash=hashlib.sha256(body).hexdigest(),
+                elapsed_seconds=0.0, blocked_reason="browser_no_structured_response",
+            )
+        matched_url, payload = selected
+        body = _json.dumps(payload).encode("utf-8")
+        return FetchResponse(
+            request_url=self._source_page_url, final_url=matched_url, status_code=200,
+            headers={"content-type": "application/json"}, content_type="application/json",
+            body=body, redirect_history=(), body_hash=hashlib.sha256(body).hexdigest(),
+            elapsed_seconds=0.0, blocked_reason=None,
+        )
+
+
 def _fire(coro) -> None:
     import asyncio
 
