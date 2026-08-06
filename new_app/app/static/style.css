@@ -425,6 +425,20 @@ button:hover {
 /* ==========================================================================
    9. Admin shell
    ========================================================================== */
+/* On admin pages the brand row spans the full width and shares the admin
+   navigation's horizontal padding, so the brand aligns with the nav's left
+   edge instead of sitting inside the narrower centered container. The single
+   divider comes from the admin nav row below it. */
+.admin-header {
+  border-bottom: none;
+}
+
+.admin-header .site-header-inner {
+  max-width: none;
+  justify-content: flex-start;
+  padding: var(--space-3) var(--space-5);
+}
+
 .admin-nav {
   display: flex;
   align-items: center;

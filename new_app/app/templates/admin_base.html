@@ -1,34 +1,39 @@
 {% extends "base.html" %}
 
+{% block header_class %} admin-header{% endblock %}
+
+{# The public primary nav is intentionally empty on admin pages; the admin
+   navigation renders as a second header row below the brand. #}
 {% block header_nav %}{% endblock %}
 
+{% block header_nav_row %}
+<nav class="admin-nav" aria-label="Admin">
+  <a href="/admin">Dashboard</a>
+  <a href="/admin/cities">Cities</a>
+  <a href="/admin/websites">Websites</a>
+  <a href="/admin/onboarding/batches">Onboarding</a>
+  <a href="/admin/events">Events</a>
+  <a href="/admin/event-categories">Categories</a>
+  <a href="/admin/categorization-rules">Category Rules</a>
+  <a href="/admin/users">Users</a>
+  <a href="/admin/roles">Roles</a>
+  <a href="/admin/audit">Audit Log</a>
+  <a href="/admin/settings/onboarding-policies">Auto Policies</a>
+  <a href="/admin/reports">Reports</a>
+  <a href="/admin/unsupported-reports">Unsupported Reports</a>
+  <a href="/admin/notifications">Notifications{% if current_user %} ({{ unread_notification_count(current_user.id) }}){% endif %}</a>
+  <span class="admin-nav-spacer"></span>
+  <a href="/account">My Account</a>
+  <span class="admin-nav-user">{{ current_user.email }}</span>
+  <form method="post" action="/auth/logout" class="inline-form">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}" />
+    <button type="submit">Log out</button>
+  </form>
+</nav>
+{% endblock %}
+
 {% block content %}
-<div class="admin-shell">
-  <nav class="admin-nav">
-    <a href="/admin">Dashboard</a>
-    <a href="/admin/cities">Cities</a>
-    <a href="/admin/websites">Websites</a>
-    <a href="/admin/onboarding/batches">Onboarding</a>
-    <a href="/admin/events">Events</a>
-    <a href="/admin/event-categories">Categories</a>
-    <a href="/admin/categorization-rules">Category Rules</a>
-    <a href="/admin/users">Users</a>
-    <a href="/admin/roles">Roles</a>
-    <a href="/admin/audit">Audit Log</a>
-    <a href="/admin/settings/onboarding-policies">Auto Policies</a>
-    <a href="/admin/reports">Reports</a>
-    <a href="/admin/unsupported-reports">Unsupported Reports</a>
-    <a href="/admin/notifications">Notifications{% if current_user %} ({{ unread_notification_count(current_user.id) }}){% endif %}</a>
-    <span class="admin-nav-spacer"></span>
-    <a href="/account">My Account</a>
-    <span class="admin-nav-user">{{ current_user.email }}</span>
-    <form method="post" action="/auth/logout" class="inline-form">
-      <input type="hidden" name="csrf_token" value="{{ csrf_token }}" />
-      <button type="submit">Log out</button>
-    </form>
-  </nav>
-  <div class="admin-body">
-    {% block admin_content %}{% endblock %}
-  </div>
+<div class="admin-body">
+  {% block admin_content %}{% endblock %}
 </div>
 {% endblock %}
