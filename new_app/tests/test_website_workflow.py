@@ -294,6 +294,19 @@ def test_recipe_summary_none_without_recipe():
     assert _wf(_drafted("simpleview_events")).recipe_summary is None
 
 
+def test_recipe_config_not_historical_after_matching_successful_preview():
+    # A recipe-bearing draft whose matching preview succeeded must stay the
+    # current, approvable draft -- never demoted to failed/historical.
+    w = _drafted("simpleview_events", version=8)
+    w.configuration = {"pattern_name": "simpleview_events", "request_recipe": _recipe_dict()}
+    wf = _wf(w, preview=_preview(8, "success", 12), next_states=["approved", "archived"])
+    assert wf.config_is_failed_historical is False
+    assert wf.preview_matches_current is True
+    assert wf.approval_allowed is True
+    assert wf.approval_blockers == []
+    assert wf.recipe_summary is not None
+
+
 def test_recipe_summary_tolerates_malformed_recipe():
     w = _drafted("simpleview_events")
     w.configuration = {"pattern_name": "x", "request_recipe": {"nonsense": True}}

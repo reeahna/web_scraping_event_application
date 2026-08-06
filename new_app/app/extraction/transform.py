@@ -112,8 +112,43 @@ def parse_time_value(value: Any, formats: list[str] | None = None) -> time | Non
         return None
 
 
+def _next_occurrence(month: int, day: int, reference: date) -> date | None:
+    """The next calendar occurrence of month/day on or after `reference`
+    (this year if still upcoming, otherwise next year). Handles Feb 29 by
+    skipping non-leap years."""
+    for year in (reference.year, reference.year + 1):
+        try:
+            candidate = date(year, month, day)
+        except ValueError:
+            continue
+        if candidate >= reference:
+            return candidate
+    try:
+        return date(reference.year, month, day)
+    except ValueError:
+        return None
+
+
+def _coerce_reference(value: Any) -> date:
+    if isinstance(value, date):
+        return value
+    if isinstance(value, str):
+        try:
+            return date.fromisoformat(value[:10])
+        except ValueError:
+            pass
+    return date.today()
+
+
 def _parse_date(value: Any, params: dict[str, Any]) -> date | None:
-    return parse_date_value(value, params.get("formats"))
+    parsed = parse_date_value(value, params.get("formats"))
+    # Year-less card dates (e.g. "Aug 07") parse to strptime's default year
+    # (1900). When a config opts in, resolve them to the next occurrence from a
+    # reference date — general, off by default, never changes dated values.
+    if parsed is not None and params.get("assume_next_occurrence") and parsed.year == 1900:
+        reference = _coerce_reference(params.get("reference_date"))
+        return _next_occurrence(parsed.month, parsed.day, reference)
+    return parsed
 
 
 def _parse_time(value: Any, params: dict[str, Any]) -> time | None:

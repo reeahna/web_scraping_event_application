@@ -27,8 +27,10 @@ a local fixture server without weakening the production default.
 from __future__ import annotations
 
 import contextlib
+import hashlib
 import json
 from dataclasses import dataclass, field
+from typing import TYPE_CHECKING
 from urllib.parse import urlsplit
 
 from app.extraction.network_safety import (
@@ -37,7 +39,12 @@ from app.extraction.network_safety import (
     resolve_and_validate_host,
     validate_request_url,
 )
+from app.extraction.types import FetchResponse
 from app.schemas.browser import BrowserPlan
+
+if TYPE_CHECKING:
+    from app.extraction.types import FetchRequest
+    from app.schemas.extraction import FetchConfig
 
 _CHALLENGE_MARKERS = (
     "cloudflare",
@@ -299,6 +306,47 @@ def _capture_request_meta(response, response_content_type: str, observed_request
         }
     except Exception:  # noqa: BLE001 - metadata capture must never break a render
         return
+
+
+class BrowserRenderFetchStrategy:
+    """A `FetchStrategy` that renders the URL in the restricted headless browser
+    and returns the rendered HTML as an ordinary `FetchResponse`, so the same
+    HTML extraction patterns (e.g. generic_html_cards) run against a JS-rendered
+    page. This is the transport for sources whose events only exist after
+    client-side rendering, or whose data API is edge-protected — the browser
+    passes the same edge/bot checks a real visitor would.
+
+    `plan` is a closed BrowserPlan (waits/scrolls/clicks); `_browser` is a
+    testability seam so tests can inject a fake render without launching a real
+    browser. Query params / JSON bodies on the request are ignored — a browser
+    navigation is a GET of the URL, exactly like a real visitor."""
+
+    def __init__(
+        self, *, plan: BrowserPlan | None = None, browser: BrowserFetchStrategy | None = None
+    ) -> None:
+        self._plan = plan
+        self._browser = browser or BrowserFetchStrategy()
+
+    async def fetch(self, request: FetchRequest, config: FetchConfig) -> FetchResponse:
+        result = await self._browser.render(request.url, self._plan)
+        body = (result.rendered_html or "").encode("utf-8")
+        blocked = result.blocked_reason
+        # A render that returned no HTML without an explicit reason is still a
+        # failure the pipeline must see, not a silent empty page.
+        if blocked is None and not body:
+            blocked = "browser_render_empty"
+        return FetchResponse(
+            request_url=request.url,
+            final_url=result.final_url,
+            status_code=result.status_code,
+            headers={"content-type": "text/html; charset=utf-8"},
+            content_type="text/html",
+            body=body,
+            redirect_history=(),
+            body_hash=hashlib.sha256(body).hexdigest(),
+            elapsed_seconds=0.0,
+            blocked_reason=blocked,
+        )
 
 
 def _fire(coro) -> None:

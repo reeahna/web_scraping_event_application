@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import dataclasses
 import re
+from datetime import date, datetime
 from urllib.parse import urljoin
 
 from app.extraction.date_ranges import parse_date_range
@@ -36,14 +37,24 @@ def _rules_for_field(
     return [r for r in rules if r.field == field_name]
 
 
-def _split_iso_datetime(value: str | None) -> tuple[str | None, str | None]:
+def _split_iso_datetime(value: object) -> tuple[object | None, str | None]:
     """Only splits on "T" when it's the actual ISO 8601 date/time separator
     (immediately after a YYYY-MM-DD date) — a naive `"T" in value` substring
     check would also match free-text weekday names like "Tuesday"/"Thursday"
     (as generic_html_cards sources often emit) and silently discard the date
-    by partitioning inside the word itself."""
-    if not value:
+    by partitioning inside the word itself.
+
+    A `parse_date`/`parse_time` transformation may already have produced a
+    `date`/`datetime` object; those are passed straight through to the date
+    parser (which accepts them as-is) rather than string-split."""
+    if value is None:
         return None, None
+    if isinstance(value, datetime):
+        return value.date(), value.time().isoformat()
+    if isinstance(value, date):
+        return value, None
+    if not isinstance(value, str) or not value:
+        return (value or None), None
     match = _ISO_DATETIME_SPLIT_RE.match(value)
     if match:
         date_part, time_part = match.groups()

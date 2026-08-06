@@ -306,6 +306,74 @@ def test_recipe_execution_sends_json_token_and_referer_and_recovers_403():
     assert outcome.last_response.status_code == 200
 
 
+def test_recipe_execution_sends_single_encoded_json_no_top_level_cursors():
+    page1 = (FIXTURES_DIR / "simpleview_events_page1.json").read_text(encoding="utf-8")
+    seen = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen["param_names"] = sorted(request.url.params.keys())
+        seen["json_raw"] = request.url.params.get("json")
+        return httpx.Response(200, text=page1, headers={"content-type": "application/json"})
+
+    _run_pipeline(_site_config_with_recipe(), handler)
+
+    # Exactly the captured params -- no top-level limit/skip/offset were added.
+    assert seen["param_names"] == ["json", "token"]
+    for cursor in ("limit", "skip", "offset", "page"):
+        assert cursor not in seen["param_names"]
+    # The json parameter is a single JSON encoding: it parses once to an object,
+    # and is NOT a double-encoded JSON string (which would parse to a str).
+    parsed = json.loads(seen["json_raw"])
+    assert isinstance(parsed, dict)
+    # The pagination cursors live INSIDE options, not as top-level query params.
+    assert parsed["options"]["skip"] == 0
+    assert isinstance(parsed["options"]["limit"], int)
+
+
+def test_recipe_execution_reports_edge_protection_block():
+    # An edge/WAF "Access Denied" (as the live Simpleview endpoint returns) is
+    # surfaced as an edge_protection block, not a bare http_403, so the operator
+    # learns the source is browser-only and cannot be HTTP-imported.
+    akamai_body = (
+        "<HTML><HEAD><TITLE>Access Denied</TITLE></HEAD><BODY><H1>Access Denied</H1>"
+        "You don't have permission to access this server. "
+        "Reference #18 https://errors.edgesuite.net/18</BODY></HTML>"
+    )
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            403, text=akamai_body,
+            headers={"content-type": "text/html", "x-sv-edge": "true", "akamai-grn": "0.x"},
+        )
+
+    outcome = _run_pipeline(_site_config_with_recipe(), handler)
+    assert outcome.last_response.blocked_reason == "edge_protection:http_403"
+    assert len(outcome.outcomes) == 0
+    from app.extraction.fetch import describe_block_reason
+
+    assert "edge/bot management" in describe_block_reason(outcome.last_response.blocked_reason)
+
+
+def test_recipe_does_not_mutate_saved_recipe_across_pages():
+    # Rendering successive pages must not mutate the stored recipe in place: its
+    # json template keeps its placeholder for options.skip after execution.
+    config = _paged_config(limit=2, total_path="docs.count")
+    all_records = [_record(i) for i in range(3)]
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        decoded = json.loads(dict(request.url.params)["json"])
+        skip = decoded["options"]["skip"]
+        page = all_records[skip: skip + 2]
+        body = json.dumps({"docs": {"count": 3, "docs": page}})
+        return httpx.Response(200, text=body, headers={"content-type": "application/json"})
+
+    _run_pipeline(config, handler)
+    # The persisted recipe template still holds the placeholder, unmutated.
+    assert config.request_recipe.query_params["json"].value["options"]["skip"] == {
+        "kind": "page_offset"
+    }
+
+
 def _record(i: int) -> dict:
     return {
         "recid": f"sv-{i}", "title": f"Event {i}",

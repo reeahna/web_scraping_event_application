@@ -19,11 +19,13 @@ just conventional:
 
 from __future__ import annotations
 
+import hashlib
 from dataclasses import dataclass
 from datetime import UTC, datetime
 
 from sqlalchemy.orm import Session
 
+from app.config import get_settings
 from app.core.exceptions import AppError
 from app.core.onboarding import (
     ACTIVE,
@@ -35,10 +37,16 @@ from app.core.onboarding import (
     UNSUPPORTED,
 )
 from app.core.onboarding import can_transition as _can_transition
+from app.extraction.browser import BrowserRenderFetchStrategy
 from app.extraction.dedup import dedupe_within_run
 from app.extraction.detail_pages import enrich_with_detail_pages
 from app.extraction.detection import run_detection as detect_patterns
-from app.extraction.fetch import FetchStrategy, HttpFetchStrategy, content_type_allowed
+from app.extraction.fetch import (
+    FetchStrategy,
+    HttpFetchStrategy,
+    content_type_allowed,
+    describe_block_reason,
+)
 from app.extraction.inference.quality import evaluate_preview_quality
 from app.extraction.inference.types import PreviewQualityResult
 from app.extraction.normalize import normalize_candidate
@@ -69,6 +77,7 @@ from app.repositories.unsupported_site_report import (
     record_report_occurrence,
     should_create_new_report,
 )
+from app.schemas.browser import BrowserPlan, NetworkIdleAction, WaitForSelectorAction
 from app.schemas.extraction import FetchConfig, SiteConfiguration
 from app.services.geographic_filter import (
     annotate_candidate_geography,
@@ -615,6 +624,45 @@ class PreviewOutcome:
     rejected_samples: tuple[tuple[EventCandidate, tuple[str, ...]], ...]
 
 
+def _browser_plan_for(config: SiteConfiguration) -> BrowserPlan:
+    """A closed render plan for a browser-rendered listing: settle the network,
+    then wait for the event container so JS-injected cards are present before the
+    HTML is captured. Selector is config-driven — no site-specific values."""
+    actions: list = [NetworkIdleAction()]
+    if config.event_container_selector:
+        actions.append(
+            WaitForSelectorAction(selector=config.event_container_selector, timeout_ms=15_000)
+        )
+    return BrowserPlan(actions=actions)
+
+
+class _DisabledBrowserFetchStrategy:
+    """Stands in when a config asks for browser rendering but the deployment has
+    it disabled. Returns a blocked response (never silently falls back to HTTP,
+    which would fetch an empty JS shell or an edge-deny page)."""
+
+    async def fetch(self, request: FetchRequest, config: FetchConfig) -> FetchResponse:
+        body = b""
+        return FetchResponse(
+            request_url=request.url, final_url=request.url, status_code=0,
+            headers={}, content_type=None, body=body, redirect_history=(),
+            body_hash=hashlib.sha256(body).hexdigest(), elapsed_seconds=0.0,
+            blocked_reason="browser_rendering_disabled",
+        )
+
+
+def _build_fetch_strategy(config: SiteConfiguration) -> FetchStrategy:
+    """Select the transport for this configuration. "browser" render mode uses
+    the restricted headless browser (gated by the deployment flag); everything
+    else uses the ordinary normalized HTTP client. Both feed the identical
+    extraction pipeline."""
+    if config.render_mode == "browser":
+        if not get_settings().browser_extraction_enabled:
+            return _DisabledBrowserFetchStrategy()
+        return BrowserRenderFetchStrategy(plan=_browser_plan_for(config))
+    return HttpFetchStrategy()
+
+
 async def preview_extraction(
     db: Session, website: Website, *, correlation_id: str | None = None
 ) -> ExtractionResult:
@@ -630,7 +678,7 @@ async def preview_extraction_detailed(
     here that can persist an Event row."""
     config = _resolve_configuration(website, use_approved=False)
     started_at = datetime.now(UTC)
-    fetch = HttpFetchStrategy()
+    fetch = _build_fetch_strategy(config)
     outcome = await _execute_pipeline(
         config, config.pattern_name, fetch, fallback_timezone=_fallback_timezone(website)
     )
@@ -648,7 +696,11 @@ async def preview_extraction_detailed(
         f"candidate[{i}]: {err}" for i, (_, result) in enumerate(rejected) for err in result.errors
     ]
     if blocked and outcome.last_response is not None:
-        warnings.append(str(outcome.last_response.blocked_reason))
+        reason = str(outcome.last_response.blocked_reason)
+        warnings.append(reason)
+        explanation = describe_block_reason(reason)
+        if explanation:
+            warnings.append(explanation)
 
     run = create_extraction_run(
         db,
@@ -787,7 +839,7 @@ async def run_extraction(
 
     config = _resolve_configuration(website, use_approved=True)
     started_at = datetime.now(UTC)
-    fetch = HttpFetchStrategy()
+    fetch = _build_fetch_strategy(config)
     outcome = await _execute_pipeline(
         config, config.pattern_name, fetch, fallback_timezone=_fallback_timezone(website)
     )
@@ -814,7 +866,11 @@ async def run_extraction(
         f"candidate[{i}]: {err}" for i, (_, result) in enumerate(rejected) for err in result.errors
     ]
     if blocked and outcome.last_response is not None:
-        warnings.append(str(outcome.last_response.blocked_reason))
+        reason = str(outcome.last_response.blocked_reason)
+        warnings.append(reason)
+        explanation = describe_block_reason(reason)
+        if explanation:
+            warnings.append(explanation)
 
     # Created now (counts filled in below) so every persisted EventProvenance
     # row can carry a real extraction_run_id from the start.

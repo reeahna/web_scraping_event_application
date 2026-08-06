@@ -309,3 +309,33 @@ async def test_detail_page_fetch_gets_same_ssrf_protection():
         FetchRequest(url="http://127.0.0.1/event-detail"), FetchConfig()
     )
     assert response.blocked_reason is not None
+
+
+# --- block-reason classification: edge/WAF vs ordinary status --------------
+
+
+def test_blocked_marker_classifies_edge_deny_page():
+    from app.extraction.fetch import _blocked_marker
+
+    akamai = (
+        b"<HTML><HEAD><TITLE>Access Denied</TITLE></HEAD><BODY>"
+        b"You don't have permission to access ... errors.edgesuite.net/18</BODY></HTML>"
+    )
+    assert _blocked_marker(403, akamai, {"x-sv-edge": "true"}) == "edge_protection:http_403"
+    # A vendor response header alone (Cloudflare) is enough.
+    assert _blocked_marker(429, b"nope", {"cf-ray": "abc123"}) == "edge_protection:http_429"
+
+
+def test_blocked_marker_plain_403_stays_generic():
+    from app.extraction.fetch import _blocked_marker
+
+    # An ordinary 403 with no edge signature is NOT reclassified.
+    assert _blocked_marker(403, b"Forbidden", {"content-type": "text/plain"}) == "http_403"
+
+
+def test_describe_block_reason_only_explains_edge():
+    from app.extraction.fetch import describe_block_reason
+
+    assert describe_block_reason("http_403") is None
+    assert describe_block_reason(None) is None
+    assert "browser session" in describe_block_reason("edge_protection:http_403")

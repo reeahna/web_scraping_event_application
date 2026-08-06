@@ -228,6 +228,31 @@ def test_extraction_skips_non_dict_records():
     assert len(SimpleviewEventsPattern().extract(_page1(), CONFIG)) == 7
 
 
+def test_records_read_from_docs_docs_not_first_docs_value():
+    # The live envelope nests the record list at docs.docs with a sibling total;
+    # `docs` itself is an OBJECT, not the record list. The extractor must read
+    # docs.docs, not treat the first `docs` value as the array.
+    body = (
+        '{"docs": {"docs": ['
+        '{"recid": "e1", "title": "Example event", "startDate": "2026-10-06", '
+        '"url": "/event/e1/"},'
+        '{"recid": "e2", "title": "Second event", "date": "2026-10-07", '
+        '"url": "/event/e2/"}'
+        '], "total": 12, "count": 12}}'
+    )
+    response = make_response(body, final_url=FIND_URL, content_type="application/json")
+    candidates = SimpleviewEventsPattern().extract(response, CONFIG)
+    assert [c.raw.get("title") for c in candidates] == ["Example event", "Second event"]
+
+
+def test_object_docs_without_nested_docs_yields_no_records():
+    # Defensive: if `docs` is an object lacking a `docs` array, no records (never
+    # a crash, never mis-reading the envelope object as a record).
+    body = '{"docs": {"total": 0}}'
+    response = make_response(body, final_url=FIND_URL, content_type="application/json")
+    assert SimpleviewEventsPattern().extract(response, CONFIG) == []
+
+
 def test_required_and_optional_fields_normalized():
     event = _by_title("Autumn Quartet")
     assert event.external_source_id == "sv-1001"  # recid preferred

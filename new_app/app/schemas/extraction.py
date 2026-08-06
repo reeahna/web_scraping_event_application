@@ -205,6 +205,13 @@ class SiteConfiguration(BaseModel):
     pattern_name: str
     listing_url: str | None = None
     api_endpoint: str | None = None
+    # How the listing page is fetched. "http" is the ordinary normalized HTTP
+    # request. "browser" renders the page in the restricted headless browser
+    # first (for sources whose events are only present after client-side
+    # rendering, or whose data API is edge-protected) and hands the rendered
+    # HTML to the same extraction patterns. Purely a fetch-transport choice —
+    # no site-specific logic depends on it.
+    render_mode: Literal["http", "browser"] = "http"
     fetch: FetchConfig = FetchConfig()
     pagination: PaginationConfig = PaginationConfig()
     timezone: str | None = None

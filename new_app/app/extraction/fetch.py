@@ -36,6 +36,22 @@ _RETRYABLE_STATUSES = frozenset({500, 502, 503, 504})
 # Short, frozen — deliberately not a growing heuristic pile.
 _BLOCK_MARKERS: tuple[str, ...] = ("cloudflare", "access denied", "are you a robot", "captcha")
 
+# Signatures of an edge/CDN/WAF "denied" response (Akamai, Cloudflare, generic
+# reverse proxies). Generic infrastructure strings — no site-specific values.
+# When a 401/403/429 carries one of these, the request was rejected at the edge
+# (bot-management / TLS or sensor-cookie fingerprinting) before ever reaching
+# the origin app; a plain HTTP client cannot pass it, so it is reported
+# distinctly from an ordinary status block.
+_EDGE_DENY_BODY_MARKERS: tuple[str, ...] = (
+    "edgesuite.net",  # Akamai deny page reference URL
+    "you don't have permission to access",  # Akamai/Apache-style deny
+    "attention required",  # Cloudflare
+    "request unsuccessful",  # Incapsula/Imperva
+    "the requested url was rejected",  # F5/BIG-IP ASM
+)
+# Response-header name fragments naming an edge/CDN vendor.
+_EDGE_HEADER_FRAGMENTS: tuple[str, ...] = ("akamai", "-edge", "cf-ray", "x-iinfo", "x-cdn")
+
 
 class FetchStrategy(Protocol):
     async def fetch(self, request: FetchRequest, config: FetchConfig) -> FetchResponse: ...
@@ -62,13 +78,48 @@ def _resolve_secret_headers(config: FetchConfig) -> dict[str, str]:
     return resolved
 
 
-def _blocked_marker(status_code: int, body_sample: bytes) -> str | None:
+def _is_edge_denied(body_sample: bytes, headers: dict[str, str]) -> bool:
+    """True when a response looks like an edge/CDN/WAF denial (bot management),
+    identified generically by vendor deny-page text or vendor response headers.
+    No site-specific values."""
+    lowered = body_sample.lower()
+    if any(marker.encode("utf-8") in lowered for marker in _EDGE_DENY_BODY_MARKERS):
+        return True
+    header_blob = " ".join(f"{k} {v}" for k, v in headers.items()).lower()
+    return any(fragment in header_blob for fragment in _EDGE_HEADER_FRAGMENTS)
+
+
+def _blocked_marker(status_code: int, body_sample: bytes, headers: dict[str, str]) -> str | None:
     if status_code in (403, 429):
+        # An edge/WAF denial is reported distinctly: a normalized HTTP client
+        # cannot pass it (it needs a browser TLS fingerprint / sensor cookies),
+        # so the caller can explain that instead of implying a transient block.
+        if _is_edge_denied(body_sample, headers):
+            return f"edge_protection:http_{status_code}"
         return f"http_{status_code}"
     lowered = body_sample.lower()
     for marker in _BLOCK_MARKERS:
         if marker.encode("utf-8") in lowered:
             return f"challenge_marker:{marker}"
+    return None
+
+
+def describe_block_reason(reason: str | None) -> str | None:
+    """A one-line operator explanation for a machine block reason, or None when
+    the reason is self-explanatory. Kept generic — no site-specific text."""
+    if not reason:
+        return None
+    if reason.startswith("edge_protection:"):
+        return (
+            "The endpoint is protected by edge/bot management (CDN WAF) and rejected the "
+            "request before it reached the site. This response is only obtainable inside a "
+            "real browser session, so it cannot be imported via scheduled HTTP requests."
+        )
+    if reason == "browser_rendering_disabled":
+        return (
+            "This configuration requires browser rendering, but restricted browser "
+            "extraction is disabled for this deployment. Enable it to import this source."
+        )
     return None
 
 
@@ -157,7 +208,7 @@ class HttpFetchStrategy:
                 current_url = urljoin(safe_url, response_headers["location"])
                 continue
 
-            blocked_reason = _blocked_marker(status_code, body[:2000])
+            blocked_reason = _blocked_marker(status_code, body[:2000], response_headers)
             content_type = response_headers.get("content-type")
             # Content-type mismatch is surfaced via `content_type` for the
             # caller to reject as `failed` — it is not itself a `blocked`
