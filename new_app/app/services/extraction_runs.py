@@ -703,14 +703,23 @@ async def preview_extraction(
 
 
 async def preview_extraction_detailed(
-    db: Session, website: Website, *, correlation_id: str | None = None
+    db: Session,
+    website: Website,
+    *,
+    correlation_id: str | None = None,
+    fetch_override: FetchStrategy | None = None,
 ) -> PreviewOutcome:
     """Builds from the *draft* configuration (an admin previews before
     approving). Never calls app.repositories.event — there is no code path
-    here that can persist an Event row."""
+    here that can persist an Event row.
+
+    `fetch_override` lets a caller supply the transport (e.g. recovery reusing
+    the exact browser it just observed with, so its browser preview does not
+    spin up a second browser); when omitted the strategy is chosen from the
+    configuration exactly as an ordinary preview would."""
     config = _resolve_configuration(website, use_approved=False)
     started_at = datetime.now(UTC)
-    fetch = _build_fetch_strategy(config)
+    fetch = fetch_override if fetch_override is not None else _build_fetch_strategy(config)
     outcome = await _execute_pipeline(
         config, config.pattern_name, fetch, fallback_timezone=_fallback_timezone(website)
     )

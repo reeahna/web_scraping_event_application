@@ -13,7 +13,7 @@ from types import SimpleNamespace as NS
 from app.schemas.extraction import SiteConfiguration
 from app.services.browser_recovery import (
     _browser_structured_config,
-    _preview_edge_blocked,
+    _http_replay_blocked,
     _same_recovery_config,
     _structured_endpoint_config,
 )
@@ -41,13 +41,17 @@ def _http_simpleview_config() -> SiteConfiguration:
 # --- edge-block detection ----------------------------------------------------
 
 
-def test_edge_block_detected_only_for_edge_protection():
-    assert _preview_edge_blocked(_preview("blocked", ["edge_protection:http_403", "…"])) is True
-    # A plain block (not edge protection) does not trigger the browser fallback.
-    assert _preview_edge_blocked(_preview("blocked", ["http_403"])) is False
-    # A successful/failed preview never triggers it.
-    assert _preview_edge_blocked(_preview("success", [])) is False
-    assert _preview_edge_blocked(_preview("failed", ["parse_error"])) is False
+def test_http_replay_block_detected_for_any_403_class():
+    # The fallback must fire whether or not the exact edge signature was
+    # recognised — a plain http_403 is just as much proof HTTP is blocked. This
+    # is the fresh-onboarding regression: fresh sources often get plain http_403.
+    assert _http_replay_blocked(_preview("blocked", ["http_403"])) is True
+    assert _http_replay_blocked(_preview("blocked", ["edge_protection:http_403", "…"])) is True
+    assert _http_replay_blocked(_preview("blocked", ["http_429"])) is True
+    # Non-request-layer blocks / other statuses do not trigger the browser path.
+    assert _http_replay_blocked(_preview("blocked", ["ssrf_blocked:x"])) is False
+    assert _http_replay_blocked(_preview("success", [])) is False
+    assert _http_replay_blocked(_preview("failed", ["parse_error"])) is False
 
 
 # --- structured-endpoint eligibility -----------------------------------------

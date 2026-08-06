@@ -244,7 +244,17 @@ def _handle_structured_pattern_needed(
     )
 
 
-_EDGE_BLOCK_PREFIX = "edge_protection:"
+# An HTTP replay that comes back with any of these is rejected at the request
+# layer (a 403/429, whether or not the exact edge/WAF signature was recognised
+# in the body). The edge classification is best-effort and intermittent for the
+# same endpoint, so the browser fallback must not depend on it — a plain
+# `http_403` is just as much proof that HTTP cannot reach the source.
+_HTTP_BLOCK_PREFIXES = (
+    "http_403",
+    "http_429",
+    "edge_protection:http_403",
+    "edge_protection:http_429",
+)
 # The fields that make one recovery configuration materially the same as
 # another — a proposal matching the previous version on all of these (with no
 # new evidence) is a duplicate and is not persisted again.
@@ -257,11 +267,13 @@ _RECOVERY_DUP_KEYS = (
 )
 
 
-def _preview_edge_blocked(preview) -> bool:
-    """True when a preview was blocked specifically by edge/WAF protection — the
-    signal that a normalized HTTP replay cannot reach a source the browser can."""
+def _http_replay_blocked(preview) -> bool:
+    """True when an HTTP preview was rejected at the request layer (403/429 or a
+    recognised edge/WAF denial). This is the signal — independent of Website
+    history or the precise edge classification — that a normalized HTTP replay
+    cannot reach a source the browser already read."""
     return preview.result.status == "blocked" and any(
-        str(w).startswith(_EDGE_BLOCK_PREFIX) for w in preview.result.warnings
+        str(w).startswith(_HTTP_BLOCK_PREFIXES) for w in preview.result.warnings
     )
 
 
@@ -295,6 +307,22 @@ def _same_recovery_config(existing: dict | None, proposed) -> bool:
         return False
     dumped = proposed.model_dump(mode="json")
     return all(existing.get(key) == dumped.get(key) for key in _RECOVERY_DUP_KEYS)
+
+
+def _recovery_browser_fetch(config, *, source_page_url: str, strategy):
+    """The browser transport for a recovery browser preview. Reuses the same
+    browser `strategy` the observation ran with (a real browser in production,
+    an injected fake in tests) so the preview does not launch a second one and
+    stays deterministic under test."""
+    from app.extraction.browser import BrowserStructuredResponseFetchStrategy
+    from app.services.extraction_runs import _browser_plan_for
+
+    return BrowserStructuredResponseFetchStrategy(
+        source_page_url=config.listing_url or source_page_url,
+        endpoint_match=config.api_endpoint or "",
+        plan=_browser_plan_for(config),
+        browser=strategy,
+    )
 
 
 async def browser_retry_recovery(
@@ -395,35 +423,56 @@ async def browser_retry_recovery(
             status=inference.outcome, observation=observation, onboarding=result
         )
 
-    save_draft_configuration(db, website, inference.configuration)
-    website.configuration_origin = (
-        ORIGIN_DETERMINISTIC_GENERIC_HTML
-        if inference.configuration.pattern_name == "generic_html_cards"
-        else ORIGIN_DETERMINISTIC_STRUCTURED
-    )
-    db.commit()
-
-    preview = await extraction_runs.preview_extraction_detailed(
-        db, website, correlation_id=correlation_id
+    # The browser has already read this endpoint's events. If it is a structured
+    # endpoint whose HTTP replay we have previously proven is blocked (the
+    # current version is the equivalent browser config), skip re-creating an HTTP
+    # draft we know will 403 and propose the browser configuration directly (§8).
+    browser_config = (
+        _browser_structured_config(inference.configuration, source_page_url=listing_url)
+        if _structured_endpoint_config(inference.configuration)
+        else None
     )
 
-    # If the HTTP replay of a structured endpoint was rejected by edge/bot
-    # protection but the browser itself observed the event data, the source is
-    # browser-required: rebuild it as an execution_strategy="browser" structured
-    # capture (navigate the page, read its own JSON response) and preview that
-    # via the browser transport — never propose another HTTP-only replay.
-    if _preview_edge_blocked(preview) and _structured_endpoint_config(inference.configuration):
-        browser_config = _browser_structured_config(
-            inference.configuration, source_page_url=listing_url
+    async def _browser_preview(config):
+        return await extraction_runs.preview_extraction_detailed(
+            db, website, correlation_id=correlation_id,
+            fetch_override=_recovery_browser_fetch(
+                config, source_page_url=listing_url, strategy=strategy
+            ),
         )
-        if not _same_recovery_config(previous_configuration, browser_config):
+
+    if browser_config is not None and _same_recovery_config(previous_configuration, browser_config):
+        # The current version is already this exact browser configuration — do
+        # not create another equivalent version (§8); just preview it through the
+        # browser transport to confirm it still works.
+        inference = dataclasses.replace(inference, configuration=browser_config)
+        preview = await _browser_preview(browser_config)
+    else:
+        save_draft_configuration(db, website, inference.configuration)
+        website.configuration_origin = (
+            ORIGIN_DETERMINISTIC_GENERIC_HTML
+            if inference.configuration.pattern_name == "generic_html_cards"
+            else ORIGIN_DETERMINISTIC_STRUCTURED
+        )
+        db.commit()
+
+        preview = await extraction_runs.preview_extraction_detailed(
+            db, website, correlation_id=correlation_id
+        )
+
+        # The HTTP replay of a structured endpoint the browser already read was
+        # rejected at the request layer (any 403/429, not only a recognised
+        # edge signature). The source is browser-required: within THIS same
+        # recovery operation, create an execution_strategy="browser" successor
+        # and preview it through the browser transport — never leave a fresh
+        # source stuck on an HTTP draft that will always 403, and never require
+        # a second manual retry.
+        if browser_config is not None and _http_replay_blocked(preview):
             save_draft_configuration(db, website, browser_config)
             website.configuration_origin = ORIGIN_DETERMINISTIC_STRUCTURED
             db.commit()
             inference = dataclasses.replace(inference, configuration=browser_config)
-            preview = await extraction_runs.preview_extraction_detailed(
-                db, website, correlation_id=correlation_id
-            )
+            preview = await _browser_preview(browser_config)
 
     ok, reasons = meets_approval_bar(preview.quality, policy, preview_status=preview.result.status)
     # This path is only reached for a genuinely selected source (structured_api

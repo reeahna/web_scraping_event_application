@@ -27,7 +27,12 @@ from app.services.browser_recovery import (
     browser_retry_recovery,
 )
 
-from .extraction_helpers import html_handler, load_fixture, patched_http_fetch
+from .extraction_helpers import (
+    blocked_handler,
+    html_handler,
+    load_fixture,
+    patched_http_fetch,
+)
 
 
 def _preview_count(db, website_id) -> int:
@@ -528,3 +533,135 @@ def test_pattern_options_flag_supporting_evidence():
     assert options["json_ld_event"]["evidence_confidence"] == 0.82
     assert options["wordpress_rest"]["has_evidence"] is False
     assert options["ics_calendar"]["has_evidence"] is False
+
+
+# --- fresh onboarding: browser fallback with no prior Website history --------
+
+_SIMPLEVIEW_FIND = "https://example.com/includes/rest_v2/plugins_events_events_by_date/find/"
+
+
+def _simpleview_observed(n: int = 12) -> dict:
+    records = [
+        {
+            "recid": str(1000 + i), "title": f"Community Event {i}",
+            "startDate": "2026-10-06", "url": f"/event/e{i}/{1000 + i}/", "location": "Downtown",
+        }
+        for i in range(n)
+    ]
+    return {"docs": {"count": n, "docs": records}}
+
+
+def _fresh_strategy(observed, warnings=()):
+    return _FakeStrategy(
+        BrowserRenderResult(
+            final_url=LISTING_URL, rendered_html=_SPA_SHELL, status_code=200,
+            observed_json=observed, warnings=tuple(warnings),
+        )
+    )
+
+
+def _browser_preview_run(db, website):
+    from app.repositories.extraction_run import list_extraction_runs_for_website
+
+    runs = [
+        r
+        for r in list_extraction_runs_for_website(db, website.id, limit=50)
+        if r.run_type == "preview"
+    ]
+    # Newest preview run (recovery previews HTTP first, then the browser successor).
+    return max(runs, key=lambda r: r.id) if runs else None
+
+
+async def test_fresh_website_browser_fallback_on_plain_http_403(
+    db_session, unsupported_site, enable_browser
+):
+    """The regression: a brand-new Website (no config, no recovery history)
+    whose HTTP replay returns a PLAIN http_403 (not a recognised edge
+    signature) must still get a browser successor in the SAME recovery run."""
+    website = unsupported_site()
+    assert website.configuration is None  # fresh: no prior configuration
+
+    find = _SIMPLEVIEW_FIND + "?json=%7B%7D&token=PUBTOKEN"
+    observed = [
+        (find, _simpleview_observed(12)),
+        ("https://bs.serving-sys.com/pixel", {"ad": True}),  # unrelated 3rd-party
+    ]
+    strategy = _fresh_strategy(observed, warnings=("blocked_subrequest:bs.serving-sys.com",))
+
+    # Plain 403 with no edge/WAF body markers -> classified as http_403.
+    with patched_http_fetch(blocked_handler(403, "Forbidden")):
+        result = await browser_retry_recovery(db_session, website, strategy=strategy)
+
+    db_session.refresh(website)
+    cfg = website.configuration
+    assert cfg is not None
+    # The current configuration is the browser successor.
+    assert cfg["execution_strategy"] == "browser"
+    assert cfg["pattern_name"] == "simpleview_events"
+    assert cfg["json_paths"]["events_root"] == "docs.docs"
+    assert cfg["listing_url"] == LISTING_URL
+    assert cfg["request_recipe"] is None
+    # One HTTP (blocked, historical) + one browser (current) version — the fresh
+    # Website started at 0, so the browser successor is v2.
+    assert website.configuration_version == 2
+    # Browser preview captured the records and succeeded.
+    run = _browser_preview_run(db_session, website)
+    assert run.status in ("success", "partial")
+    assert run.events_found == 12
+    assert run.events_valid == 12
+    assert result.status == READY_FOR_APPROVAL
+
+
+async def test_ignored_ad_subrequest_does_not_block_fresh_recovery(
+    db_session, unsupported_site, enable_browser
+):
+    # The blocked third-party ad subrequest is only a diagnostic warning — it
+    # must not set the recovery outcome to blocked when the first-party event
+    # endpoint was captured successfully.
+    website = unsupported_site()
+    observed = [(_SIMPLEVIEW_FIND + "?token=X", _simpleview_observed(12))]
+    strategy = _fresh_strategy(observed, warnings=("blocked_subrequest:bs.serving-sys.com",))
+    with patched_http_fetch(blocked_handler(403, "Forbidden")):
+        result = await browser_retry_recovery(db_session, website, strategy=strategy)
+    assert result.status == READY_FOR_APPROVAL
+    db_session.refresh(website)
+    assert website.configuration["execution_strategy"] == "browser"
+
+
+async def test_repeated_fresh_recovery_creates_no_equivalent_http_draft(
+    db_session, unsupported_site, enable_browser
+):
+    # §8: once browser is proven, a second recovery must not create another
+    # equivalent HTTP draft first (nor a duplicate browser version).
+    website = unsupported_site()
+    observed = [(_SIMPLEVIEW_FIND + "?token=X", _simpleview_observed(12))]
+
+    def _run():
+        return browser_retry_recovery(
+            db_session, website, strategy=_fresh_strategy(observed)
+        )
+
+    with patched_http_fetch(blocked_handler(403, "Forbidden")):
+        await _run()
+    db_session.refresh(website)
+    version_after_first = website.configuration_version  # 2 (http v1 + browser v2)
+    assert website.configuration["execution_strategy"] == "browser"
+
+    with patched_http_fetch(blocked_handler(403, "Forbidden")):
+        await _run()
+    db_session.refresh(website)
+    # No new version: the current config was already the browser successor.
+    assert website.configuration_version == version_after_first
+    assert website.configuration["execution_strategy"] == "browser"
+
+
+async def test_selected_endpoint_failure_still_blocks(
+    db_session, unsupported_site, enable_browser
+):
+    # A genuine browser render block (challenge/SSRF on the page itself) is NOT
+    # turned into a browser success — recovery reports blocked as before.
+    website = unsupported_site()
+    result = await browser_retry_recovery(
+        db_session, website, strategy=_blocked("challenge_marker:captcha")
+    )
+    assert result.status == RECOVERY_BLOCKED

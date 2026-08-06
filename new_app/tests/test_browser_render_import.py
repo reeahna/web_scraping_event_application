@@ -298,6 +298,24 @@ def test_structured_pipeline_extracts_docs_docs_twelve_records():
     assert len(valid) == 12
     assert outcome.last_response.content_type == "application/json"
     assert outcome.last_response.final_url.split("?")[0] == API
+    # Browser preview applies the (DST-aware IANA) timezone consistently.
+    assert all(c.timezone == TZ for c, _ in valid)
+
+
+def test_fallback_timezone_uses_city_iana_when_no_override():
+    from types import SimpleNamespace as NS
+
+    from app.services.extraction_runs import _fallback_timezone
+
+    city = NS(timezone="America/Indiana/Indianapolis")
+    # No override -> the city's DST-aware IANA zone (not a bare EST abbreviation).
+    assert _fallback_timezone(NS(timezone_override=None, city=city)) == (
+        "America/Indiana/Indianapolis"
+    )
+    # An explicit override is still honored.
+    assert _fallback_timezone(NS(timezone_override="America/New_York", city=city)) == (
+        "America/New_York"
+    )
 
 
 def test_strategy_selection_structured_browser():
