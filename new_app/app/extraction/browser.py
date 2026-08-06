@@ -57,6 +57,14 @@ _BLOCKED_RESOURCE_TYPES = frozenset({"image", "media", "font"})
 # whole upload.
 _MAX_REQUEST_BODY_CHARS = 4_000
 
+# Request headers safe to retain from an observed request. Everything else
+# (Cookie, Authorization, sec-ch-*, cache/transport headers) is dropped before
+# it ever reaches observed_requests. Kept deliberately narrow; request_recipe's
+# capture applies the same allowlist again when it builds the stored recipe.
+_SAFE_REQUEST_HEADERS = frozenset(
+    {"accept", "referer", "accept-language", "content-type", "x-requested-with"}
+)
+
 
 @dataclass
 class BrowserRenderResult:
@@ -268,10 +276,23 @@ def _capture_request_meta(response, response_content_type: str, observed_request
         query_names = sorted(
             {p.split("=", 1)[0] for p in urlsplit(request.url).query.split("&") if p}
         )
+        # Pre-filter headers to the safe allowlist HERE so cookies, Authorization,
+        # sec-ch-ua, etc. never enter observed_requests at all. request_recipe's
+        # capture re-filters, but keeping them out of memory is defence in depth.
+        safe_headers = {
+            name: value
+            for name, value in req_headers.items()
+            if name.lower() in _SAFE_REQUEST_HEADERS
+        }
         observed_requests[response.url] = {
             "method": request.method,
+            # Full URL (with query) so a recipe can preserve the required nested
+            # `json`/`token` params. Values may include a *public* site token;
+            # this dict is transient and the token is redacted in UI/logs.
+            "request_url": request.url,
             "request_content_type": req_headers.get("content-type"),
             "request_body": body,
+            "request_headers": safe_headers,
             "query_param_names": query_names,
             "response_status": response.status,
             "response_content_type": response_content_type,

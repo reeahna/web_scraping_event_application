@@ -12,42 +12,21 @@ dict (see TransformationRuleConfig) — there is no way to store executable
 code in a SiteConfiguration.
 """
 
-import re
 from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, field_validator, model_validator
 
 from app.core.url_safety import UnsafeURLError, validate_public_url
 from app.schemas.geographic import GeographicFilterConfig
-from app.schemas.recurrence import RecurrenceBounds, RecurrenceMode
-
-# Headers an administrator can never set via configuration — either they are
-# meaningless/dangerous on an outbound request we build ourselves (Host,
-# Content-Length, Connection, Transfer-Encoding), or they could be used to
-# smuggle credentials/session state to a third-party site (Cookie,
-# Authorization, Proxy-Authorization). Authorization stays blocked entirely
-# until a future phase adds an explicit, secure credential system.
-FORBIDDEN_HEADERS: frozenset[str] = frozenset(
-    {
-        "host",
-        "content-length",
-        "connection",
-        "transfer-encoding",
-        "proxy-authorization",
-        "cookie",
-        "authorization",
-    }
+from app.schemas.http_safety import (  # noqa: F401 - re-exported for back-compat
+    _ENV_VAR_REFERENCE_RE,
+    FORBIDDEN_HEADERS,
 )
-
-# Rejects `${VAR}`, `$VAR`, `%VAR%` style environment/shell variable
-# references appearing inside a configured string value.
-_ENV_VAR_REFERENCE_RE = re.compile(r"\$\{[^}]+\}|\$[A-Za-z_][A-Za-z0-9_]*|%[A-Za-z_][A-Za-z0-9_]*%")
-
-
-def _reject_env_var_reference(value: str, *, field_label: str) -> str:
-    if _ENV_VAR_REFERENCE_RE.search(value):
-        raise ValueError(f"{field_label} must not contain an environment-variable reference")
-    return value
+from app.schemas.http_safety import (
+    reject_env_var_reference as _reject_env_var_reference,
+)
+from app.schemas.recurrence import RecurrenceBounds, RecurrenceMode
+from app.schemas.request_recipe import RequestRecipe
 
 
 class FetchConfig(BaseModel):
@@ -245,6 +224,11 @@ class SiteConfiguration(BaseModel):
     required_fields: list[str] = ["title", "start_date", "canonical_url"]
     allow_page_url_as_canonical_fallback: bool = False
     allow_offers_url_as_event_url: bool = False
+    # Optional captured request recipe for structured endpoints that need the
+    # full request (nested JSON query params, public token, Referer, dynamic
+    # date window, pagination). When present, preview and import render and send
+    # it; when absent, behaviour is exactly as before (api_endpoint/fetch).
+    request_recipe: "RequestRecipe | None" = None
 
     @field_validator("listing_url", "api_endpoint")
     @classmethod

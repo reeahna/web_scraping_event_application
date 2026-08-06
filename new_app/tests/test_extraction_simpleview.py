@@ -164,6 +164,62 @@ def test_proposal_drops_oversized_post_body():
     assert any("could not be safely templated" in w for w in proposal.warnings)
 
 
+def _captured_get_metadata():
+    """A confirmed GET request with the full URL + safe headers (as the browser
+    layer now captures), so the proposer can build a request recipe."""
+    query = {
+        "filter": {"date_range": {"start": {"$date": "2026-08-06T04:00:00.000Z"},
+                                  "end": {"$date": "2026-08-13T03:59:59.999Z"}}},
+        "options": {"limit": 100, "skip": 0, "count": True},
+    }
+    import json as _json
+    from urllib.parse import urlencode as _urlencode
+
+    url = FIND_URL + "?" + _urlencode({"json": _json.dumps(query), "token": "PUB-TOKEN-XYZ-123456"})
+    return {
+        "method": "GET",
+        "request_url": url,
+        "request_headers": {"Accept": "application/json", "Referer": FIND_URL,
+                            "Cookie": "s=SECRET"},
+        "request_body": None,
+        "query_param_names": ["json", "token"],
+        "response_status": 200,
+    }
+
+
+def test_proposal_captures_request_recipe():
+    proposal = _propose(request_metadata=_captured_get_metadata())
+    recipe = proposal.configuration.request_recipe
+    assert recipe is not None
+    assert set(recipe.query_params) == {"json", "token"}
+    # Public token persisted (it's a request param, not a secret)...
+    assert recipe.query_params["token"].value == "PUB-TOKEN-XYZ-123456"
+    # ...date range normalized to dynamic placeholders.
+    dr = recipe.query_params["json"].value["filter"]["date_range"]
+    assert dr["start"] == {"$date": {"kind": "window_start_utc"}}
+    # Referer preserved as the dynamic source-page URL; Cookie discarded.
+    assert any(v.kind == "source_page_url" for v in recipe.headers.values())
+    assert not any(h.lower() == "cookie" for h in recipe.headers)
+    assert recipe.pagination.kind == "offset"
+    # The "params not persisted" warning is gone — they ARE persisted now.
+    assert not any("were not persisted" in w for w in proposal.warnings)
+    assert any("captured request recipe" in n for n in proposal.notes)
+
+
+def test_proposal_without_full_url_keeps_endpoint_only():
+    # Backward-compatible: metadata lacking request_url yields no recipe.
+    proposal = _propose(request_metadata={"method": "GET", "query_param_names": ["json"]})
+    assert proposal.configuration.request_recipe is None
+    assert any("pagination not confirmed" in w for w in proposal.warnings)
+
+
+def test_proposal_recipe_token_redacted_in_notes():
+    proposal = _propose(request_metadata=_captured_get_metadata())
+    joined = " ".join(proposal.notes)
+    assert "PUB-TOKEN-XYZ-123456" not in joined  # never the raw token
+    assert "public token" in joined
+
+
 # --- extraction --------------------------------------------------------------
 
 

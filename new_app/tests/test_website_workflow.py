@@ -255,6 +255,52 @@ def test_approval_blockers_hidden_when_no_permission():
     assert any("permission to approve" in b for b in wf.approval_blockers)
 
 
+# --- captured request recipe diagnostics ------------------------------------
+
+
+def _recipe_dict():
+    return {
+        "method": "GET",
+        "endpoint": "https://events.example.org/api/find/",
+        "query_params": {
+            "json": {"kind": "json_template", "value": {
+                "filter": {"date_range": {"start": {"$date": {"kind": "window_start_utc"}}}},
+                "options": {"skip": {"kind": "page_offset"}},
+            }},
+            "token": {"kind": "literal", "value": "PUB-TOKEN-XYZ-1234567890"},
+        },
+        "headers": {"Referer": {"kind": "source_page_url"}},
+        "source_page_url": "https://events.example.org/events/",
+        "pagination": {"kind": "offset", "limit": 100, "total_path": "docs.count"},
+    }
+
+
+def test_recipe_summary_surfaced_and_redacted():
+    w = _drafted("simpleview_events")
+    w.configuration = {"pattern_name": "simpleview_events", "request_recipe": _recipe_dict()}
+    wf = _wf(w, preview=_preview(6, "success", 5))
+    summary = wf.recipe_summary
+    assert summary is not None
+    assert summary["query_param_names"] == ["json", "token"]
+    assert summary["pagination_kind"] == "offset"
+    assert summary["dynamic_date_window"] is True
+    assert summary["referer_present"] is True
+    # Token present but never shown in the clear.
+    assert summary["public_token_present"] is True
+    assert "PUB-TOKEN-XYZ-1234567890" not in (summary["public_token_hint"] or "")
+
+
+def test_recipe_summary_none_without_recipe():
+    assert _wf(_drafted("simpleview_events")).recipe_summary is None
+
+
+def test_recipe_summary_tolerates_malformed_recipe():
+    w = _drafted("simpleview_events")
+    w.configuration = {"pattern_name": "x", "request_recipe": {"nonsense": True}}
+    # A malformed stored recipe must not raise — just no summary.
+    assert _wf(w).recipe_summary is None
+
+
 # --- rendering (route returns 200 for all major states) ---------------------
 
 

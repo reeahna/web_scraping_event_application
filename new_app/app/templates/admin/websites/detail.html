@@ -90,6 +90,26 @@
       <tr><th>Approval status</th><td>{% if website.approved_pattern %}Approved{% elif workflow.approval_blockers %}Not approvable yet{% else %}Ready to approve{% endif %}</td></tr>
     </tbody>
   </table>
+  {% if workflow.recipe_summary %}
+  {% set r = workflow.recipe_summary %}
+  <details class="wf-recipe">
+    <summary>Captured request recipe <span class="badge badge-muted">advanced</span></summary>
+    <p class="audit-meta">This source needs its full structured request replayed for
+      scheduled imports (no browser). Values are never shown — only their shape.</p>
+    <table>
+      <tbody>
+        <tr><th>Method</th><td><code>{{ r.method }}</code></td></tr>
+        <tr><th>Endpoint</th><td><code>{{ r.endpoint }}</code></td></tr>
+        <tr><th>Query parameters</th><td>{% for name in r.query_param_names %}<code>{{ name }}</code>{% if not loop.last %}, {% endif %}{% else %}—{% endfor %}</td></tr>
+        <tr><th>Request body</th><td>{{ r.body_type }}</td></tr>
+        <tr><th>Dynamic date window</th><td>{{ "Yes" if r.dynamic_date_window else "No" }} ({{ r.horizon_days }}-day horizon)</td></tr>
+        <tr><th>Pagination</th><td>{{ r.pagination_kind }}</td></tr>
+        <tr><th>Referer preserved</th><td>{{ "Yes" if r.referer_present else "No" }}</td></tr>
+        <tr><th>Public token</th><td>{% if r.public_token_present %}<span class="badge badge-muted">present</span> <span class="audit-meta">{{ r.public_token_hint or "redacted" }}</span>{% else %}None{% endif %}</td></tr>
+      </tbody>
+    </table>
+  </details>
+  {% endif %}
   <div class="wf-card-cta">
     {% if website.configuration and can_update %}<a href="/admin/websites/{{ website.id }}/configure" class="wf-muted">{{ "Inspect failed configuration" if workflow.config_is_failed_historical else "Review configuration" }}</a>{% endif %}
   </div>

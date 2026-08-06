@@ -1,0 +1,37 @@
+{
+  "_comment": "Sanitized capture of a successful Simpleview /find/ request. Generic example domain; the token is a placeholder, not a real credential. Tests build the URL-encoded `json` query param from `query_json`.",
+  "method": "GET",
+  "endpoint": "https://events.example.org/includes/rest_v2/plugins_events_events_by_date/find/",
+  "token": "PUBLIC-SITE-TOKEN-PLACEHOLDER-0123456789",
+  "query_json": {
+    "filter": {
+      "active": true,
+      "categories": ["100", "205"],
+      "date_range": {
+        "start": {"$date": "2026-08-06T04:00:00.000Z"},
+        "end": {"$date": "2026-08-13T03:59:59.999Z"}
+      }
+    },
+    "options": {
+      "limit": 100,
+      "skip": 0,
+      "count": true,
+      "fields": {"title": 1, "startDate": 1, "endDate": 1, "url": 1, "location": 1, "recid": 1},
+      "sort": {"startDate": 1}
+    }
+  },
+  "headers": {
+    "Accept": "application/json",
+    "Referer": "https://events.example.org/events/this-weekend/",
+    "Cookie": "sessionid=SECRET-SESSION-VALUE; consent=1",
+    "Authorization": "Bearer SECRET-BEARER-TOKEN",
+    "sec-ch-ua": "\"Chromium\";v=\"126\"",
+    "Cache-Control": "no-cache",
+    "Host": "events.example.org",
+    "Accept-Encoding": "gzip, deflate, br"
+  },
+  "source_page_url": "https://events.example.org/events/this-weekend/",
+  "window_start": "2026-08-06T04:00:00.000Z",
+  "window_end": "2026-08-13T03:59:59.999Z",
+  "horizon_days": 7
+}

@@ -226,3 +226,27 @@ def test_analysis_url_is_sanitized():
     )
     assert "token" not in a.sanitized_url
     assert "abc123" not in a.sanitized_url
+
+
+# --- request metadata for recipe capture ------------------------------------
+
+
+def test_request_metadata_carries_full_url_and_safe_headers():
+    full_url = "https://www.visitbloomington.com/events/find/?json=%7B%7D&token=PUBTOKEN"
+    a = analyze_response(
+        url=full_url, payload=_EVENT_BODY, listing_url=LISTING,
+        request_meta={
+            "method": "GET", "request_url": full_url,
+            "request_headers": {"Referer": LISTING, "Accept": "application/json"},
+            "query_param_names": ["json", "token"], "response_status": 200,
+        },
+    )
+    meta = a.request_metadata
+    # The recipe needs the full URL (with token) and the safe headers...
+    assert meta["request_url"] == full_url
+    assert meta["request_headers"]["Referer"] == LISTING
+    # ...but the public-facing evidence must never leak them.
+    evidence = a.to_evidence()
+    assert "request_url" not in evidence
+    assert "request_headers" not in evidence
+    assert "PUBTOKEN" not in str(evidence)

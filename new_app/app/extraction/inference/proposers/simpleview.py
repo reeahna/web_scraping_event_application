@@ -26,8 +26,10 @@ from app.extraction.inference.types import (
     ProposalContext,
 )
 from app.extraction.patterns.simpleview_events import _DEFAULT_PATHS, EVENTS_ROOT_DEFAULT
+from app.extraction.request_recipe import capture_recipe, summarize_recipe
 from app.extraction.selectors import resolve_json_path
 from app.schemas.extraction import SiteConfiguration
+from app.schemas.request_recipe import RequestRecipe
 
 NAME = "simpleview_events"
 
@@ -93,6 +95,60 @@ def _replay_fetch(request_metadata: dict | None) -> tuple[dict, list[str]]:
     return {}, warnings
 
 
+def _referer(headers: dict | None) -> str | None:
+    if not isinstance(headers, dict):
+        return None
+    for name, value in headers.items():
+        if str(name).lower() == "referer" and isinstance(value, str) and value:
+            return value
+    return None
+
+
+def _build_recipe(
+    request_metadata: dict | None, *, horizon_days: int | None
+) -> tuple[RequestRecipe | None, tuple[str, ...], tuple[str, ...]]:
+    """Build a captured request recipe from the observed successful request.
+
+    Returns (recipe, notes, warnings). The recipe preserves the full request
+    (nested json/token query params, Referer, dynamic date window, pagination)
+    so scheduled imports reproduce the confirmed request over plain HTTP — no
+    browser, no persisted cookies. Returns (None, ...) when no full request URL
+    was observed, so the endpoint-only path is used exactly as before."""
+    if not request_metadata:
+        return None, (), ()
+    request_url = request_metadata.get("request_url")
+    if not isinstance(request_url, str) or not request_url:
+        return None, (), ()
+
+    headers = request_metadata.get("request_headers")
+    body = request_metadata.get("request_body")
+    try:
+        recipe = capture_recipe(
+            method=str(request_metadata.get("method", "GET")),
+            url=request_url,
+            headers=headers if isinstance(headers, dict) else {},
+            request_body=body if isinstance(body, str) else None,
+            source_page_url=_referer(headers),
+            horizon_days=horizon_days,
+        )
+    except ValueError as exc:
+        return None, (), (f"a request recipe could not be captured ({exc}); using endpoint only",)
+
+    summary = summarize_recipe(recipe)
+    token_note = (
+        f", public token {summary['public_token_hint']}"
+        if summary.get("public_token_present") and summary.get("public_token_hint")
+        else ""
+    )
+    notes = (
+        f"captured request recipe: {summary['method']} with "
+        f"{len(summary['query_param_names'])} query param(s), "
+        f"dynamic date window ({summary['horizon_days']}d), "
+        f"pagination={summary['pagination_kind']}{token_note}",
+    )
+    return recipe, notes, ()
+
+
 class SimpleviewEventsProposer:
     pattern_name = NAME
 
@@ -138,7 +194,17 @@ class SimpleviewEventsProposer:
             if not accepted:
                 missing.append(engine_field)
 
-        replay_fetch, replay_warnings = _replay_fetch(getattr(context, "request_metadata", None))
+        request_metadata = getattr(context, "request_metadata", None)
+        recipe, recipe_notes, recipe_warnings = _build_recipe(
+            request_metadata, horizon_days=getattr(context.policy, "window_horizon_days", None)
+        )
+        # A captured recipe preserves the full request (incl. filter params), so
+        # the endpoint-only replay fetch and the "params not persisted" warning
+        # only apply when no recipe was captured.
+        if recipe is not None:
+            replay_fetch, replay_warnings = {}, []
+        else:
+            replay_fetch, replay_warnings = _replay_fetch(request_metadata)
 
         try:
             configuration = SiteConfiguration(
@@ -155,6 +221,7 @@ class SimpleviewEventsProposer:
                 },
                 max_detail_fetches=0,
                 required_fields=list(DEFAULT_REQUIRED_FIELDS),
+                request_recipe=recipe,
             )
         except ValueError as exc:
             return failed_proposal(f"proposed Simpleview configuration failed validation: {exc}")
@@ -167,17 +234,29 @@ class SimpleviewEventsProposer:
             f"record array: {EVENTS_ROOT_DEFAULT}",
             f"stable id field: {id_field or 'none observed'}",
             "field mappings are the pattern defaults, editable under 'JSON paths'",
+            *recipe_notes,
+        )
+        # With a captured recipe, pagination and required filter params are part
+        # of the recipe — so those warnings only apply to the endpoint-only path.
+        pagination_warning = (
+            ()
+            if recipe is not None
+            else (
+                "pagination not confirmed from observation; extracting a single response. "
+                "Configure query-param pagination once the mechanism is confirmed.",
+            )
+        )
+        query_param_warning = (
+            (f"observed query parameters {observed_query_names} were not persisted "
+             "(they may carry tokens); configure required filters manually.",)
+            if observed_query_names and recipe is None
+            else ()
         )
         warnings = (
-            "pagination not confirmed from observation; extracting a single response. "
-            "Configure query-param pagination once the mechanism is confirmed.",
+            *pagination_warning,
             *replay_warnings,
-            *(
-                (f"observed query parameters {observed_query_names} were not persisted "
-                 "(they may carry tokens); configure required filters manually.",)
-                if observed_query_names
-                else ()
-            ),
+            *recipe_warnings,
+            *query_param_warning,
         )
         return ConfigurationProposal(
             configuration=configuration,

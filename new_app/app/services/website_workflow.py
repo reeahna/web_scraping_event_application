@@ -83,6 +83,10 @@ class WebsiteWorkflow:
     preview_raw_errors: list[str] = field(default_factory=list)
     show_recovery_card: bool = False
     warnings: list[str] = field(default_factory=list)
+    # Safe, token-redacted summary of a captured request recipe (parameter
+    # *names* only, never raw values) for the collapsed diagnostics panel.
+    # None unless the current configuration carries a request recipe.
+    recipe_summary: dict | None = None
 
 
 _LIFECYCLE_LABELS = {
@@ -143,6 +147,25 @@ def _group_preview_errors(preview) -> tuple[list[tuple[str, int]], list[str]]:
         counts[message] += 1
     grouped = sorted(((m, counts[m]) for m in order), key=lambda mc: (-mc[1], mc[0]))
     return grouped, raw
+
+
+def _recipe_summary(website) -> dict | None:
+    """Token-redacted request-recipe summary for the diagnostics panel, drawn
+    from the current (draft, else approved) configuration. Best-effort: a
+    malformed stored config never breaks the detail page."""
+    source = website.configuration or website.approved_pattern
+    if not source or not isinstance(source, dict) or source.get("request_recipe") is None:
+        return None
+    # Import here to keep this presentation module free of heavy extraction deps
+    # unless a recipe is actually present.
+    from app.extraction.request_recipe import summarize_recipe
+    from app.schemas.request_recipe import RequestRecipe
+
+    try:
+        recipe = RequestRecipe.model_validate(source["request_recipe"])
+    except Exception:  # noqa: BLE001 - diagnostics must never break the page
+        return None
+    return summarize_recipe(recipe)
 
 
 def build_website_workflow(
@@ -501,6 +524,7 @@ def build_website_workflow(
         warnings.append("The stored configuration is historical and should not be approved.")
 
     preview_error_groups, preview_raw_errors = _group_preview_errors(preview)
+    recipe_summary = _recipe_summary(website)
 
     return WebsiteWorkflow(
         current_step=current_step,
@@ -524,4 +548,5 @@ def build_website_workflow(
         preview_raw_errors=preview_raw_errors,
         show_recovery_card=show_recovery_card,
         warnings=warnings,
+        recipe_summary=recipe_summary,
     )

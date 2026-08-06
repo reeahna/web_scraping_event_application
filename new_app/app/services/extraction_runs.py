@@ -45,6 +45,7 @@ from app.extraction.normalize import normalize_candidate
 from app.extraction.pagination import build_pagination_strategy
 from app.extraction.recurrence import expand_candidates
 from app.extraction.registry import REGISTRY
+from app.extraction.request_recipe import render_recipe
 from app.extraction.types import (
     EventCandidate,
     ExtractionResult,
@@ -361,27 +362,40 @@ class _PipelineOutcome:
     response_hash_by_page: dict[str, str]
 
 
-async def _execute_pipeline(
-    config: SiteConfiguration,
-    pattern_name: str,
-    fetch: FetchStrategy,
-    *,
-    fallback_timezone: str | None,
-) -> _PipelineOutcome:
-    registration = REGISTRY.get(pattern_name)
-    pattern = registration.extractor
-    pagination = build_pagination_strategy(config)
+def _total_from_response(response: FetchResponse, total_path: str | None) -> int | None:
+    """The integer at `total_path` (dotted) in a JSON response, used as a
+    pagination stop condition. None when absent or not an integer."""
+    if not total_path:
+        return None
+    import json
 
+    try:
+        node = json.loads(response.text)
+    except (json.JSONDecodeError, ValueError):
+        return None
+    for segment in total_path.split("."):
+        if isinstance(node, dict) and segment in node:
+            node = node[segment]
+        else:
+            return None
+    return node if isinstance(node, int) and not isinstance(node, bool) else None
+
+
+async def _fetch_legacy_pages(
+    config: SiteConfiguration,
+    pattern,
+    fetch: FetchStrategy,
+    all_candidates: list[EventCandidate],
+    warnings: list[str],
+    response_hash_by_page: dict[str, str],
+) -> tuple[FetchResponse | None, FetchResponse | None, bool]:
+    """The endpoint/fetch-config page loop (unchanged behaviour)."""
+    pagination = build_pagination_strategy(config)
     request_url = config.api_endpoint or config.listing_url
     if not request_url:
         raise AppError("Site configuration has no listing_url or api_endpoint", status_code=409)
-
-    warnings: list[str] = []
-    all_candidates: list[EventCandidate] = []
-    response_hash_by_page: dict[str, str] = {}
     visited_urls: set[str] = set()
     seen_hashes: set[str] = set()
-
     current_request: FetchRequest | None = FetchRequest(
         url=request_url,
         method=config.fetch.method,
@@ -393,7 +407,6 @@ async def _execute_pipeline(
     first_response: FetchResponse | None = None
     page_index = 0
     max_events_reached = False
-
     while current_request is not None:
         response = await fetch.fetch(current_request, config.fetch)
         if first_response is None:
@@ -403,33 +416,21 @@ async def _execute_pipeline(
         if not content_type_allowed(response.content_type, config.fetch):
             warnings.append(f"unexpected_content_type:{response.content_type}")
             break
-
         response_hash_by_page[response.final_url] = response.body_hash
-
         page_candidates = pattern.extract(response, config)
         remaining_capacity = config.pagination.max_events - len(all_candidates)
         if len(page_candidates) > remaining_capacity:
             page_candidates = page_candidates[: max(remaining_capacity, 0)]
             max_events_reached = True
-
         all_candidates.extend(page_candidates)
         if max_events_reached:
             warnings.append("max_events_reached")
             visited_urls.add(response.final_url)
             seen_hashes.add(response.body_hash)
             break
-
-        # Pagination strategies decide "already seen" against every *prior*
-        # page's URL/hash — not this page's own, which would trivially
-        # always be "seen" and stop pagination after a single page. This
-        # page's own URL/hash are recorded immediately after, so the next
-        # iteration's check does include it.
         next_request = pagination.next_request(
-            response,
-            page_index,
-            config,
-            visited_urls=frozenset(visited_urls),
-            seen_body_hashes=frozenset(seen_hashes),
+            response, page_index, config,
+            visited_urls=frozenset(visited_urls), seen_body_hashes=frozenset(seen_hashes),
         )
         visited_urls.add(response.final_url)
         seen_hashes.add(response.body_hash)
@@ -437,6 +438,112 @@ async def _execute_pipeline(
             break
         current_request = next_request
         page_index += 1
+    return first_response, response, max_events_reached
+
+
+async def _fetch_recipe_pages(
+    config: SiteConfiguration,
+    pattern,
+    fetch: FetchStrategy,
+    all_candidates: list[EventCandidate],
+    warnings: list[str],
+    response_hash_by_page: dict[str, str],
+    *,
+    fallback_timezone: str | None,
+) -> tuple[FetchResponse | None, FetchResponse | None, bool]:
+    """Render the captured request recipe per page and walk offset/page
+    pagination with bounded stop conditions. Same fetch strategy, SSRF, and
+    byte caps as every other request — no Playwright at import time."""
+    recipe = config.request_recipe
+    timezone = config.timezone or fallback_timezone
+    now = datetime.now(UTC)
+    seen_hashes: set[str] = set()
+    first_response: FetchResponse | None = None
+    response: FetchResponse | None = None
+    max_events_reached = False
+    page_index = 0
+    while True:
+        offset = page_index * recipe.pagination.limit
+        rendered = render_recipe(
+            recipe, now_utc=now, timezone=timezone,
+            page_offset=offset, page_number=page_index + 1,
+        )
+        request = FetchRequest(
+            url=rendered.endpoint, method=rendered.method,
+            headers=rendered.headers, params=rendered.params, json_body=rendered.json_body,
+        )
+        response = await fetch.fetch(request, config.fetch)
+        if first_response is None:
+            first_response = response
+        if response.blocked_reason is not None:
+            break
+        if not content_type_allowed(response.content_type, config.fetch):
+            warnings.append(f"unexpected_content_type:{response.content_type}")
+            break
+        response_hash_by_page[response.final_url] = response.body_hash
+
+        page_candidates = pattern.extract(response, config)
+        records_this_page = len(page_candidates)
+        new_candidates = [c for c in page_candidates if c.raw_record_hash not in seen_hashes]
+        for candidate in new_candidates:
+            seen_hashes.add(candidate.raw_record_hash)
+
+        remaining_capacity = config.pagination.max_events - len(all_candidates)
+        if len(new_candidates) > remaining_capacity:
+            new_candidates = new_candidates[: max(remaining_capacity, 0)]
+            max_events_reached = True
+        all_candidates.extend(new_candidates)
+        if max_events_reached:
+            warnings.append("max_events_reached")
+            break
+
+        # --- bounded pagination stop conditions ---
+        if recipe.pagination.kind == "none":
+            break
+        if records_this_page == 0:
+            break
+        if not new_candidates:
+            warnings.append("recipe_no_new_records")
+            break
+        if records_this_page < recipe.pagination.limit:
+            break
+        total = _total_from_response(response, recipe.pagination.total_path)
+        if total is not None and (page_index + 1) * recipe.pagination.limit >= total:
+            break
+        if page_index + 1 >= recipe.pagination.max_pages:
+            warnings.append("recipe_max_pages_reached")
+            break
+        page_index += 1
+    return first_response, response, max_events_reached
+
+
+async def _execute_pipeline(
+    config: SiteConfiguration,
+    pattern_name: str,
+    fetch: FetchStrategy,
+    *,
+    fallback_timezone: str | None,
+) -> _PipelineOutcome:
+    registration = REGISTRY.get(pattern_name)
+    pattern = registration.extractor
+
+    warnings: list[str] = []
+    all_candidates: list[EventCandidate] = []
+    response_hash_by_page: dict[str, str] = {}
+
+    # A captured request recipe drives the request when present; otherwise the
+    # legacy endpoint/fetch config does. Both feed the same normalize/validate
+    # tail below, and both are used by preview AND import (this is the single
+    # shared execution path — parameter building never forks per run type).
+    if config.request_recipe is not None:
+        first_response, response, max_events_reached = await _fetch_recipe_pages(
+            config, pattern, fetch, all_candidates, warnings, response_hash_by_page,
+            fallback_timezone=fallback_timezone,
+        )
+    else:
+        first_response, response, max_events_reached = await _fetch_legacy_pages(
+            config, pattern, fetch, all_candidates, warnings, response_hash_by_page,
+        )
 
     if response is not None and response.blocked_reason is None:
         wants_detail_fetch = bool(config.detail_page_selector) or any(

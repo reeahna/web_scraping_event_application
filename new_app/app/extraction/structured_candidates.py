@@ -238,6 +238,12 @@ class CandidateAnalysis:
     request_body: str | None = None
     query_param_names: list[str] = field(default_factory=list)
     response_status: int | None = None
+    # Full request URL (query included) and safe headers — needed to build a
+    # request recipe that preserves the nested json/token params and Referer.
+    # These may carry a *public* token, so they live only in request_metadata
+    # (which flows into the stored, redacted recipe) — never in to_evidence().
+    request_url: str | None = None
+    request_headers: dict[str, str] = field(default_factory=dict)
 
     @property
     def request_metadata(self) -> dict:
@@ -246,6 +252,8 @@ class CandidateAnalysis:
             "request_content_type": self.request_content_type,
             "request_body": self.request_body,
             "query_param_names": list(self.query_param_names),
+            "request_url": self.request_url,
+            "request_headers": dict(self.request_headers),
         }
 
     @property
@@ -387,6 +395,10 @@ def analyze_response(
         names = request_meta.get("query_param_names")
         analysis.query_param_names = list(names) if isinstance(names, list) else []
         analysis.response_status = request_meta.get("response_status")
+        req_url = request_meta.get("request_url")
+        analysis.request_url = req_url if isinstance(req_url, str) else None
+        headers = request_meta.get("request_headers")
+        analysis.request_headers = dict(headers) if isinstance(headers, dict) else {}
 
     if byte_size > _MAX_INSPECT_BYTES:
         analysis.classification = THIRD_PARTY_FUNCTIONAL if not first_party else FIRST_PARTY_OTHER
