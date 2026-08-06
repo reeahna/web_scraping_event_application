@@ -44,6 +44,11 @@ class FetchResponse:
     elapsed_seconds: float
     blocked_reason: str | None = None
     truncated: bool = False
+    # Optional pagination diagnostics when this response was assembled from
+    # multiple pages (e.g. browser-backed structured pagination): a safe,
+    # token-free summary (pages fetched, reported total, captured/unique counts,
+    # stop reason, per-page rows). None for ordinary single-response fetches.
+    pagination: dict | None = None
 
     @property
     def text(self) -> str:

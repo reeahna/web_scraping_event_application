@@ -126,13 +126,30 @@ def _fallback_timezone(website: Website) -> str | None:
 
 
 def _response_metadata(response: FetchResponse) -> dict:
-    return {
+    metadata = {
         "status_code": response.status_code,
         "content_type": response.content_type,
         "redirect_count": len(response.redirect_history),
         "body_hash": response.body_hash,
         "truncated": response.truncated,
     }
+    if response.pagination:
+        # Token-free browser-pagination diagnostics (pages, total, stop reason,
+        # per-page rows) for the run detail view.
+        metadata["pagination"] = response.pagination
+    return metadata
+
+
+def _pagination_warning(response: FetchResponse | None) -> str | None:
+    if response is None or not response.pagination:
+        return None
+    p = response.pagination
+    return (
+        f"browser_pagination: {p.get('pages_fetched')} page(s), "
+        f"reported total {p.get('reported_total')}, "
+        f"captured {p.get('captured_records')} ({p.get('unique_records')} unique); "
+        f"stop reason {p.get('stop_reason')}"
+    )
 
 
 # --- Detection ------------------------------------------------------------
@@ -560,6 +577,10 @@ async def _execute_pipeline(
             config, pattern, fetch, all_candidates, warnings, response_hash_by_page,
         )
 
+    pagination_note = _pagination_warning(response)
+    if pagination_note:
+        warnings.append(pagination_note)
+
     if response is not None and response.blocked_reason is None:
         wants_detail_fetch = bool(config.detail_page_selector) or any(
             key.startswith("detail_") for key in config.field_selectors
@@ -691,6 +712,11 @@ def _build_fetch_strategy(config: SiteConfiguration) -> FetchStrategy:
             source_page_url=config.listing_url or config.api_endpoint or "",
             endpoint_match=config.api_endpoint or "",
             plan=plan,
+            recipe=config.request_recipe,
+            record_path=(config.json_paths or {}).get("events_root", "docs.docs"),
+            timezone=config.timezone,
+            max_pages=config.pagination.max_pages,
+            max_records=config.pagination.max_events,
         )
     return BrowserRenderFetchStrategy(plan=plan)
 

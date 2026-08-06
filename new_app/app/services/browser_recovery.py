@@ -291,13 +291,14 @@ def _structured_endpoint_config(config) -> bool:
 
 def _browser_structured_config(config, *, source_page_url: str):
     """Rebuild a structured HTTP config as a browser structured-capture config:
-    navigate the source page and read the page's own JSON response to the
-    endpoint. The HTTP request recipe is dropped; the extractor is unchanged."""
+    navigate the source page and read the page's own JSON response(s) to the
+    endpoint. The captured request recipe is RETAINED — it carries the offset
+    placeholder, page size, total path and dynamic date window the browser
+    pagination needs; only the transport changes, never the extractor."""
     return config.model_copy(
         update={
             "execution_strategy": "browser",
             "listing_url": source_page_url,
-            "request_recipe": None,
         }
     )
 
@@ -322,6 +323,11 @@ def _recovery_browser_fetch(config, *, source_page_url: str, strategy):
         endpoint_match=config.api_endpoint or "",
         plan=_browser_plan_for(config),
         browser=strategy,
+        recipe=config.request_recipe,
+        record_path=(config.json_paths or {}).get("events_root", "docs.docs"),
+        timezone=config.timezone,
+        max_pages=config.pagination.max_pages,
+        max_records=config.pagination.max_events,
     )
 
 

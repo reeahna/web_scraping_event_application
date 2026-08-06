@@ -31,7 +31,7 @@ import hashlib
 import json
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
-from urllib.parse import urlsplit
+from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 
 from app.extraction.network_safety import (
     BlockedHostError,
@@ -84,6 +84,25 @@ class BrowserRenderResult:
     # headers; only the method, request content-type, a bounded request body,
     # safe query-param names, and the response status/content-type.
     observed_requests: dict[str, dict] = field(default_factory=dict)
+    blocked_reason: str | None = None
+    warnings: tuple[str, ...] = ()
+
+
+@dataclass
+class BrowserJsonPage:
+    """One page fetched in-context via the page's own fetch(): the request URL,
+    the HTTP status, and the parsed JSON body (None if it did not parse)."""
+
+    url: str
+    status: int
+    json: object | None
+
+
+@dataclass
+class BrowserPagedResult:
+    final_url: str
+    status_code: int
+    pages: list[BrowserJsonPage] = field(default_factory=list)
     blocked_reason: str | None = None
     warnings: tuple[str, ...] = ()
 
@@ -187,6 +206,98 @@ class BrowserFetchStrategy:
                 )
             finally:
                 # Always tear down, even on timeout/error.
+                await _safe_close_context(context)
+                await _safe_close_browser(browser)
+
+    async def render_and_fetch_json_pages(
+        self,
+        source_page_url: str,
+        plan: BrowserPlan | None = None,
+        *,
+        next_url,
+        max_pages: int,
+    ) -> BrowserPagedResult:
+        """Navigate the source page ONCE (establishing the browser session the
+        edge/bot check requires), then fetch a sequence of JSON pages from within
+        that same page context via its own `fetch()` — same origin, same cookies,
+        same Referer. `next_url(pages)` decides the next URL from the pages
+        collected so far (returning None to stop); the caller owns pagination
+        policy, this method owns only the browser mechanics. The context/browser
+        are always closed in the finally block."""
+        from app.schemas.browser import default_plan
+
+        plan = plan or default_plan()
+
+        if not await _host_allowed(source_page_url):
+            return BrowserPagedResult(
+                final_url=source_page_url, status_code=0,
+                blocked_reason=f"ssrf_blocked:{urlsplit(source_page_url).hostname}",
+            )
+
+        from playwright.async_api import async_playwright
+
+        observed_json: list[tuple[str, object]] = []
+        observed_requests: dict[str, dict] = {}
+        warnings: list[str] = []
+        pages: list[BrowserJsonPage] = []
+
+        async with async_playwright() as pw:
+            browser = await pw.chromium.launch(headless=True)
+            context = await browser.new_context(
+                accept_downloads=False, service_workers="block", java_script_enabled=True,
+            )
+            context.set_default_timeout(plan.max_total_ms)
+            try:
+                page = await context.new_page()
+                context.on("page", lambda p: _safe_close(p))
+                await self._install_guards(
+                    context, plan, observed_json, observed_requests, warnings
+                )
+                response = await page.goto(source_page_url, wait_until="domcontentloaded")
+                status = response.status if response is not None else 0
+                html = await page.content()
+                challenge = _challenge_reason(html, status)
+                if challenge is not None:
+                    return BrowserPagedResult(
+                        final_url=page.url, status_code=status,
+                        blocked_reason=challenge, warnings=tuple(warnings),
+                    )
+                await self._run_plan(page, plan, warnings)
+
+                for _ in range(max_pages):
+                    url = next_url(pages, observed_json)
+                    if not url:
+                        break
+                    if not await _host_allowed(url):
+                        warnings.append(f"ssrf_blocked:{urlsplit(url).hostname}")
+                        break
+                    fetched = await page.evaluate(
+                        """async (u) => {
+                            const r = await fetch(u, {credentials: 'include'});
+                            const t = await r.text();
+                            let j = null;
+                            try { j = JSON.parse(t); } catch (e) { j = null; }
+                            return { status: r.status, json: j };
+                        }""",
+                        url,
+                    )
+                    pages.append(
+                        BrowserJsonPage(
+                            url=url, status=int(fetched.get("status", 0)),
+                            json=fetched.get("json"),
+                        )
+                    )
+                return BrowserPagedResult(
+                    final_url=page.url, status_code=status, pages=pages,
+                    warnings=tuple(warnings),
+                )
+            except Exception as exc:  # noqa: BLE001 - a fetch failure must not crash the app
+                return BrowserPagedResult(
+                    final_url=source_page_url, status_code=0, pages=pages,
+                    blocked_reason=f"browser_error:{type(exc).__name__}",
+                    warnings=tuple(warnings),
+                )
+            finally:
                 await _safe_close_context(context)
                 await _safe_close_browser(browser)
 
@@ -349,22 +460,125 @@ class BrowserRenderFetchStrategy:
         )
 
 
+def _get_at_path(obj, dotted: str):
+    node = obj
+    for seg in dotted.split("."):
+        if isinstance(node, dict) and seg in node:
+            node = node[seg]
+        else:
+            return None
+    return node
+
+
+def _set_at_path(obj: dict, dotted: str, value) -> dict:
+    node = obj
+    segs = dotted.split(".")
+    for seg in segs[:-1]:
+        nxt = node.get(seg)
+        if not isinstance(nxt, dict):
+            nxt = {}
+            node[seg] = nxt
+        node = nxt
+    node[segs[-1]] = value
+    return obj
+
+
+def _records_at(payload, record_path: str) -> list:
+    found = _get_at_path(payload, record_path)
+    return [r for r in found if isinstance(r, dict)] if isinstance(found, list) else []
+
+
+# Candidate paths for a "total" count, tried in order after any configured path.
+_TOTAL_PATH_CANDIDATES = ("docs.total", "docs.count", "total", "count", "meta.total")
+# Stable-identifier fields for cross-page dedup, best first.
+_RECORD_ID_FIELDS = ("recid", "_id", "id", "uuid", "url")
+
+
+def _detect_total(payload, configured_path: str | None) -> int | None:
+    for path in ((configured_path,) if configured_path else ()) + _TOTAL_PATH_CANDIDATES:
+        value = _get_at_path(payload, path)
+        if isinstance(value, int) and not isinstance(value, bool):
+            return value
+    return None
+
+
+def _record_identity(record: dict) -> str:
+    for field_name in _RECORD_ID_FIELDS:
+        value = record.get(field_name)
+        if value not in (None, "", [], {}):
+            return f"{field_name}:{value}"
+    import json as _json
+
+    return "hash:" + hashlib.sha256(
+        _json.dumps(record, sort_keys=True, default=str).encode("utf-8")
+    ).hexdigest()
+
+
+def _find_placeholder_path(node, kind: str, prefix: tuple = ()) -> list | None:
+    """Path (list of dict keys) to a bare `{"kind": <kind>}` placeholder inside a
+    recipe json template, or None. Used to locate WHERE the offset cursor lives
+    in the request body — per configuration, never a hardcoded field name."""
+    if isinstance(node, dict):
+        if set(node.keys()) == {"kind"} and node.get("kind") == kind:
+            return list(prefix)
+        for key, value in node.items():
+            found = _find_placeholder_path(value, kind, (*prefix, str(key)))
+            if found is not None:
+                return found
+    return None
+
+
+def _locate_offset(recipe) -> tuple[str | None, list | None]:
+    """(query-param name, path) of the offset cursor within a recipe's json
+    template, derived from its `page_offset` placeholder. (None, None) if absent."""
+    for name, value in (recipe.query_params or {}).items():
+        if getattr(value, "kind", None) == "json_template":
+            path = _find_placeholder_path(value.value, "page_offset")
+            if path is not None:
+                return name, path
+    return None, None
+
+
+def _url_with_offset(url: str, json_param: str, offset_path: list, offset: int) -> str | None:
+    """Return `url` with only the offset cursor changed: decode the json query
+    param, set the value at `offset_path`, re-encode. Every other byte of the
+    request (token, filters, the rendered date window) is preserved exactly —
+    this is why it passes the edge/bot check that a reconstructed request fails."""
+    import json as _json
+
+    parts = urlsplit(url)
+    query = dict(parse_qsl(parts.query, keep_blank_values=True))
+    raw = query.get(json_param)
+    if raw is None:
+        return None
+    try:
+        decoded = _json.loads(raw)
+    except (ValueError, TypeError):
+        return None
+    _set_at_path(decoded, ".".join(offset_path), offset)
+    query[json_param] = _json.dumps(decoded)
+    return urlunsplit((parts.scheme, parts.netloc, parts.path, urlencode(query), ""))
+
+
 class BrowserStructuredResponseFetchStrategy:
     """A `FetchStrategy` that navigates the *source page* in the restricted
-    browser and returns the page's own JSON response to a configured endpoint as
-    an application/json `FetchResponse` — so the ordinary structured extractor
-    (e.g. simpleview_events reading docs.docs) runs against it.
+    browser and returns the page's own JSON event data as one application/json
+    `FetchResponse` — so the ordinary structured extractor (e.g. simpleview_events
+    reading docs.docs) runs against the FULL result set.
 
-    This is the preferred browser mode when recovery already identified an
-    event-like JSON endpoint that a normalized HTTP client cannot reach (the
-    site's edge/bot protection only lets the request through from inside a real
-    browser session). We never call the API directly — the page's own JavaScript
-    issues the request with whatever the edge requires; we only *observe* the
-    response the browser already received.
+    This is the browser mode for an event-like JSON endpoint a normalized HTTP
+    client cannot reach (the site's edge/bot protection only lets the request
+    through from inside a real browser session). When the configuration carries a
+    request recipe with offset pagination, the browser navigates once and then
+    walks every page from within the page context via its own `fetch()` — same
+    origin, cookies, Referer and (crucially) the same rendered date window; only
+    the offset cursor changes. Records are combined and deduplicated across pages
+    before extraction. Without a paginating recipe it falls back to capturing the
+    single response the page already made.
 
-    `source_page_url` is navigated to; `endpoint_match` is a path/URL substring
-    that selects the event response among all observed responses (telemetry and
-    third-party responses are rejected). `_browser` is a testability seam."""
+    `_browser` is a testability seam; nothing here is provider-specific — the
+    record path, total path and cursor position all come from the configuration
+    (record_path) and the captured recipe (offset placeholder, limit, total)."""
 
     def __init__(
         self,
@@ -373,16 +587,25 @@ class BrowserStructuredResponseFetchStrategy:
         endpoint_match: str,
         plan: BrowserPlan | None = None,
         browser: BrowserFetchStrategy | None = None,
+        recipe=None,
+        record_path: str = "docs.docs",
+        timezone: str | None = None,
+        max_pages: int = 20,
+        max_records: int = 2000,
+        now_utc=None,
     ) -> None:
         self._source_page_url = source_page_url
         self._endpoint_match = endpoint_match
         self._plan = plan
         self._browser = browser or BrowserFetchStrategy()
+        self._recipe = recipe
+        self._record_path = record_path or "docs.docs"
+        self._timezone = timezone
+        self._max_pages = max(1, max_pages)
+        self._max_records = max(1, max_records)
+        self._now_utc = now_utc
 
     def _match_signature(self) -> str:
-        # Compare on path only — the observed URL carries a query (token, json)
-        # the configured endpoint does not, and matching on the query would never
-        # hit. An empty path falls back to the whole configured string.
         path = urlsplit(self._endpoint_match).path
         return path or self._endpoint_match
 
@@ -399,38 +622,157 @@ class BrowserStructuredResponseFetchStrategy:
                 return url, payload
         return None
 
-    async def fetch(self, request: FetchRequest, config: FetchConfig) -> FetchResponse:
+    def _json_response(self, payload, *, final_url, pagination=None) -> FetchResponse:
         import json as _json
 
+        body = _json.dumps(payload).encode("utf-8")
+        return FetchResponse(
+            request_url=self._source_page_url, final_url=final_url, status_code=200,
+            headers={"content-type": "application/json"}, content_type="application/json",
+            body=body, redirect_history=(), body_hash=hashlib.sha256(body).hexdigest(),
+            elapsed_seconds=0.0, blocked_reason=None, pagination=pagination,
+        )
+
+    def _blocked_response(self, *, final_url, status_code, reason) -> FetchResponse:
+        return FetchResponse(
+            request_url=self._source_page_url, final_url=final_url, status_code=status_code,
+            headers={}, content_type=None, body=b"", redirect_history=(),
+            body_hash=hashlib.sha256(b"").hexdigest(), elapsed_seconds=0.0,
+            blocked_reason=reason,
+        )
+
+    async def fetch(self, request: FetchRequest, config: FetchConfig) -> FetchResponse:
+        if self._recipe is not None and self._recipe.pagination.kind == "offset":
+            return await self._fetch_paginated()
+        return await self._fetch_single()
+
+    async def _fetch_single(self) -> FetchResponse:
+        """Backward-compatible single-response capture (no paginating recipe)."""
         result = await self._browser.render(self._source_page_url, self._plan)
         if result.blocked_reason is not None:
-            body = b""
-            return FetchResponse(
-                request_url=self._source_page_url, final_url=result.final_url,
-                status_code=result.status_code, headers={}, content_type=None, body=body,
-                redirect_history=(), body_hash=hashlib.sha256(body).hexdigest(),
-                elapsed_seconds=0.0, blocked_reason=result.blocked_reason,
+            return self._blocked_response(
+                final_url=result.final_url, status_code=result.status_code,
+                reason=result.blocked_reason,
             )
         selected = self._select(result.observed_json)
         if selected is None:
-            body = b""
-            # The page rendered but never produced the configured event response
-            # — an honest, distinct failure (not an http_403 from a path we did
-            # not take).
-            return FetchResponse(
-                request_url=self._source_page_url, final_url=result.final_url,
-                status_code=result.status_code, headers={}, content_type=None, body=body,
-                redirect_history=(), body_hash=hashlib.sha256(body).hexdigest(),
-                elapsed_seconds=0.0, blocked_reason="browser_no_structured_response",
+            return self._blocked_response(
+                final_url=result.final_url, status_code=result.status_code,
+                reason="browser_no_structured_response",
             )
         matched_url, payload = selected
-        body = _json.dumps(payload).encode("utf-8")
-        return FetchResponse(
-            request_url=self._source_page_url, final_url=matched_url, status_code=200,
-            headers={"content-type": "application/json"}, content_type="application/json",
-            body=body, redirect_history=(), body_hash=hashlib.sha256(body).hexdigest(),
-            elapsed_seconds=0.0, blocked_reason=None,
+        return self._json_response(payload, final_url=matched_url)
+
+    async def _fetch_paginated(self) -> FetchResponse:
+        recipe = self._recipe
+        limit = recipe.pagination.limit
+        total_path = recipe.pagination.total_path
+        record_path = self._record_path
+        json_param, offset_path = _locate_offset(recipe)
+
+        state = {
+            "processed": 0, "records": [], "seen": set(), "total": None,
+            "rows": [], "stop": None, "last_status": 200, "last_returned": 0, "last_new": 0,
+            "seed_url": None,
+        }
+
+        def _process(pages: list) -> None:
+            while state["processed"] < len(pages):
+                page = pages[state["processed"]]
+                index = state["processed"]
+                state["processed"] += 1
+                if state["total"] is None and page.json is not None:
+                    state["total"] = _detect_total(page.json, total_path)
+                records = _records_at(page.json, record_path) if page.json is not None else []
+                new = 0
+                for record in records:
+                    identity = _record_identity(record)
+                    if identity in state["seen"]:
+                        continue
+                    state["seen"].add(identity)
+                    state["records"].append(record)
+                    new += 1
+                state["last_status"] = page.status
+                state["last_returned"] = len(records)
+                state["last_new"] = new
+                state["rows"].append(
+                    {
+                        "page": index + 1, "offset": index * limit,
+                        "returned": len(records), "new": new,
+                        "cumulative_unique": len(state["records"]), "status": page.status,
+                    }
+                )
+
+        def _next_url(pages: list, observed: list) -> str | None:
+            _process(pages)
+            index = len(pages)
+            if index == 0:
+                # Page 1 is the page's OWN request (byte-identical to what its JS
+                # sent) — the only form the edge/bot check reliably lets through.
+                selected = self._select(observed)
+                if selected is None:
+                    state["stop"] = "no_observed_response"
+                    return None
+                state["seed_url"] = selected[0]
+                return state["seed_url"]
+            if not (200 <= state["last_status"] < 300):
+                state["stop"] = "non_2xx_status"
+                return None
+            if state["last_returned"] == 0:
+                state["stop"] = "empty_page"
+                return None
+            if state["last_new"] == 0:
+                state["stop"] = "no_new_records"
+                return None
+            if state["last_returned"] < limit:
+                state["stop"] = "short_page"
+                return None
+            if state["total"] is not None and len(state["records"]) >= state["total"]:
+                state["stop"] = "reported_total_reached"
+                return None
+            if len(state["records"]) >= self._max_records:
+                state["stop"] = "max_records"
+                return None
+            if index >= self._max_pages:
+                state["stop"] = "max_pages"
+                return None
+            if not (state["seed_url"] and json_param and offset_path):
+                state["stop"] = "no_offset_cursor"
+                return None
+            # Subsequent pages: the same request with ONLY the offset advanced.
+            return _url_with_offset(state["seed_url"], json_param, offset_path, index * limit)
+
+        result = await self._browser.render_and_fetch_json_pages(
+            self._source_page_url, self._plan, next_url=_next_url, max_pages=self._max_pages,
         )
+        if result.blocked_reason is not None and not state["records"]:
+            return self._blocked_response(
+                final_url=result.final_url, status_code=result.status_code,
+                reason=result.blocked_reason,
+            )
+        _process(result.pages)  # process any trailing page
+        if state["stop"] is None:
+            state["stop"] = "max_pages" if len(result.pages) >= self._max_pages else "exhausted"
+        if not state["records"]:
+            return self._blocked_response(
+                final_url=result.final_url, status_code=result.status_code,
+                reason="browser_no_structured_response",
+            )
+
+        first_json = result.pages[0].json if result.pages and result.pages[0].json else {}
+        import copy
+
+        combined = copy.deepcopy(first_json) if isinstance(first_json, dict) else {}
+        _set_at_path(combined, record_path, state["records"])
+        pagination = {
+            "kind": "offset", "page_size": limit, "pages_fetched": len(state["rows"]),
+            "reported_total": state["total"], "captured_records": len(state["records"]),
+            "unique_records": len(state["records"]), "stop_reason": state["stop"],
+            "offsets": [row["offset"] for row in state["rows"]],
+            "pages": state["rows"],
+        }
+        final_url = result.pages[0].url if result.pages else result.final_url
+        return self._json_response(combined, final_url=final_url, pagination=pagination)
 
 
 def _fire(coro) -> None:

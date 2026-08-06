@@ -74,11 +74,13 @@ def test_structured_endpoint_config_rejects_html_and_endpointless():
 # --- rebuild as a browser structured config ----------------------------------
 
 
-def test_browser_structured_config_switches_transport_and_drops_recipe():
+def test_browser_structured_config_switches_transport_and_keeps_recipe():
     browser = _browser_structured_config(_http_simpleview_config(), source_page_url=PAGE)
     assert browser.execution_strategy == "browser"
     assert browser.listing_url == PAGE  # navigate the source page, not the API
-    assert browser.request_recipe is None  # no HTTP replay
+    # The recipe is RETAINED — it carries the offset placeholder / page size /
+    # total path / date window the browser pagination needs.
+    assert browser.request_recipe is not None
     # Extraction is unchanged: same pattern, endpoint to capture, record path.
     assert browser.pattern_name == "simpleview_events"
     assert browser.api_endpoint == API

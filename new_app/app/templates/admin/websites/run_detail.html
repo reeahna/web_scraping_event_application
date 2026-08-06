@@ -24,12 +24,43 @@
   </tbody>
 </table>
 
+{% if run.response_metadata and run.response_metadata.pagination %}
+{% set pg = run.response_metadata.pagination %}
+<h2>Pagination</h2>
+<table>
+  <tbody>
+    <tr><th>Pagination</th><td>{{ pg.kind }}</td></tr>
+    <tr><th>Page size</th><td>{{ pg.page_size }}</td></tr>
+    <tr><th>Pages fetched</th><td>{{ pg.pages_fetched }}</td></tr>
+    <tr><th>Reported total</th><td>{{ pg.reported_total if pg.reported_total is not none else "—" }}</td></tr>
+    <tr><th>Captured records</th><td>{{ pg.captured_records }}</td></tr>
+    <tr><th>Unique records</th><td>{{ pg.unique_records }}</td></tr>
+    <tr><th>Stop reason</th><td>{{ pg.stop_reason }}</td></tr>
+  </tbody>
+</table>
+{% if pg.pages %}
+<details>
+  <summary>Per-page detail</summary>
+  <table>
+    <thead><tr><th>Page</th><th>Offset</th><th>Returned</th><th>New</th><th>Cumulative unique</th><th>Status</th></tr></thead>
+    <tbody>
+      {% for row in pg.pages %}
+      <tr><td>{{ row.page }}</td><td>{{ row.offset }}</td><td>{{ row.returned }}</td><td>{{ row.new }}</td><td>{{ row.cumulative_unique }}</td><td>{{ row.status }}</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</details>
+{% endif %}
+{% endif %}
+
 <h2>Response metadata</h2>
 {% if run.response_metadata %}
 <table>
   <tbody>
     {% for key, value in run.response_metadata.items() %}
+    {% if key != "pagination" %}
     <tr><th>{{ key }}</th><td>{{ value }}</td></tr>
+    {% endif %}
     {% endfor %}
   </tbody>
 </table>
