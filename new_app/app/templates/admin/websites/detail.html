@@ -167,7 +167,8 @@
       <tr><th>Selected / proposed pattern</th><td>{{ recovery.proposed_pattern or (recovery.detected_pattern or "—") }}</td></tr>
       <tr><th>Reason</th><td class="audit-meta">{{ recovery.selection_reason or "—" }}</td></tr>
       <tr><th>Ignored third-party endpoints</th><td>{{ recovery.ignored_endpoint_count or 0 }}</td></tr>
-      <tr><th>Draft created / preview run</th><td>{{ "Yes" if recovery.proposed_pattern else "No" }} / {{ recovery.preview_status or "—" }}</td></tr>
+      <tr><th>Draft created</th><td>{{ "Yes" if recovery.proposed_pattern else "No" }}</td></tr>
+      <tr><th>Preview status</th><td>{{ recovery.preview_status | capitalize if recovery.preview_status else "—" }}</td></tr>
       <tr><th>Warnings</th><td class="audit-meta">{{ recovery.error_summary or "—" }}</td></tr>
     </tbody>
   </table>
@@ -353,10 +354,14 @@
   {% endfor %}
   <div class="wf-card-cta">
     {% for a in workflow.lifecycle_actions %}
+    {# Secondary safeguard: never render an 'approved' lifecycle jump while the
+       configuration is not approvable, even if the model somehow contains it. #}
+    {% if not (a.status_target == "approved" and not workflow.approval_allowed) %}
     <span>
       {{ action_button(a, csrf_token) }}
       <small class="audit-meta">{{ a.disabled_reason }}</small>
     </span>
+    {% endif %}
     {% endfor %}
   </div>
 </section>

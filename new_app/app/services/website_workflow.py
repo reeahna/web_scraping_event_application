@@ -72,6 +72,9 @@ class WebsiteWorkflow:
     run_blockers: list[str] = field(default_factory=list)
     config_is_failed_historical: bool = False
     config_warning: str | None = None
+    # Authoritative display guard for the approved lifecycle transition: false
+    # whenever the current configuration is not approvable.
+    approval_allowed: bool = False
     preview_matches_current: bool = False
     preview_status_label: str = "No preview yet"
     # Grouped validation errors (message, count) for the preview card, plus the
@@ -459,6 +462,13 @@ def build_website_workflow(
             )
         )
 
+    # Invariant (defence in depth): whenever approval is not allowed, no
+    # lifecycle action targeting `approved` may survive — regardless of how the
+    # list above was built. The loop already skips it; this guarantees it even
+    # if a future edit adds an approved action by another path.
+    if not approval_allowed:
+        lifecycle = [a for a in lifecycle if a.status_target != "approved"]
+
     advanced: list[WorkflowAction] = []
     if can_test and not archived:
         advanced.append(action("Detect pattern only", "detect-pattern", style="muted"))
@@ -507,6 +517,7 @@ def build_website_workflow(
         run_blockers=run_blockers,
         config_is_failed_historical=config_is_failed_historical,
         config_warning=config_warning,
+        approval_allowed=approval_allowed,
         preview_matches_current=preview_matches,
         preview_status_label=_preview_status_label(preview, preview_matches),
         preview_error_groups=preview_error_groups,

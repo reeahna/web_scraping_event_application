@@ -625,3 +625,142 @@ def test_detail_recovery_not_attempted_message(
     db_session.commit()
     body = client.get(f"/admin/websites/{website.id}").text
     assert "Automatic browser recovery has not been attempted yet." in body
+
+
+# --- approved lifecycle action must never render when not approvable --------
+
+
+def _failed_historical():
+    """The observed Bloomington state: needs_review + inactive + a failed,
+    historical simpleview_events v6 draft whose matching preview is blocked."""
+    w = _website(
+        onboarding_status="needs_review",
+        configuration={"pattern_name": "simpleview_events", "api_endpoint": "https://x/find/"},
+        configuration_version=6,
+        proposed_pattern={"detection": {"pattern_name": "simpleview_events"}},
+    )
+    preview = _preview(6, "blocked", 0)
+    recovery = {"new_pattern_needed": False, "proposed_pattern": "simpleview_events",
+                "preview_status": "blocked"}
+    wf = _wf(w, preview=preview, recovery=recovery,
+             next_states=["approved", "unsupported", "archived"])
+    return wf
+
+
+def test_view_model_excludes_approved_when_not_approvable():
+    wf = _failed_historical()
+    assert wf.approval_allowed is False
+    assert wf.config_is_failed_historical is True
+    targets = [a.status_target for a in wf.lifecycle_actions]
+    assert "approved" not in targets
+    assert not any("approved" in a.label.lower() for a in wf.lifecycle_actions)
+    assert any("not approvable" in note for note in wf.lifecycle_notes)
+    # Non-approval transitions remain available.
+    assert "unsupported" in targets
+    assert "archived" in targets
+
+
+def test_view_model_includes_fast_track_when_approvable():
+    wf = _wf(_drafted("simpleview_events"), preview=_preview(6, "success", 5),
+             next_states=["approved", "archived"])
+    assert wf.approval_allowed is True
+    labels = [a.label for a in wf.lifecycle_actions]
+    assert "Fast-track lifecycle to approved" in labels
+    # Still a secondary style; the guided Approve action stays primary.
+    approved_action = next(a for a in wf.lifecycle_actions if a.status_target == "approved")
+    assert approved_action.style == "secondary"
+
+
+def _failed_historical_website(db, make_city, make_website, name):
+    website = make_website(make_city(), name=name)
+    website.onboarding_status = "needs_review"
+    website.configuration = {"pattern_name": "simpleview_events", "api_endpoint": "https://x/find/"}
+    website.configuration_version = 6
+    website.proposed_pattern = {"detection": {"pattern_name": "simpleview_events"}}
+    db.add(website)
+    db.commit()
+    _add_preview_run(db, website, version=6, status="blocked", valid=0)
+    return website
+
+
+def test_detail_hides_approved_lifecycle_for_failed_historical(
+    client, make_super_admin, make_city, make_website, login, db_session
+):
+    _login_admin(client, make_super_admin, login, "wf-la@example.com")
+    website = _failed_historical_website(db_session, make_city, make_website, "Bloomington Fail")
+    body = client.get(f"/admin/websites/{website.id}").text
+    assert "Move to approved" not in body
+    assert "Fast-track lifecycle to approved" not in body
+    assert "Lifecycle approval is unavailable while the current configuration" in body
+    # Other lifecycle transitions remain.
+    assert "Move to unsupported" in body
+    assert "Archive" in body
+
+
+def test_template_defense_drops_injected_approved_action(
+    client, make_super_admin, make_city, make_website, login, db_session, monkeypatch
+):
+    """Even if the view model is malformed (contains an approved action while
+    approval is not allowed), the template must not render it."""
+    import app.routers.websites as mod
+    from app.services.website_workflow import WorkflowAction
+    from app.services.website_workflow import build_website_workflow as real_builder
+
+    _login_admin(client, make_super_admin, login, "wf-inj@example.com")
+    website = make_website(make_city(), name="Injected Site")
+    website.onboarding_status = "needs_review"
+    db_session.add(website)
+    db_session.commit()
+
+    def _malformed(**kwargs):
+        wf = real_builder(**kwargs)
+        wf.approval_allowed = False
+        wf.lifecycle_actions = [
+            *wf.lifecycle_actions,
+            WorkflowAction(
+                label="Move to approved", url=f"/admin/websites/{website.id}/status",
+                style="secondary", status_target="approved",
+            ),
+        ]
+        return wf
+
+    monkeypatch.setattr(mod, "build_website_workflow", _malformed)
+    body = client.get(f"/admin/websites/{website.id}").text
+    assert "Move to approved" not in body
+    assert 'value="approved"' not in body
+
+
+def test_bloomington_recovery_renders_single_primary_retry(
+    client, make_super_admin, make_city, make_website, login, db_session
+):
+    _login_admin(client, make_super_admin, login, "wf-blm@example.com")
+    website = _failed_historical_website(db_session, make_city, make_website, "Bloomington Rec")
+    body = client.get(f"/admin/websites/{website.id}").text
+    assert body.count("wf-primary") == 1
+    assert body.count(f"/admin/websites/{website.id}/browser-retry") == 2  # header + recovery card
+
+
+def test_recovery_draft_and_preview_status_are_separate_rows(
+    client, make_super_admin, make_city, make_website, login, db_session
+):
+    from app.models.unsupported_site_report import UnsupportedSiteReport
+
+    _login_admin(client, make_super_admin, login, "wf-ws@example.com")
+    website = make_website(make_city(), name="Wording Site")
+    website.onboarding_status = "needs_review"
+    website.proposed_pattern = {"detection": {"pattern_name": "simpleview_events"}}
+    db_session.add(website)
+    db_session.add(
+        UnsupportedSiteReport(
+            website_id=website.id, submitted_url="https://x/find/", fingerprint="fp",
+            browser_recovery={"status": "blocked", "proposed_pattern": "simpleview_events",
+                              "preview_status": "blocked", "blocked_reason": "http_403"},
+        )
+    )
+    db_session.commit()
+    body = client.get(f"/admin/websites/{website.id}").text
+    assert "Draft created" in body
+    assert "Preview status" in body
+    assert "Draft created / preview run" not in body
+    # 'blocked' is presented as a preview status, capitalized, not a yes/no.
+    assert "Blocked" in body
