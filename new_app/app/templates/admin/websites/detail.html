@@ -3,383 +3,363 @@
 
 {% block title %}{{ website.name }}{% endblock %}
 
-{% block admin_content %}
-<h1>{{ website.name }} {{ onboarding_badge(website.onboarding_status) }}</h1>
-<p class="audit-meta">Created {{ website.created_at }} · Updated {{ website.updated_at }}</p>
-
-<table>
-  <tbody>
-    <tr><th>Source display name</th><td>{{ website.source_display_name or "—" }}</td></tr>
-    <tr><th>City</th>
-      <td>{% if website.city %}<a href="/admin/cities/{{ website.city.id }}">{{ website.city.name }}</a>{% if not website.city.is_active %} (inactive){% endif %}{% else %}Unassigned{% endif %}</td>
-    </tr>
-    <tr><th>Base URL</th><td><a href="{{ website.base_url }}" target="_blank" rel="noopener"><code>{{ website.base_url }}</code></a></td></tr>
-    <tr><th>Event listing URL</th><td>{{ website.event_listing_url or "—" }}</td></tr>
-    <tr><th>Timezone override</th>
-      <td>{{ website.timezone_override or "(uses city timezone)" }}
-        {% if timezone_dst_warning %}
-        <br/><span class="badge badge-pending">DST warning</span>
-        <span class="audit-meta">{{ timezone_dst_warning }} Changing the stored timezone
-          requires an explicit edit and does not rewrite existing event timestamps.</span>
-        {% endif %}</td></tr>
-    <tr><th>Requires JS</th><td>{{ "Yes" if website.requires_js else "No" }}</td></tr>
-    <tr><th>Active</th><td>{{ "Yes" if website.is_active else "No" }}</td></tr>
-    <tr><th>Events</th><td>{{ event_count }}</td></tr>
-    <tr><th>Last successful run</th><td>{{ website.last_success_at or "Never" }}</td></tr>
-    <tr><th>Last failed run</th><td>{{ website.last_failure_at or "Never" }}</td></tr>
-    <tr><th>Consecutive failures</th><td>{{ website.consecutive_failure_count }}</td></tr>
-    <tr><th>Configuration version (draft)</th><td>{{ website.configuration_version }}</td></tr>
-    <tr><th>Configuration set</th><td>{{ "Yes" if website.configuration else "No" }}
-      {% if website.configuration %}(<a href="/admin/websites/{{ website.id }}/configure">review / edit</a>){% endif %}</td></tr>
-    <tr><th>Approved pattern</th>
-      <td>{% if website.approved_pattern %}{{ website.approved_pattern.pattern_name }}
-        — approved {{ website.approved_at }}{% if website.approved_by_user_id %} by user #{{ website.approved_by_user_id }}{% endif %}
-        (config v{{ website.active_configuration_version }}){% else %}Not approved{% endif %}</td>
-    </tr>
-  </tbody>
-</table>
-
-<div class="form-actions">
-  {% if can_update %}
-  <a href="/admin/websites/{{ website.id }}/edit"><button type="button">Edit</button></a>
-  <a href="/admin/websites/{{ website.id }}/configure"><button type="button">Configure extraction</button></a>
-  {% endif %}
-  {% if can_delete %}
-  <a href="/admin/websites/{{ website.id }}/delete"><button type="button" class="btn-danger">Delete…</button></a>
-  {% endif %}
-</div>
-
-<h2>Lifecycle</h2>
-<p>Current status: {{ onboarding_badge(website.onboarding_status) }}</p>
-{% if next_states %}
-<div class="form-actions">
-  {% for target in next_states %}
-  <form method="post" action="/admin/websites/{{ website.id }}/status" class="inline-form"
-        onsubmit="return confirm('Move {{ website.name }} to status \'{{ target }}\'?{% if target == 'active' %} Approved configuration: {{ website.approved_pattern.pattern_name if website.approved_pattern else 'none' }} (v{{ website.active_configuration_version }}).{% endif %}');">
+{% macro action_button(a, csrf_token) %}
+  {%- if a.method == "get" -%}
+  <a href="{{ a.url }}" class="wf-{{ a.style }}">{{ a.label }}</a>
+  {%- else -%}
+  <form method="post" action="{{ a.url }}" class="inline-form"
+        {% if a.confirmation_text %}onsubmit="return confirm('{{ a.confirmation_text }}');"{% endif %}>
     <input type="hidden" name="csrf_token" value="{{ csrf_token }}" />
-    <input type="hidden" name="to_status" value="{{ target }}" />
-    <button type="submit" class="{{ 'btn-secondary' if target in ('inactive', 'archived') else '' }}">
-      {% if target == "active" %}Activate
-      {% elif target == "inactive" %}Deactivate
-      {% elif target == "archived" %}Archive
-      {% else %}Move to {{ target }}
-      {% endif %}
-    </button>
+    {% if a.status_target %}<input type="hidden" name="to_status" value="{{ a.status_target }}" />{% endif %}
+    <button type="submit" class="wf-{{ a.style }}"{% if not a.enabled %} disabled aria-disabled="true"{% endif %}>{{ a.label }}</button>
   </form>
-  {% endfor %}
+  {%- endif -%}
+{% endmacro %}
+
+{% set state_mark = {"complete": "✓", "current": "→", "failed": "✕", "blocked": "🔒", "not_started": "·"} %}
+
+{% block admin_content %}
+{# ---------- 1. Header ---------- #}
+<div class="wf-header">
+  <div class="wf-header-main">
+    <h1>{{ website.name }}
+      {{ onboarding_badge(website.onboarding_status) }}
+      <span class="badge {{ 'badge-active' if website.is_active else 'badge-inactive' }}">{{ "Active" if website.is_active else "Inactive" }}</span>
+    </h1>
+    <p class="audit-meta">
+      {% if website.city %}<a href="/admin/cities/{{ website.city.id }}">{{ website.city.name }}</a>{% if not website.city.is_active %} (inactive){% endif %}{% else %}Unassigned city{% endif %}
+      · {{ event_count }} event(s)
+      · Last successful import: {{ website.last_success_at or "never" }}
+    </p>
+    <p class="wf-summary"><strong>{{ workflow.headline }}.</strong>
+      <span class="wf-explain">{{ workflow.explanation }}</span></p>
+  </div>
+  <div class="wf-header-actions">
+    {% if workflow.primary_action %}{{ action_button(workflow.primary_action, csrf_token) }}{% endif %}
+    {% for a in workflow.secondary_actions %}{{ action_button(a, csrf_token) }}{% endfor %}
+  </div>
 </div>
-{% else %}
-<p class="audit-meta">No further transitions available from this status.</p>
-{% endif %}
 
-<h2>Detection review</h2>
-{% if website.proposed_pattern %}
-{% set detection = website.proposed_pattern.detection %}
-<table>
-  <tbody>
-    <tr><th>Selected pattern</th><td>{{ detection.pattern_name or "none — needs review or unsupported" }}</td></tr>
-    <tr><th>Confidence</th>
-      <td>{{ "%.2f"|format(detection.confidence) }} (threshold {{ "%.2f"|format(min_pattern_confidence) }})
-        {% if detection.confidence < min_pattern_confidence %}<span class="badge badge-pending">below threshold — review recommended</span>
-        {% elif detection.pattern_name %}<span class="badge badge-active">high confidence</span>{% endif %}</td></tr>
-    <tr><th>How the winner is chosen</th>
-      <td>
-        {% if detection.pattern_name %}
-        <code>{{ detection.pattern_name }}</code> had the highest confidence among the detectors
-        clearing the {{ "%.2f"|format(min_pattern_confidence) }} threshold. Ties break by the
-        registry reliability order (below) — never by any site-specific rule.
-        {% elif detection_winner %}
-        <code>{{ detection_winner }}</code> was the strongest candidate but fell below the
-        {{ "%.2f"|format(min_pattern_confidence) }} threshold, so no pattern was selected
-        automatically and the source was routed to review.
-        {% else %}
-        No detector qualified — no pattern reached the {{ "%.2f"|format(min_pattern_confidence) }}
-        confidence threshold on this response, so there is no winner or tie-break to explain.
-        {% endif %}
-      </td></tr>
-    <tr><th>Registry reliability order</th>
-      <td class="audit-meta">{% for name in reliability_order %}<code>{{ name }}</code>{% if not loop.last %} › {% endif %}{% endfor %}</td></tr>
-    <tr><th>Detector version</th><td>{{ detection.detector_version }}</td></tr>
-    <tr><th>Discovered endpoints</th><td>{% if detection.discovered_endpoints %}{% for e in detection.discovered_endpoints %}<code>{{ e }}</code><br/>{% endfor %}{% else %}—{% endif %}</td></tr>
-    <tr><th>Browser required</th>
-      <td>{% if detection.browser_required %}Yes — ordinary HTTP fetch cannot see the events.
-        {% if browser_extraction_enabled %}Try restricted browser detection below.{% else %}
-        Restricted browser detection is disabled for this deployment.{% endif %}
-        {% else %}No{% endif %}</td></tr>
-    <tr><th>Warnings</th><td>{% if detection.warnings %}{{ detection.warnings | join(", ") }}{% else %}None{% endif %}</td></tr>
-    <tr><th>Detected at</th><td>{{ detection.detected_at }}</td></tr>
-    {% if latest_detection_run %}
-    <tr><th>Extraction run</th><td><a href="/admin/websites/{{ website.id }}/runs/{{ latest_detection_run.id }}">Run #{{ latest_detection_run.id }}</a> ({{ latest_detection_run.status }}, response status {{ (latest_detection_run.response_metadata or {}).get("status_code", "—") }}, content-type {{ (latest_detection_run.response_metadata or {}).get("content_type", "—") }}, body hash <code>{{ (latest_detection_run.response_metadata or {}).get("body_hash", "—") }}</code>)</td></tr>
+{# ---------- 2. What happens next? ---------- #}
+<section class="wf-card" aria-labelledby="wf-next">
+  <h2 id="wf-next">What happens next?</h2>
+  <ol class="wf-steps">
+    {% for step in workflow.steps %}
+    <li class="wf-step is-{{ step.state }}"{% if step.state == 'current' %} aria-current="step"{% endif %}>
+      <span class="wf-step-top">
+        <span class="wf-mark" aria-hidden="true">{{ state_mark[step.state] }}</span>
+        {{ loop.index }}. {{ step.label }}
+      </span>
+      <span class="wf-state">{{ step.state.replace("_", " ") }}</span>
+      <small>{% if step.blocked_reason %}{{ step.blocked_reason }}{% else %}{{ step.explanation }}{% endif %}</small>
+    </li>
+    {% endfor %}
+  </ol>
+  <p class="wf-summary">{{ workflow.explanation }}</p>
+  {% if workflow.config_warning %}
+  <div class="wf-warn"><strong>Historical draft:</strong> {{ workflow.config_warning }}</div>
+  {% endif %}
+  {% if workflow.primary_action %}
+  <div class="wf-card-cta">{{ action_button(workflow.primary_action, csrf_token) }}</div>
+  {% elif workflow.current_step is none and website.onboarding_status == "archived" %}
+  <p class="audit-meta">No workflow action is available for an archived source.</p>
+  {% endif %}
+</section>
+
+{# ---------- 3. Current configuration ---------- #}
+<section class="wf-card" aria-labelledby="wf-config">
+  <h2 id="wf-config">Current configuration</h2>
+  {% if workflow.config_warning %}
+  <div class="wf-warn"><strong>Not eligible for approval:</strong> {{ workflow.config_warning }}</div>
+  {% endif %}
+  {% if website.configuration or website.approved_pattern %}
+  <table>
+    <tbody>
+      {% if website.approved_pattern %}
+      <tr><th>Approved configuration</th><td>{{ website.approved_pattern.pattern_name }} (v{{ website.active_configuration_version }}), approved {{ website.approved_at or "—" }}</td></tr>
+      {% endif %}
+      {% if website.configuration %}
+      <tr><th>Draft configuration</th>
+        <td>{{ website.configuration.pattern_name }} (v{{ website.configuration_version }})
+          {% if workflow.config_is_failed_historical %}<span class="badge badge-danger">failed / historical</span>
+          {% elif website.approved_pattern and website.active_configuration_version != website.configuration_version %}<span class="badge badge-pending">revised draft</span>
+          {% else %}<span class="badge badge-muted">draft</span>{% endif %}</td></tr>
+      <tr><th>Source / endpoint</th><td><code>{{ website.configuration.api_endpoint or website.configuration.listing_url or website.event_listing_url or website.base_url }}</code></td></tr>
+      {% endif %}
+      <tr><th>Timezone</th><td>{{ website.timezone_override or "(uses city timezone)" }}
+        {% if timezone_dst_warning %}<br/><span class="badge badge-pending">DST</span> <span class="audit-meta">{{ timezone_dst_warning }}</span>{% endif %}</td></tr>
+      <tr><th>Matching preview</th><td>{{ workflow.preview_status_label }}{% if latest_preview_run %} (used config v{{ latest_preview_run.configuration_version }}){% endif %}</td></tr>
+      <tr><th>Approval status</th><td>{% if website.approved_pattern %}Approved{% elif workflow.approval_blockers %}Not approvable yet{% else %}Ready to approve{% endif %}</td></tr>
+    </tbody>
+  </table>
+  <div class="wf-card-cta">
+    {% if website.configuration and can_update %}<a href="/admin/websites/{{ website.id }}/configure" class="wf-secondary">Review configuration</a>{% endif %}
+    {% if workflow.current_step == "preview" and workflow.primary_action %}{{ action_button(workflow.primary_action, csrf_token) }}{% endif %}
+  </div>
+  {% else %}
+  <p class="placeholder-note">No configuration yet. {{ workflow.explanation }}</p>
+  {% endif %}
+</section>
+
+{# ---------- 4. Preview and quality ---------- #}
+<section class="wf-card" aria-labelledby="wf-preview">
+  <h2 id="wf-preview">Preview &amp; quality</h2>
+  <p><strong>{{ workflow.preview_status_label }}.</strong></p>
+  {% if latest_preview_run %}
+  <table>
+    <tbody>
+      <tr><th>Preview run</th><td><a href="/admin/websites/{{ website.id }}/runs/{{ latest_preview_run.id }}">Run #{{ latest_preview_run.id }}</a></td></tr>
+      <tr><th>Configuration version used</th><td>{{ latest_preview_run.configuration_version }}{% if not workflow.preview_matches_current %} <span class="badge badge-pending">does not match current v{{ website.configuration_version }}</span>{% endif %}</td></tr>
+      <tr><th>Found / valid / rejected</th><td>{{ latest_preview_run.events_found }} / {{ latest_preview_run.events_valid }} / {{ latest_preview_run.events_rejected }}</td></tr>
+      <tr><th>Warnings</th><td>{% if latest_preview_run.warnings %}{{ latest_preview_run.warnings | join(", ") }}{% else %}None{% endif %}</td></tr>
+      <tr><th>Errors (first 5)</th><td>{{ latest_preview_run.error_summary or "None" }}</td></tr>
+      {% if inference and inference.quality %}
+      <tr><th>Quality</th><td class="audit-meta">valid {{ "%.0f"|format((inference.quality.valid_percentage or 0) * 100) }}%, date-parse {{ "%.0f"|format((inference.quality.date_parse_success_rate or 0) * 100) }}%, URLs {{ "%.0f"|format((inference.quality.url_validity_rate or 0) * 100) }}%</td></tr>
+      {% endif %}
+    </tbody>
+  </table>
+  {% else %}
+  <p class="placeholder-note">No preview has been run for the current configuration.</p>
+  {% endif %}
+
+  {% if not website.approved_pattern and workflow.approval_blockers %}
+  <div class="wf-blockers">
+    <strong>Approval is blocked because:</strong>
+    <ul>{% for reason in workflow.approval_blockers %}<li>{{ reason }}</li>{% endfor %}</ul>
+  </div>
+  {% endif %}
+  {% if can_approve and not website.approved_pattern and not workflow.approval_blockers %}
+  <div class="wf-card-cta">
+    <form method="post" action="/admin/websites/{{ website.id }}/approve-configuration" class="inline-form"
+          onsubmit="return confirm('Approve the configuration for {{ website.name }}?');">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}" />
+      <button type="submit" class="wf-primary">Approve configuration</button>
+    </form>
+    <a href="/admin/websites/{{ website.id }}/onboarding" class="wf-secondary">Review preview results</a>
+  </div>
+  {% endif %}
+</section>
+
+{# ---------- 5. Automatic recovery ---------- #}
+{% if workflow.show_recovery_card %}
+<section class="wf-card" aria-labelledby="wf-recovery">
+  <h2 id="wf-recovery">Automatic recovery</h2>
+  {% if latest_browser_recovery %}
+  {% set recovery = latest_browser_recovery %}
+  {% if recovery.new_pattern_needed %}
+  <div class="wf-warn">
+    <strong>Preferred structured event endpoint found.</strong>
+    No registered extraction pattern was recorded for this shape at the time of the retry.
+    Retry automatic recovery to re-run detection with the current pattern registry.
+  </div>
+  {% endif %}
+  <table>
+    <tbody>
+      <tr><th>Latest recovery</th><td>{{ recovery.attempted_at or "—" }} — {{ recovery.status or "—" }}</td></tr>
+      <tr><th>Candidate endpoint</th><td>{% if recovery.selected_endpoint %}<code>{{ recovery.selected_endpoint }}</code>{% else %}—{% endif %}</td></tr>
+      <tr><th>Selected / proposed pattern</th><td>{{ recovery.proposed_pattern or (recovery.detected_pattern or "—") }}</td></tr>
+      <tr><th>Reason</th><td class="audit-meta">{{ recovery.selection_reason or "—" }}</td></tr>
+      <tr><th>Ignored third-party endpoints</th><td>{{ recovery.ignored_endpoint_count or 0 }}</td></tr>
+      <tr><th>Draft created / preview run</th><td>{{ "Yes" if recovery.proposed_pattern else "No" }} / {{ recovery.preview_status or "—" }}</td></tr>
+      <tr><th>Warnings</th><td class="audit-meta">{{ recovery.error_summary or "—" }}</td></tr>
+    </tbody>
+  </table>
+  {% else %}
+  <p class="placeholder-note">No automatic recovery has been attempted for this source yet.</p>
+  {% endif %}
+  <div class="wf-card-cta">
+    {% if browser_extraction_enabled and can_test and not website_is_archived %}
+    <form method="post" action="/admin/websites/{{ website.id }}/browser-retry" class="inline-form"
+          onsubmit="return confirm('Retry detection for {{ website.name }} using the restricted browser?');">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}" />
+      <button type="submit" class="wf-primary">Retry automatic recovery</button>
+    </form>
+    <span class="audit-meta">Automatic recovery can create and preview a new configuration.</span>
+    {% elif not browser_extraction_enabled %}
+    <p class="audit-meta">Restricted browser detection is disabled for this deployment (<code>BROWSER_EXTRACTION_ENABLED</code> is off). Use Advanced tools to configure manually.</p>
+    {% elif website_is_archived %}
+    <p class="audit-meta">Recovery is unavailable while the source is archived.</p>
     {% endif %}
-  </tbody>
-</table>
-
-<h3>All detector results</h3>
-{% if all_detector_results %}
-<table>
-  <thead><tr><th>Detector</th><th>Confidence</th><th>Needs review</th><th>Browser required</th><th>Evidence</th></tr></thead>
-  <tbody>
-    {% for name, result in all_detector_results.items() %}
-    <tr>
-      <td>{{ name }}</td>
-      <td>{{ "%.2f"|format(result.confidence) if result.confidence is defined else "—" }}</td>
-      <td>{{ "Yes" if result.needs_review else "No" }}</td>
-      <td>{{ "Yes" if result.browser_required else "No" }}</td>
-      <td><code>{{ result }}</code></td>
-    </tr>
-    {% endfor %}
-  </tbody>
-</table>
-{% else %}
-<p class="audit-meta">No detector evidence was recorded for this run.</p>
+  </div>
+</section>
 {% endif %}
 
-{% if website.onboarding_status in ("unsupported", "needs_review") %}
-<h3>Automatic recovery</h3>
-{% if website_is_archived %}
-<p class="audit-meta">This website is archived — recovery actions are unavailable.</p>
-{% elif browser_extraction_enabled and can_test %}
-<p class="audit-meta">
-  When ordinary HTTP detection fails, restricted browser detection renders the page in a
-  locked-down headless browser, observes the rendered HTML and any public JSON/feed responses,
-  re-runs every registry detector automatically, and prefers a reusable structured HTTP endpoint
-  when one is found — then drafts, previews and scores a configuration without persisting any
-  events. No HTML inspection or manual pattern choice is required first.
-</p>
-<form method="post" action="/admin/websites/{{ website.id }}/browser-retry" class="inline-form"
-      onsubmit="return confirm('Retry detection for {{ website.name }} using the restricted browser?');">
-  <input type="hidden" name="csrf_token" value="{{ csrf_token }}" />
-  <button type="submit">Retry with restricted browser detection</button>
-</form>
-{% elif not browser_extraction_enabled %}
-<p class="audit-meta">
-  Restricted browser detection is disabled for this deployment
-  (<code>BROWSER_EXTRACTION_ENABLED</code> is off), so automatic browser-assisted recovery is
-  unavailable. The advanced manual pattern selector below remains as a fallback.
-</p>
-{% endif %}
+{# ---------- 6. Extraction status ---------- #}
+<section class="wf-card" aria-labelledby="wf-extraction">
+  <h2 id="wf-extraction">Event import status</h2>
+  <table>
+    <tbody>
+      <tr><th>State</th><td>{{ "Active" if website.is_active else "Inactive" }}</td></tr>
+      <tr><th>Approved pattern</th><td>{% if website.approved_pattern %}{{ website.approved_pattern.pattern_name }} (v{{ website.active_configuration_version }}){% else %}Not approved{% endif %}</td></tr>
+      <tr><th>Last successful import</th><td>{{ website.last_success_at or "Never" }}</td></tr>
+      <tr><th>Last failed import</th><td>{{ website.last_failure_at or "Never" }}</td></tr>
+      <tr><th>Consecutive failures</th><td>{{ website.consecutive_failure_count }}</td></tr>
+    </tbody>
+  </table>
+  {% if workflow.run_blockers %}
+  <div class="wf-blockers"><strong>Event import unavailable:</strong>
+    <ul>{% for reason in workflow.run_blockers %}<li>{{ reason }}</li>{% endfor %}</ul></div>
+  {% elif website.is_active and website.approved_pattern and can_test %}
+  <div class="wf-card-cta">
+    <form method="post" action="/admin/websites/{{ website.id }}/run-extraction" class="inline-form">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}" />
+      <button type="submit" class="wf-primary">Run event import</button>
+    </form>
+  </div>
+  {% endif %}
+</section>
 
-{% if latest_browser_recovery %}
-{% set recovery = latest_browser_recovery %}
-{% if recovery.new_pattern_needed %}
-<p class="badge badge-pending">Preferred structured event endpoint found</p>
-<p class="audit-meta">No registered extraction pattern supports this response shape yet — a reusable
-  pattern is required. No configuration draft or preview was created.{% if recovery.attempts and recovery.attempts > 1 %} Observed on {{ recovery.attempts }} retries.{% endif %}</p>
-{% endif %}
-<table>
-  <tbody>
-    <tr><th>Latest browser retry</th><td>{{ recovery.attempted_at or "—" }}</td></tr>
-    <tr><th>Recovery status</th><td>{{ recovery.status or "—" }}</td></tr>
-    <tr><th>Rendered page</th><td>{{ recovery.rendered_status or "—" }}</td></tr>
-    <tr><th>Observed response types</th><td>{% if recovery.observed_response_types %}{{ recovery.observed_response_types | join(", ") }}{% else %}—{% endif %}</td></tr>
-    <tr><th>Selected / preferred source</th>
-      <td>{% if recovery.chosen_source %}{{ recovery.chosen_source }}{% if recovery.selected_endpoint %} — <code>{{ recovery.selected_endpoint }}</code>{% endif %}{% elif recovery.selected_endpoint %}preferred structured endpoint — <code>{{ recovery.selected_endpoint }}</code>{% else %}—{% endif %}</td></tr>
-    <tr><th>Why this source</th><td class="audit-meta">{{ recovery.selection_reason or "—" }}</td></tr>
-    {% if recovery.proposed_pattern or not recovery.new_pattern_needed %}
-    <tr><th>Proposed pattern</th><td>{{ recovery.proposed_pattern or "—" }}</td></tr>
-    <tr><th>Request method</th><td>{{ recovery.request_method or "—" }}</td></tr>
-    <tr><th>Record-array path</th><td>{{ recovery.record_array_path or "—" }}</td></tr>
-    <tr><th>Source-ID field</th><td>{{ recovery.source_id_field or "—" }}</td></tr>
-    <tr><th>Preview</th><td>{{ recovery.preview_status or "—" }}</td></tr>
-    {% endif %}
-    <tr><th>Ignored third-party endpoints</th><td>{{ recovery.ignored_endpoint_count or 0 }}</td></tr>
-    <tr><th>Blocked / challenge</th><td>{{ recovery.blocked_reason or "None" }}</td></tr>
-    <tr><th>Warnings</th><td class="audit-meta">{{ recovery.error_summary or "—" }}</td></tr>
-  </tbody>
-</table>
+{# ---------- 7. Activity history ---------- #}
+<section class="wf-card" aria-labelledby="wf-history">
+  <h2 id="wf-history">Activity history</h2>
+  {% if extraction_runs %}
+  <div style="overflow-x:auto;">
+  <table>
+    <thead><tr><th>Started</th><th>Type</th><th>Status</th><th>Pattern</th><th>Cfg v</th><th>F / V / R</th><th>Ins / Upd</th><th></th></tr></thead>
+    <tbody>
+      {% for run in extraction_runs[:10] %}
+      <tr>
+        <td>{{ run.started_at }}</td>
+        <td>{{ run.run_type }}</td>
+        <td>{{ run.status }}</td>
+        <td>{{ run.pattern_name or "—" }}</td>
+        <td>{{ run.configuration_version }}</td>
+        <td>{{ run.events_found }} / {{ run.events_valid }} / {{ run.events_rejected }}</td>
+        <td>{{ run.events_inserted }} / {{ run.events_updated }}</td>
+        <td><a href="/admin/websites/{{ website.id }}/runs/{{ run.id }}">Details</a></td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  </div>
+  {% if extraction_runs | length > 10 %}<p class="audit-meta">Showing the 10 most recent of {{ extraction_runs | length }}+ runs.</p>{% endif %}
+  {% else %}
+  <p class="placeholder-note">No detection, preview, or import runs yet.</p>
+  {% endif %}
+</section>
 
-{% if recovery.candidate_event_endpoints %}
-<h4>Candidate event endpoints</h4>
-<table>
-  <thead><tr><th>Endpoint</th><th>Score</th><th>Record array</th><th>Sample fields</th><th>Records</th></tr></thead>
-  <tbody>
-    {% for c in recovery.candidate_event_endpoints %}
-    <tr>
-      <td><code>{{ c.url }}</code></td>
-      <td>{{ "%.2f"|format(c.event_likeness_score) }}</td>
-      <td>{{ c.record_array_path or "—" }}</td>
-      <td class="audit-meta">{% if c.sample_field_names %}{{ c.sample_field_names | join(", ") }}{% else %}—{% endif %}</td>
-      <td>{{ c.sample_record_count }}</td>
-    </tr>
-    {% endfor %}
-  </tbody>
-</table>
-{% endif %}
+{# ---------- 8. Advanced tools ---------- #}
+{% if can_update or can_test %}
+<details class="wf-card">
+  <summary><strong>Advanced tools</strong></summary>
+  <p class="audit-meta">These tools are normally unnecessary. Use automatic onboarding and the guided workflow above first.</p>
 
-{% if recovery.rejected_candidates %}
-<h4>Rejected candidates</h4>
-<ul class="audit-meta">
-  {% for r in recovery.rejected_candidates %}
-  <li><code>{{ r.url }}</code> — {{ r.reason }}{% if r.score is defined %} (score {{ "%.2f"|format(r.score) }}){% endif %}</li>
-  {% endfor %}
-</ul>
-{% endif %}
+  <div class="wf-card-cta">
+    {% for a in workflow.advanced_actions %}{{ action_button(a, csrf_token) }}{% endfor %}
+  </div>
 
-{% if recovery.ignored_endpoints %}
-<details>
-  <summary class="audit-meta">Ignored third-party endpoints ({{ recovery.ignored_endpoint_count }})</summary>
-  <ul class="audit-meta">
-    {% for i in recovery.ignored_endpoints %}
-    <li><code>{{ i.url }}</code> — {{ i.classification }}</li>
-    {% endfor %}
-  </ul>
-</details>
-{% endif %}
-{% endif %}
-{% endif %}
-
-{% if website.onboarding_status in ("draft", "unsupported", "needs_review") and can_update %}
-<details>
-  <summary><strong>Advanced:</strong> manually select an extraction pattern</summary>
-  <p class="audit-meta">
-    A fallback for when automatic recovery cannot resolve the source. Choosing a pattern only
-    saves a <em>draft</em> — it still requires preview, validation and normal approval, and never
-    activates the source on its own. Patterns and their evidence come from the pattern registry.
-  </p>
+  {% if website.onboarding_status in ("draft", "unsupported", "needs_review") and can_update %}
+  <h3>Manual pattern selection</h3>
+  <p class="audit-meta">A fallback when automatic recovery cannot resolve the source. Selecting a pattern saves a <em>draft only</em> — it still requires preview, validation and normal approval.</p>
   <form method="post" action="/admin/websites/{{ website.id }}/select-pattern" class="admin-form">
     <input type="hidden" name="csrf_token" value="{{ csrf_token }}" />
     <label for="pattern_name">Pattern</label>
     <select id="pattern_name" name="pattern_name" required>
       <option value="" selected disabled>Choose a pattern…</option>
       {% for option in pattern_options %}
-      <option value="{{ option.name }}">
-        {{ option.display_name }} ({{ option.name }}) — {{ option.classification }}{% if option.has_evidence %}, evidence {{ "%.2f"|format(option.evidence_confidence) }}{% endif %}
-      </option>
+      <option value="{{ option.name }}">{{ option.display_name }} ({{ option.name }}) — {{ option.classification }}{% if option.has_evidence %}, evidence {{ "%.2f"|format(option.evidence_confidence) }}{% endif %}</option>
       {% endfor %}
     </select>
-    <button type="submit" class="btn-secondary">Select pattern (draft only)</button>
+    <button type="submit" class="wf-secondary">Select pattern (draft only)</button>
   </form>
+  {% endif %}
+
+  {% if website.proposed_pattern and website.proposed_pattern.detection %}
+  {% set detection = website.proposed_pattern.detection %}
+  <h3>Detector evidence</h3>
   <table>
-    <thead><tr><th>Pattern</th><th>Registered name</th><th>Type</th><th>Auto-proposer</th><th>Evidence on this response</th></tr></thead>
     <tbody>
-      {% for option in pattern_options %}
-      <tr>
-        <td>{{ option.display_name }}</td>
-        <td><code>{{ option.name }}</code></td>
-        <td>{{ option.classification }}</td>
-        <td>{{ "Yes" if option.has_proposer else "No" }}</td>
-        <td>{% if option.has_evidence %}{{ "%.2f"|format(option.evidence_confidence) }}{% else %}—{% endif %}</td>
-      </tr>
+      <tr><th>Selected pattern</th><td>{{ detection.pattern_name or "none" }} ({{ "%.2f"|format(detection.confidence) }}, threshold {{ "%.2f"|format(min_pattern_confidence) }})</td></tr>
+      <tr><th>Registry reliability order</th><td class="audit-meta">{% for name in reliability_order %}<code>{{ name }}</code>{% if not loop.last %} › {% endif %}{% endfor %}</td></tr>
+      <tr><th>Discovered endpoints</th><td>{% if detection.discovered_endpoints %}{% for e in detection.discovered_endpoints %}<code>{{ e }}</code><br/>{% endfor %}{% else %}—{% endif %}</td></tr>
+      <tr><th>Browser required</th><td>{{ "Yes" if detection.browser_required else "No" }}</td></tr>
+      <tr><th>Warnings</th><td>{% if detection.warnings %}{{ detection.warnings | join(", ") }}{% else %}None{% endif %}</td></tr>
+    </tbody>
+  </table>
+  {% if all_detector_results %}
+  <div style="overflow-x:auto;">
+  <table>
+    <thead><tr><th>Detector</th><th>Confidence</th><th>Needs review</th><th>Browser</th></tr></thead>
+    <tbody>
+      {% for name, result in all_detector_results.items() %}
+      <tr><td>{{ name }}</td><td>{{ "%.2f"|format(result.confidence) if result.confidence is defined else "—" }}</td><td>{{ "Yes" if result.needs_review else "No" }}</td><td>{{ "Yes" if result.browser_required else "No" }}</td></tr>
       {% endfor %}
     </tbody>
   </table>
+  </div>
+  {% else %}
+  <p class="audit-meta">No detector evidence was recorded for this run.</p>
+  {% endif %}
+  {% endif %}
+
+  {% if latest_browser_recovery and (latest_browser_recovery.candidate_event_endpoints or latest_browser_recovery.ignored_endpoints) %}
+  {% set recovery = latest_browser_recovery %}
+  <h3>Browser diagnostics</h3>
+  {% if recovery.candidate_event_endpoints %}
+  <div style="overflow-x:auto;">
+  <table>
+    <thead><tr><th>Candidate endpoint</th><th>Score</th><th>Record array</th><th>Records</th></tr></thead>
+    <tbody>
+      {% for c in recovery.candidate_event_endpoints %}
+      <tr><td><code>{{ c.url }}</code></td><td>{{ "%.2f"|format(c.event_likeness_score) }}</td><td>{{ c.record_array_path or "—" }}</td><td>{{ c.sample_record_count }}</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  </div>
+  {% endif %}
+  {% if recovery.rejected_candidates %}
+  <p class="audit-meta">Rejected: {% for r in recovery.rejected_candidates %}<code>{{ r.url }}</code> ({{ r.reason }}){% if not loop.last %}; {% endif %}{% endfor %}</p>
+  {% endif %}
+  {% endif %}
+
+  {% if unsupported_reports %}
+  <h3>Unsupported-site reports</h3>
+  <ul class="audit-meta">
+    {% for report in unsupported_reports %}
+    <li><a href="/admin/unsupported-reports/{{ report.id }}">Report #{{ report.id }}</a> — {{ report.status }}, {{ report.occurrence_count }} occurrence(s), {{ report.failure_reason or "—" }}</li>
+    {% endfor %}
+  </ul>
+  {% endif %}
+
+  {% if can_approve and website.configuration and not website.approved_pattern %}
+  <h3>Reject configuration</h3>
+  <form method="post" action="/admin/websites/{{ website.id }}/reject-configuration" class="admin-form"
+        onsubmit="return confirm('Reject the proposed configuration for {{ website.name }}?');">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}" />
+    <label for="reject-reason">Reason (required)</label>
+    <input type="text" id="reject-reason" name="reason" required maxlength="500" />
+    <label for="reject-notes">Notes (optional)</label>
+    <textarea id="reject-notes" name="notes" rows="2"></textarea>
+    <button type="submit" class="wf-danger">Reject configuration</button>
+  </form>
+  {% endif %}
 </details>
 {% endif %}
-{% else %}
-<p class="audit-meta">No detection has been run yet.</p>
-{% endif %}
 
-<h2>Onboarding</h2>
-<p class="audit-meta">
-  Detect and configure runs detection, generates a complete draft configuration, previews it and
-  scores the result in one step — no HTML inspection, CSS selectors or JSON required. The
-  individual steps below remain available for advanced use.
-</p>
-<div class="form-actions">
-  <form method="post" action="/admin/websites/{{ website.id }}/detect-and-configure" class="inline-form">
-    <input type="hidden" name="csrf_token" value="{{ csrf_token }}" />
-    <button type="submit">Detect and configure</button>
-  </form>
-  {% if website.proposed_pattern and website.proposed_pattern.inference %}
-  <a href="/admin/websites/{{ website.id }}/onboarding"><button type="button" class="btn-secondary">View onboarding result ({{ website.proposed_pattern.inference.outcome.replace("_", " ") }})</button></a>
-  {% endif %}
-</div>
-
-<h2>Extraction pipeline (advanced)</h2>
-<div class="form-actions">
-  <form method="post" action="/admin/websites/{{ website.id }}/detect-pattern" class="inline-form">
-    <input type="hidden" name="csrf_token" value="{{ csrf_token }}" />
-    <button type="submit" class="btn-secondary">Detect pattern</button>
-  </form>
-  <form method="post" action="/admin/websites/{{ website.id }}/preview-extraction" class="inline-form">
-    <input type="hidden" name="csrf_token" value="{{ csrf_token }}" />
-    <button type="submit" class="btn-secondary">Preview extraction</button>
-  </form>
-  <form method="post" action="/admin/websites/{{ website.id }}/approve-configuration" class="inline-form">
-    <input type="hidden" name="csrf_token" value="{{ csrf_token }}" />
-    <button type="submit" class="btn-secondary">Approve configuration</button>
-  </form>
-  <form method="post" action="/admin/websites/{{ website.id }}/run-extraction" class="inline-form">
-    <input type="hidden" name="csrf_token" value="{{ csrf_token }}" />
-    <button type="submit" class="btn-secondary">Run extraction</button>
-  </form>
-</div>
-
-{% if can_approve %}
-<h3>Reject proposed configuration</h3>
-<form method="post" action="/admin/websites/{{ website.id }}/reject-configuration" class="admin-form"
-      onsubmit="return confirm('Reject the proposed configuration for {{ website.name }}?');">
-  <input type="hidden" name="csrf_token" value="{{ csrf_token }}" />
-  <label for="reject-reason">Reason (required)</label>
-  <input type="text" id="reject-reason" name="reason" required maxlength="500" />
-  <label for="reject-notes">Notes (optional)</label>
-  <textarea id="reject-notes" name="notes" rows="2"></textarea>
-  <button type="submit" class="btn-danger">Reject configuration</button>
-</form>
-{% endif %}
-
-<h2>Preview results</h2>
-{% if latest_preview_run %}
-<table>
-  <tbody>
-    <tr><th>Run</th><td><a href="/admin/websites/{{ website.id }}/runs/{{ latest_preview_run.id }}">Run #{{ latest_preview_run.id }}</a></td></tr>
-    <tr><th>Configuration version used</th><td>{{ latest_preview_run.configuration_version }}</td></tr>
-    <tr><th>Status</th><td>{{ latest_preview_run.status }}</td></tr>
-    <tr><th>Found / valid / rejected</th><td>{{ latest_preview_run.events_found }} / {{ latest_preview_run.events_valid }} / {{ latest_preview_run.events_rejected }}</td></tr>
-    <tr><th>Warnings</th><td>{% if latest_preview_run.warnings %}{{ latest_preview_run.warnings | join(", ") }}{% else %}None{% endif %}</td></tr>
-    <tr><th>Errors (first 5)</th><td>{{ latest_preview_run.error_summary or "None" }}</td></tr>
-  </tbody>
-</table>
-{% else %}
-<p class="audit-meta">No preview has been run yet.</p>
-{% endif %}
-
-<h2>Extraction history</h2>
-{% if extraction_runs %}
-<table>
-  <thead><tr><th>Started</th><th>Type</th><th>Status</th><th>Pattern</th><th>Found</th><th>Valid</th><th>Rejected</th><th>Inserted</th><th>Updated</th><th>Dup. skipped</th><th></th></tr></thead>
-  <tbody>
-    {% for run in extraction_runs %}
-    <tr>
-      <td>{{ run.started_at }}</td>
-      <td>{{ run.run_type }}</td>
-      <td>{{ run.status }}</td>
-      <td>{{ run.pattern_name or "—" }}</td>
-      <td>{{ run.events_found }}</td>
-      <td>{{ run.events_valid }}</td>
-      <td>{{ run.events_rejected }}</td>
-      <td>{{ run.events_inserted }}</td>
-      <td>{{ run.events_updated }}</td>
-      <td>{{ run.duplicates_skipped }}</td>
-      <td><a href="/admin/websites/{{ website.id }}/runs/{{ run.id }}">Details</a></td>
-    </tr>
+{# ---------- 9. Lifecycle controls ---------- #}
+{% if workflow.lifecycle_actions %}
+<section class="wf-card" aria-labelledby="wf-lifecycle">
+  <h2 id="wf-lifecycle">Lifecycle controls</h2>
+  <p class="audit-meta">Lifecycle status (<strong>{{ website.onboarding_status }}</strong>) is distinct from configuration approval and from active event-import status.</p>
+  <div class="wf-card-cta">
+    {% for a in workflow.lifecycle_actions %}
+    <span>
+      {{ action_button(a, csrf_token) }}
+      <small class="audit-meta">{{ a.disabled_reason }}</small>
+    </span>
     {% endfor %}
-  </tbody>
-</table>
-{% else %}
-<p class="audit-meta">No extraction runs yet.</p>
+  </div>
+</section>
 {% endif %}
 
-<h2>Unsupported-site reports</h2>
-{% if unsupported_reports %}
-<table>
-  <thead><tr><th>Created</th><th>Status</th><th>HTTP status</th><th>Browser required</th><th>JSON-LD present</th><th>Occurrences</th><th>Failure reason</th><th></th></tr></thead>
-  <tbody>
-    {% for report in unsupported_reports %}
-    <tr>
-      <td>{{ report.created_at }}</td>
-      <td>{{ report.status }}</td>
-      <td>{{ report.http_status or "—" }}</td>
-      <td>{{ "Yes" if report.browser_required else "No" }}</td>
-      <td>{{ "Yes" if report.json_ld_presence else "No" }}</td>
-      <td>{{ report.occurrence_count }} (last seen {{ report.last_seen_at }})</td>
-      <td>{{ report.failure_reason or "—" }}</td>
-      <td><a href="/admin/unsupported-reports/{{ report.id }}">Details</a></td>
-    </tr>
-    {% endfor %}
-  </tbody>
-</table>
-{% else %}
-<p class="audit-meta">No unsupported-site reports for this website.</p>
+{# ---------- 10. Danger zone ---------- #}
+{% if workflow.danger_actions %}
+<details class="wf-danger-zone">
+  <summary><strong>Danger zone</strong></summary>
+  <p class="audit-meta">Destructive actions. These cannot be undone by the normal workflow.</p>
+  <div class="wf-card-cta">
+    {% for a in workflow.danger_actions %}{{ action_button(a, csrf_token) }}{% endfor %}
+  </div>
+</details>
 {% endif %}
 {% endblock %}

@@ -55,6 +55,7 @@ from app.services.website_configuration import (
     save_draft_configuration,
     select_pattern,
 )
+from app.services.website_workflow import build_website_workflow
 from app.services.websites import get_deletion_impact, transition_website
 
 router = APIRouter(prefix="/admin/websites", tags=["admin-websites"])
@@ -333,6 +334,21 @@ def website_detail(website_id: int, request: Request, current_user: ViewSites, d
     )
     settings = get_settings()
 
+    permissions = {
+        "update": user_has_permission(db, current_user, "sites.update"),
+        "delete": user_has_permission(db, current_user, "sites.delete"),
+        "approve": user_has_permission(db, current_user, "sites.approve"),
+        "test": user_has_permission(db, current_user, "sites.test"),
+    }
+    workflow = build_website_workflow(
+        website=website,
+        latest_preview_run=latest_preview_run,
+        latest_browser_recovery=latest_browser_recovery,
+        next_states=next_states,
+        permissions=permissions,
+        browser_extraction_enabled=settings.browser_extraction_enabled,
+    )
+
     return render(
         request,
         "admin/websites/detail.html",
@@ -341,14 +357,16 @@ def website_detail(website_id: int, request: Request, current_user: ViewSites, d
             "website": website,
             "event_count": event_count,
             "next_states": next_states,
-            "can_update": user_has_permission(db, current_user, "sites.update"),
-            "can_delete": user_has_permission(db, current_user, "sites.delete"),
-            "can_approve": user_has_permission(db, current_user, "sites.approve"),
-            "can_test": user_has_permission(db, current_user, "sites.test"),
+            "workflow": workflow,
+            "can_update": permissions["update"],
+            "can_delete": permissions["delete"],
+            "can_approve": permissions["approve"],
+            "can_test": permissions["test"],
             "extraction_runs": extraction_runs,
             "unsupported_reports": reports,
             "latest_detection_run": latest_detection_run,
             "latest_preview_run": latest_preview_run,
+            "inference": (website.proposed_pattern or {}).get("inference"),
             "all_detector_results": all_detector_results,
             "detection_winner": detection_winner,
             "pattern_options": pattern_options(REGISTRY, all_detector_results),

@@ -1374,3 +1374,70 @@ button:hover {
   color: var(--muted);
   font-style: italic;
 }
+
+/* --- Website admin workflow (presentation) ------------------------------- */
+.wf-header {
+  display: flex; flex-wrap: wrap; gap: var(--space-md, 1rem);
+  align-items: flex-start; justify-content: space-between;
+}
+.wf-header-main { flex: 1 1 320px; min-width: 0; }
+.wf-header-actions { display: flex; flex-wrap: wrap; gap: 0.5rem; align-items: center; }
+.wf-summary { color: var(--text); margin: 0.35rem 0 0; }
+.wf-summary .wf-explain { color: var(--muted); }
+
+.wf-card {
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: var(--radius-md); padding: 1.1rem 1.25rem;
+  box-shadow: var(--shadow-sm); margin: 1.1rem 0;
+}
+.wf-card > h2 { margin-top: 0; font-size: var(--font-md); }
+.wf-card-cta { margin-top: 0.9rem; display: flex; flex-wrap: wrap; gap: 0.5rem; align-items: center; }
+
+/* Stepper */
+.wf-steps { display: flex; flex-wrap: wrap; gap: 0.5rem; list-style: none; padding: 0; margin: 0.5rem 0 0; }
+.wf-step {
+  flex: 1 1 140px; min-width: 130px; border: 1px solid var(--border);
+  border-radius: var(--radius-sm); padding: 0.55rem 0.7rem; background: var(--bg);
+}
+.wf-step .wf-step-top { display: flex; align-items: center; gap: 0.4rem; font-weight: 600; }
+.wf-step .wf-mark { font-weight: 700; }
+.wf-step .wf-state { font-size: var(--font-xs); text-transform: uppercase; letter-spacing: 0.04em; }
+.wf-step small { color: var(--muted); display: block; margin-top: 0.2rem; }
+.wf-step.is-complete { border-color: var(--success); background: rgba(22, 163, 74, 0.06); }
+.wf-step.is-complete .wf-state { color: var(--success); }
+.wf-step.is-current { border-color: var(--accent); background: var(--accent-soft); border-width: 2px; }
+.wf-step.is-current .wf-state { color: var(--accent); }
+.wf-step.is-failed { border-color: var(--danger); background: rgba(220, 38, 38, 0.06); }
+.wf-step.is-failed .wf-state { color: var(--danger); }
+.wf-step.is-blocked, .wf-step.is-not_started { color: var(--muted); }
+.wf-step.is-blocked .wf-state, .wf-step.is-not_started .wf-state { color: var(--muted); }
+
+/* Buttons by role (default <button> is already the accent primary) */
+button.wf-primary, a.wf-primary {
+  background: var(--accent); color: #fff; border: 1px solid var(--accent);
+  border-radius: var(--radius-sm); padding: 0.5rem 0.9rem; font-weight: 600;
+  text-decoration: none; display: inline-block; cursor: pointer;
+}
+button.wf-primary:hover, a.wf-primary:hover { background: var(--accent-hover); }
+a.wf-secondary, button.wf-secondary {
+  background: var(--surface); color: var(--text); border: 1px solid var(--border-strong);
+  border-radius: var(--radius-sm); padding: 0.5rem 0.9rem; text-decoration: none; display: inline-block;
+}
+a.wf-muted, button.wf-muted {
+  background: transparent; color: var(--muted); border: 1px solid var(--border);
+  border-radius: var(--radius-sm); padding: 0.45rem 0.8rem; text-decoration: none; display: inline-block;
+}
+a.wf-danger, button.wf-danger {
+  background: var(--surface); color: var(--danger); border: 1px solid var(--danger);
+  border-radius: var(--radius-sm); padding: 0.5rem 0.9rem; text-decoration: none; display: inline-block; cursor: pointer;
+}
+
+/* Callouts */
+.wf-blockers, .wf-warn {
+  border-radius: var(--radius-sm); padding: 0.7rem 0.9rem; margin: 0.7rem 0;
+}
+.wf-warn { border: 1px solid var(--warning); background: rgba(217, 119, 6, 0.08); }
+.wf-blockers { border: 1px solid var(--border-strong); background: var(--bg); }
+.wf-blockers ul, .wf-warn ul { margin: 0.3rem 0 0; padding-left: 1.1rem; }
+.wf-blockers strong { color: var(--warning); }
+.wf-danger-zone { border: 1px solid var(--danger); border-radius: var(--radius-md); padding: 0.5rem 1rem; margin-top: 1.5rem; }
