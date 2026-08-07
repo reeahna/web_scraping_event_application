@@ -492,6 +492,14 @@ def _records_at(payload, record_path: str) -> list:
 _TOTAL_PATH_CANDIDATES = ("docs.total", "docs.count", "total", "count", "meta.total")
 # Stable-identifier fields for cross-page dedup, best first.
 _RECORD_ID_FIELDS = ("recid", "_id", "id", "uuid", "url")
+# A per-occurrence date component, so recurring instances that share a base id
+# but occur on different dates are NOT collapsed together.
+_RECORD_DATE_FIELDS = ("startDate", "start_date", "startdate", "date", "start")
+# Fields whose integer value is an offset cursor / a page size, when inferring
+# pagination from a request the page itself made (no stored recipe). Generic
+# REST conventions — never a provider name.
+_OFFSET_CURSOR_FIELDS = frozenset({"skip", "offset", "start", "from"})
+_LIMIT_CURSOR_FIELDS = frozenset({"limit", "pagesize", "page_size", "size", "per_page", "perpage"})
 
 
 def _detect_total(payload, configured_path: str | None) -> int | None:
@@ -503,15 +511,66 @@ def _detect_total(payload, configured_path: str | None) -> int | None:
 
 
 def _record_identity(record: dict) -> str:
+    base = None
     for field_name in _RECORD_ID_FIELDS:
         value = record.get(field_name)
         if value not in (None, "", [], {}):
-            return f"{field_name}:{value}"
+            base = f"{field_name}:{value}"
+            break
+    if base is None:
+        import json as _json
+
+        base = "hash:" + hashlib.sha256(
+            _json.dumps(record, sort_keys=True, default=str).encode("utf-8")
+        ).hexdigest()
+    for date_field in _RECORD_DATE_FIELDS:
+        value = record.get(date_field)
+        if isinstance(value, (str, int)) and value not in (None, ""):
+            return f"{base}|{value}"
+    return base
+
+
+def _find_int_field_path(node, names: frozenset, prefix: tuple = ()) -> list | None:
+    """Path (list of keys) to the first integer-valued (non-bool) key whose name
+    is in `names`, searching a decoded JSON object depth-first. Used to locate a
+    pagination cursor inside a request the page itself made."""
+    if isinstance(node, dict):
+        for key, value in node.items():
+            if (
+                str(key).lower() in names
+                and isinstance(value, int)
+                and not isinstance(value, bool)
+            ):
+                return [*prefix, str(key)]
+        for key, value in node.items():
+            found = _find_int_field_path(value, names, (*prefix, str(key)))
+            if found is not None:
+                return found
+    return None
+
+
+def _infer_cursor(url: str) -> tuple[str | None, list | None, int | None]:
+    """Infer (json-param name, offset path, page size) from a request URL the
+    page actually made, by finding an integer offset field (skip/offset/…) and a
+    sibling page-size field inside a JSON query parameter. Enables pagination for
+    configurations that have no stored recipe. (None, None, None) if not found."""
     import json as _json
 
-    return "hash:" + hashlib.sha256(
-        _json.dumps(record, sort_keys=True, default=str).encode("utf-8")
-    ).hexdigest()
+    parts = urlsplit(url)
+    for name, raw in parse_qsl(parts.query, keep_blank_values=True):
+        try:
+            decoded = _json.loads(raw)
+        except (ValueError, TypeError):
+            continue
+        if not isinstance(decoded, dict):
+            continue
+        offset_path = _find_int_field_path(decoded, _OFFSET_CURSOR_FIELDS)
+        if offset_path is None:
+            continue
+        limit_path = _find_int_field_path(decoded, _LIMIT_CURSOR_FIELDS)
+        limit = _get_at_path(decoded, ".".join(limit_path)) if limit_path else None
+        return name, offset_path, (limit if isinstance(limit, int) else None)
+    return None, None, None
 
 
 def _find_placeholder_path(node, kind: str, prefix: tuple = ()) -> list | None:
@@ -633,48 +692,45 @@ class BrowserStructuredResponseFetchStrategy:
             elapsed_seconds=0.0, blocked_reason=None, pagination=pagination,
         )
 
-    def _blocked_response(self, *, final_url, status_code, reason) -> FetchResponse:
+    def _blocked_response(
+        self, *, final_url, status_code, reason, pagination=None
+    ) -> FetchResponse:
         return FetchResponse(
             request_url=self._source_page_url, final_url=final_url, status_code=status_code,
             headers={}, content_type=None, body=b"", redirect_history=(),
             body_hash=hashlib.sha256(b"").hexdigest(), elapsed_seconds=0.0,
-            blocked_reason=reason,
+            blocked_reason=reason, pagination=pagination,
         )
 
     async def fetch(self, request: FetchRequest, config: FetchConfig) -> FetchResponse:
-        if self._recipe is not None and self._recipe.pagination.kind == "offset":
-            return await self._fetch_paginated()
-        return await self._fetch_single()
+        # A structured browser config always walks every page. Pagination degrades
+        # gracefully to a single page when no offset cursor can be determined.
+        return await self._fetch_paginated()
 
-    async def _fetch_single(self) -> FetchResponse:
-        """Backward-compatible single-response capture (no paginating recipe)."""
-        result = await self._browser.render(self._source_page_url, self._plan)
-        if result.blocked_reason is not None:
-            return self._blocked_response(
-                final_url=result.final_url, status_code=result.status_code,
-                reason=result.blocked_reason,
-            )
-        selected = self._select(result.observed_json)
-        if selected is None:
-            return self._blocked_response(
-                final_url=result.final_url, status_code=result.status_code,
-                reason="browser_no_structured_response",
-            )
-        matched_url, payload = selected
-        return self._json_response(payload, final_url=matched_url)
+    def _resolve_cursor(self, seed_url: str) -> tuple[str | None, list | None, int | None]:
+        """(json-param, offset path, page size) for pagination. Prefer the stored
+        recipe's page_offset placeholder + limit; otherwise INFER them from the
+        page's own request URL — so a configuration with no recipe (e.g. an older
+        approved one) still paginates without being mutated or re-versioned."""
+        recipe = self._recipe
+        if recipe is not None and recipe.pagination.kind == "offset":
+            json_param, offset_path = _locate_offset(recipe)
+            if json_param and offset_path:
+                return json_param, offset_path, recipe.pagination.limit
+        return _infer_cursor(seed_url)
 
     async def _fetch_paginated(self) -> FetchResponse:
-        recipe = self._recipe
-        limit = recipe.pagination.limit
-        total_path = recipe.pagination.total_path
         record_path = self._record_path
-        json_param, offset_path = _locate_offset(recipe)
-
+        total_path = self._recipe.pagination.total_path if self._recipe is not None else None
         state = {
-            "processed": 0, "records": [], "seen": set(), "total": None,
+            "processed": 0, "records": [], "seen": set(), "total": None, "raw": 0,
             "rows": [], "stop": None, "last_status": 200, "last_returned": 0, "last_new": 0,
-            "seed_url": None,
+            "last_json_ok": True, "seed_url": None, "json_param": None, "offset_path": None,
+            "limit": None, "first_count": None, "incomplete": False, "failed_offset": None,
         }
+
+        def _effective_limit() -> int:
+            return state["limit"] or state["first_count"] or 0
 
         def _process(pages: list) -> None:
             while state["processed"] < len(pages):
@@ -684,6 +740,9 @@ class BrowserStructuredResponseFetchStrategy:
                 if state["total"] is None and page.json is not None:
                     state["total"] = _detect_total(page.json, total_path)
                 records = _records_at(page.json, record_path) if page.json is not None else []
+                if index == 0:
+                    state["first_count"] = len(records)
+                state["raw"] += len(records)
                 new = 0
                 for record in records:
                     identity = _record_identity(record)
@@ -695,13 +754,19 @@ class BrowserStructuredResponseFetchStrategy:
                 state["last_status"] = page.status
                 state["last_returned"] = len(records)
                 state["last_new"] = new
+                state["last_json_ok"] = page.json is not None
                 state["rows"].append(
                     {
-                        "page": index + 1, "offset": index * limit,
-                        "returned": len(records), "new": new,
+                        "index": index, "returned": len(records), "new": new,
                         "cumulative_unique": len(state["records"]), "status": page.status,
                     }
                 )
+
+        def _fail(reason: str, offset: int) -> None:
+            state["stop"] = reason
+            if state["records"]:  # page 1 already gave us data — the walk is partial
+                state["incomplete"] = True
+                state["failed_offset"] = offset
 
         def _next_url(pages: list, observed: list) -> str | None:
             _process(pages)
@@ -714,9 +779,16 @@ class BrowserStructuredResponseFetchStrategy:
                     state["stop"] = "no_observed_response"
                     return None
                 state["seed_url"] = selected[0]
+                jp, op, lim = self._resolve_cursor(state["seed_url"])
+                state["json_param"], state["offset_path"], state["limit"] = jp, op, lim
                 return state["seed_url"]
+            limit = _effective_limit()
+            failed_offset = (index - 1) * limit
             if not (200 <= state["last_status"] < 300):
-                state["stop"] = "non_2xx_status"
+                _fail("non_2xx_status", failed_offset)
+                return None
+            if not state["last_json_ok"]:
+                _fail("invalid_json", failed_offset)
                 return None
             if state["last_returned"] == 0:
                 state["stop"] = "empty_page"
@@ -724,7 +796,7 @@ class BrowserStructuredResponseFetchStrategy:
             if state["last_new"] == 0:
                 state["stop"] = "no_new_records"
                 return None
-            if state["last_returned"] < limit:
+            if limit and state["last_returned"] < limit:
                 state["stop"] = "short_page"
                 return None
             if state["total"] is not None and len(state["records"]) >= state["total"]:
@@ -736,11 +808,13 @@ class BrowserStructuredResponseFetchStrategy:
             if index >= self._max_pages:
                 state["stop"] = "max_pages"
                 return None
-            if not (state["seed_url"] and json_param and offset_path):
+            if not (state["seed_url"] and state["json_param"] and state["offset_path"] and limit):
                 state["stop"] = "no_offset_cursor"
                 return None
             # Subsequent pages: the same request with ONLY the offset advanced.
-            return _url_with_offset(state["seed_url"], json_param, offset_path, index * limit)
+            return _url_with_offset(
+                state["seed_url"], state["json_param"], state["offset_path"], index * limit
+            )
 
         result = await self._browser.render_and_fetch_json_pages(
             self._source_page_url, self._plan, next_url=_next_url, max_pages=self._max_pages,
@@ -753,24 +827,49 @@ class BrowserStructuredResponseFetchStrategy:
         _process(result.pages)  # process any trailing page
         if state["stop"] is None:
             state["stop"] = "max_pages" if len(result.pages) >= self._max_pages else "exhausted"
+
+        limit = _effective_limit()
+        pagination = {
+            "kind": "offset", "page_size": limit, "pages_fetched": len(state["rows"]),
+            "reported_total": state["total"], "raw_records": state["raw"],
+            "captured_records": len(state["records"]), "unique_records": len(state["records"]),
+            "duplicates_discarded": state["raw"] - len(state["records"]),
+            "stop_reason": state["stop"], "incomplete": state["incomplete"],
+            "offsets": [row["index"] * limit for row in state["rows"]],
+            "pages": [
+                {
+                    "page": row["index"] + 1, "offset": row["index"] * limit,
+                    "returned": row["returned"], "new": row["new"],
+                    "cumulative_unique": row["cumulative_unique"], "status": row["status"],
+                }
+                for row in state["rows"]
+            ],
+        }
+        if state["incomplete"]:
+            pagination["failed_offset"] = state["failed_offset"]
+
         if not state["records"]:
             return self._blocked_response(
                 final_url=result.final_url, status_code=result.status_code,
-                reason="browser_no_structured_response",
+                reason="browser_no_structured_response", pagination=pagination,
+            )
+        if state["incomplete"]:
+            # Page 1 succeeded but a later page failed: do NOT report a complete
+            # success with a partial result set. Block so nothing is imported
+            # (all-or-nothing) while keeping the diagnostics that show which
+            # offset failed.
+            return self._blocked_response(
+                final_url=result.pages[0].url if result.pages else result.final_url,
+                status_code=result.status_code,
+                reason=f"browser_pagination_incomplete:offset_{state['failed_offset']}",
+                pagination=pagination,
             )
 
-        first_json = result.pages[0].json if result.pages and result.pages[0].json else {}
         import copy
 
+        first_json = result.pages[0].json if result.pages and result.pages[0].json else {}
         combined = copy.deepcopy(first_json) if isinstance(first_json, dict) else {}
         _set_at_path(combined, record_path, state["records"])
-        pagination = {
-            "kind": "offset", "page_size": limit, "pages_fetched": len(state["rows"]),
-            "reported_total": state["total"], "captured_records": len(state["records"]),
-            "unique_records": len(state["records"]), "stop_reason": state["stop"],
-            "offsets": [row["offset"] for row in state["rows"]],
-            "pages": state["rows"],
-        }
         final_url = result.pages[0].url if result.pages else result.final_url
         return self._json_response(combined, final_url=final_url, pagination=pagination)
 

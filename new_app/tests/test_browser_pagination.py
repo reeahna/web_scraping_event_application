@@ -214,8 +214,14 @@ def test_stops_on_non_2xx_mid_walk():
 
     browser = _Flaky(_records(108), total=108)
     resp, records = _run(_strategy(browser, _recipe()))
-    assert len(records) == 12
+    # A later-page failure is NOT reported as a complete success: the run is
+    # blocked (all-or-nothing) with the offset that failed shown, and no partial
+    # result set is returned for import.
+    assert records == []
+    assert resp.blocked_reason == "browser_pagination_incomplete:offset_12"
     assert resp.pagination["stop_reason"] == "non_2xx_status"
+    assert resp.pagination["incomplete"] is True
+    assert resp.pagination["failed_offset"] == 12
 
 
 # --- request invariants ------------------------------------------------------
@@ -261,3 +267,86 @@ def test_pipeline_finds_all_paginated_records():
     )
     assert len(outcome.outcomes) == 108
     assert outcome.last_response.pagination["pages_fetched"] == 9
+
+
+# --- pagination without a stored recipe (older approved configs) --------------
+
+
+def test_paginates_without_recipe_via_inferred_cursor():
+    # No recipe: the offset cursor (options.skip) and page size are inferred from
+    # the page's OWN observed request. Older approved configs still paginate.
+    browser = _PagingBrowser(_records(108), total=108)
+    resp, records = _run(_strategy(browser, None))
+    assert len(records) == 108
+    assert resp.pagination["pages_fetched"] == 9
+    assert resp.pagination["offsets"] == [0, 12, 24, 36, 48, 60, 72, 84, 96]
+    assert resp.pagination["stop_reason"] == "reported_total_reached"
+
+
+# --- deduplication by id + occurrence date -----------------------------------
+
+
+class _CustomPages:
+    def __init__(self, pages_records):
+        self._pages_records = pages_records
+        self.navigated = None
+
+    def _observed(self):
+        return [(_seed_url(2), {"docs": {"count": 100, "docs": self._pages_records[0]}})]
+
+    async def render_and_fetch_json_pages(self, src, plan=None, *, next_url, max_pages):
+        self.navigated = src
+        observed = self._observed()
+        pages = []
+        for _ in range(max_pages):
+            url = next_url(pages, observed)
+            if not url:
+                break
+            q = dict(parse_qsl(urlsplit(url).query, keep_blank_values=True))
+            skip = int(json.loads(q["json"])["options"]["skip"])
+            idx = skip // 2
+            recs = self._pages_records[idx] if idx < len(self._pages_records) else []
+            body = {"docs": {"count": 100, "docs": recs}}
+            pages.append(BrowserJsonPage(url=url, status=200, json=body))
+        return BrowserPagedResult(final_url=src, status_code=200, pages=pages)
+
+
+def test_dedup_keeps_recurrences_but_drops_exact_duplicates():
+    # recid 1 occurs on two different dates (a legitimate recurrence) and must be
+    # kept twice; the exact (recid 1, D1) duplicate across pages is dropped.
+    page1 = [
+        {"recid": "1", "title": "Weekly Market", "startDate": "2026-10-06"},
+        {"recid": "2", "title": "Concert", "startDate": "2026-10-06"},
+    ]
+    page2 = [
+        {"recid": "1", "title": "Weekly Market", "startDate": "2026-10-06"},  # exact dup
+        {"recid": "1", "title": "Weekly Market", "startDate": "2026-10-13"},  # recurrence
+    ]
+    browser = _CustomPages([page1, page2, []])
+    resp, records = _run(_strategy(browser, _recipe(limit=2)))
+    ids = sorted((r["recid"], r["startDate"]) for r in records)
+    assert ids == [("1", "2026-10-06"), ("1", "2026-10-13"), ("2", "2026-10-06")]
+    assert resp.pagination["raw_records"] == 4
+    assert resp.pagination["unique_records"] == 3
+    assert resp.pagination["duplicates_discarded"] == 1
+
+
+# --- caps governed by the record cap, not a stale max_pages ------------------
+
+
+def test_pagination_bounds_use_record_cap_not_max_pages():
+    from app.services.extraction_runs import (
+        _BROWSER_STRUCTURED_PAGE_CAP,
+        _browser_pagination_bounds,
+    )
+
+    config = SiteConfiguration(
+        pattern_name="simpleview_events", listing_url=URL, api_endpoint=API,
+        execution_strategy="browser", json_paths={"events_root": "docs.docs"},
+        pagination={"strategy": "none", "max_pages": 5, "max_events": 250},
+    )
+    bounds = _browser_pagination_bounds(config)
+    # max_events governs completeness; the stale max_pages=5 (which would cap at
+    # 60 events) is NOT used.
+    assert bounds == {"max_records": 250, "max_pages": _BROWSER_STRUCTURED_PAGE_CAP}
+    assert _BROWSER_STRUCTURED_PAGE_CAP >= 9  # enough for 108 records at 12/page

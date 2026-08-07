@@ -79,6 +79,27 @@ class _FakeStrategy:
         self.calls += 1
         return self._result
 
+    async def render_and_fetch_json_pages(self, source_page_url, plan=None, *, next_url, max_pages):
+        # Serve the observed structured response(s) as pages so browser
+        # structured previews (which always paginate) work with the fake.
+        from app.extraction.browser import BrowserJsonPage, BrowserPagedResult
+
+        self.calls += 1
+        r = self._result
+        if r.blocked_reason is not None:
+            return BrowserPagedResult(
+                final_url=r.final_url, status_code=r.status_code, blocked_reason=r.blocked_reason
+            )
+        observed = list(r.observed_json)
+        pages = []
+        for _ in range(max_pages):
+            url = next_url(pages, observed)
+            if not url:
+                break
+            payload = next((p for (u, p) in observed if u == url), None)
+            pages.append(BrowserJsonPage(url=url, status=200, json=payload))
+        return BrowserPagedResult(final_url=r.final_url, status_code=r.status_code, pages=pages)
+
 
 def _blocked(reason: str) -> _FakeStrategy:
     return _FakeStrategy(

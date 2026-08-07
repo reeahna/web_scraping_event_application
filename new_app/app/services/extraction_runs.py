@@ -691,6 +691,23 @@ def _is_structured_browser(config: SiteConfiguration) -> bool:
         return False
 
 
+# A hard backstop on browser page walks. Completeness is governed by the record
+# cap (pagination.max_events); this only bounds a pathological/looping source.
+_BROWSER_STRUCTURED_PAGE_CAP = 60
+
+
+def _browser_pagination_bounds(config: SiteConfiguration) -> dict:
+    """Bounds for browser structured pagination. The record cap
+    (pagination.max_events) governs completeness; the page cap is a hard
+    backstop. `pagination.max_pages` is deliberately NOT used here — it is an
+    HTTP query-param concept whose small default (e.g. 5) would truncate a
+    browser walk long before the record cap and drop most events."""
+    return {
+        "max_records": config.pagination.max_events,
+        "max_pages": _BROWSER_STRUCTURED_PAGE_CAP,
+    }
+
+
 def _build_fetch_strategy(config: SiteConfiguration) -> FetchStrategy:
     """Select the transport for this configuration, from the stored
     execution_strategy — never inferred at runtime:
@@ -715,8 +732,7 @@ def _build_fetch_strategy(config: SiteConfiguration) -> FetchStrategy:
             recipe=config.request_recipe,
             record_path=(config.json_paths or {}).get("events_root", "docs.docs"),
             timezone=config.timezone,
-            max_pages=config.pagination.max_pages,
-            max_records=config.pagination.max_events,
+            **_browser_pagination_bounds(config),
         )
     return BrowserRenderFetchStrategy(plan=plan)
 

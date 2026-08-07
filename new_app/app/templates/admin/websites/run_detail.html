@@ -33,9 +33,14 @@
     <tr><th>Page size</th><td>{{ pg.page_size }}</td></tr>
     <tr><th>Pages fetched</th><td>{{ pg.pages_fetched }}</td></tr>
     <tr><th>Reported total</th><td>{{ pg.reported_total if pg.reported_total is not none else "—" }}</td></tr>
+    <tr><th>Raw records captured</th><td>{{ pg.raw_records if pg.raw_records is not none else pg.captured_records }}</td></tr>
     <tr><th>Captured records</th><td>{{ pg.captured_records }}</td></tr>
     <tr><th>Unique records</th><td>{{ pg.unique_records }}</td></tr>
+    <tr><th>Duplicates discarded</th><td>{{ pg.duplicates_discarded if pg.duplicates_discarded is not none else 0 }}</td></tr>
     <tr><th>Stop reason</th><td>{{ pg.stop_reason }}</td></tr>
+    {% if pg.incomplete %}
+    <tr><th>Incomplete</th><td><span class="badge badge-danger">Yes</span> — failed at offset {{ pg.failed_offset }}</td></tr>
+    {% endif %}
   </tbody>
 </table>
 {% if pg.pages %}

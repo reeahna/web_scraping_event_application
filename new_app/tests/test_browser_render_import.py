@@ -224,6 +224,25 @@ class _FakeObservingBrowser:
             observed_json=self._observed, blocked_reason=self._blocked,
         )
 
+    async def render_and_fetch_json_pages(self, source_page_url, plan=None, *, next_url, max_pages):
+        from app.extraction.browser import BrowserJsonPage, BrowserPagedResult
+
+        self.navigated_to = source_page_url
+        if self._blocked is not None:
+            return BrowserPagedResult(
+                final_url=source_page_url, status_code=self._status, blocked_reason=self._blocked
+            )
+        pages = []
+        for _ in range(max_pages):
+            url = next_url(pages, self._observed)
+            if not url:
+                break
+            payload = next((p for (u, p) in self._observed if u == url), None)
+            pages.append(BrowserJsonPage(url=url, status=self._status, json=payload))
+        return BrowserPagedResult(
+            final_url=source_page_url, status_code=self._status, pages=pages
+        )
+
 
 def _sv_payload(n: int) -> dict:
     records = [

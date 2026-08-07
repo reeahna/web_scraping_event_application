@@ -316,7 +316,7 @@ def _recovery_browser_fetch(config, *, source_page_url: str, strategy):
     an injected fake in tests) so the preview does not launch a second one and
     stays deterministic under test."""
     from app.extraction.browser import BrowserStructuredResponseFetchStrategy
-    from app.services.extraction_runs import _browser_plan_for
+    from app.services.extraction_runs import _browser_pagination_bounds, _browser_plan_for
 
     return BrowserStructuredResponseFetchStrategy(
         source_page_url=config.listing_url or source_page_url,
@@ -326,8 +326,7 @@ def _recovery_browser_fetch(config, *, source_page_url: str, strategy):
         recipe=config.request_recipe,
         record_path=(config.json_paths or {}).get("events_root", "docs.docs"),
         timezone=config.timezone,
-        max_pages=config.pagination.max_pages,
-        max_records=config.pagination.max_events,
+        **_browser_pagination_bounds(config),
     )
 
 
