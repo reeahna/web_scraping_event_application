@@ -49,6 +49,13 @@ from app.services.browser_recovery import browser_retry_recovery
 from app.services.extraction_runs import preview_extraction, run_detection, run_extraction
 from app.services.onboarding_automation import detect_and_configure
 from app.services.rbac import require_permission, user_has_permission
+from app.services.schedule_admin import (
+    INTERVAL_PRESETS,
+    apply_schedule,
+    build_schedule_config,
+    build_website_schedule_view,
+    format_interval,
+)
 from app.services.website_configuration import (
     approve_configuration,
     reject_configuration,
@@ -376,6 +383,9 @@ def website_detail(website_id: int, request: Request, current_user: ViewSites, d
             "website_is_archived": website.archived_at is not None,
             "timezone_dst_warning": dst_warning(website.timezone_override),
             "latest_browser_recovery": latest_browser_recovery,
+            "schedule_view": build_website_schedule_view(db, website),
+            "interval_presets": INTERVAL_PRESETS,
+            "format_interval": format_interval,
         },
     )
 
@@ -964,6 +974,55 @@ async def run_extraction_view(
     )
     response = RedirectResponse(url=f"/admin/websites/{website.id}", status_code=303)
     _extraction_result_flash(response, "Extraction run", result)
+    return response
+
+
+@router.post("/{website_id}/schedule")
+def update_schedule_view(
+    website_id: int,
+    request: Request,
+    db: DbSession,
+    correlation_id: CorrelationId,
+    ip_address: ClientIp,
+    current_user: UpdateSites,
+    csrf_token: str = Form(...),
+    schedule_enabled: str = Form(""),
+    interval_minutes: str = Form("1440"),
+):
+    verify_csrf(request, csrf_token)
+    website = get_website(db, website_id)
+    if website is None:
+        raise NotFoundError("Website not found")
+
+    response = RedirectResponse(url=f"/admin/websites/{website.id}", status_code=303)
+    try:
+        minutes = int(interval_minutes)
+    except (TypeError, ValueError):
+        set_flash(response, "Import frequency must be a whole number of minutes.", "error")
+        return response
+    enabled = schedule_enabled in ("on", "1", "true", "yes")
+    try:
+        config = build_schedule_config(enabled=enabled, interval_minutes=minutes)
+    except Exception as exc:  # noqa: BLE001 - surface a validation message, don't 500
+        set_flash(response, f"Invalid schedule: {exc}", "error")
+        return response
+
+    apply_schedule(db, website, config)
+    record_audit(
+        db,
+        actor_id=current_user.id,
+        action="schedule_updated",
+        entity_type="website",
+        entity_id=website.id,
+        after={"enabled": enabled, "interval_minutes": config["interval_minutes"]},
+        correlation_id=correlation_id,
+        ip_address=ip_address,
+    )
+    state = "enabled" if enabled else "disabled"
+    set_flash(
+        response,
+        f"Automatic imports {state} ({format_interval(config['interval_minutes'])}).",
+    )
     return response
 
 

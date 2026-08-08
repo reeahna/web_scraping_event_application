@@ -1,0 +1,103 @@
+{% extends "admin_base.html" %}
+
+{% block title %}Scheduler &amp; imports{% endblock %}
+
+{% block admin_content %}
+<h1>Scheduler &amp; imports</h1>
+
+<section class="wf-card" aria-labelledby="sched-proc">
+  <h2 id="sched-proc">Scheduler process</h2>
+  <p>
+    {% if scheduler.status == "Running" %}
+    <span class="badge badge-active">Scheduler: Running</span>
+    {% elif scheduler.status == "Stale" %}
+    <span class="badge badge-danger">Scheduler: Stale</span>
+    {% else %}
+    <span class="badge badge-inactive">Scheduler: Not detected</span>
+    {% endif %}
+  </p>
+  <p class="audit-meta">{{ scheduler.detail }}</p>
+  <table>
+    <tbody>
+      <tr><th>Holder</th><td>{{ scheduler.holder or "—" }}</td></tr>
+      <tr><th>Last heartbeat</th><td>{{ scheduler.heartbeat_display }}</td></tr>
+      <tr><th>Scheduled websites</th><td>{{ scheduler.scheduled_count }}</td></tr>
+      <tr><th>Currently running</th><td>{{ scheduler.running_count }}</td></tr>
+      <tr><th>Paused</th><td>{{ scheduler.paused_count }}</td></tr>
+    </tbody>
+  </table>
+  <p class="audit-meta">Automatic imports require the dedicated scheduler process:
+    <code>python -m app.scheduler</code></p>
+</section>
+
+<section class="wf-card" aria-labelledby="bulk">
+  <h2 id="bulk">Import all active websites</h2>
+  <p class="audit-meta">A one-time manual import of every currently-importable website. This does
+    <strong>not</strong> change any website's automatic schedule or next scheduled time.</p>
+  <table>
+    <tbody>
+      <tr><th>Eligible websites</th><td>{{ plan.eligible_count }}</td></tr>
+      <tr><th>HTTP-backed</th><td>{{ plan.http_count }}</td></tr>
+      <tr><th>Browser-backed</th><td>{{ plan.browser_count }}</td></tr>
+      <tr><th>Skipped / ineligible</th><td>{{ plan.skipped_count }}</td></tr>
+    </tbody>
+  </table>
+
+  {% if active_run %}
+  <p><span class="badge badge-pending">A bulk import is already in progress</span>
+    — <a href="/admin/scheduler/bulk-imports/{{ active_run.id }}">view bulk import #{{ active_run.id }}</a>.</p>
+  {% elif can_run and plan.eligible_count > 0 %}
+  <details class="wf-recipe">
+    <summary>Import all eligible websites…</summary>
+    <p>This will contact <strong>{{ plan.eligible_count }}</strong> external event source(s).
+      <strong>{{ plan.browser_count }}</strong> require browser rendering.
+      Existing scheduled times will not be changed.</p>
+    <form method="post" action="/admin/scheduler/bulk-import" class="inline-form"
+          onsubmit="this.querySelector('button').disabled = true;">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}" />
+      <button type="submit" class="wf-primary">Confirm import all</button>
+    </form>
+  </details>
+  {% elif plan.eligible_count == 0 %}
+  <p class="placeholder-note">No websites are currently eligible for a manual import.</p>
+  {% else %}
+  <p class="audit-meta">You do not have permission to run imports.</p>
+  {% endif %}
+
+  {% if plan.ineligible %}
+  <details>
+    <summary>Skipped websites ({{ plan.ineligible|length }})</summary>
+    <table>
+      <thead><tr><th>Website</th><th>Reason</th></tr></thead>
+      <tbody>
+        {% for website, reasons in plan.ineligible %}
+        <tr><td>{{ website.name }}</td><td class="audit-meta">{{ reasons|join("; ") }}</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </details>
+  {% endif %}
+</section>
+
+<section class="wf-card" aria-labelledby="recent">
+  <h2 id="recent">Recent bulk imports</h2>
+  {% if recent_runs %}
+  <table>
+    <thead><tr><th>#</th><th>Started</th><th>Status</th><th>Eligible</th><th>Completed</th></tr></thead>
+    <tbody>
+      {% for run in recent_runs %}
+      <tr>
+        <td><a href="/admin/scheduler/bulk-imports/{{ run.id }}">#{{ run.id }}</a></td>
+        <td>{{ format_admin_datetime(run.started_at or run.created_at) }}</td>
+        <td>{{ run.status.replace("_", " ") }}</td>
+        <td>{{ run.eligible_count }}</td>
+        <td>{{ run.completed_count }} / {{ run.eligible_count }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <p class="placeholder-note">No bulk imports have been run yet.</p>
+  {% endif %}
+</section>
+{% endblock %}

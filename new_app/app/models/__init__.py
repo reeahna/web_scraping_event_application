@@ -6,6 +6,7 @@ from app.models.auto_onboarding_policy import (
     AutoOnboardingPolicyCity,
     AutoOnboardingPolicyRole,
 )
+from app.models.bulk_import import BulkImportItem, BulkImportRun
 from app.models.categorization_rule import CategorizationRule
 from app.models.city import City
 from app.models.event import Event
@@ -37,6 +38,8 @@ from app.models.website import Website
 
 __all__ = [
     "AuditLog",
+    "BulkImportItem",
+    "BulkImportRun",
     "AutoOnboardingActionResult",
     "AutoOnboardingDecision",
     "AutoOnboardingPolicy",

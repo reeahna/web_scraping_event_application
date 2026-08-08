@@ -1,0 +1,71 @@
+{% extends "admin_base.html" %}
+
+{% block title %}Bulk import #{{ run.id }}{% endblock %}
+
+{% block head_extra %}
+{% if run.status in ("queued", "running") %}
+<meta http-equiv="refresh" content="5" />
+{% endif %}
+{% endblock %}
+
+{% block admin_content %}
+<h1>Bulk import #{{ run.id }}</h1>
+<p class="audit-meta"><a href="/admin/scheduler">&laquo; Back to scheduler &amp; imports</a></p>
+
+<section class="wf-card">
+  <table>
+    <tbody>
+      <tr><th>Status</th><td>
+        {% if run.status == "completed" %}<span class="badge badge-active">Completed</span>
+        {% elif run.status == "completed_with_failures" %}<span class="badge badge-pending">Completed with failures</span>
+        {% elif run.status == "running" %}<span class="badge badge-pending">Running</span>
+        {% elif run.status == "queued" %}<span class="badge badge-muted">Queued</span>
+        {% else %}<span class="badge badge-danger">{{ run.status.replace("_", " ") }}</span>{% endif %}
+      </td></tr>
+      <tr><th>Requested by</th><td>{{ run.requested_by.email if run.requested_by else "—" }}</td></tr>
+      <tr><th>Created</th><td>{{ format_admin_datetime(run.created_at) }}</td></tr>
+      <tr><th>Started</th><td>{{ format_admin_datetime(run.started_at) }}</td></tr>
+      <tr><th>Completed</th><td>{{ format_admin_datetime(run.completed_at) }}</td></tr>
+      <tr><th>Eligible</th><td>{{ run.eligible_count }} ({{ run.http_count }} HTTP, {{ run.browser_count }} browser)</td></tr>
+      <tr><th>Progress</th><td>{{ run.completed_count }} / {{ run.eligible_count }}</td></tr>
+    </tbody>
+  </table>
+  {% if run.status in ("queued", "running") %}
+  <p class="audit-meta">This page auto-refreshes every 5 seconds. Bulk imports are executed by the
+    dedicated scheduler process (<code>python -m app.scheduler</code>); a queued run stays queued
+    until that process picks it up.</p>
+  {% endif %}
+  <p class="audit-meta">Automatic import schedules and next-run times are unchanged by this bulk import.</p>
+</section>
+
+<section class="wf-card">
+  <h2>Per-website results</h2>
+  <table>
+    <thead>
+      <tr><th>Website</th><th>Strategy</th><th>Status</th><th>Found</th><th>Valid</th>
+        <th>Inserted</th><th>Updated</th></tr>
+    </thead>
+    <tbody>
+      {% for item in run.items %}
+      <tr>
+        <td><a href="/admin/websites/{{ item.website_id }}">{{ item.website_name }}</a></td>
+        <td>{{ "Browser" if item.execution_strategy == "browser" else "HTTP" }}</td>
+        <td>
+          {% if item.status == "success" %}<span class="badge badge-active">Success</span>
+          {% elif item.status == "partial" %}<span class="badge badge-pending">Partial</span>
+          {% elif item.status in ("failed", "blocked") %}<span class="badge badge-danger">{{ item.status|capitalize }}</span>
+          {% elif item.status == "running" %}<span class="badge badge-pending">Running</span>
+          {% elif item.status == "queued" %}<span class="badge badge-muted">Queued</span>
+          {% else %}<span class="badge badge-muted">{{ item.status.replace("_", " ") }}</span>{% endif %}
+          {% if item.error_summary %}<br/><span class="audit-meta">{{ item.error_summary }}</span>{% endif %}
+        </td>
+        <td>{{ item.events_found }}</td>
+        <td>{{ item.events_valid }}</td>
+        <td>{{ item.events_inserted }}</td>
+        <td>{{ item.events_updated }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</section>
+{% endblock %}

@@ -26,6 +26,7 @@ from app.core.logging import get_logger
 from app.database import SessionLocal
 from app.models.scheduler import SchedulerJobState
 from app.services.scheduler import (
+    MAX_CONCURRENT_RUNS,
     leader_heartbeat,
     reclaim_stale_locks,
     reconcile,
@@ -37,7 +38,8 @@ logger = get_logger("scheduler.runtime")
 
 DEFAULT_DISPATCH_INTERVAL_SECONDS = 60
 DEFAULT_HEARTBEAT_INTERVAL_SECONDS = 30
-DEFAULT_MAX_CONCURRENT_RUNS = 4
+# Shared with the manual bulk-import runner (app.services.scheduler).
+DEFAULT_MAX_CONCURRENT_RUNS = MAX_CONCURRENT_RUNS
 
 
 def default_holder() -> str:
@@ -118,6 +120,14 @@ class SchedulerRuntime:
         self._scheduler.add_job(
             self._alerts_tick, "interval", seconds=self._dispatch_interval,
             id="alerts", max_instances=1, coalesce=True,
+        )
+        # Admin "import all active websites" operations are enqueued by the web
+        # app and drained here, so a browser-heavy bulk import runs in this
+        # isolated process under the shared concurrency ceiling — never inside a
+        # web request, and never altering any site's next_run_at.
+        self._scheduler.add_job(
+            self._bulk_import_tick, "interval", seconds=self._dispatch_interval,
+            id="bulk_import", max_instances=1, coalesce=True,
         )
         self._scheduler.start()
 
@@ -211,6 +221,18 @@ class SchedulerRuntime:
             logger.warning("alerts tick failed: %s", exc)
         finally:
             db.close()
+
+    async def _bulk_import_tick(self) -> None:
+        if not self._is_leader:
+            return
+        from app.services.bulk_import import drain_bulk_import_queue
+
+        try:
+            processed = await drain_bulk_import_queue(self._session_factory)
+            if processed:
+                logger.info("executed %d bulk import operation(s)", processed)
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("bulk import tick failed: %s", exc)
 
     async def _run_one(self, website_id: int) -> None:
         async with self._semaphore:

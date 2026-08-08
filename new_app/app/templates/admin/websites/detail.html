@@ -124,6 +124,66 @@
   {% endif %}
 </section>
 
+{# ---------- 3b. Automatic imports ---------- #}
+{% set sv = schedule_view %}
+<section class="wf-card" aria-labelledby="wf-schedule">
+  <h2 id="wf-schedule">Automatic imports</h2>
+  <table>
+    <tbody>
+      <tr><th>Status</th><td>
+        {% if sv.status_label == "Enabled" %}<span class="badge badge-active">Enabled</span>
+        {% elif sv.status_label == "Disabled" %}<span class="badge badge-inactive">Disabled</span>
+        {% elif sv.status_label == "Not configured" %}<span class="badge badge-muted">Not configured</span>
+        {% else %}<span class="badge badge-pending">{{ sv.status_label }}</span>{% endif %}
+        <br/><span class="audit-meta">{{ sv.status_detail }}</span></td></tr>
+      <tr><th>Frequency</th><td>{{ sv.frequency }}</td></tr>
+      <tr><th>Next scheduled run</th><td>{{ sv.next_run_display }}
+        {% if sv.next_run_display == "—" and sv.enabled and sv.eligible %}<br/><span class="audit-meta">Waiting for the scheduler to set the first run time.</span>{% endif %}</td></tr>
+      <tr><th>Last scheduled run</th><td>{{ sv.last_run_display }}</td></tr>
+      <tr><th>Scheduler state</th><td>{{ sv.scheduler_state }}</td></tr>
+      <tr><th>Execution</th><td>{{ sv.execution }}</td></tr>
+    </tbody>
+  </table>
+  {% if not sv.eligible and sv.ineligible_reasons %}
+  <p class="audit-meta">Not eligible: {{ sv.ineligible_reasons | join("; ") }}.</p>
+  {% endif %}
+
+  {% if can_update %}
+  <details class="wf-recipe">
+    <summary>Edit automatic import schedule</summary>
+    <form method="post" action="/admin/websites/{{ website.id }}/schedule" class="stacked-form">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}" />
+      <label><input type="checkbox" name="schedule_enabled" value="on" {% if sv.enabled %}checked{% endif %} /> Enable automatic imports</label>
+      <label for="interval_minutes">Frequency</label>
+      <select id="interval_minutes" name="interval_minutes">
+        {% for preset in interval_presets %}
+        <option value="{{ preset }}"{% if sv.interval_minutes == preset %} selected{% endif %}>{{ format_interval(preset) }}</option>
+        {% endfor %}
+        {% if sv.interval_minutes and sv.interval_minutes not in interval_presets %}
+        <option value="{{ sv.interval_minutes }}" selected>{{ format_interval(sv.interval_minutes) }} (custom)</option>
+        {% endif %}
+      </select>
+      <p class="audit-meta">Minimum every 15 minutes; maximum every 30 days.</p>
+      <button type="submit" class="wf-secondary">Save schedule</button>
+    </form>
+  </details>
+  {% endif %}
+
+  {% if can_test %}
+  <div class="wf-card-cta">
+    <form method="post" action="/admin/websites/{{ website.id }}/run-extraction" class="inline-form">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}" />
+      <button type="submit" class="wf-secondary" title="Import immediately in this request using the approved configuration; does not change the schedule.">Run event import now</button>
+    </form>
+    <form method="post" action="/admin/scheduler/websites/{{ website.id }}/queue-now" class="inline-form">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}" />
+      <button type="submit" class="wf-muted" title="Set the next scheduled run to now so the scheduler process picks it up.">Queue scheduled run now</button>
+    </form>
+    <span class="audit-meta">“Run now” imports immediately (no schedule change). “Queue scheduled run now” asks the scheduler process to run it.</span>
+  </div>
+  {% endif %}
+</section>
+
 {# ---------- 4. Preview and quality ---------- #}
 <section class="wf-card" aria-labelledby="wf-preview">
   <h2 id="wf-preview">Preview &amp; quality</h2>

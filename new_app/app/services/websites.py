@@ -37,10 +37,21 @@ def transition_website(db: Session, website: Website, target_status: str) -> Web
     db.commit()
     db.refresh(website)
 
+    # Becoming approved+active with NO schedule at all means the source would
+    # silently never import. Give it the default automatic schedule (daily),
+    # but never overwrite an existing one — a schedule an administrator
+    # explicitly disabled stays disabled across reactivation. Import lazily to
+    # avoid a service import cycle.
+    if target_status == ACTIVE:
+        from app.services.schedule_admin import ensure_default_schedule
+
+        if ensure_default_schedule(website):
+            db.commit()
+            db.refresh(website)
+
     # Keep the durable scheduler job in step with the lifecycle: leaving ACTIVE
     # (deactivation, failing, archive) pauses future runs immediately; entering
-    # ACTIVE clears the pause. Events and history are untouched. Import lazily
-    # to avoid a models/service import cycle.
+    # ACTIVE clears the pause. Events and history are untouched.
     from app.services.scheduler import set_paused
 
     set_paused(db, website.id, paused=target_status != ACTIVE)

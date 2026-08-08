@@ -35,6 +35,10 @@ STALE_LEADER_SECONDS = 90
 LEADER_ROW_ID = 1
 # Consecutive structural failures that trigger the re-onboarding workflow.
 STRUCTURE_FAILURE_THRESHOLD = 3
+# The single source of truth for how many website imports run at once — shared
+# by the scheduler dispatch loop and the manual bulk-import runner so both
+# obey the same concurrency ceiling.
+MAX_CONCURRENT_RUNS = 4
 
 
 @dataclass(frozen=True)
@@ -44,10 +48,21 @@ class ScheduleEligibility:
     schedule: ScheduleConfig | None = None
 
 
-def evaluate_eligibility(website: Website) -> ScheduleEligibility:
-    """Pure: a website is schedulable only if it is an approved, active source
-    of an active city with a valid approved configuration and a valid, enabled
-    schedule. Returns every failing reason, not just the first."""
+@dataclass(frozen=True)
+class ManualImportEligibility:
+    """Whether a website may be imported *now* by an administrator (manual
+    one-off / bulk). Deliberately does NOT require an enabled automatic
+    schedule — an admin may keep auto-imports off yet still import on demand."""
+
+    eligible: bool
+    reasons: tuple[str, ...] = ()
+    execution_strategy: str = "http"
+
+
+def _source_eligibility_reasons(website: Website) -> list[str]:
+    """The reasons a source is not importable at all — independent of any
+    automatic schedule. Shared by scheduled eligibility and manual-import
+    eligibility so the two never drift apart."""
     reasons: list[str] = []
     if website.onboarding_status != ACTIVE:
         reasons.append(f"onboarding_status is '{website.onboarding_status}', not active")
@@ -64,8 +79,23 @@ def evaluate_eligibility(website: Website) -> ScheduleEligibility:
     else:
         try:
             SiteConfiguration.model_validate(_approved_config_dict(website))
-        except Exception as exc:  # noqa: BLE001 - any validation failure means not schedulable
+        except Exception as exc:  # noqa: BLE001 - any validation failure means not importable
             reasons.append(f"approved configuration is invalid: {type(exc).__name__}")
+    return reasons
+
+
+def _approved_execution_strategy(website: Website) -> str:
+    config = _approved_config_dict(website)
+    if isinstance(config, dict):
+        return "browser" if config.get("execution_strategy") == "browser" else "http"
+    return "http"
+
+
+def evaluate_eligibility(website: Website) -> ScheduleEligibility:
+    """Pure: a website is schedulable only if it is an approved, active source
+    of an active city with a valid approved configuration and a valid, enabled
+    schedule. Returns every failing reason, not just the first."""
+    reasons = _source_eligibility_reasons(website)
 
     schedule: ScheduleConfig | None = None
     try:
@@ -78,6 +108,18 @@ def evaluate_eligibility(website: Website) -> ScheduleEligibility:
         reasons.append("schedule is disabled")
 
     return ScheduleEligibility(eligible=not reasons, reasons=tuple(reasons), schedule=schedule)
+
+
+def evaluate_manual_import_eligibility(website: Website) -> ManualImportEligibility:
+    """Whether an administrator may import this website now. Uses only the
+    source-level checks — an approved, active, non-archived website of an active
+    city — NOT whether automatic scheduling is enabled."""
+    reasons = _source_eligibility_reasons(website)
+    return ManualImportEligibility(
+        eligible=not reasons,
+        reasons=tuple(reasons),
+        execution_strategy=_approved_execution_strategy(website),
+    )
 
 
 def _approved_config_dict(website: Website) -> dict:
