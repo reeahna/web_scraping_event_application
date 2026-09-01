@@ -124,3 +124,56 @@ def test_field_source_paths_recorded_for_every_field():
     candidate = _extract("jsonld_single_event.html")[0]
     for field_name in ("title", "start_datetime", "canonical_url", "venue", "address"):
         assert field_name in candidate.field_source_paths
+
+
+# --- schema.org ItemList of Events (Google's event-listing shape; used by
+# Eventbrite and many venue/DMO sites) -----------------------------------
+
+_ITEMLIST_HTML = """<!DOCTYPE html><html><head>
+<script type="application/ld+json">
+{"@context":"https://schema.org","@type":"ItemList","itemListElement":[
+  {"@type":"ListItem","position":1,"item":{"@type":"Event","name":"Recovery Summit",
+    "startDate":"2026-09-01","url":"https://example.com/e/summit",
+    "location":{"@type":"Place","name":"Convention Center",
+    "address":{"@type":"PostalAddress","streetAddress":"302 S College Ave",
+    "addressLocality":"Bloomington","addressRegion":"IN"}}}},
+  {"@type":"ListItem","position":2,"item":{"@type":"MusicEvent","name":"Trivia Night",
+    "startDate":"2026-09-02","url":"https://example.com/e/trivia"}}
+]}
+</script></head><body></body></html>"""
+
+# itemListElement whose entries are bare Events (no ListItem `item` wrapper).
+_ITEMLIST_BARE_HTML = """<!DOCTYPE html><html><head>
+<script type="application/ld+json">
+{"@context":"https://schema.org","@type":"ItemList","itemListElement":[
+  {"@type":"Event","name":"Bare One","startDate":"2026-10-01","url":"https://example.com/e/b1"},
+  {"@type":"Event","name":"Bare Two","startDate":"2026-10-02","url":"https://example.com/e/b2"}
+]}
+</script></head><body></body></html>"""
+
+# A non-event ItemList (breadcrumb) must yield nothing, not false positives.
+_BREADCRUMB_HTML = """<!DOCTYPE html><html><head>
+<script type="application/ld+json">
+{"@context":"https://schema.org","@type":"ItemList","itemListElement":[
+  {"@type":"ListItem","position":1,"item":{"@type":"WebPage","name":"Home","url":"https://example.com/"}}
+]}
+</script></head><body></body></html>"""
+
+
+def test_itemlist_of_events_unwrapped():
+    candidates = JsonLdEventPattern().extract(make_response(_ITEMLIST_HTML), CONFIG)
+    assert {c.raw["title"] for c in candidates} == {"Recovery Summit", "Trivia Night"}
+    summit = next(c for c in candidates if c.raw["title"] == "Recovery Summit")
+    assert summit.raw["start_datetime"] == "2026-09-01"
+    assert summit.raw["canonical_url"] == "https://example.com/e/summit"
+    assert summit.raw["venue"] == "Convention Center"
+
+
+def test_itemlist_bare_event_elements_unwrapped():
+    candidates = JsonLdEventPattern().extract(make_response(_ITEMLIST_BARE_HTML), CONFIG)
+    assert {c.raw["title"] for c in candidates} == {"Bare One", "Bare Two"}
+
+
+def test_itemlist_non_event_yields_nothing():
+    candidates = JsonLdEventPattern().extract(make_response(_BREADCRUMB_HTML), CONFIG)
+    assert candidates == []

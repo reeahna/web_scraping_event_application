@@ -686,3 +686,47 @@ async def test_selected_endpoint_failure_still_blocks(
         db_session, website, strategy=_blocked("challenge_marker:captcha")
     )
     assert result.status == RECOVERY_BLOCKED
+
+
+async def test_observation_prefers_structured_rendered_over_unextractable_api():
+    """When the only observed API candidate can't be extracted by any pattern
+    but the rendered page carries a robust *structured* pattern (schema.org
+    JSON-LD), the observation selects the rendered structured source instead of
+    declaring structured_pattern_needed."""
+    from app.services.browser_observation import (
+        OUTCOME_RENDERED_SELECTED,
+        render_and_observe,
+    )
+
+    itemlist_html = (
+        '<html><head><script type="application/ld+json">'
+        '{"@context":"https://schema.org","@type":"ItemList","itemListElement":['
+        '{"@type":"ListItem","item":{"@type":"Event","name":"E1",'
+        '"startDate":"2026-09-01","url":"https://example.com/e/1"}}]}'
+        "</script></head><body></body></html>"
+    )
+    strategy = _rendered(itemlist_html, observed_json=[(_FIND_URL, _UNKNOWN_EVENT_API)])
+    obs = await render_and_observe(LISTING_URL, strategy=strategy)
+
+    assert obs.outcome == OUTCOME_RENDERED_SELECTED
+    assert obs.chosen_source == "rendered_html"
+    assert obs.detection.pattern_name == "json_ld_event"
+
+
+async def test_observation_still_needs_pattern_when_rendered_is_only_static():
+    """The refinement is narrow: a *static* (HTML-card) rendered pattern does
+    NOT override a real-but-unextractable API candidate — that still asks for a
+    reusable pattern rather than falling back to fragile scraping."""
+    from app.services.browser_observation import (
+        OUTCOME_STRUCTURED_PATTERN_NEEDED,
+        render_and_observe,
+    )
+
+    cards = (
+        '<html><body><div class="event-card"><h3><a href="/e/x">X</a></h3>'
+        '<time datetime="2026-09-01">Sep 1</time></div></body></html>'
+    )
+    strategy = _rendered(cards, observed_json=[(_FIND_URL, _UNKNOWN_EVENT_API)])
+    obs = await render_and_observe(LISTING_URL, strategy=strategy)
+
+    assert obs.outcome == OUTCOME_STRUCTURED_PATTERN_NEEDED

@@ -69,3 +69,29 @@ def test_blocked_response_never_produces_a_confident_match():
     assert result.pattern_name is None
     assert result.needs_review
     assert any("access denied" in w for w in result.warnings)
+
+
+def test_jsonld_detector_matches_itemlist_of_events():
+    html = (
+        '<html><head><script type="application/ld+json">'
+        '{"@context":"https://schema.org","@type":"ItemList","itemListElement":['
+        '{"@type":"ListItem","position":1,"item":{"@type":"Event","name":"A",'
+        '"startDate":"2026-09-01","url":"https://example.com/e/a"}},'
+        '{"@type":"ListItem","position":2,"item":{"@type":"Event","name":"B",'
+        '"startDate":"2026-09-02","url":"https://example.com/e/b"}}'
+        ']}</script></head><body></body></html>'
+    )
+    result = JsonLdDetector().detect(make_response(html))
+    assert result.pattern_name == "json_ld_event"
+    assert result.evidence["event_blocks_found"] == 2
+
+
+def test_jsonld_detector_ignores_non_event_itemlist():
+    html = (
+        '<html><head><script type="application/ld+json">'
+        '{"@context":"https://schema.org","@type":"ItemList","itemListElement":['
+        '{"@type":"ListItem","position":1,"item":{"@type":"WebPage","name":"Home",'
+        '"url":"https://example.com/"}}]}</script></head><body></body></html>'
+    )
+    result = JsonLdDetector().detect(make_response(html))
+    assert result.pattern_name is None

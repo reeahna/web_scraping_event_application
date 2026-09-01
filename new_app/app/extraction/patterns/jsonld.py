@@ -55,6 +55,20 @@ def _flatten_node(node: Any) -> list[dict[str, Any]]:
     if isinstance(node, dict):
         if isinstance(node.get("@graph"), list):
             return _flatten_node(node["@graph"])
+        # schema.org ItemList: unwrap `itemListElement` to the inner objects.
+        # Each element is typically a ListItem whose `item` holds the Event
+        # (Google's event-listing structured-data shape), but a bare Event per
+        # element is also allowed. Non-event lists (e.g. breadcrumbs) survive
+        # the unwrap and are simply filtered out by the event-type check.
+        elements = node.get("itemListElement")
+        if isinstance(elements, list):
+            result = []
+            for element in elements:
+                if isinstance(element, dict) and "item" in element:
+                    result.extend(_flatten_node(element["item"]))
+                else:
+                    result.extend(_flatten_node(element))
+            return result
         return [node]
     return []
 

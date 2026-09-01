@@ -120,6 +120,33 @@ def _blocked_result(reason: str) -> PatternDetectionResult:
     )
 
 
+def _flatten_jsonld(node: object) -> list[dict]:
+    """Expand a JSON-LD node into the concrete objects to type-check: recurse
+    through lists, `@graph`, and schema.org `ItemList`/`itemListElement` (each
+    element's `item`, or a bare element). Mirrors the extractor's own flatten
+    (app.extraction.patterns.jsonld) so detection and extraction agree on what
+    an ItemList of Events contains."""
+    if isinstance(node, list):
+        out: list[dict] = []
+        for item in node:
+            out.extend(_flatten_jsonld(item))
+        return out
+    if isinstance(node, dict):
+        if isinstance(node.get("@graph"), list):
+            return _flatten_jsonld(node["@graph"])
+        elements = node.get("itemListElement")
+        if isinstance(elements, list):
+            out = []
+            for element in elements:
+                if isinstance(element, dict) and "item" in element:
+                    out.extend(_flatten_jsonld(element["item"]))
+                else:
+                    out.extend(_flatten_jsonld(element))
+            return out
+        return [node]
+    return []
+
+
 class JsonLdDetector:
     def detect(self, response: FetchResponse) -> PatternDetectionResult:
         if _access_denied_detected(response):
@@ -138,19 +165,11 @@ class JsonLdDetector:
             except json.JSONDecodeError:
                 malformed += 1
                 continue
-            for node in data if isinstance(data, list) else [data]:
-                nodes_to_check = (
-                    node.get("@graph", [])
-                    if isinstance(node, dict) and isinstance(node.get("@graph"), list)
-                    else ([node] if isinstance(node, dict) else [])
-                )
-                for candidate_node in nodes_to_check:
-                    if not isinstance(candidate_node, dict):
-                        continue
-                    type_value = candidate_node.get("@type")
-                    types = type_value if isinstance(type_value, list) else [type_value]
-                    if any(isinstance(t, str) and "event" in t.lower() for t in types):
-                        event_blocks += 1
+            for candidate_node in _flatten_jsonld(data):
+                type_value = candidate_node.get("@type")
+                types = type_value if isinstance(type_value, list) else [type_value]
+                if any(isinstance(t, str) and "event" in t.lower() for t in types):
+                    event_blocks += 1
 
         if event_blocks == 0:
             return PatternDetectionResult(

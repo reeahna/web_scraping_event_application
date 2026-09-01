@@ -25,6 +25,7 @@ from dataclasses import dataclass, field
 
 from app.extraction.browser import BrowserFetchStrategy, BrowserRenderResult
 from app.extraction.detection import run_detection
+from app.extraction.registry import REGISTRY
 from app.extraction.structured_candidates import (
     THIRD_PARTY_FUNCTIONAL,
     THIRD_PARTY_TELEMETRY,
@@ -108,6 +109,17 @@ class BrowserObservation:
     @property
     def usable(self) -> bool:
         return self.detection is not None and self.detection.pattern_name is not None
+
+
+def _is_structured_pattern(pattern_name: str) -> bool:
+    """True when a registered pattern is classified `structured` (schema.org
+    JSON-LD, embedded JSON, vendor APIs) rather than `static` HTML-card
+    scraping. Used to decide whether a rendered-page pattern is robust enough
+    to prefer over an observed-but-unextractable API candidate."""
+    try:
+        return REGISTRY.get(pattern_name).classification == "structured"
+    except Exception:  # noqa: BLE001 - unknown pattern is simply "not structured"
+        return False
 
 
 async def render_and_observe(
@@ -205,6 +217,41 @@ async def render_and_observe(
     # pattern is needed. chosen_response/detection stay None so recovery cannot
     # extract or propose from it, and rendered HTML is never selected here.
     if candidate_endpoints:
+        # Before declaring that a brand-new API pattern is required, check
+        # whether the rendered page itself carries a robust *structured*
+        # pattern (schema.org JSON-LD, etc.). Using that is strictly better
+        # than giving up, and — unlike fragile HTML-card scraping — it is still
+        # structured data, so the deliberate bias against rendered HTML when a
+        # real API exists is preserved for everything but genuine page-embedded
+        # structured events.
+        rendered_detection = run_detection(rendered)
+        if rendered_detection.pattern_name and _is_structured_pattern(
+            rendered_detection.pattern_name
+        ):
+            warnings.append(
+                "observed API endpoint(s) not extractable by any registered pattern; "
+                f"using structured '{rendered_detection.pattern_name}' from the rendered page"
+            )
+            return BrowserObservation(
+                outcome=OUTCOME_RENDERED_SELECTED,
+                rendered_response=rendered,
+                api_responses=api_responses,
+                chosen_response=rendered,
+                detection=rendered_detection,
+                chosen_source="rendered_html",
+                warnings=tuple(warnings),
+                candidate_endpoints=candidate_endpoints,
+                ignored_endpoints=ignored_endpoints,
+                other_first_party=other_first_party,
+                selected_endpoint=None,
+                selection_reason=(
+                    f"observed first-party API endpoint(s) are not extractable by any "
+                    f"registered pattern; the rendered page carries structured "
+                    f"'{rendered_detection.pattern_name}' data, which is used instead"
+                ),
+                rejected_candidates=rejected,
+            )
+
         top = candidate_endpoints[0]
         warnings.append(
             "a first-party event-like endpoint was observed but no registered pattern can "
