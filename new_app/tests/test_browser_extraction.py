@@ -227,3 +227,66 @@ def test_the_browser_is_reusable_after_a_render(server, browser_available, allow
     first = asyncio.run(strategy.render(f"{server}/cards", plan))
     second = asyncio.run(strategy.render(f"{server}/cards", plan))
     assert first.blocked_reason is None and second.blocked_reason is None
+
+
+# --- Windows uvicorn --reload regression: browser launch must not 500 --------
+#
+# Under uvicorn --reload (or --workers) on Windows the web process runs on a
+# SelectorEventLoop, which raises NotImplementedError when Playwright spawns its
+# node driver subprocess. `_run_browser` offloads the coroutine to a dedicated
+# ProactorEventLoop thread so the launch succeeds instead of crashing the
+# request. These tests pin that behavior without needing a real Windows loop.
+
+
+def test_run_browser_runs_inline_when_loop_can_spawn():
+    from app.extraction import browser as browser_mod
+
+    main_thread = threading.current_thread().ident
+    ran_on: dict = {}
+
+    async def work():
+        ran_on["thread"] = threading.current_thread().ident
+        return "inline"
+
+    async def main():
+        with patch.object(browser_mod, "_loop_can_spawn_subprocess", return_value=True):
+            return await browser_mod._run_browser(work)
+
+    assert asyncio.run(main()) == "inline"
+    # Inline: same thread as the caller.
+    assert ran_on["thread"] == main_thread
+
+
+def test_run_browser_offloads_when_loop_cannot_spawn():
+    from app.extraction import browser as browser_mod
+
+    main_thread = threading.current_thread().ident
+    ran_on: dict = {}
+
+    async def work():
+        # Bind an asyncio primitive so we prove a real loop backs the offload.
+        await asyncio.sleep(0)
+        ran_on["thread"] = threading.current_thread().ident
+        return "offloaded"
+
+    async def main():
+        with patch.object(browser_mod, "_loop_can_spawn_subprocess", return_value=False):
+            return await browser_mod._run_browser(work)
+
+    assert asyncio.run(main()) == "offloaded"
+    # Offloaded: ran on a different (worker) thread with its own event loop.
+    assert ran_on["thread"] != main_thread
+
+
+def test_run_browser_propagates_exceptions_from_offload_thread():
+    from app.extraction import browser as browser_mod
+
+    async def boom():
+        raise RuntimeError("kaboom")
+
+    async def main():
+        with patch.object(browser_mod, "_loop_can_spawn_subprocess", return_value=False):
+            return await browser_mod._run_browser(boom)
+
+    with pytest.raises(RuntimeError, match="kaboom"):
+        asyncio.run(main())

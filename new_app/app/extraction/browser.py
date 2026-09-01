@@ -26,9 +26,11 @@ a local fixture server without weakening the production default.
 
 from __future__ import annotations
 
+import asyncio
 import contextlib
 import hashlib
 import json
+import sys
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
@@ -133,6 +135,50 @@ def _challenge_reason(html: str, status: int) -> str | None:
     return None
 
 
+def _loop_can_spawn_subprocess() -> bool:
+    """Whether the running event loop can spawn subprocesses (Playwright's node
+    driver needs one). On Windows only ``ProactorEventLoop`` can; uvicorn run
+    with ``--reload`` or ``--workers`` drives the web process on a
+    ``SelectorEventLoop``, which raises ``NotImplementedError`` on launch."""
+    if sys.platform != "win32":
+        return True
+    try:
+        loop = asyncio.get_running_loop()
+    except RuntimeError:
+        return True
+    return isinstance(loop, asyncio.ProactorEventLoop)
+
+
+async def _run_browser(coro_factory):
+    """Run a Playwright coroutine, offloading it to a dedicated thread with its
+    own ``ProactorEventLoop`` when the current loop cannot spawn subprocesses
+    (the Windows ``SelectorEventLoop`` used by ``uvicorn --reload``). Everywhere
+    else — the scheduler process, POSIX — it runs inline on the current loop.
+    ``coro_factory`` is a zero-arg callable so the coroutine is created inside
+    whichever loop will actually run it."""
+    if _loop_can_spawn_subprocess():
+        return await coro_factory()
+
+    outcome: dict = {}
+
+    def _worker() -> None:
+        worker_loop = asyncio.ProactorEventLoop()
+        try:
+            asyncio.set_event_loop(worker_loop)
+            outcome["value"] = worker_loop.run_until_complete(coro_factory())
+        except BaseException as exc:  # noqa: BLE001 - re-raised on the caller loop
+            outcome["error"] = exc
+        finally:
+            with contextlib.suppress(Exception):
+                asyncio.set_event_loop(None)
+            worker_loop.close()
+
+    await asyncio.get_running_loop().run_in_executor(None, _worker)
+    if "error" in outcome:
+        raise outcome["error"]
+    return outcome["value"]
+
+
 class BrowserFetchStrategy:
     """`_launcher` is a testability hook only: production passes None and the
     real Playwright chromium is used. There is no mock browser — tests drive
@@ -152,21 +198,28 @@ class BrowserFetchStrategy:
                 blocked_reason=f"ssrf_blocked:{urlsplit(url).hostname}",
             )
 
+        # Browser launch is offloaded to a Proactor-backed thread when the
+        # request loop cannot spawn subprocesses (uvicorn --reload on Windows).
+        return await _run_browser(lambda: self._render_impl(url, plan))
+
+    async def _render_impl(self, url: str, plan: BrowserPlan) -> BrowserRenderResult:
         from playwright.async_api import async_playwright
 
         observed_json: list[tuple[str, object]] = []
         observed_requests: dict[str, dict] = {}
         warnings: list[str] = []
+        browser = None
+        context = None
 
-        async with async_playwright() as pw:
-            browser = await pw.chromium.launch(headless=True)
-            context = await browser.new_context(
-                accept_downloads=False,
-                service_workers="block",
-                java_script_enabled=True,
-            )
-            context.set_default_timeout(plan.max_total_ms)
-            try:
+        try:
+            async with async_playwright() as pw:
+                browser = await pw.chromium.launch(headless=True)
+                context = await browser.new_context(
+                    accept_downloads=False,
+                    service_workers="block",
+                    java_script_enabled=True,
+                )
+                context.set_default_timeout(plan.max_total_ms)
                 page = await context.new_page()
                 # New windows/popups are closed immediately rather than
                 # followed.
@@ -198,16 +251,16 @@ class BrowserFetchStrategy:
                     observed_requests=observed_requests,
                     warnings=tuple(warnings),
                 )
-            except Exception as exc:  # noqa: BLE001 - a render failure must not crash the app
-                return BrowserRenderResult(
-                    final_url=url, rendered_html="", status_code=0,
-                    blocked_reason=f"browser_error:{type(exc).__name__}",
-                    warnings=tuple(warnings),
-                )
-            finally:
-                # Always tear down, even on timeout/error.
-                await _safe_close_context(context)
-                await _safe_close_browser(browser)
+        except Exception as exc:  # noqa: BLE001 - a render/launch failure must not crash the app
+            return BrowserRenderResult(
+                final_url=url, rendered_html="", status_code=0,
+                blocked_reason=f"browser_error:{type(exc).__name__}",
+                warnings=tuple(warnings),
+            )
+        finally:
+            # Always tear down, even on timeout/error/launch failure.
+            await _safe_close_context(context)
+            await _safe_close_browser(browser)
 
     async def render_and_fetch_json_pages(
         self,
@@ -234,20 +287,36 @@ class BrowserFetchStrategy:
                 blocked_reason=f"ssrf_blocked:{urlsplit(source_page_url).hostname}",
             )
 
+        return await _run_browser(
+            lambda: self._render_and_fetch_json_pages_impl(
+                source_page_url, plan, next_url=next_url, max_pages=max_pages
+            )
+        )
+
+    async def _render_and_fetch_json_pages_impl(
+        self,
+        source_page_url: str,
+        plan: BrowserPlan,
+        *,
+        next_url,
+        max_pages: int,
+    ) -> BrowserPagedResult:
         from playwright.async_api import async_playwright
 
         observed_json: list[tuple[str, object]] = []
         observed_requests: dict[str, dict] = {}
         warnings: list[str] = []
         pages: list[BrowserJsonPage] = []
+        browser = None
+        context = None
 
-        async with async_playwright() as pw:
-            browser = await pw.chromium.launch(headless=True)
-            context = await browser.new_context(
-                accept_downloads=False, service_workers="block", java_script_enabled=True,
-            )
-            context.set_default_timeout(plan.max_total_ms)
-            try:
+        try:
+            async with async_playwright() as pw:
+                browser = await pw.chromium.launch(headless=True)
+                context = await browser.new_context(
+                    accept_downloads=False, service_workers="block", java_script_enabled=True,
+                )
+                context.set_default_timeout(plan.max_total_ms)
                 page = await context.new_page()
                 context.on("page", lambda p: _safe_close(p))
                 await self._install_guards(
@@ -291,15 +360,15 @@ class BrowserFetchStrategy:
                     final_url=page.url, status_code=status, pages=pages,
                     warnings=tuple(warnings),
                 )
-            except Exception as exc:  # noqa: BLE001 - a fetch failure must not crash the app
-                return BrowserPagedResult(
-                    final_url=source_page_url, status_code=0, pages=pages,
-                    blocked_reason=f"browser_error:{type(exc).__name__}",
-                    warnings=tuple(warnings),
-                )
-            finally:
-                await _safe_close_context(context)
-                await _safe_close_browser(browser)
+        except Exception as exc:  # noqa: BLE001 - a fetch/launch failure must not crash the app
+            return BrowserPagedResult(
+                final_url=source_page_url, status_code=0, pages=pages,
+                blocked_reason=f"browser_error:{type(exc).__name__}",
+                warnings=tuple(warnings),
+            )
+        finally:
+            await _safe_close_context(context)
+            await _safe_close_browser(browser)
 
     async def _install_guards(
         self, context, plan, observed_json, observed_requests, warnings
