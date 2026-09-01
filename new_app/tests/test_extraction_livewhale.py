@@ -507,3 +507,30 @@ async def test_full_workflow_detection_through_repeat_extraction(
     assert repeat_result.events_inserted == 0
     assert repeat_result.events_updated == 4
     assert db_session.query(Event).count() == 4
+
+
+def test_events_from_data_envelope_are_extracted():
+    """Modern LiveWhale feeds (e.g. events.iu.edu/live/json/events) wrap the
+    list in a JSON:API-style envelope under `data`, not `events`."""
+    body = (
+        '{"meta":{"total":2},"links":{},"data":['
+        '{"id":1,"title":"Convocation","url":"https://x.edu/e/1","date_ts":1788235200},'
+        '{"id":2,"title":"Concert","url":"https://x.edu/e/2","date_ts":1788321600}'
+        "]}"
+    )
+    config = SiteConfiguration(pattern_name="livewhale_json", api_endpoint="https://x.edu/live/json/events")
+    candidates = LiveWhalePattern().extract(make_response(body, content_type="application/json"), config)
+    assert {c.raw["title"] for c in candidates} == {"Convocation", "Concert"}
+
+
+def test_livewhale_detector_derives_json_feed_from_assets():
+    """When LiveWhale assets are present but the page links no API route, the
+    detector derives the conventional /live/json/events feed from the origin."""
+    html = (
+        '<html><head><link rel="stylesheet" '
+        'href="https://events.iu.edu/live/resource/css/livewhale/frontend.css">'
+        "</head><body><h1>Events Calendar</h1></body></html>"
+    )
+    result = LiveWhaleDetector().detect(make_response(html, final_url="https://events.iu.edu/"))
+    assert result.pattern_name == "livewhale_json"
+    assert "https://events.iu.edu/live/json/events" in result.discovered_endpoints

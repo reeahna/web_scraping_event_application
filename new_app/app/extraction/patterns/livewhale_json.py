@@ -121,8 +121,14 @@ def _first_group_name(value: Any) -> Any:
 
 def _events_from_payload(payload: Any) -> list[Any] | None:
     if isinstance(payload, dict):
-        events = payload.get("events")
-        return events if isinstance(events, list) else None
+        # LiveWhale exposes the event list under `events` on some installs and
+        # under `data` (a JSON:API-style envelope with `meta`/`links`/`data`)
+        # on others — e.g. the `/live/json/events` feed on events.iu.edu.
+        for key in ("events", "data"):
+            value = payload.get(key)
+            if isinstance(value, list):
+                return value
+        return None
     if isinstance(payload, list):
         return payload
     return None

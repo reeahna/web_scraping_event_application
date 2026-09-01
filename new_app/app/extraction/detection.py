@@ -501,6 +501,18 @@ class LiveWhaleDetector:
                     score += 0.3
                     break
 
+        # Modern LiveWhale installs expose events at the deterministic
+        # `/live/json/events` feed rather than the older `calendar/api/N/events`
+        # route, and don't link it from the page. When LiveWhale is present
+        # (asset evidence) but no explicit route was discovered, derive that
+        # conventional feed from the site origin so onboarding has an endpoint
+        # to configure — the same "known CMS route" principle as WordPress's
+        # wp/v2/posts. Deterministic convention, never inferred from the host.
+        if livewhale_assets and not discovered:
+            derived = urljoin(response.final_url, "/live/json/events")
+            discovered.append(derived)
+            evidence["livewhale_derived_json_feed"] = derived
+
         # Generic generator-meta text is deliberately excluded from this
         # gate — it only ever adds score on top of a real asset/route signal,
         # never triggers a match on its own.
