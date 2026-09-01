@@ -58,6 +58,7 @@ from app.core.onboarding_jobs import (
     VALIDATING,
     is_terminal,
 )
+from app.core.timezones import is_fixed_offset_abbreviation
 from app.core.url_canonical import canonical_url
 from app.extraction.inference import policy as inference_policy
 from app.extraction.inference.site_metadata import infer_site_metadata
@@ -111,6 +112,16 @@ class BatchProgress:
     processed: int
     remaining: int
     counts: dict[str, int]
+
+
+def _onboarding_timezone(value: str | None) -> str | None:
+    """The timezone override to persist for a new source. A bare fixed-offset
+    abbreviation (``EST``/``PST``/…) is dropped to ``None`` so the assigned
+    city's DST-aware IANA zone governs instead — a constant-offset override is
+    always the wrong choice for a location that observes daylight saving."""
+    if value and is_fixed_offset_abbreviation(value):
+        return None
+    return value or None
 
 
 def _now() -> datetime:
@@ -181,8 +192,10 @@ def create_batch_from_submission(
             # Precedence: the row's own timezone, then the submission default.
             # A city timezone is not copied here — it is resolved at
             # extraction time from the assigned city, so leaving this null
-            # means "use the city's".
-            timezone_override=row.timezone or default_timezone,
+            # means "use the city's". A bare fixed-offset abbreviation (EST,
+            # PST, …) is dropped to null so it never overrides the city's
+            # DST-aware zone — the city timezone is always the better default.
+            timezone_override=_onboarding_timezone(row.timezone or default_timezone),
             submitted_by_user_id=submitted_by_user_id,
             submitted_name=row.name,
             submitted_source_display_name=row.source_display_name,

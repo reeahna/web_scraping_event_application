@@ -26,6 +26,7 @@ from app.core.onboarding_jobs import (
     SOURCE_SINGLE,
 )
 from app.core.templating import render
+from app.core.timezones import is_fixed_offset_abbreviation
 from app.dependencies import ClientIp, CorrelationId, DbSession
 from app.models.user import User
 from app.repositories.auto_onboarding import (
@@ -155,6 +156,15 @@ async def onboard_submit(
         errors["city_id"] = "Choose a default city — sources cannot be approved without one."
     if default_timezone and default_timezone not in _VALID_TIMEZONES:
         errors["default_timezone"] = f"'{default_timezone}' is not a recognized IANA timezone."
+    elif default_timezone and is_fixed_offset_abbreviation(default_timezone):
+        # A bare abbreviation like EST ignores daylight saving time and would
+        # override the assigned city's correct zone. Leaving this blank uses the
+        # city's timezone, which is the right default.
+        errors["default_timezone"] = (
+            f"'{default_timezone}' is a fixed-offset abbreviation that ignores daylight "
+            "saving time. Leave this blank to use the city's timezone, or enter a full IANA "
+            "name such as 'America/Indiana/Indianapolis'."
+        )
 
     # A batch-level policy override is only honoured when it exists and — if it
     # enables automatic approval or activation — the submitter holds

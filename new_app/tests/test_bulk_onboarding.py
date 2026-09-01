@@ -338,3 +338,27 @@ def test_a_blocked_job_is_not_retryable_without_an_explicit_decision(
 
     with pytest.raises(AppError):
         asyncio.run(retry_job(db_session, job))
+
+
+# --- timezone normalization: bare fixed-offset abbreviations are dropped so
+# the assigned city's DST-aware IANA zone governs -----------------------------
+
+
+def test_onboarding_timezone_drops_bare_offset_abbreviations():
+    from app.services.bulk_onboarding import _onboarding_timezone
+
+    # EST/MST/HST are the bare abbreviations zoneinfo actually recognizes and
+    # that ignore DST; each is dropped so the city's IANA zone governs.
+    assert _onboarding_timezone("EST") is None
+    assert _onboarding_timezone("MST") is None
+    assert _onboarding_timezone("HST") is None
+    assert _onboarding_timezone("") is None
+    assert _onboarding_timezone(None) is None
+
+
+def test_onboarding_timezone_keeps_iana_and_utc():
+    from app.services.bulk_onboarding import _onboarding_timezone
+
+    assert _onboarding_timezone("America/Indiana/Indianapolis") == "America/Indiana/Indianapolis"
+    assert _onboarding_timezone("America/New_York") == "America/New_York"
+    assert _onboarding_timezone("UTC") == "UTC"
