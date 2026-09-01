@@ -11,10 +11,12 @@ from datetime import date, time
 
 
 def human_date(value: date | None) -> str:
-    """ "Sat, Aug 1" — compact form for event cards."""
+    """ "Sat, Aug 1, 2026" — compact form for event cards. The year is included
+    so listings spanning more than one year (recurring series, far-future
+    events) read unambiguously."""
     if value is None:
         return "Date TBD"
-    return f"{value.strftime('%a')}, {value.strftime('%b')} {value.day}"
+    return f"{value.strftime('%a')}, {value.strftime('%b')} {value.day}, {value.year}"
 
 
 def human_date_long(value: date | None) -> str:
