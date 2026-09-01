@@ -366,3 +366,28 @@ def test_no_site_identity_branching():
         lowered = path.read_text(encoding="utf-8").lower()
         offenders.extend(f"{path.name}:{token}" for token in forbidden if token in lowered)
     assert offenders == []
+
+
+def test_tribe_proposer_appends_events_to_bare_rest_root():
+    # Some sites (e.g. lotusfest.org) expose only the Tribe REST namespace root
+    # on the page; the events collection is always at <root>/events.
+    from app.extraction.inference.proposers.structured import the_events_calendar_proposer
+
+    p = the_events_calendar_proposer()
+    assert (
+        p._with_derived_route("https://x.org/wp-json/tribe/events/v1/")
+        == "https://x.org/wp-json/tribe/events/v1/events"
+    )
+    # An endpoint that already names the collection is left unchanged.
+    assert (
+        p._with_derived_route("https://x.org/wp-json/tribe/events/v1/events")
+        == "https://x.org/wp-json/tribe/events/v1/events"
+    )
+
+
+def test_wordpress_proposer_still_derives_posts_route():
+    from app.extraction.inference.proposers.structured import wordpress_rest_proposer
+
+    p = wordpress_rest_proposer()
+    assert p._with_derived_route("https://x.org/wp-json").endswith("wp/v2/posts")
+    assert p._with_derived_route("https://x.org/wp-json/wp/v2/posts").endswith("wp/v2/posts")

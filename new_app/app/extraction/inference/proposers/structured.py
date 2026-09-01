@@ -148,14 +148,30 @@ class _StructuredProposer:
     def _endpoint(self, context: ProposalContext) -> str | None:
         for endpoint in context.detection.discovered_endpoints:
             if endpoint:
-                if self._spec.derived_route and endpoint.rstrip("/").endswith("wp-json"):
-                    return urljoin(endpoint.rstrip("/") + "/", self._spec.derived_route)
-                return endpoint
+                return self._with_derived_route(endpoint)
         # The listing URL itself is a usable endpoint when the response we
         # already hold is the API payload.
         if _payload_records(context.response.text) is not None:
             return context.response.final_url
         return None
+
+    def _with_derived_route(self, endpoint: str) -> str:
+        """Append the pattern's known collection route when the detector could
+        only discover the API *root*. These are deterministic route conventions,
+        not a guess about which site this is: WordPress exposes posts at
+        ``wp-json/wp/v2/posts``; The Events Calendar exposes its events at
+        ``tribe/events/v1/events`` (the detector discovers the ``v1`` root)."""
+        route = self._spec.derived_route
+        if not route:
+            return endpoint
+        trimmed = endpoint.rstrip("/")
+        if trimmed.endswith("/" + route.strip("/")):
+            return endpoint  # the collection route is already present
+        is_wp_root = trimmed.endswith("wp-json")
+        is_tribe_root = "/tribe/events/v" in trimmed
+        if is_wp_root or is_tribe_root:
+            return urljoin(trimmed + "/", route.strip("/"))
+        return endpoint
 
     def propose(self, context: ProposalContext) -> ConfigurationProposal:
         spec = self._spec
@@ -289,6 +305,7 @@ def the_events_calendar_proposer() -> _StructuredProposer:
             paths=TRIBE_PATHS,
             pagination_strategy="tribe_rest",
             page_param=None,
+            derived_route="events",
             endpoint_note="The Events Calendar REST route discovered on the page",
         )
     )
