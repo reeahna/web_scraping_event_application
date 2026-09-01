@@ -80,6 +80,12 @@ BrowserActionType = Annotated[
 ]
 
 
+DEFAULT_BROWSER_USER_AGENT = (
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
+    "(KHTML, like Gecko) Chrome/140.0.0.0 Safari/537.36"
+)
+
+
 class BrowserPlan(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -91,6 +97,12 @@ class BrowserPlan(BaseModel):
     # Block image/font/media subrequests to keep a render fast and cheap. On by
     # default; a plan can turn it off if a pattern genuinely needs images.
     block_media: bool = True
+    # Present a normal desktop-Chrome User-Agent. Playwright's default headless
+    # UA contains "HeadlessChrome", which edge/bot protection (Akamai, etc.)
+    # rejects outright; a realistic UA lets the browser read the same public
+    # pages a normal visitor sees. Not site-specific — applies to every
+    # browser-backed source.
+    user_agent: str = Field(default=DEFAULT_BROWSER_USER_AGENT, min_length=1)
 
 
 def default_plan() -> BrowserPlan:

@@ -68,10 +68,13 @@ _CHALLENGE_PAGE = """<!DOCTYPE html><html><body>
 
 
 class _Handler(BaseHTTPRequestHandler):
+    last_user_agent: str | None = None
+
     def log_message(self, *args):  # silence
         pass
 
     def do_GET(self):  # noqa: N802
+        _Handler.last_user_agent = self.headers.get("User-Agent")
         routes = {
             "/cards": ("text/html", _CARDS_PAGE),
             "/algolia-page": ("text/html", _ALGOLIA_PAGE),
@@ -290,3 +293,34 @@ def test_run_browser_propagates_exceptions_from_offload_thread():
 
     with pytest.raises(RuntimeError, match="kaboom"):
         asyncio.run(main())
+
+
+# --- realistic User-Agent: Playwright's default headless UA ("HeadlessChrome")
+# is rejected by edge/bot protection (Akamai), so every browser-backed fetch
+# must present a normal desktop-Chrome UA. ---------------------------------
+
+
+def test_default_plan_user_agent_is_realistic():
+    from app.schemas.browser import DEFAULT_BROWSER_USER_AGENT, default_plan
+
+    ua = default_plan().user_agent
+    assert ua == DEFAULT_BROWSER_USER_AGENT
+    assert "HeadlessChrome" not in ua
+    assert ua.startswith("Mozilla/5.0")
+    assert "Chrome/" in ua
+
+
+def test_render_applies_plan_user_agent(server, browser_available, allow_local):
+    if not browser_available:
+        pytest.skip("chromium is not available in this environment")
+
+    from app.schemas.browser import NetworkIdleAction
+
+    _Handler.last_user_agent = None
+    plan = BrowserPlan(actions=[NetworkIdleAction()])
+    result = asyncio.run(BrowserFetchStrategy().render(f"{server}/cards", plan))
+
+    assert result.status_code == 200
+    # The fixture server saw the realistic UA, not Playwright's headless default.
+    assert _Handler.last_user_agent == plan.user_agent
+    assert "HeadlessChrome" not in (_Handler.last_user_agent or "")

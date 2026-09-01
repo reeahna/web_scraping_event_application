@@ -169,6 +169,16 @@ async def _run_browser(coro_factory):
         except BaseException as exc:  # noqa: BLE001 - re-raised on the caller loop
             outcome["error"] = exc
         finally:
+            # Drain the fire-and-forget response observers before closing, so
+            # they don't emit "Task was destroyed but it is pending" warnings.
+            with contextlib.suppress(Exception):
+                pending = asyncio.all_tasks(worker_loop)
+                for task in pending:
+                    task.cancel()
+                if pending:
+                    worker_loop.run_until_complete(
+                        asyncio.gather(*pending, return_exceptions=True)
+                    )
             with contextlib.suppress(Exception):
                 asyncio.set_event_loop(None)
             worker_loop.close()
@@ -218,6 +228,7 @@ class BrowserFetchStrategy:
                     accept_downloads=False,
                     service_workers="block",
                     java_script_enabled=True,
+                    user_agent=plan.user_agent,
                 )
                 context.set_default_timeout(plan.max_total_ms)
                 page = await context.new_page()
@@ -315,6 +326,7 @@ class BrowserFetchStrategy:
                 browser = await pw.chromium.launch(headless=True)
                 context = await browser.new_context(
                     accept_downloads=False, service_workers="block", java_script_enabled=True,
+                    user_agent=plan.user_agent,
                 )
                 context.set_default_timeout(plan.max_total_ms)
                 page = await context.new_page()
