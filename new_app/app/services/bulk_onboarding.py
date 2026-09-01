@@ -82,6 +82,12 @@ from app.schemas.extraction import FetchConfig
 from app.schemas.website import WebsiteCreate
 from app.services import extraction_runs
 from app.services.audit import record_audit
+from app.services.browser_recovery import (
+    RECOVERY_BLOCKED,
+    RECOVERY_STRUCTURED_PATTERN_NEEDED,
+    RECOVERY_UNSUPPORTED,
+    browser_retry_recovery,
+)
 from app.services.notifications import (
     SEVERITY_INFO,
     SEVERITY_WARNING,
@@ -104,6 +110,16 @@ _OUTCOME_TO_STATUS: dict[str, str] = {
     inference_policy.BROWSER_REQUIRED: UNSUPPORTED,
     inference_policy.BLOCKED: BLOCKED,
     inference_policy.FAILED: FAILED,
+}
+
+
+# Browser-recovery outcome (no config produced) -> job status. When recovery
+# *does* produce a config its AutoOnboardingResult is mapped by
+# _OUTCOME_TO_STATUS like any other; this only covers the no-config cases.
+_RECOVERY_STATUS_TO_JOB: dict[str, str] = {
+    RECOVERY_BLOCKED: BLOCKED,
+    RECOVERY_UNSUPPORTED: UNSUPPORTED,
+    RECOVERY_STRUCTURED_PATTERN_NEEDED: NEEDS_REVIEW,
 }
 
 
@@ -255,6 +271,26 @@ class _PreflightResult:
     # Any other reason the page couldn't be read: 404, 500, wrong content
     # type. An ordinary failure, and retryable.
     failure_reason: str | None = None
+    # True when plain HTTP was edge/bot-blocked but the restricted browser
+    # rendered the page — the source must be onboarded as browser-backed.
+    browser_required: bool = False
+
+
+async def _browser_preflight(url: str):
+    """When plain HTTP is edge/bot-protected, try the same restricted browser
+    the extraction pipeline uses. Returns the render result on success (a real
+    browser session frequently passes an Akamai-style 403), or None when the
+    browser is disabled for this deployment or also could not read the page."""
+    from app.config import get_settings
+
+    if not get_settings().browser_extraction_enabled:
+        return None
+    from app.extraction.browser import BrowserFetchStrategy
+
+    result = await BrowserFetchStrategy().render(url)
+    if result.blocked_reason is not None or not result.rendered_html:
+        return None
+    return result
 
 
 async def _resolve_document(url: str) -> _PreflightResult:
@@ -274,6 +310,14 @@ async def _resolve_document(url: str) -> _PreflightResult:
         FetchRequest(url=url), fetch_config
     )
     if response.blocked_reason is not None:
+        # Edge/bot protection blocks plain HTTP but a real browser session
+        # often passes. Retry once via the restricted browser so the source can
+        # still be onboarded — as a browser-backed config, via browser recovery.
+        rendered = await _browser_preflight(url)
+        if rendered is not None:
+            return _PreflightResult(
+                rendered.final_url or url, rendered.rendered_html, browser_required=True
+            )
         return _PreflightResult(
             response.final_url or url, None, blocked_reason=response.blocked_reason
         )
@@ -448,15 +492,39 @@ async def process_job(
     job.current_step = DETECTING
     db.commit()
     try:
-        result = await detect_and_configure(
-            db,
-            website,
-            correlation_id=correlation_id,
-            submitted_by_user_id=job.submitted_by_user_id,
-            onboarding_job_id=job.id,
-            onboarding_batch_id=job.batch_id,
-            submitter_role_ids=_submitter_role_ids(db, job.submitted_by_user_id),
-        )
+        if preflight.browser_required:
+            # Plain HTTP was edge-blocked but the browser rendered the page, so
+            # ordinary HTTP detection would only block again. Run the browser
+            # recovery path (render -> detect -> propose browser config ->
+            # preview) instead. It never auto-activates: a passing preview lands
+            # in needs_review for an administrator to approve.
+            recovery = await browser_retry_recovery(
+                db,
+                website,
+                correlation_id=correlation_id,
+                submitted_by_user_id=job.submitted_by_user_id,
+                submitter_role_ids=_submitter_role_ids(db, job.submitted_by_user_id),
+            )
+            result = recovery.onboarding
+            if result is None:
+                # The browser path produced no configuration either.
+                job.status = _RECOVERY_STATUS_TO_JOB.get(recovery.status, NEEDS_REVIEW)
+                job.failure_reason = (
+                    f"Browser onboarding could not configure the source ({recovery.status})."
+                )
+                job.completed_at = _now()
+                db.commit()
+                return job
+        else:
+            result = await detect_and_configure(
+                db,
+                website,
+                correlation_id=correlation_id,
+                submitted_by_user_id=job.submitted_by_user_id,
+                onboarding_job_id=job.id,
+                onboarding_batch_id=job.batch_id,
+                submitter_role_ids=_submitter_role_ids(db, job.submitted_by_user_id),
+            )
     except Exception as exc:
         db.rollback()
         _fail(job, f"Automatic configuration failed: {type(exc).__name__}: {exc}")

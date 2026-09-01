@@ -362,3 +362,59 @@ def test_onboarding_timezone_keeps_iana_and_utc():
     assert _onboarding_timezone("America/Indiana/Indianapolis") == "America/Indiana/Indianapolis"
     assert _onboarding_timezone("America/New_York") == "America/New_York"
     assert _onboarding_timezone("UTC") == "UTC"
+
+
+# --- edge-protected preflight falls back to the browser ----------------------
+
+
+def test_resolve_document_uses_browser_when_http_is_edge_blocked(monkeypatch):
+    """A 403/edge-protected HTTP preflight retries via the browser; a successful
+    render marks the source browser_required and supplies the document."""
+    from app.extraction.types import FetchResponse
+    from app.services import bulk_onboarding as bo
+
+    async def fake_http(self, request, config):
+        return FetchResponse(
+            request_url=request.url, final_url=request.url, status_code=403,
+            headers={}, content_type="text/html", body=b"", redirect_history=(),
+            body_hash="x", elapsed_seconds=0.0, blocked_reason="edge_protection:http_403",
+        )
+
+    class _Rendered:
+        final_url = "https://x.org/events"
+        rendered_html = "<html><body>rendered</body></html>"
+        blocked_reason = None
+
+    async def fake_browser(url):
+        return _Rendered()
+
+    monkeypatch.setattr(bo.extraction_runs.HttpFetchStrategy, "fetch", fake_http)
+    monkeypatch.setattr(bo, "_browser_preflight", fake_browser)
+
+    result = asyncio.run(bo._resolve_document("https://x.org/events"))
+    assert result.browser_required is True
+    assert result.document == "<html><body>rendered</body></html>"
+    assert result.blocked_reason is None
+
+
+def test_resolve_document_stays_blocked_when_browser_also_fails(monkeypatch):
+    from app.extraction.types import FetchResponse
+    from app.services import bulk_onboarding as bo
+
+    async def fake_http(self, request, config):
+        return FetchResponse(
+            request_url=request.url, final_url=request.url, status_code=403,
+            headers={}, content_type="text/html", body=b"", redirect_history=(),
+            body_hash="x", elapsed_seconds=0.0, blocked_reason="edge_protection:http_403",
+        )
+
+    async def no_browser(url):
+        return None  # browser disabled or also blocked
+
+    monkeypatch.setattr(bo.extraction_runs.HttpFetchStrategy, "fetch", fake_http)
+    monkeypatch.setattr(bo, "_browser_preflight", no_browser)
+
+    result = asyncio.run(bo._resolve_document("https://x.org/events"))
+    assert result.browser_required is False
+    assert result.blocked_reason == "edge_protection:http_403"
+    assert result.document is None
