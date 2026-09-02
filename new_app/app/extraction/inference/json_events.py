@@ -30,7 +30,12 @@ DATE_KEYS: frozenset[str] = frozenset(
         "date", "datetime", "begin", "dtstart", "startsat", "starts_at", "when",
     }
 )
-URL_KEYS: tuple[str, ...] = ("url", "link", "permalink", "canonical_url", "href", "eventurl")
+URL_KEYS: tuple[str, ...] = (
+    "url", "link", "permalink", "canonical_url", "href", "eventurl",
+    # Ticket/detail links — a valid event URL when there's no plainer one.
+    # Ordered last so a real `url`/`link` always wins over a purchase link.
+    "buy_url", "tickets_url", "ticket_url", "detail_url", "more_info_url",
+)
 END_KEYS: tuple[str, ...] = ("end", "enddate", "end_date", "enddatetime", "end_datetime", "dtend")
 VENUE_KEYS: tuple[str, ...] = ("venue", "location", "place", "venuename")
 ADDRESS_KEYS: tuple[str, ...] = ("address", "streetaddress", "fulladdress")
@@ -107,6 +112,23 @@ def _first_key(item: dict, options: tuple[str, ...]) -> str | None:
     return None
 
 
+def _first_key_nested(item: dict, options: tuple[str, ...]) -> str | None:
+    """Like `_first_key`, but if no top-level key matches it searches one level
+    into nested objects and returns a dotted path (e.g. `extendedProps.buyUrl`).
+    FullCalendar-style records nest an event's URL under `extendedProps`, so the
+    top-level scan alone misses it. A wrong nested guess is self-correcting: the
+    proposer measures coverage against real records and drops what doesn't hit."""
+    top = _first_key(item, options)
+    if top is not None:
+        return top
+    for key, value in item.items():
+        if isinstance(value, dict):
+            nested = _first_key(value, options)
+            if nested is not None:
+                return f"{key}.{nested}"
+    return None
+
+
 def infer_field_paths(sample: dict) -> dict[str, str]:
     """Maps the raw field names the JSON patterns use to the actual keys of a
     sample event object, so a proposal points at real keys, not assumed ones."""
@@ -117,6 +139,10 @@ def infer_field_paths(sample: dict) -> dict[str, str]:
         paths["title"] = title
     if date:
         paths["start_datetime"] = date
+    # Secondary fields also look one level deep, so a nested URL/venue/image
+    # (common in FullCalendar's extendedProps) is mapped rather than reported
+    # missing. Title and start stay top-level — a nested title-like key is more
+    # likely a wrong match than a right one.
     for field, options in (
         ("canonical_url", URL_KEYS),
         ("end_datetime", END_KEYS),
@@ -126,7 +152,7 @@ def infer_field_paths(sample: dict) -> dict[str, str]:
         ("source_category", CATEGORY_KEYS),
         ("external_source_id", ID_KEYS),
     ):
-        actual = _first_key(sample, options)
+        actual = _first_key_nested(sample, options)
         if actual:
             paths[field] = actual
     return paths

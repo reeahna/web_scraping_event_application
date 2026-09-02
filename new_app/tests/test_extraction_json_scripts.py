@@ -220,3 +220,29 @@ def test_no_hostname_branching_in_the_new_patterns():
                 lowered = node.value.lower()
                 for token in ("iuauditorium", "buskirk", "chumley", "://"):
                     assert token not in lowered, f"{module}: {node.value!r}"
+
+
+# --- nested field inference (FullCalendar-style extendedProps) ---------------
+
+
+def test_infer_field_paths_finds_a_nested_url():
+    # No top-level URL; the event's link is nested under extendedProps.
+    record = {
+        "title": "Heist",
+        "start": "2026-09-03",
+        "extendedProps": {"buyUrl": "https://x.org/e/110201", "time": "7:30 PM"},
+    }
+    paths = infer_field_paths(record)
+    assert paths["title"] == "title"
+    assert paths["start_datetime"] == "start"
+    assert paths["canonical_url"] == "extendedProps.buyUrl"
+
+
+def test_infer_field_paths_prefers_a_top_level_url_over_a_nested_one():
+    record = {
+        "title": "A",
+        "start": "2026-09-03",
+        "url": "https://x.org/real",
+        "extendedProps": {"buyUrl": "https://x.org/buy"},
+    }
+    assert infer_field_paths(record)["canonical_url"] == "url"

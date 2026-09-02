@@ -93,7 +93,7 @@ def test_detector_ignores_non_event_arrays():
     assert find_inline_event_variable(_NON_EVENT_PAGE) is None
 
 
-def test_proposer_configures_events_root_and_flags_nested_url():
+def test_proposer_configures_events_root_and_nested_url():
     response = make_response(_PAGE)
     detection = run_detection(response)
     assert detection.pattern_name == "inline_json_events"
@@ -105,6 +105,7 @@ def test_proposer_configures_events_root_and_flags_nested_url():
     config = proposal.configuration
     assert config.json_paths["events_root"] == "eventsListing"
     assert config.json_paths["title"] == "title"
-    # The URL is nested under extendedProps, which top-level inference can't
-    # place — so it is honestly reported as missing rather than mis-defaulted.
-    assert "canonical_url" in proposal.missing_required_fields
+    # The URL is nested under extendedProps; field inference now looks one level
+    # deep, so it is mapped as a dotted path and nothing is left missing.
+    assert config.json_paths["canonical_url"] == "extendedProps.buyUrl"
+    assert "canonical_url" not in proposal.missing_required_fields
