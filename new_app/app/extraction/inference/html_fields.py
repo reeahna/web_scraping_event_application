@@ -37,6 +37,7 @@ from app.extraction.inference.dates import (
 from app.extraction.inference.policy import AutoOnboardingPolicy
 from app.extraction.inference.selectors import (
     SelectorCandidate,
+    _element_hints,
     candidate_selectors,
     is_stable_class_token,
     selector_stability,
@@ -170,6 +171,15 @@ def _depth(element: Tag) -> int:
     return sum(1 for _ in element.parents)
 
 
+def _has_link(el: Tag) -> bool:
+    """True when a card carries an event link — a nested anchor, or the card
+    element itself being an `<a href>` (a whole-card link). A nested-only check
+    would reject anchor-cards as linkless."""
+    if el.name == "a" and el.get("href"):
+        return True
+    return el.find("a", href=True) is not None
+
+
 def detect_path_pagination(soup: BeautifulSoup, listing_url: str | None) -> str | None:
     """An absolute URL template for pages numbered in the URL *path* rather than
     a query string — a listing at /calendar/upcoming whose later pages live at
@@ -247,7 +257,7 @@ def infer_container(soup: BeautifulSoup, policy: AutoOnboardingPolicy) -> Contai
             continue
 
         count = len(elements)
-        with_link = sum(1 for el in elements if el.find("a", href=True)) / count
+        with_link = sum(1 for el in elements if _has_link(el)) / count
         with_date = sum(
             1 for el in elements if el.find("time") or DATE_LIKE_RE.search(el.get_text(" "))
         ) / count
@@ -346,6 +356,19 @@ def _collect_candidates(
     collected: dict[tuple[str, str | None], SelectorCandidate] = {}
     for card in cards:
         per_card = 0
+        # A whole-card anchor (the card *is* the event link) exposes its own href
+        # only via the card element itself, which no descendant selector reaches.
+        # Offer it as a ":scope"@href candidate so the event URL is inferable.
+        if card.name == "a" and card.get("href"):
+            key = (":scope", "href")
+            if key not in collected:
+                collected[key] = SelectorCandidate(
+                    selector=":scope",
+                    attribute="href",
+                    tag_name="a",
+                    hints=_element_hints(card),
+                    is_first_anchor=True,
+                )
         for element in card.find_all(True):
             if per_card >= policy.max_candidate_selectors_per_card:
                 break
@@ -377,7 +400,7 @@ def _observe(
         tags: set[str] = {candidate.tag_name}
         itemprops: set[str] = {candidate.itemprop} if candidate.itemprop else set()
         for card in cards:
-            matches = card.select(selector)
+            matches = [card] if selector.strip() == ":scope" else card.select(selector)
             counts.append(len(matches))
             if not matches:
                 values.append(None)

@@ -40,12 +40,19 @@ def validate_css_selector(selector: str) -> str:
 
 def resolve_css(node: Tag, selector: str, attribute: str | None = None) -> FieldExtractionResult:
     warnings: list[str] = []
-    try:
-        target = node.select_one(selector)
-    except Exception as exc:
-        return FieldExtractionResult(
-            value=None, source_path=f"css:{selector}", warnings=(str(exc),)
-        )
+    # ":scope" resolves to the card element itself, so a field can be read off
+    # the container — e.g. a whole-card `<a href>`'s own href, or an attribute
+    # on the card. BeautifulSoup's select_one(":scope") does not match self, so
+    # it is handled explicitly here.
+    if selector.strip() == ":scope":
+        target: Tag | None = node
+    else:
+        try:
+            target = node.select_one(selector)
+        except Exception as exc:
+            return FieldExtractionResult(
+                value=None, source_path=f"css:{selector}", warnings=(str(exc),)
+            )
 
     if target is None:
         return FieldExtractionResult(

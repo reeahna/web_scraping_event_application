@@ -71,6 +71,14 @@ DATE_FORMAT_TABLE: tuple[str, ...] = (
     "%b %d · %Y",
     "%B %d | %Y",
     "%b %d | %Y",
+    # Datetime cards that render a weekday + date + time in one string, joined
+    # by "@" ("Sunday Sep 6, 2026 @ 07:00 PM"). Parsed to a date here; the time
+    # is carried through the same value if a start_time field is also inferred.
+    "%A %b %d, %Y @ %I:%M %p",
+    "%A %B %d, %Y @ %I:%M %p",
+    "%a %b %d, %Y @ %I:%M %p",
+    "%b %d, %Y @ %I:%M %p",
+    "%B %d, %Y @ %I:%M %p",
 )
 
 # Year-less date shapes, tried only when no sampled value carries a year. A
@@ -134,6 +142,17 @@ def normalize_whitespace(value: str | None) -> str:
     return " ".join(str(value).split()) if value is not None else ""
 
 
+_ORDINAL_RE = re.compile(r"\b(\d{1,2})(?:st|nd|rd|th)\b", re.IGNORECASE)
+
+
+def strip_ordinals(value: str) -> str:
+    """Drop English ordinal suffixes from day numbers ("Sep 6th" -> "Sep 6",
+    "the 1st" -> "the 1"), which strptime cannot parse. Shared by date-format
+    inference and the runtime parser so a card that writes "6th" is still
+    read as a date."""
+    return _ORDINAL_RE.sub(r"\1", value)
+
+
 def has_year(value: str | None) -> bool:
     return bool(_YEAR_RE.search(normalize_whitespace(value)))
 
@@ -193,7 +212,7 @@ def infer_date_formats(
     written into `SiteConfiguration.date_formats`; the ISO candidate is
     reported for evidence but needs no configuration, since
     `parse_date_value` already falls back to ISO 8601."""
-    values = [normalize_whitespace(v) for v in raw_values if normalize_whitespace(v)]
+    values = [strip_ordinals(normalize_whitespace(v)) for v in raw_values if normalize_whitespace(v)]
     if not values:
         return [], 0.0
 

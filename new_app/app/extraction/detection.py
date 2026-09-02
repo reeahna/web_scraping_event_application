@@ -68,15 +68,19 @@ _MONTH_NAME = r"(?:jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*"
 # BeautifulSoup's text extraction presents with the separator intact. Without
 # them a listing whose date is split across nested elements reads as "no
 # dates on this page" and is misclassified as unsupported.
+# An optional English ordinal suffix on a day number ("6th", "1st", "22nd"),
+# common on US event cards ("Sep 6th, 2026"). Matching it lets a plainly dated
+# card count as dated instead of being rejected.
+_ORD = r"(?:st|nd|rd|th)?"
 DATE_LIKE_RE = re.compile(
-    rf"\b{_MONTH_NAME}\.?\s+\d{{1,2}}\b"
+    rf"\b{_MONTH_NAME}\.?\s+\d{{1,2}}{_ORD}\b"
     r"|\b\d{1,2}/\d{1,2}(?:/\d{2,4})?\b"
     r"|\b\d{4}-\d{2}-\d{2}\b"
     rf"|\b\d{{1,2}}\s*[/|·.-]\s*{_MONTH_NAME}\b"
     rf"|\b{_MONTH_NAME}\s*[/|·.-]\s*\d{{1,2}}\b"
     # Day-first with only whitespace between ("03 September"), the reverse of
     # the leading "Month DD" form — common on European-style event cards.
-    rf"|\b\d{{1,2}}\s+{_MONTH_NAME}\b",
+    rf"|\b\d{{1,2}}{_ORD}\s+{_MONTH_NAME}\b",
     re.IGNORECASE,
 )
 _WP_GENERATOR_RE = re.compile(r"wordpress\s*[\d.]*", re.IGNORECASE)
@@ -202,6 +206,16 @@ class JsonLdDetector:
         )
 
 
+def _has_link(el) -> bool:
+    """True when a card carries an event link — either a nested anchor or the
+    card element *itself* being an `<a href>`. Many listings make the whole card
+    a single link (an anchor with the fields nested inside), which a
+    nested-only check would miss and reject as linkless."""
+    if el.name == "a" and el.get("href"):
+        return True
+    return el.find("a", href=True) is not None
+
+
 class StaticHtmlDetector:
     def detect(self, response: FetchResponse) -> PatternDetectionResult:
         if _access_denied_detected(response):
@@ -221,7 +235,7 @@ class StaticHtmlDetector:
         for key, elements in groups.items():
             if len(elements) < 3:
                 continue
-            with_link = sum(1 for el in elements if el.find("a", href=True))
+            with_link = sum(1 for el in elements if _has_link(el))
             with_date = sum(
                 1 for el in elements if DATE_LIKE_RE.search(el.get_text(" ")) or el.find("time")
             )

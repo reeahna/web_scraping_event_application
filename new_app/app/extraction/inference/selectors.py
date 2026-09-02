@@ -87,10 +87,14 @@ def selector_stability(selector: str, policy: AutoOnboardingPolicy) -> float:
 def name_tokens(value: str | None) -> set[str]:
     """Splits a class/id/itemprop/aria-label/data-attribute name into
     lowercase word tokens, so `m-eventItem__title` yields {m, event, item,
-    title} rather than one opaque blob."""
+    title} rather than one opaque blob, and a trailing style number splits off
+    so `heading2` still yields {heading} (the lone digit is dropped as noise)."""
     if not value:
         return set()
     spaced = re.sub(r"(?<=[a-z0-9])(?=[A-Z])", " ", value)
+    # Split letter<->digit boundaries so "heading2"/"col4" -> heading/col + a
+    # digit token (dropped below), keeping the meaningful word.
+    spaced = re.sub(r"(?<=[A-Za-z])(?=[0-9])|(?<=[0-9])(?=[A-Za-z])", " ", spaced)
     return {t for t in _WORD_SPLIT_RE.split(spaced.lower()) if len(t) > 1}
 
 

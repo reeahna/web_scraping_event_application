@@ -481,3 +481,67 @@ def test_jsonld_proposer_auto_configures_page_pagination():
 def test_jsonld_proposer_stays_single_page_without_pagination():
     config = _propose_jsonld(_jsonld_page(rel_next=False)).configuration
     assert config.pagination.strategy == "none"
+
+
+# --- anchor cards (the whole card is a link) ---------------------------------
+
+_ANCHOR_CARDS_HTML = """
+<html><body><div class="event_listings"><div class="grid">
+  <a class="cell event-cta events" href="/event/open-mike/">
+    <div class="content">
+      <span class="date">Sunday Sep 6th, 2026 @ 07:00 PM</span>
+      <span class="heading2">Open Mike Night</span>
+    </div>
+  </a>
+  <a class="cell event-cta events" href="/event/larry-campbell/">
+    <div class="content">
+      <span class="date">Friday Sep 11th, 2026 @ 08:00 PM</span>
+      <span class="heading2">Larry Campbell &amp; Teresa Williams</span>
+    </div>
+  </a>
+  <a class="cell event-cta events" href="/event/iain-matthews/">
+    <div class="content">
+      <span class="date">Friday Sep 18th, 2026 @ 08:00 PM</span>
+      <span class="heading2">Iain Matthews</span>
+    </div>
+  </a>
+  <a class="cell event-cta events" href="/event/ordinary-elephant/">
+    <div class="content">
+      <span class="date">Saturday Sep 12th, 2026 @ 07:30 PM</span>
+      <span class="heading2">Ordinary Elephant</span>
+    </div>
+  </a>
+</div></div></body></html>
+"""
+
+
+def _anchor_cards_soup():
+    return BeautifulSoup(_ANCHOR_CARDS_HTML, "html.parser")
+
+
+def test_whole_card_anchor_is_detected_as_a_container():
+    container = infer_container(_anchor_cards_soup(), DEFAULT_POLICY)
+    assert container is not None
+    assert container.count == 4  # anchor-cards counted despite being links, not containing them
+
+
+def test_anchor_card_fields_are_inferred_from_self_and_nested_spans():
+    soup = _anchor_cards_soup()
+    container = infer_container(soup, DEFAULT_POLICY)
+    cards = sample_cards(soup, container.selector, DEFAULT_POLICY)
+    accepted, _ = infer_fields(cards, base_url="https://godfreydaniels.org/upcoming-events/", policy=DEFAULT_POLICY)
+    # The card's own href becomes the event URL via :scope.
+    assert accepted["canonical_url"].selector == ":scope"
+    assert accepted["canonical_url"].attribute == "href"
+    # Title comes from the plain <span class="heading2"> (heading2 -> heading).
+    assert "heading2" in accepted["title"].selector
+    # The ordinal "@ time" date is inferable.
+    assert "start_datetime" in accepted
+
+
+def test_ordinal_and_at_time_date_format_is_inferred():
+    candidates, rate = infer_date_formats(
+        ["Sunday Sep 6th, 2026 @ 07:00 PM", "Friday Sep 11th, 2026 @ 08:00 PM"]
+    )
+    assert rate == 1.0
+    assert any("%A %b %d, %Y @ %I:%M %p" == c.format for c in candidates if c.accepted)

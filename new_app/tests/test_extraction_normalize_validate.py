@@ -160,3 +160,12 @@ def test_time_parsing_accepts_iso_time_with_offset():
     parsed = parse_time_value("19:00:00-05:00", [])
     assert parsed is not None
     assert parsed.hour == 19
+
+
+def test_parse_date_value_strips_ordinal_suffixes():
+    # strptime cannot parse "6th"; the parser drops the ordinal first.
+    assert parse_date_value("Sunday Sep 6th, 2026 @ 07:00 PM", ["%A %b %d, %Y @ %I:%M %p"]) == date(
+        2026, 9, 6
+    )
+    assert parse_date_value("June 1st, 2025", ["%B %d, %Y"]) == date(2025, 6, 1)
+    assert parse_date_value("22nd December 2025", ["%d %B %Y"]) == date(2025, 12, 22)

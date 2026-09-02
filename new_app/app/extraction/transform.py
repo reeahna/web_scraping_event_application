@@ -32,6 +32,9 @@ warnings.filterwarnings(
 _WHITESPACE_RE = re.compile(r"\s+")
 _TAG_RE = re.compile(r"<[^>]+>")
 _MAX_INPUT_LENGTH = 10_000
+# English ordinal suffixes strptime cannot parse ("Sep 6th" -> "Sep 6"). Dropped
+# before every strptime attempt so a card that writes an ordinal still parses.
+_ORDINAL_RE = re.compile(r"\b(\d{1,2})(?:st|nd|rd|th)\b", re.IGNORECASE)
 
 
 class TransformationError(ValueError):
@@ -89,9 +92,10 @@ def parse_date_value(value: Any, formats: list[str] | None = None) -> date | Non
     text = _as_text(value).strip()
     if not text:
         return None
+    cleaned = _ORDINAL_RE.sub(r"\1", text)
     for fmt in formats or []:
         try:
-            return datetime.strptime(text, fmt).date()
+            return datetime.strptime(cleaned, fmt).date()
         except ValueError:
             continue
     try:
