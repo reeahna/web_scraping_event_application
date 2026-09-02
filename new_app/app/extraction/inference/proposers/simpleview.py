@@ -28,7 +28,11 @@ from app.extraction.inference.types import (
 from app.extraction.patterns.simpleview_events import _DEFAULT_PATHS, EVENTS_ROOT_DEFAULT
 from app.extraction.request_recipe import capture_recipe, summarize_recipe
 from app.extraction.selectors import resolve_json_path
-from app.schemas.extraction import RecurrenceRuntimeConfig, SiteConfiguration
+from app.schemas.extraction import (
+    FieldSelectorConfig,
+    RecurrenceRuntimeConfig,
+    SiteConfiguration,
+)
 from app.schemas.request_recipe import RequestRecipe
 
 NAME = "simpleview_events"
@@ -219,7 +223,21 @@ class SimpleviewEventsProposer:
                     "max_pages": context.policy.max_pages,
                     "max_events": context.policy.max_events,
                 },
-                max_detail_fetches=0,
+                # A "custom"-recurrence record (recurType set, no rule sentence)
+                # carries its occurrence dates only on its detail page. The
+                # pattern points detail_link at those records alone, so this
+                # bound applies to just them, not the whole feed.
+                max_detail_fetches=context.policy.max_events,
+                # The detail page lists custom dates in a "Dates:" definition
+                # row; read the sibling value. `%m/%d/%Y` lets the recurrence
+                # expander parse those (e.g. "9/4/2026") into RDATEs — the ISO
+                # feed dates still fall through to ISO parsing.
+                field_selectors={
+                    "detail_occurrence_dates": FieldSelectorConfig(
+                        kind="css", selector='dt:-soup-contains("Dates:") + dd'
+                    )
+                },
+                date_formats=["%m/%d/%Y"],
                 required_fields=list(DEFAULT_REQUIRED_FIELDS),
                 request_recipe=recipe,
                 # Simpleview records describe a recurring series with a single

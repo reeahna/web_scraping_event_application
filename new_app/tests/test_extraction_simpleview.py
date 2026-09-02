@@ -466,6 +466,30 @@ def test_monthly_recurrence_expands_to_distinct_third_thursdays():
     assert all(c.end_date is None for c in expanded)
 
 
+def test_custom_recurrence_points_at_the_detail_page_for_its_dates():
+    # A recurring record with recurType set but no recurrence sentence lists its
+    # dates only on the detail page: point the enricher there, show it on its
+    # next occurrence, and drop the series-spanning endDate.
+    record = {
+        "recid": "gw1",
+        "title": "Gallery Walk",
+        "url": "/event/gallery-walk/57674/",
+        "startDate": "2026-01-09T05:00:00.000Z",
+        "endDate": "2026-12-05T04:59:59.000Z",
+        "date": "2026-09-05T03:59:59.000Z",
+        "recurrence": None,
+        "recurType": 99,
+    }
+    body = json.dumps({"docs": {"docs": [record]}})
+    response = make_response(body, final_url=FIND_URL, content_type="application/json")
+    candidate = SimpleviewEventsPattern().extract(response, _REC_CONFIG)[0]
+    assert candidate.raw["detail_link"] == "https://www.visitbloomington.com/event/gallery-walk/57674/"
+    # Next occurrence becomes the start; the year-spanning end is dropped.
+    assert candidate.raw["start_datetime"] == "2026-09-05T03:59:59.000Z"
+    assert candidate.raw["end_datetime"] is None
+    assert candidate.raw["recurrence"] is None
+
+
 def test_non_recurring_record_keeps_its_end_date():
     record = {
         "recid": "evt-2",
@@ -474,10 +498,11 @@ def test_non_recurring_record_keeps_its_end_date():
         "startDate": "2026-09-10T23:00:00.000Z",
         "endDate": "2026-09-11T03:00:00.000Z",
         "recurrence": None,
-        "recurType": 99,
+        "recurType": 0,
     }
     body = json.dumps({"docs": {"docs": [record]}})
     response = make_response(body, final_url=FIND_URL, content_type="application/json")
     candidate = SimpleviewEventsPattern().extract(response, _REC_CONFIG)[0]
     assert candidate.raw["recurrence"] is None
+    assert candidate.raw.get("detail_link") is None
     assert candidate.raw["end_datetime"] == "2026-09-11T03:00:00.000Z"

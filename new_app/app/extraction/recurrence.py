@@ -29,13 +29,15 @@ from __future__ import annotations
 
 import dataclasses
 import hashlib
+import re
 import time as _time
 from dataclasses import dataclass, field
 from datetime import date, datetime, time, timedelta
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from dateutil.rrule import rrulestr
 
+from app.extraction.transform import parse_date_value
 from app.schemas.recurrence import RecurrenceBounds, RecurrenceOccurrence, RecurrenceSpec
 
 if TYPE_CHECKING:
@@ -242,43 +244,47 @@ def _expand_rule(
         generated[parent.identity] = parent
         return generated
 
-    upper = (spec.rrule or "").upper()
-    if any(marker in upper for marker in _SUBDAILY):
-        result.warnings.append("recurrence_subdaily_refused")
-        parent = _parent_occurrence(spec, parent_start, parent_end, parent_fingerprint)
-        generated[parent.identity] = parent
-        return generated
-
     dtstart = parent_start if isinstance(parent_start, datetime) else datetime.combine(
         parent_start, time.min
     )
     ref_start = datetime.combine(reference_date, time.min)
     horizon_end = datetime.combine(reference_date + timedelta(days=bounds.horizon_days), time.max)
 
-    try:
-        rule = rrulestr(_rrule_body(spec.rrule), dtstart=dtstart)
-    except (ValueError, TypeError):
-        result.warnings.append("recurrence_rule_unparseable")
-        parent = _parent_occurrence(spec, parent_start, parent_end, parent_fingerprint)
-        generated[parent.identity] = parent
-        return generated
-
-    started = _time.monotonic()
+    # An RRULE is optional: a spec may enumerate its occurrences purely through
+    # RDATEs (a source that lists explicit dates but states no rule). Only parse
+    # a rule when one is present — feeding an empty body to rrulestr would raise
+    # and wrongly collapse an rdate-only series back to a single parent.
     instants: list[datetime] = []
-    for instant in rule:
-        if instant < ref_start:
-            continue
-        if instant > horizon_end:
-            break
-        instants.append(instant)
-        if len(instants) >= bounds.max_occurrences_per_parent:
-            result.truncated = True
-            result.warnings.append("recurrence_truncated_per_parent")
-            break
-        if (_time.monotonic() - started) * 1000 > bounds.max_execution_ms:
-            result.truncated = True
-            result.warnings.append("recurrence_execution_budget_exceeded")
-            break
+    if spec.rrule:
+        upper = spec.rrule.upper()
+        if any(marker in upper for marker in _SUBDAILY):
+            result.warnings.append("recurrence_subdaily_refused")
+            parent = _parent_occurrence(spec, parent_start, parent_end, parent_fingerprint)
+            generated[parent.identity] = parent
+            return generated
+        try:
+            rule = rrulestr(_rrule_body(spec.rrule), dtstart=dtstart)
+        except (ValueError, TypeError):
+            result.warnings.append("recurrence_rule_unparseable")
+            parent = _parent_occurrence(spec, parent_start, parent_end, parent_fingerprint)
+            generated[parent.identity] = parent
+            return generated
+
+        started = _time.monotonic()
+        for instant in rule:
+            if instant < ref_start:
+                continue
+            if instant > horizon_end:
+                break
+            instants.append(instant)
+            if len(instants) >= bounds.max_occurrences_per_parent:
+                result.truncated = True
+                result.warnings.append("recurrence_truncated_per_parent")
+                break
+            if (_time.monotonic() - started) * 1000 > bounds.max_execution_ms:
+                result.truncated = True
+                result.warnings.append("recurrence_execution_budget_exceeded")
+                break
 
     for d in spec.rdate:
         extra = parse_iso_temporal(d)
@@ -389,6 +395,29 @@ def _has_payload(rec: dict, mode: str) -> bool:
     return bool(rec.get("rrule") or rec.get("rdate") or rec.get("occurrences"))
 
 
+def _occurrence_rdates(text: Any, formats: list[str]) -> list[str]:
+    """Parse a delimited list of dates carried on a candidate's raw
+    ``occurrence_dates`` (a detail page's explicit "Dates:" list, e.g.
+    "9/4/2026, 10/2/2026, 11/6/2026") into ISO date strings usable as RDATEs.
+
+    Tokens are parsed with the site's configured date formats first, then ISO;
+    an unparseable token is skipped rather than failing the whole event. This is
+    a generic convention — any pattern that fills ``occurrence_dates`` benefits;
+    nothing here is source-specific."""
+    if not isinstance(text, str) or not text.strip():
+        return []
+    iso: list[str] = []
+    for token in re.split(r"[,;\n]+", text):
+        token = token.strip()
+        if not token:
+            continue
+        parsed = parse_date_value(token, formats)
+        if parsed is not None:
+            iso.append(parsed.isoformat())
+    # De-duplicate while preserving order — a page may repeat a date.
+    return list(dict.fromkeys(iso))
+
+
 def _spec_from_raw(rec: dict, mode: str, all_day: bool) -> RecurrenceSpec:
     def _as_list(value) -> list[str]:
         if value is None:
@@ -451,6 +480,14 @@ def expand_candidates(
     budget = rconfig.bounds.max_occurrences_per_run
     for cand in candidates:
         rec = cand.raw.get("recurrence")
+        # A detail page may enumerate an event's dates explicitly ("Dates:
+        # 9/4/2026, 10/2/2026, ...") when the listing states no rule. Fold that
+        # list into the spec as RDATEs, unless a real recurrence rule was
+        # already recognised (a rule + these dates would double-count).
+        if not (isinstance(rec, dict) and rec.get("rrule")):
+            rdates = _occurrence_rdates(cand.raw.get("occurrence_dates"), config.date_formats)
+            if rdates:
+                rec = {**(rec if isinstance(rec, dict) else {}), "rdate": rdates}
         parent_start = _candidate_temporal(cand)
         if not isinstance(rec, dict) or not _has_payload(rec, rconfig.mode) or parent_start is None:
             out.append(cand)

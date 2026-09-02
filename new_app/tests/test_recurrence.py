@@ -168,3 +168,89 @@ def test_expansion_is_deterministic():
     a = _expand(spec, datetime(2026, 3, 2, 19, 0))
     b = _expand(spec, datetime(2026, 3, 2, 19, 0))
     assert [o.identity for o in a.occurrences] == [o.identity for o in b.occurrences]
+
+
+# --- rdate-only expansion and detail occurrence-date folding ------------------
+
+
+def test_bounded_expand_with_rdates_but_no_rule():
+    # A source that enumerates explicit dates but states no RRULE must expand the
+    # RDATEs, not collapse back to a single parent (feeding rrulestr an empty
+    # body used to raise and do exactly that).
+    spec = RecurrenceSpec(
+        mode="bounded_expand",
+        rdate=["2026-03-06", "2026-04-03", "2026-05-01"],
+        all_day=True,
+    )
+    result = _expand(spec, date(2026, 3, 6))
+    assert [o.start_date for o in result.occurrences] == [
+        date(2026, 3, 6), date(2026, 4, 3), date(2026, 5, 1),
+    ]
+    assert "recurrence_rule_unparseable" not in result.warnings
+
+
+def test_occurrence_dates_are_folded_into_rdates():
+    from datetime import date as _date
+
+    from app.extraction.recurrence import _occurrence_rdates, expand_candidates
+    from app.extraction.types import EventCandidate
+    from app.schemas.extraction import RecurrenceRuntimeConfig, SiteConfiguration
+
+    assert _occurrence_rdates("9/4/2026, 10/2/2026, 11/6/2026", ["%m/%d/%Y"]) == [
+        "2026-09-04", "2026-10-02", "2026-11-06",
+    ]
+    # Unparseable tokens are skipped, duplicates collapsed, order preserved.
+    assert _occurrence_rdates("9/4/2026, junk, 9/4/2026", ["%m/%d/%Y"]) == ["2026-09-04"]
+
+    config = SiteConfiguration(
+        pattern_name="simpleview_events",
+        api_endpoint="https://example.com/api/",
+        date_formats=["%m/%d/%Y"],
+        recurrence=RecurrenceRuntimeConfig(mode="bounded_expand"),
+    )
+    candidate = EventCandidate(
+        raw={"occurrence_dates": "9/4/2026, 10/2/2026, 11/6/2026, 12/4/2026"},
+        title="Gallery Walk", canonical_url="https://example.com/e", description=None,
+        start_date=_date(2026, 9, 4), start_time=None, end_date=None, end_time=None,
+        timezone="America/Indiana/Indianapolis", venue=None, address=None, image_url=None,
+        latitude=None, longitude=None, source_category=None, external_source_id="gw1",
+        field_source_paths={}, transformation_history=(), source_page="https://example.com/",
+        extraction_pattern="simpleview_events", warnings=(), raw_record_hash="h",
+    )
+    expanded, warnings = expand_candidates([candidate], config, reference_date=_date(2026, 9, 2))
+    assert sorted(str(c.start_date) for c in expanded) == [
+        "2026-09-04", "2026-10-02", "2026-11-06", "2026-12-04",
+    ]
+    assert all(c.end_date is None for c in expanded)
+
+
+def test_a_recognised_rule_is_not_double_counted_with_occurrence_dates():
+    # When a real RRULE was recognised, an occurrence-date list must not also be
+    # folded in (that would emit each date twice / conflict).
+    from datetime import date as _date
+
+    from app.extraction.recurrence import expand_candidates
+    from app.extraction.types import EventCandidate
+    from app.schemas.extraction import RecurrenceRuntimeConfig, SiteConfiguration
+
+    config = SiteConfiguration(
+        pattern_name="simpleview_events", api_endpoint="https://example.com/api/",
+        date_formats=["%m/%d/%Y"], recurrence=RecurrenceRuntimeConfig(mode="bounded_expand"),
+    )
+    candidate = EventCandidate(
+        raw={
+            "recurrence": {"rrule": "RRULE:FREQ=WEEKLY;BYDAY=FR"},
+            "occurrence_dates": "9/4/2026, 10/2/2026",
+        },
+        title="Trivia", canonical_url="https://example.com/e", description=None,
+        start_date=_date(2026, 9, 4), start_time=None, end_date=None, end_time=None,
+        timezone="America/Indiana/Indianapolis", venue=None, address=None, image_url=None,
+        latitude=None, longitude=None, source_category=None, external_source_id="t1",
+        field_source_paths={}, transformation_history=(), source_page="https://example.com/",
+        extraction_pattern="simpleview_events", warnings=(), raw_record_hash="h",
+    )
+    expanded, _ = expand_candidates([candidate], config, reference_date=_date(2026, 9, 2))
+    # Weekly Fridays from the rule, no October-2-only stray from the folded list
+    # beyond what the rule already yields.
+    dates = {str(c.start_date) for c in expanded}
+    assert "2026-09-04" in dates and "2026-09-11" in dates  # weekly rule fired

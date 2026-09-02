@@ -27,6 +27,7 @@ import json
 import re
 from datetime import datetime, timezone
 from typing import Any
+from urllib.parse import urljoin
 
 from app.extraction.selectors import resolve_json_path
 from app.extraction.types import EventCandidate, FetchResponse
@@ -235,6 +236,16 @@ def _recurrence_rule(recurrence: Any, end_iso: Any) -> str | None:
     return "RRULE:FREQ=" + freq + "".join(f";{part}" for part in parts)
 
 
+def _is_recurring_without_rule(recur_type: Any) -> bool:
+    """True when Simpleview flags the record as recurring (a non-zero recurType)
+    but supplied no recurrence sentence to build a rule from. Such "custom"
+    series list their occurrence dates only on the event's detail page."""
+    try:
+        return int(recur_type) != 0
+    except (TypeError, ValueError):
+        return False
+
+
 class SimpleviewEventsPattern:
     name = NAME
 
@@ -296,8 +307,22 @@ class SimpleviewEventsPattern:
             if rrule is not None:
                 raw["recurrence"] = {"rrule": rrule}
                 raw["end_datetime"] = None
-            elif not isinstance(raw.get("recurrence"), dict):
-                raw["recurrence"] = None
+            else:
+                if not isinstance(raw.get("recurrence"), dict):
+                    raw["recurrence"] = None
+                # A recurring record with no rule sentence lists its dates only
+                # on the detail page. Point the detail enricher at that page to
+                # read them (folded into the recurrence as RDATEs downstream),
+                # show the event on its next occurrence (`date`) meanwhile, and
+                # drop the series-spanning endDate so it never reads as a single
+                # event covering the whole run.
+                if _is_recurring_without_rule(raw.get("recur_type")):
+                    detail = _safe_url_string(raw.get("canonical_url"))
+                    if detail:
+                        raw["detail_link"] = urljoin(response.final_url, detail)
+                    if raw.get("date"):
+                        raw["start_datetime"] = raw["date"]
+                    raw["end_datetime"] = None
 
             raw_record_hash = hashlib.sha256(
                 json.dumps(record, sort_keys=True, default=str).encode("utf-8")

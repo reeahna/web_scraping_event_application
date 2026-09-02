@@ -586,7 +586,9 @@ async def _execute_pipeline(
             key.startswith("detail_") for key in config.field_selectors
         )
         if wants_detail_fetch:
-            all_candidates = await enrich_with_detail_pages(all_candidates, fetch, config)
+            all_candidates = await enrich_with_detail_pages(
+                all_candidates, _detail_fetch_strategy(config, fetch), config
+            )
 
     normalized = [
         normalize_candidate(c, config, fallback_timezone=config.timezone or fallback_timezone)
@@ -706,6 +708,17 @@ def _browser_pagination_bounds(config: SiteConfiguration) -> dict:
         "max_records": config.pagination.max_events,
         "max_pages": _BROWSER_STRUCTURED_PAGE_CAP,
     }
+
+
+def _detail_fetch_strategy(config: SiteConfiguration, listing_fetch: FetchStrategy) -> FetchStrategy:
+    """Transport for detail-page enrichment fetches. Detail pages are always
+    HTML, so a browser-execution source — whose listing transport captures the
+    page's JSON, not arbitrary HTML — reads them by rendering the page, while an
+    ordinary HTTP source reuses the exact same HTTP transport as its listing
+    (identical SSRF/redirect/byte protections)."""
+    if config.execution_strategy == "browser" and get_settings().browser_extraction_enabled:
+        return BrowserRenderFetchStrategy(plan=_browser_plan_for(config))
+    return listing_fetch
 
 
 def _build_fetch_strategy(config: SiteConfiguration) -> FetchStrategy:
