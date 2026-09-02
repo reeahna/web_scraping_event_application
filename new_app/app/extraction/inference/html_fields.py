@@ -470,7 +470,12 @@ def _semantic_score(role: str, hints: frozenset[str]) -> float:
 def _tag_score(role: str, observation: _Observation) -> float:
     priors = ROLE_TAG_PRIOR.get(role, {})
     best = max((priors.get(tag, _DEFAULT_TAG_PRIOR) for tag in observation.tags), default=0.0)
-    if role == "title" and observation.first_anchor:
+    # A card's title is often a plain link that isn't the first anchor — a
+    # "Buy Tickets"/"Book now" call-to-action frequently precedes it. Treat any
+    # anchor as a title candidate; because title is an identity role, a CTA link
+    # (identical text on every card) is filtered by the variation gate, while
+    # the real title link (distinct text per card) survives.
+    if role == "title" and "a" in observation.tags:
         best = max(best, 0.6)
     return best
 
