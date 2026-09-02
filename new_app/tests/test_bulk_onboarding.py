@@ -418,3 +418,84 @@ def test_resolve_document_stays_blocked_when_browser_also_fails(monkeypatch):
     assert result.browser_required is False
     assert result.blocked_reason == "edge_protection:http_403"
     assert result.document is None
+
+
+# --- process_job routes an edge-blocked source through browser recovery -------
+
+
+def test_edge_blocked_source_is_onboarded_through_browser_recovery(db_session, city, monkeypatch):
+    """Full path: HTTP 403 pre-flight -> browser render -> Website created ->
+    browser recovery produces a config -> job lands ready_for_approval."""
+    from types import SimpleNamespace
+
+    from app.extraction.inference import policy as inference_policy
+    from app.services import bulk_onboarding as bo
+    from app.services.browser_recovery import BrowserRecoveryResult
+
+    url = "https://edge.example.org/events"
+
+    async def fake_preflight(u):
+        return SimpleNamespace(
+            final_url=url, rendered_html="<html><body>rendered</body></html>", blocked_reason=None
+        )
+
+    captured = {}
+
+    async def fake_recovery(db, website, **kwargs):
+        captured["website_id"] = website.id
+        onboarding = SimpleNamespace(
+            outcome=inference_policy.READY_FOR_APPROVAL,
+            detection=SimpleNamespace(run_id=None),
+            inference=SimpleNamespace(
+                pattern_name="json_ld_event", detection_confidence=0.9,
+                error=None, missing_required_fields=(),
+            ),
+            preview=None, quality=None, blocking_reasons=(),
+        )
+        return BrowserRecoveryResult(
+            status="rendered_selected", observation=None, onboarding=onboarding
+        )
+
+    monkeypatch.setattr(bo, "_browser_preflight", fake_preflight)
+    monkeypatch.setattr(bo, "browser_retry_recovery", fake_recovery)
+
+    batch = _submit(db_session, url, city)
+    with patched_http_fetch(_handler({}, blocked={url})):
+        asyncio.run(process_batch(db_session, batch, limit=5))
+    db_session.refresh(batch)
+
+    job = batch.jobs[0]
+    assert job.website_id is not None  # a Website was created despite the HTTP 403
+    assert captured.get("website_id") == job.website_id  # recovery ran on that site
+    assert job.status == READY_FOR_APPROVAL
+    assert job.detected_pattern == "json_ld_event"
+
+
+def test_edge_blocked_source_with_no_browser_config_is_classified(db_session, city, monkeypatch):
+    from types import SimpleNamespace
+
+    from app.services import bulk_onboarding as bo
+    from app.services.browser_recovery import RECOVERY_UNSUPPORTED, BrowserRecoveryResult
+
+    url = "https://edge2.example.org/events"
+
+    async def fake_preflight(u):
+        return SimpleNamespace(
+            final_url=url, rendered_html="<html><body>rendered</body></html>", blocked_reason=None
+        )
+
+    async def fake_recovery(db, website, **kwargs):
+        return BrowserRecoveryResult(status=RECOVERY_UNSUPPORTED, observation=None, onboarding=None)
+
+    monkeypatch.setattr(bo, "_browser_preflight", fake_preflight)
+    monkeypatch.setattr(bo, "browser_retry_recovery", fake_recovery)
+
+    batch = _submit(db_session, url, city)
+    with patched_http_fetch(_handler({}, blocked={url})):
+        asyncio.run(process_batch(db_session, batch, limit=5))
+    db_session.refresh(batch)
+
+    job = batch.jobs[0]
+    assert job.website_id is not None  # website still created from the rendered page
+    assert job.status == UNSUPPORTED
+    assert "Browser onboarding" in (job.failure_reason or "")
