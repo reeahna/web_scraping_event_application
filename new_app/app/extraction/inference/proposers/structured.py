@@ -379,8 +379,13 @@ def livewhale_proposer() -> _StructuredProposer:
         _StructuredSpec(
             pattern_name="livewhale_json",
             paths=LIVEWHALE_PATHS,
-            pagination_strategy="livewhale_offset",
-            page_param="offset",
+            # The modern /live/json/events feed paginates by ?page=N (its meta
+            # carries total_pages and a links.next) and wraps events under
+            # `data`; the older offset paginator keyed on an `events` array and
+            # so read only the first page. Numbered page pagination walks the
+            # whole feed and stops when a page yields nothing new.
+            pagination_strategy="query_param",
+            page_param="page",
             endpoint_note="LiveWhale calendar API route discovered on the page",
         )
     )

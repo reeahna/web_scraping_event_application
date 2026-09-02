@@ -300,13 +300,15 @@ def test_wordpress_rest_proposal_derives_the_conventional_route():
     assert config.pagination.strategy == "wordpress"
 
 
-def test_livewhale_proposal_uses_offset_pagination():
+def test_livewhale_proposal_uses_page_pagination():
+    # The modern /live/json/events feed paginates by ?page=N (events under
+    # `data`), so the proposer configures numbered page pagination.
     proposal, _, _ = _propose("livewhale_site_page.html", "https://campus.example.org/calendar")
     config = proposal.configuration
     assert config is not None
     assert config.pattern_name == "livewhale_json"
-    assert config.pagination.strategy == "livewhale_offset"
-    assert config.pagination.page_param == "offset"
+    assert config.pagination.strategy == "query_param"
+    assert config.pagination.page_param == "page"
 
 
 def test_json_ld_proposal_measures_coverage_against_real_nodes():
