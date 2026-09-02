@@ -133,3 +133,80 @@ def test_next_link_pagination_requires_explicit_selector():
 
 def test_build_pagination_strategy_dispatches_by_name():
     assert isinstance(build_pagination_strategy(BASE_CONFIG), QueryParamPagination)
+
+
+# --- path_page pagination (numbered pages in the URL path) --------------------
+
+from app.extraction.inference.html_fields import detect_path_pagination  # noqa: E402
+from app.extraction.pagination import PathPagePagination  # noqa: E402
+from bs4 import BeautifulSoup  # noqa: E402
+
+PATH_CONFIG = SiteConfiguration(
+    pattern_name="json_ld_event",
+    listing_url="https://example.com/calendar/upcoming",
+    pagination={
+        "strategy": "path_page",
+        "page_path_template": "https://example.com/calendar/upcoming/{page}",
+        "max_pages": 3,
+    },
+)
+
+
+def test_path_page_pagination_appends_the_page_number():
+    response = make_response("<html></html>", final_url="https://example.com/calendar/upcoming")
+    nxt = PathPagePagination(
+        "https://example.com/calendar/upcoming/{page}"
+    ).next_request(response, 0, PATH_CONFIG, visited_urls=frozenset(), seen_body_hashes=frozenset())
+    assert isinstance(nxt, FetchRequest)
+    assert nxt.url == "https://example.com/calendar/upcoming/2"
+
+
+def test_path_page_pagination_stops_at_max_pages():
+    response = make_response("<html></html>", final_url="https://example.com/calendar/upcoming/3")
+    result = PathPagePagination(
+        "https://example.com/calendar/upcoming/{page}"
+    ).next_request(response, 2, PATH_CONFIG, visited_urls=frozenset(), seen_body_hashes=frozenset())
+    assert result is None
+
+
+def test_path_page_pagination_stops_on_duplicate_body():
+    # A throttling site that re-serves an earlier page must halt the walk.
+    response = make_response("<html>dup</html>", final_url="https://example.com/calendar/upcoming/2")
+    result = PathPagePagination(
+        "https://example.com/calendar/upcoming/{page}"
+    ).next_request(
+        response, 1, PATH_CONFIG,
+        visited_urls=frozenset(), seen_body_hashes=frozenset({response.body_hash}),
+    )
+    assert result is None
+
+
+def test_build_pagination_strategy_selects_path_page():
+    assert isinstance(build_pagination_strategy(PATH_CONFIG), PathPagePagination)
+
+
+def test_detect_path_pagination_from_numbered_path_links():
+    html = """
+    <div class="pager">
+      <div class="active">1</div>
+      <a href="/calendar/upcoming/2">2</a>
+      <a href="/calendar/upcoming/3">3</a>
+    </div>
+    """
+    soup = BeautifulSoup(html, "html.parser")
+    template = detect_path_pagination(soup, "https://example.com/calendar/upcoming")
+    assert template == "https://example.com/calendar/upcoming/{page}"
+
+
+def test_detect_path_pagination_handles_page_segment():
+    html = '<a href="/events/page/2/">Next</a>'
+    soup = BeautifulSoup(html, "html.parser")
+    template = detect_path_pagination(soup, "https://example.com/events")
+    # The trailing slash from the source link is preserved so later pages match.
+    assert template == "https://example.com/events/page/{page}/"
+
+
+def test_detect_path_pagination_ignores_cross_origin_and_page_one():
+    html = '<a href="https://other.com/events/2">x</a><a href="/events">home</a>'
+    soup = BeautifulSoup(html, "html.parser")
+    assert detect_path_pagination(soup, "https://example.com/events") is None

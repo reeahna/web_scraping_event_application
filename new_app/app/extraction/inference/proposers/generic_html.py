@@ -42,6 +42,7 @@ from app.extraction.inference.dates import (
     split_explicit_range,
 )
 from app.extraction.inference.html_fields import (
+    detect_path_pagination,
     infer_container,
     infer_fields,
     sample_cards,
@@ -284,12 +285,20 @@ def _infer_venue_transformations(values: list[str | None]) -> list[Transformatio
     return [_regex_rule("venue", _AT_VENUE_PATTERN)]
 
 
-def _infer_pagination(soup: BeautifulSoup) -> tuple[str, str | None, list[str]]:
+def _infer_pagination(
+    soup: BeautifulSoup, listing_url: str | None
+) -> tuple[str, str | None, str | None, list[str]]:
+    """Returns (strategy, next_page_selector, page_path_template, notes). Prefers
+    an explicit next-page link; falls back to numbered path pages
+    (/events/2, /events/page/2) so path-paginated calendars walk every page."""
     for selector in _NEXT_LINK_SELECTORS:
         link = soup.select_one(selector)
         if link is not None and link.get("href"):
-            return "next_link", selector, [f"next-page link found via {selector}"]
-    return "none", None, ["no next-page link found — single-page listing"]
+            return "next_link", selector, None, [f"next-page link found via {selector}"]
+    template = detect_path_pagination(soup, listing_url)
+    if template:
+        return "path_page", None, template, [f"numbered path pages found: {template}"]
+    return "none", None, None, ["no next-page link found — single-page listing"]
 
 
 def _first_absolute(values: list[str | None], base_url: str) -> str | None:
@@ -451,7 +460,9 @@ class GenericHtmlCardsProposer:
             missing.append("start_date")
             warnings.append("no_usable_date_format_inferred")
 
-        strategy, next_selector, pagination_notes = _infer_pagination(soup)
+        strategy, next_selector, page_path_template, pagination_notes = _infer_pagination(
+            soup, context.listing_url
+        )
         notes.extend(pagination_notes)
 
         try:
@@ -468,6 +479,7 @@ class GenericHtmlCardsProposer:
                 pagination={
                     "strategy": strategy,
                     "next_page_selector": next_selector,
+                    "page_path_template": page_path_template,
                     "max_pages": policy.max_pages,
                     "max_events": policy.max_events,
                 },

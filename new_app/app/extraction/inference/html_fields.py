@@ -22,7 +22,7 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass
-from urllib.parse import urljoin
+from urllib.parse import urljoin, urlsplit, urlunsplit
 
 from bs4 import BeautifulSoup, Tag
 
@@ -168,6 +168,32 @@ class ContainerCandidate:
 
 def _depth(element: Tag) -> int:
     return sum(1 for _ in element.parents)
+
+
+def detect_path_pagination(soup: BeautifulSoup, listing_url: str | None) -> str | None:
+    """An absolute URL template for pages numbered in the URL *path* rather than
+    a query string — a listing at /calendar/upcoming whose later pages live at
+    /calendar/upcoming/2, or /events with /events/page/2/. Returns a template
+    with a literal "{page}" placeholder (e.g. "https://host/calendar/upcoming/
+    {page}"), or None when the page advertises no such numbered path links.
+    Same-origin only; the number must be >= 2 so page 1's own path never matches.
+    Shared by the page-embedded (JSON-LD) and generic-HTML proposers."""
+    if not listing_url:
+        return None
+    origin = urlsplit(listing_url)
+    base_path = origin.path.rstrip("/")
+    if not base_path:
+        return None
+    pattern = re.compile(rf"^{re.escape(base_path)}/(?:page/)?(\d+)/?$")
+    for anchor in soup.find_all("a", href=True):
+        target = urlsplit(urljoin(listing_url, anchor["href"]))
+        if target.netloc and target.netloc != origin.netloc:
+            continue
+        match = pattern.match(target.path)
+        if match and int(match.group(1)) >= 2:
+            template_path = target.path[: match.start(1)] + "{page}" + target.path[match.end(1) :]
+            return urlunsplit((origin.scheme, origin.netloc, template_path, "", ""))
+    return None
 
 
 def _group_key(tag: Tag) -> tuple[str, tuple[str, ...]] | None:

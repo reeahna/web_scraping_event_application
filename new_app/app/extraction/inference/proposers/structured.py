@@ -258,12 +258,32 @@ def _detect_page_param(html: str) -> str | None:
 
 def _html_pagination(context: ProposalContext) -> dict:
     """Pagination config for a page-embedded pattern (JSON-LD, inline JSON):
-    numbered ?page walking when the page advertises it, else single page."""
+    numbered ?page walking when the page advertises it, then numbered path pages
+    (/upcoming/2), else single page."""
     page_param = _detect_page_param(context.response.text)
-    strategy = "query_param" if page_param else "none"
+    if page_param:
+        return {
+            "strategy": "query_param",
+            "page_param": page_param,
+            "max_pages": context.policy.max_pages,
+            "max_events": context.policy.max_events,
+        }
+    from bs4 import BeautifulSoup
+
+    from app.extraction.inference.html_fields import detect_path_pagination
+
+    template = detect_path_pagination(
+        BeautifulSoup(context.response.text, "html.parser"), context.listing_url
+    )
+    if template:
+        return {
+            "strategy": "path_page",
+            "page_path_template": template,
+            "max_pages": context.policy.max_pages,
+            "max_events": context.policy.max_events,
+        }
     return {
-        "strategy": strategy,
-        "page_param": page_param,
+        "strategy": "none",
         "max_pages": context.policy.max_pages,
         "max_events": context.policy.max_events,
     }

@@ -245,6 +245,36 @@ class LiveWhaleOffsetPagination:
 _QUERY_PARAM_RE_TEMPLATE = r"([?&]{param}=)[^&]*"
 
 
+class PathPagePagination:
+    """Numbered pagination carried in the URL *path* rather than a query string
+    — e.g. /calendar/upcoming/2, /events/page/3/. Driven by an absolute
+    `page_path_template` whose literal "{page}" is filled with the 1-based page
+    number. Inferred from the page's own numbered path links, never guessed."""
+
+    def __init__(self, template: str | None) -> None:
+        self._template = template
+
+    def next_request(
+        self,
+        response: FetchResponse,
+        page_index: int,
+        config: SiteConfiguration,
+        *,
+        visited_urls,
+        seen_body_hashes,
+    ) -> FetchRequest | None:
+        if not self._template:
+            return None
+        if _stop_conditions_met(response, page_index, config, visited_urls, seen_body_hashes):
+            return None
+        next_page = page_index + 2  # page_index is 0-based; humans count from 1
+        next_url = self._template.replace("{page}", str(next_page))
+        safe_url = _safe_or_none(next_url)
+        if safe_url is None or safe_url in visited_urls:
+            return None
+        return FetchRequest(url=safe_url)
+
+
 def _next_url_with_param(url: str, param: str, value: str) -> str:
     pattern = re.compile(_QUERY_PARAM_RE_TEMPLATE.format(param=re.escape(param)))
     if pattern.search(url):
@@ -267,4 +297,6 @@ def build_pagination_strategy(config: SiteConfiguration) -> PaginationStrategy:
         return TribeRestPagination()
     if strategy == "livewhale_offset":
         return LiveWhaleOffsetPagination()
+    if strategy == "path_page":
+        return PathPagePagination(config.pagination.page_path_template)
     raise ValueError(f"Unknown pagination strategy: {strategy}")

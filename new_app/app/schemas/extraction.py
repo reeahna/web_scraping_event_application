@@ -123,13 +123,31 @@ class PaginationConfig(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     strategy: Literal[
-        "none", "query_param", "wordpress", "next_link", "tribe_rest", "livewhale_offset"
+        "none",
+        "query_param",
+        "wordpress",
+        "next_link",
+        "tribe_rest",
+        "livewhale_offset",
+        "path_page",
     ] = "none"
     page_param: str | None = None
     page_size_param: str | None = None
     next_page_selector: str | None = None
+    # For the "path_page" strategy: an absolute URL template whose literal
+    # "{page}" is replaced with the 1-based page number (e.g.
+    # "https://host/calendar/upcoming/{page}"). Used by sites that paginate by
+    # appending the page number to the path rather than a query string.
+    page_path_template: str | None = None
     max_pages: int = 10
     max_events: int = 500
+
+    @field_validator("page_path_template")
+    @classmethod
+    def _validate_template(cls, v: str | None) -> str | None:
+        if v is not None and "{page}" not in v:
+            raise ValueError("page_path_template must contain the '{page}' placeholder")
+        return v
 
     @field_validator("max_pages", "max_events")
     @classmethod
