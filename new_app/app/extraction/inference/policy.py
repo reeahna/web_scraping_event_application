@@ -74,8 +74,13 @@ class AutoOnboardingPolicy:
     max_date_formats_proposed: int = 4
 
     # --- Proposed configuration bounds -----------------------------------
-    max_pages: int = 5
-    max_events: int = 250
+    # Bounds a proposed config's pagination walk. Generous enough to cover a
+    # large paginated source in full on the first "accept + import" (e.g. an
+    # Eventbrite/all-events or a university calendar), while still bounded so a
+    # runaway feed can't walk forever. Pagination also stops early on its own
+    # once a page yields no new events, so smaller sources finish well short.
+    max_pages: int = 25
+    max_events: int = 2000
     # Detail-page enrichment is only ever proposed when the listing card
     # cannot yield a full date on its own; this caps it when it is.
     max_detail_fetches_when_needed: int = 10
