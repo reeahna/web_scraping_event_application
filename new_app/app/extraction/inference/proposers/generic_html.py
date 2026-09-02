@@ -342,12 +342,18 @@ class GenericHtmlCardsProposer:
         # --- dates -----------------------------------------------------
         date_formats: list[str] = []
         date_rate = 0.0
+        # A year-less listing parses through a `parse_date` transformation with
+        # assume_next_occurrence rather than a stored strptime format, so it
+        # carries no entry in `date_formats` — track it separately so the
+        # usability gate below still recognises it as a working date.
+        date_year_assumed = False
         start_candidate = accepted.get("start_datetime")
         if start_candidate is not None and start_candidate.selector:
             raw = _values(cards, start_candidate.selector, start_candidate.attribute)
             outcome = _infer_date_configuration(raw, field_name="start_datetime", policy=policy)
             date_formats = outcome.formats
             date_rate = outcome.match_rate
+            date_year_assumed = "year_assumed" in outcome.warnings
             date_candidates.extend(outcome.candidates)
             transformations.extend(outcome.transformations)
             warnings.extend(outcome.warnings)
@@ -387,7 +393,9 @@ class GenericHtmlCardsProposer:
         max_detail_fetches = policy.max_detail_fetches_default
         detail_probe_url: str | None = None
         link_candidate = accepted.get("canonical_url")
-        date_is_usable = bool(date_formats) and date_rate >= policy.min_date_format_match_rate
+        date_is_usable = (bool(date_formats) or date_year_assumed) and (
+            date_rate >= policy.min_date_format_match_rate
+        )
 
         if not date_is_usable and link_candidate is not None and link_candidate.selector:
             link_values = _values(cards, link_candidate.selector, link_candidate.attribute)

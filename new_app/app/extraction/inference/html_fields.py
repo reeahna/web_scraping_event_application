@@ -177,6 +177,23 @@ def _group_key(tag: Tag) -> tuple[str, tuple[str, ...]] | None:
     return tag.name, tuple(classes)
 
 
+def _group_keys(tag: Tag) -> list[tuple[str, tuple[str, ...]]]:
+    """Grouping keys for a tag: its full stable class set, plus each stable
+    class token on its own. The single-token keys let cards that share a common
+    class but differ in a modifier — an alternating `alt` row class, a
+    `featured`/state class — still group into one card list rather than
+    splitting by exact class set. infer_container's over-match and coherence
+    checks discard any single-token selector that pulls in unrelated elements,
+    and near-tied candidates prefer the larger, more complete group."""
+    classes = stable_classes(tag)
+    if not classes:
+        return []
+    keys: list[tuple[str, tuple[str, ...]]] = [(tag.name, tuple(classes))]
+    if len(classes) > 1:
+        keys.extend((tag.name, (token,)) for token in classes)
+    return keys
+
+
 def infer_container(soup: BeautifulSoup, policy: AutoOnboardingPolicy) -> ContainerCandidate | None:
     """Picks the repeated element that *is* one event card.
 
@@ -187,8 +204,7 @@ def infer_container(soup: BeautifulSoup, policy: AutoOnboardingPolicy) -> Contai
     """
     groups: dict[tuple[str, tuple[str, ...]], list[Tag]] = {}
     for tag in soup.find_all(True):
-        key = _group_key(tag)
-        if key is not None:
+        for key in _group_keys(tag):
             groups.setdefault(key, []).append(tag)
 
     candidates: list[ContainerCandidate] = []
