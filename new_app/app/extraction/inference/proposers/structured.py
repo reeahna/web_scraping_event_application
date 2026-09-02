@@ -283,6 +283,69 @@ class JsonLdEventProposer:
         )
 
 
+class InlineJsonEventsProposer:
+    """Events embedded as a plain JS variable (`window.eventsListing = [...]`).
+    The detector reports the variable name as `events_root`; this measures field
+    coverage against the records already in the page, exactly like the JSON-LD
+    proposer measures against nodes."""
+
+    pattern_name = "inline_json_events"
+
+    def propose(self, context: ProposalContext) -> ConfigurationProposal:
+        from app.extraction.inference.json_events import infer_field_paths
+        from app.extraction.patterns.inline_json import (
+            _DEFAULT_PATHS as INLINE_PATHS,
+        )
+        from app.extraction.patterns.inline_json import find_inline_event_variable
+
+        found = find_inline_event_variable(context.response.text)
+        if found is None or not found.records:
+            return failed_proposal(
+                "inline_json_events was detected but no source variable could be re-read"
+            )
+        var_name = found.name
+        records = found.records
+
+        inferred = infer_field_paths(records[0])
+        json_paths = {"events_root": var_name, **inferred}
+        # Coverage is measured against the *effective* paths (pattern defaults
+        # overlaid with what was inferred), so a required field the inference
+        # couldn't place — e.g. a URL nested under extendedProps — is reported
+        # missing rather than silently defaulted.
+        candidates, missing = _schema_candidates(
+            {**INLINE_PATHS, **inferred}, records, context.policy
+        )
+
+        try:
+            configuration = SiteConfiguration(
+                pattern_name=self.pattern_name,
+                listing_url=context.listing_url,
+                timezone=context.fallback_timezone,
+                json_paths=json_paths,
+                pagination={
+                    "strategy": "none",
+                    "max_pages": context.policy.max_pages,
+                    "max_events": context.policy.max_events,
+                },
+                max_detail_fetches=0,
+                required_fields=list(DEFAULT_REQUIRED_FIELDS),
+            )
+        except ValueError as exc:
+            return failed_proposal(f"proposed configuration failed validation: {exc}")
+
+        return ConfigurationProposal(
+            configuration=configuration,
+            field_candidates=candidates,
+            confidence=round(min(0.9, 0.5 + 0.4 * context.detection.confidence), 4),
+            missing_required_fields=missing,
+            notes=(
+                f"event data embedded in the '{var_name}' JavaScript variable",
+                f"{len(records)} record(s) in the array",
+                "field mappings stay editable under 'JSON paths' in advanced configuration",
+            ),
+        )
+
+
 def wordpress_rest_proposer() -> _StructuredProposer:
     return _StructuredProposer(
         _StructuredSpec(

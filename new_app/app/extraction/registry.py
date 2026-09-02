@@ -13,6 +13,7 @@ from app.extraction.detection import (
     AlgoliaSearchDetector,
     EmbeddedJsonDetector,
     IcsCalendarDetector,
+    InlineJsonEventsDetector,
     JsonLdDetector,
     LiveWhaleDetector,
     NextDataDetector,
@@ -38,6 +39,7 @@ from app.extraction.inference.proposers.json_scripts import (
 )
 from app.extraction.inference.proposers.simpleview import simpleview_events_proposer
 from app.extraction.inference.proposers.structured import (
+    InlineJsonEventsProposer,
     JsonLdEventProposer,
     livewhale_proposer,
     the_events_calendar_proposer,
@@ -50,6 +52,8 @@ from app.extraction.patterns.embedded_json import PATTERN_VERSION as _EMBEDDED_V
 from app.extraction.patterns.embedded_json import EmbeddedJsonPattern
 from app.extraction.patterns.ics_calendar import PATTERN_VERSION as _ICS_VERSION
 from app.extraction.patterns.ics_calendar import IcsCalendarPattern
+from app.extraction.patterns.inline_json import PATTERN_VERSION as _INLINE_JSON_VERSION
+from app.extraction.patterns.inline_json import InlineJsonEventsPattern
 from app.extraction.patterns.jsonld import PATTERN_VERSION as _JSONLD_VERSION
 from app.extraction.patterns.jsonld import JsonLdEventPattern
 from app.extraction.patterns.livewhale_json import PATTERN_VERSION as _LW_VERSION
@@ -284,6 +288,21 @@ def build_default_registry() -> PatternRegistry:
             supported_pagination=("none", "query_param"),
             proposer=EmbeddedJsonProposer(),
             display_name="Embedded JSON (<script>)",
+            classification="structured",
+        )
+    )
+    registry.register(
+        PatternRegistration(
+            name="inline_json_events",
+            detector=InlineJsonEventsDetector(),
+            extractor=InlineJsonEventsPattern(),
+            config_schema=SiteConfiguration,
+            priority=RELIABILITY_ORDER.index("inline_json_events"),
+            version=_INLINE_JSON_VERSION,
+            browser_required=False,
+            supported_pagination=("none",),
+            proposer=InlineJsonEventsProposer(),
+            display_name="Inline JSON variable (window.x = [...])",
             classification="structured",
         )
     )

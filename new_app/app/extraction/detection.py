@@ -49,6 +49,9 @@ RELIABILITY_ORDER: tuple[str, ...] = (
     "ics_calendar",
     "rss_atom_events",
     "algolia_search",
+    # Event data embedded as a plain JS variable (window.x = [...]). Parsed,
+    # never executed. Last structured resort before HTML-card scraping.
+    "inline_json_events",
     "generic_html_cards",
 )
 
@@ -604,6 +607,48 @@ class EmbeddedJsonDetector:
         return _json_events_result("embedded_json", best_doc)
 
 
+class InlineJsonEventsDetector:
+    """A JSON event list embedded as a plain JS variable assignment
+    (`window.eventsListing = [...]`) rather than a `<script type=application/json>`
+    block. The literal is parsed with json.loads only — never executed. A match
+    requires a substantial, event-like array (title + date keys), so an ordinary
+    config/data array cannot trigger it. Sits just above generic HTML in the
+    reliability order, so any standard structured pattern still wins."""
+
+    def detect(self, response: FetchResponse) -> PatternDetectionResult:
+        if _access_denied_detected(response):
+            return _blocked_result("access denied or challenge page detected")
+        from app.extraction.patterns.inline_json import find_inline_event_variable
+
+        found = find_inline_event_variable(response.text)
+        if found is None or found.event_like_rate < _JSON_EVENTS_MIN_CONFIDENCE:
+            return PatternDetectionResult(
+                pattern_name=None,
+                confidence=0.0,
+                evidence={"inline_json_event_array": found is not None},
+                discovered_endpoints=(),
+                browser_required=False,
+                warnings=(),
+                detector_version=DETECTOR_VERSION,
+                needs_review=True,
+            )
+        confidence = min(0.9, 0.6 + 0.3 * found.event_like_rate)
+        return PatternDetectionResult(
+            pattern_name="inline_json_events",
+            confidence=confidence,
+            evidence={
+                "events_root": found.name,
+                "array_size": found.size,
+                "event_like_rate": found.event_like_rate,
+            },
+            discovered_endpoints=(),
+            browser_required=False,
+            warnings=(),
+            detector_version=DETECTOR_VERSION,
+            needs_review=confidence < MIN_PATTERN_CONFIDENCE,
+        )
+
+
 class NextDataDetector:
     def detect(self, response: FetchResponse) -> PatternDetectionResult:
         if _access_denied_detected(response):
@@ -844,6 +889,7 @@ def run_detection(
         "next_data": NextDataDetector(),
         "nuxt_payload": NuxtPayloadDetector(),
         "embedded_json": EmbeddedJsonDetector(),
+        "inline_json_events": InlineJsonEventsDetector(),
         "ics_calendar": IcsCalendarDetector(),
         "rss_atom_events": RssAtomDetector(),
         "algolia_search": AlgoliaSearchDetector(),
