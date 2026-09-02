@@ -7,6 +7,8 @@ fixtures modeled on the confirmed Simpleview response shape (records at
 
 from __future__ import annotations
 
+import json
+
 import pydantic
 import pytest
 
@@ -366,3 +368,116 @@ def test_no_hostname_branching_in_module():
     source = inspect.getsource(module).lower()
     assert "visitbloomington" not in source
     assert "bloomington" not in source
+
+
+# --- recurrence --------------------------------------------------------------
+
+from datetime import date  # noqa: E402
+
+from app.extraction.patterns.simpleview_events import _recurrence_rule  # noqa: E402
+from app.extraction.recurrence import expand_candidates  # noqa: E402
+from app.schemas.extraction import RecurrenceRuntimeConfig  # noqa: E402
+
+_REC_CONFIG = SiteConfiguration(
+    pattern_name=NAME,
+    api_endpoint=FIND_URL,
+    timezone=TZ,
+    recurrence=RecurrenceRuntimeConfig(mode="bounded_expand"),
+)
+
+
+def _recurring_response(recurrence, start, end):
+    record = {
+        "recid": "evt-1",
+        "title": "Karaoke at the Pottery House Studio",
+        "url": "https://example.com/events/karaoke",
+        "startDate": start,
+        "endDate": end,
+        "recurrence": recurrence,
+        "recurType": 5,
+    }
+    body = json.dumps({"docs": {"docs": [record]}})
+    return make_response(body, final_url=FIND_URL, content_type="application/json")
+
+
+def test_recurrence_rule_translates_the_sentence_forms():
+    assert _recurrence_rule("Recurring daily", None) == "RRULE:FREQ=DAILY"
+    assert _recurrence_rule("Recurring weekly on Wednesday", None) == "RRULE:FREQ=WEEKLY;BYDAY=WE"
+    assert (
+        _recurrence_rule("Recurring weekly on Tuesday, Thursday, Saturday", None)
+        == "RRULE:FREQ=WEEKLY;BYDAY=TU,TH,SA"
+    )
+    assert (
+        _recurrence_rule("Recurring monthly on the 3rd Thursday", None)
+        == "RRULE:FREQ=MONTHLY;BYDAY=+3TH"
+    )
+    assert (
+        _recurrence_rule("Recurring monthly on the last Friday", None)
+        == "RRULE:FREQ=MONTHLY;BYDAY=-1FR"
+    )
+
+
+def test_recurrence_until_is_naive_utc_from_end_date():
+    # A tz-aware UNTIL would make dateutil reject the rule against a naive
+    # dtstart, so the Z is dropped.
+    rule = _recurrence_rule("Recurring daily", "2026-12-18T04:59:59.000Z")
+    assert rule == "RRULE:FREQ=DAILY;UNTIL=20261218T045959"
+
+
+def test_unrecognised_recurrence_is_not_invented():
+    assert _recurrence_rule(None, "2026-12-18T00:00:00Z") is None
+    assert _recurrence_rule("Recurring every other blue moon", None) is None
+
+
+def test_recurring_record_becomes_an_rrule_and_drops_the_series_end():
+    candidates = SimpleviewEventsPattern().extract(
+        _recurring_response(
+            "Recurring monthly on the 3rd Thursday",
+            "2025-12-18T05:00:00.000Z",
+            "2026-12-18T04:59:59.000Z",
+        ),
+        _REC_CONFIG,
+    )
+    assert len(candidates) == 1
+    recurrence = candidates[0].raw["recurrence"]
+    assert isinstance(recurrence, dict)
+    assert recurrence["rrule"] == "RRULE:FREQ=MONTHLY;BYDAY=+3TH;UNTIL=20261218T045959"
+    # endDate is the series UNTIL now — it must not remain the event's own end,
+    # or the parent would span the whole year and read as happening every day.
+    assert candidates[0].raw["end_datetime"] is None
+
+
+def test_monthly_recurrence_expands_to_distinct_third_thursdays():
+    candidates = SimpleviewEventsPattern().extract(
+        _recurring_response(
+            "Recurring monthly on the 3rd Thursday",
+            "2025-12-18T05:00:00.000Z",
+            "2026-12-18T04:59:59.000Z",
+        ),
+        _REC_CONFIG,
+    )
+    normalized = [normalize_candidate(c, _REC_CONFIG, fallback_timezone=TZ) for c in candidates]
+    expanded, _ = expand_candidates(normalized, _REC_CONFIG, reference_date=date(2026, 9, 2))
+    starts = sorted({c.start_date for c in expanded})
+    # Every occurrence is a single third Thursday within the horizon, never one
+    # year-long event.
+    assert starts == [date(2026, 9, 17), date(2026, 10, 15), date(2026, 11, 19), date(2026, 12, 17)]
+    assert all(d.weekday() == 3 for d in starts)  # Thursday
+    assert all(c.end_date is None for c in expanded)
+
+
+def test_non_recurring_record_keeps_its_end_date():
+    record = {
+        "recid": "evt-2",
+        "title": "One-off Gala",
+        "url": "https://example.com/events/gala",
+        "startDate": "2026-09-10T23:00:00.000Z",
+        "endDate": "2026-09-11T03:00:00.000Z",
+        "recurrence": None,
+        "recurType": 99,
+    }
+    body = json.dumps({"docs": {"docs": [record]}})
+    response = make_response(body, final_url=FIND_URL, content_type="application/json")
+    candidate = SimpleviewEventsPattern().extract(response, _REC_CONFIG)[0]
+    assert candidate.raw["recurrence"] is None
+    assert candidate.raw["end_datetime"] == "2026-09-11T03:00:00.000Z"

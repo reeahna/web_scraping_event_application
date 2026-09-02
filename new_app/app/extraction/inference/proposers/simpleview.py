@@ -28,7 +28,7 @@ from app.extraction.inference.types import (
 from app.extraction.patterns.simpleview_events import _DEFAULT_PATHS, EVENTS_ROOT_DEFAULT
 from app.extraction.request_recipe import capture_recipe, summarize_recipe
 from app.extraction.selectors import resolve_json_path
-from app.schemas.extraction import SiteConfiguration
+from app.schemas.extraction import RecurrenceRuntimeConfig, SiteConfiguration
 from app.schemas.request_recipe import RequestRecipe
 
 NAME = "simpleview_events"
@@ -222,6 +222,12 @@ class SimpleviewEventsProposer:
                 max_detail_fetches=0,
                 required_fields=list(DEFAULT_REQUIRED_FIELDS),
                 request_recipe=recipe,
+                # Simpleview records describe a recurring series with a single
+                # row (prose recurrence + startDate/endDate spanning the whole
+                # run). The pattern turns that prose into an RRULE; bounded
+                # expansion then emits one occurrence per date instead of one
+                # event covering the entire span.
+                recurrence=RecurrenceRuntimeConfig(mode="bounded_expand"),
             )
         except ValueError as exc:
             return failed_proposal(f"proposed Simpleview configuration failed validation: {exc}")

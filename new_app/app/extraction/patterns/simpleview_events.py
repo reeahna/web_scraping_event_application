@@ -24,6 +24,8 @@ from __future__ import annotations
 
 import hashlib
 import json
+import re
+from datetime import datetime, timezone
 from typing import Any
 
 from app.extraction.selectors import resolve_json_path
@@ -60,6 +62,33 @@ _DEFAULT_PATHS: dict[str, str] = {
     "recur_type": "recurType",
 }
 _RAW_FIELDS = ("events_root", *_DEFAULT_PATHS.keys())
+
+# Simpleview describes recurrence only as an English sentence ("Recurring
+# weekly on Wednesday", "Recurring monthly on the 3rd Thursday", "Recurring
+# daily") plus an opaque `recurType` code — never an RRULE. These translate the
+# recognised sentences into an iCal RRULE for the shared recurrence expander.
+_WEEKDAY_CODES = {
+    "monday": "MO",
+    "tuesday": "TU",
+    "wednesday": "WE",
+    "thursday": "TH",
+    "friday": "FR",
+    "saturday": "SA",
+    "sunday": "SU",
+}
+_ORDINALS = {
+    "first": 1,
+    "1st": 1,
+    "second": 2,
+    "2nd": 2,
+    "third": 3,
+    "3rd": 3,
+    "fourth": 4,
+    "4th": 4,
+    "fifth": 5,
+    "5th": 5,
+    "last": -1,
+}
 
 _IMAGE_DICT_KEYS = ("url", "src", "lg", "large", "original", "md", "medium", "sm", "small", "uri")
 _VENUE_NAME_KEYS = ("name", "title", "venue", "label", "displayName")
@@ -147,6 +176,65 @@ def _category_names(value: Any) -> list[str]:
     return names
 
 
+def _recurrence_until(end_iso: Any) -> str | None:
+    """endDate as a *naive* (no trailing Z) UTC RRULE UNTIL. The extractor
+    leaves candidate times as the source's UTC wall-clock and the expander's
+    dtstart is that same naive value, so a tz-aware UNTIL would make dateutil
+    reject the whole rule ("UNTIL must be UTC when DTSTART is tz-aware")."""
+    if not isinstance(end_iso, str) or not end_iso:
+        return None
+    try:
+        moment = datetime.fromisoformat(end_iso.replace("Z", "+00:00")).astimezone(timezone.utc)
+    except ValueError:
+        return None
+    return moment.strftime("%Y%m%dT%H%M%S")
+
+
+def _recurrence_rule(recurrence: Any, end_iso: Any) -> str | None:
+    """Translate Simpleview's English recurrence sentence into an iCal RRULE.
+
+    Simpleview never supplies an RRULE — only prose like "Recurring weekly on
+    Wednesday", "Recurring monthly on the 3rd Thursday", or "Recurring daily".
+    Recognised sentences become a bounded RRULE (with UNTIL taken from endDate,
+    which for a recurring record is the series end, not one occurrence's end).
+    Anything unrecognised returns None, leaving the event a single occurrence —
+    never an invented rule."""
+    if not isinstance(recurrence, str) or not recurrence.strip():
+        return None
+    text = re.sub(r"^\s*recurring\s+", "", recurrence.strip().lower())
+    parts: list[str] = []
+    if text.startswith("daily"):
+        freq = "DAILY"
+    elif text.startswith("weekly"):
+        freq = "WEEKLY"
+        match = re.search(r"on\s+(.+)$", text)
+        if match:
+            days = [
+                _WEEKDAY_CODES[token.strip()]
+                for token in re.split(r",|\band\b", match.group(1))
+                if token.strip() in _WEEKDAY_CODES
+            ]
+            if days:
+                parts.append("BYDAY=" + ",".join(days))
+    elif text.startswith("monthly"):
+        freq = "MONTHLY"
+        nth = re.search(r"on the\s+(\w+)\s+(\w+)", text)
+        if nth and nth.group(1) in _ORDINALS and nth.group(2) in _WEEKDAY_CODES:
+            parts.append(f"BYDAY={_ORDINALS[nth.group(1)]:+d}{_WEEKDAY_CODES[nth.group(2)]}")
+        else:
+            day_of_month = re.search(r"on (?:the |day )\s*(\d{1,2})", text)
+            if day_of_month:
+                parts.append("BYMONTHDAY=" + day_of_month.group(1))
+    elif text.startswith(("yearly", "annually")):
+        freq = "YEARLY"
+    else:
+        return None
+    until = _recurrence_until(end_iso)
+    if until:
+        parts.append("UNTIL=" + until)
+    return "RRULE:FREQ=" + freq + "".join(f";{part}" for part in parts)
+
+
 class SimpleviewEventsPattern:
     name = NAME
 
@@ -197,6 +285,19 @@ class SimpleviewEventsPattern:
             # address rather than stringifying an unknown nested object.
             locality = raw.get("locality")
             raw["address"] = locality if isinstance(locality, str) and locality else None
+
+            # Turn the prose recurrence into a shared RRULE the recurrence
+            # expander can bound-expand. When a rule is recognised endDate *is*
+            # the series UNTIL (now carried inside the rule), so it must not
+            # remain the event's end — otherwise the parent spans the whole
+            # series and the event reads as happening every day. Unrecognised
+            # (or absent) recurrence leaves the single event untouched.
+            rrule = _recurrence_rule(raw.get("recurrence"), raw.get("end_datetime"))
+            if rrule is not None:
+                raw["recurrence"] = {"rrule": rrule}
+                raw["end_datetime"] = None
+            elif not isinstance(raw.get("recurrence"), dict):
+                raw["recurrence"] = None
 
             raw_record_hash = hashlib.sha256(
                 json.dumps(record, sort_keys=True, default=str).encode("utf-8")
