@@ -222,6 +222,53 @@ class _StructuredProposer:
         )
 
 
+_PAGE_PARAM_CANDIDATES = ("page", "paged", "pg")
+
+
+def _detect_page_param(html: str) -> str | None:
+    """A 1-based numbered-page query parameter the page advertises for its own
+    pagination — via a rel="next" link (`<link rel="next" href="?page=2">`) or a
+    numbered pagination anchor. Returns the parameter name (e.g. "page"), or None
+    when the page shows no numbered pagination. Lets a page-embedded config
+    (JSON-LD, inline JSON) walk every page instead of stopping at the first."""
+    import re as _re
+    from urllib.parse import parse_qsl, urlsplit
+
+    from bs4 import BeautifulSoup
+
+    soup = BeautifulSoup(html, "html.parser")
+    hrefs: list[str] = []
+    for tag in soup.find_all(["link", "a"]):
+        rels = [r.lower() for r in (tag.get("rel") or [])]
+        if "next" in rels and tag.get("href"):
+            hrefs.append(tag["href"])
+    if not hrefs:  # no explicit rel=next — fall back to a numbered page anchor
+        for anchor in soup.find_all("a", href=True):
+            if _re.search(r"[?&](?:page|paged|pg)=\d+", anchor["href"]):
+                hrefs.append(anchor["href"])
+                break
+    for href in hrefs:
+        query = dict(parse_qsl(urlsplit(href).query))
+        for param in _PAGE_PARAM_CANDIDATES:
+            value = query.get(param)
+            if value is not None and value.isdigit():
+                return param
+    return None
+
+
+def _html_pagination(context: ProposalContext) -> dict:
+    """Pagination config for a page-embedded pattern (JSON-LD, inline JSON):
+    numbered ?page walking when the page advertises it, else single page."""
+    page_param = _detect_page_param(context.response.text)
+    strategy = "query_param" if page_param else "none"
+    return {
+        "strategy": strategy,
+        "page_param": page_param,
+        "max_pages": context.policy.max_pages,
+        "max_events": context.policy.max_events,
+    }
+
+
 class JsonLdEventProposer:
     """JSON-LD is embedded in the listing page itself, so unlike the API
     patterns this one can measure its own field coverage directly against the
@@ -261,11 +308,7 @@ class JsonLdEventProposer:
                 listing_url=context.listing_url,
                 timezone=context.fallback_timezone,
                 json_paths={},
-                pagination={
-                    "strategy": "none",
-                    "max_pages": context.policy.max_pages,
-                    "max_events": context.policy.max_events,
-                },
+                pagination=_html_pagination(context),
                 max_detail_fetches=0,
                 required_fields=list(DEFAULT_REQUIRED_FIELDS),
                 allow_page_url_as_canonical_fallback=allow_page_url,
@@ -322,11 +365,7 @@ class InlineJsonEventsProposer:
                 listing_url=context.listing_url,
                 timezone=context.fallback_timezone,
                 json_paths=json_paths,
-                pagination={
-                    "strategy": "none",
-                    "max_pages": context.policy.max_pages,
-                    "max_events": context.policy.max_events,
-                },
+                pagination=_html_pagination(context),
                 max_detail_fetches=0,
                 required_fields=list(DEFAULT_REQUIRED_FIELDS),
             )

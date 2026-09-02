@@ -393,3 +393,52 @@ def test_wordpress_proposer_still_derives_posts_route():
     p = wordpress_rest_proposer()
     assert p._with_derived_route("https://x.org/wp-json").endswith("wp/v2/posts")
     assert p._with_derived_route("https://x.org/wp-json/wp/v2/posts").endswith("wp/v2/posts")
+
+
+# --- page-embedded proposers auto-detect ?page pagination --------------------
+
+
+def test_detect_page_param_from_rel_next_and_anchors():
+    from app.extraction.inference.proposers.structured import _detect_page_param
+
+    assert _detect_page_param('<link rel="next" href="?page=2">') == "page"
+    assert _detect_page_param('<a href="/e/?paged=3">Next</a>') == "paged"
+    assert _detect_page_param("<a href='/about'>About</a>") is None
+    # offset is not a 1-based page number, so query_param pagination ignores it.
+    assert _detect_page_param('<link rel="next" href="?offset=20">') is None
+
+
+def _jsonld_page(rel_next: bool) -> str:
+    link = '<link rel="next" href="?page=2">' if rel_next else ""
+    return (
+        "<html><head>" + link + '<script type="application/ld+json">'
+        '{"@type":"Event","name":"A","startDate":"2026-09-01","url":"https://x.org/e/a"}'
+        "</script></head><body></body></html>"
+    )
+
+
+def _propose_jsonld(html: str):
+    from app.extraction.detection import run_detection
+    from app.extraction.inference.proposers.structured import JsonLdEventProposer
+    from app.extraction.inference.service import ConfigurationInferenceService
+    from app.extraction.registry import REGISTRY
+    from tests.extraction_helpers import make_response
+
+    response = make_response(html, final_url="https://x.org/events")
+    detection = run_detection(response)
+    context = ConfigurationInferenceService(REGISTRY).build_context(
+        response=response, detection=detection,
+        listing_url="https://x.org/events", fallback_timezone="UTC",
+    )
+    return JsonLdEventProposer().propose(context)
+
+
+def test_jsonld_proposer_auto_configures_page_pagination():
+    config = _propose_jsonld(_jsonld_page(rel_next=True)).configuration
+    assert config.pagination.strategy == "query_param"
+    assert config.pagination.page_param == "page"
+
+
+def test_jsonld_proposer_stays_single_page_without_pagination():
+    config = _propose_jsonld(_jsonld_page(rel_next=False)).configuration
+    assert config.pagination.strategy == "none"
