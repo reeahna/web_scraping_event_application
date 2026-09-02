@@ -95,3 +95,31 @@ def test_jsonld_detector_ignores_non_event_itemlist():
     )
     result = JsonLdDetector().detect(make_response(html))
     assert result.pattern_name is None
+
+
+def test_date_like_regex_matches_day_first_dates():
+    from app.extraction.detection import DATE_LIKE_RE
+
+    # Day-first ("03 September"), the reverse of the leading "Month DD" form.
+    assert DATE_LIKE_RE.search("03 September Thursday")
+    assert DATE_LIKE_RE.search("24 Jul")
+    # The month-first form still matches.
+    assert DATE_LIKE_RE.search("September 3, 2026")
+
+
+def test_wordpress_rest_does_not_outrank_a_real_event_listing():
+    # A WordPress site whose events are an actual card listing: generic_html_cards
+    # (the real events) must win over wordpress_rest, whose wp/v2/posts would grab
+    # blog posts. Generic "this is WordPress" evidence alone must not outrank it.
+    cards = "".join(
+        f'<div class="col event-card"><a href="/event/{i}">Show {i}</a>'
+        f'<span>0{i} September</span></div>'
+        for i in range(1, 6)
+    )
+    html = (
+        '<html><head><meta name="generator" content="WordPress 6.5">'
+        '<link rel="https://api.w.org/" href="https://x.org/wp-json/">'
+        f"</head><body><div class=\"list\">{cards}</div></body></html>"
+    )
+    result = run_detection(make_response(html, final_url="https://x.org/events/"))
+    assert result.pattern_name == "generic_html_cards"

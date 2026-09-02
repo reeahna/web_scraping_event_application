@@ -73,7 +73,10 @@ DATE_LIKE_RE = re.compile(
     r"|\b\d{1,2}/\d{1,2}(?:/\d{2,4})?\b"
     r"|\b\d{4}-\d{2}-\d{2}\b"
     rf"|\b\d{{1,2}}\s*[/|·.-]\s*{_MONTH_NAME}\b"
-    rf"|\b{_MONTH_NAME}\s*[/|·.-]\s*\d{{1,2}}\b",
+    rf"|\b{_MONTH_NAME}\s*[/|·.-]\s*\d{{1,2}}\b"
+    # Day-first with only whitespace between ("03 September"), the reverse of
+    # the leading "Month DD" form — common on European-style event cards.
+    rf"|\b\d{{1,2}}\s+{_MONTH_NAME}\b",
     re.IGNORECASE,
 )
 _WP_GENERATOR_RE = re.compile(r"wordpress\s*[\d.]*", re.IGNORECASE)
@@ -267,26 +270,32 @@ class WordPressRestDetector:
         discovered: list[str] = []
         score = 0.0
 
+        # Generic "this is WordPress" evidence is deliberately weak — the wp/v2
+        # REST API exposes blog *posts*, which are rarely a site's events, so on
+        # its own this must never outrank a pattern that found actual events
+        # (schema.org, a real event card listing). Same principle the Events
+        # Calendar detector applies. The wp-json discovery link carries the most
+        # weight because it is what makes the REST fetch possible at all.
         generator = soup.find("meta", attrs={"name": "generator"})
         if generator and _WP_GENERATOR_RE.search(str(generator.get("content", ""))):
             evidence["generator_meta"] = generator.get("content")
-            score += 0.4
+            score += 0.05
 
         api_link = soup.find("link", attrs={"rel": "https://api.w.org/"})
         if api_link and api_link.get("href"):
             discovered.append(urljoin(response.final_url, api_link["href"]))
             evidence["wp_json_discovery_link"] = discovered[-1]
-            score += 0.4
+            score += 0.5
 
         link_header = response.headers.get("link", "")
         if "wp-json" in link_header or 'rel="https://api.w.org/"' in link_header:
-            score += 0.2
+            score += 0.1
             evidence["link_header_hint"] = True
 
         script_srcs = [s.get("src", "") for s in soup.find_all("script", src=True)]
         if any("wp-content" in src or "wp-includes" in src for src in script_srcs):
             evidence["wp_script_paths"] = True
-            score = min(1.0, score + 0.1)
+            score = min(1.0, score + 0.05)
 
         if score <= 0:
             return PatternDetectionResult(
