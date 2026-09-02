@@ -886,9 +886,12 @@ class SimpleviewEventsDetector:
         )
 
 
-def run_detection(
-    response: FetchResponse, *, min_confidence: float = MIN_PATTERN_CONFIDENCE
-) -> PatternDetectionResult:
+def run_all_detectors(response: FetchResponse) -> dict[str, PatternDetectionResult]:
+    """Run every registered detector over `response` and return each raw result
+    keyed by pattern name. `run_detection` selects a single winner from these;
+    callers that need to compare specific detectors against each other (e.g.
+    the browser path preferring a page-embedded pattern over one that would
+    fetch a separate, likely-blocked API) use the raw results directly."""
     detectors: dict[str, PatternDetector] = {
         "the_events_calendar": TheEventsCalendarDetector(),
         "livewhale_json": LiveWhaleDetector(),
@@ -904,7 +907,13 @@ def run_detection(
         "algolia_search": AlgoliaSearchDetector(),
         "generic_html_cards": StaticHtmlDetector(),
     }
-    results = {name: detector.detect(response) for name, detector in detectors.items()}
+    return {name: detector.detect(response) for name, detector in detectors.items()}
+
+
+def run_detection(
+    response: FetchResponse, *, min_confidence: float = MIN_PATTERN_CONFIDENCE
+) -> PatternDetectionResult:
+    results = run_all_detectors(response)
     matched = [
         (name, result) for name, result in results.items() if result.pattern_name is not None
     ]

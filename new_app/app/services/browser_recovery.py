@@ -303,6 +303,17 @@ def _browser_structured_config(config, *, source_page_url: str):
     )
 
 
+def _browser_rendered_config(config, *, source_page_url: str):
+    """Rebuild a rendered-HTML config to execute through the browser: render the
+    source page and extract from its rendered HTML. Used when the page-embedded
+    source the browser read (schema.org JSON-LD, framework JSON) cannot be
+    reached by plain HTTP because the site is edge-protected — the extractor is
+    unchanged, only the transport becomes the headless browser."""
+    return config.model_copy(
+        update={"execution_strategy": "browser", "listing_url": source_page_url}
+    )
+
+
 def _same_recovery_config(existing: dict | None, proposed) -> bool:
     if not isinstance(existing, dict):
         return False
@@ -314,9 +325,19 @@ def _recovery_browser_fetch(config, *, source_page_url: str, strategy):
     """The browser transport for a recovery browser preview. Reuses the same
     browser `strategy` the observation ran with (a real browser in production,
     an injected fake in tests) so the preview does not launch a second one and
-    stays deterministic under test."""
-    from app.extraction.browser import BrowserStructuredResponseFetchStrategy
+    stays deterministic under test.
+
+    A structured-endpoint config captures the page's own JSON response; a
+    rendered-HTML config (no endpoint to capture — e.g. schema.org JSON-LD read
+    from the page) renders the page and returns its HTML to the same extractor."""
+    from app.extraction.browser import (
+        BrowserRenderFetchStrategy,
+        BrowserStructuredResponseFetchStrategy,
+    )
     from app.services.extraction_runs import _browser_pagination_bounds, _browser_plan_for
+
+    if not config.api_endpoint:
+        return BrowserRenderFetchStrategy(plan=_browser_plan_for(config), browser=strategy)
 
     return BrowserStructuredResponseFetchStrategy(
         source_page_url=config.listing_url or source_page_url,
@@ -428,15 +449,23 @@ async def browser_retry_recovery(
             status=inference.outcome, observation=observation, onboarding=result
         )
 
-    # The browser has already read this endpoint's events. If it is a structured
-    # endpoint whose HTTP replay we have previously proven is blocked (the
-    # current version is the equivalent browser config), skip re-creating an HTTP
-    # draft we know will 403 and propose the browser configuration directly (§8).
-    browser_config = (
-        _browser_structured_config(inference.configuration, source_page_url=listing_url)
-        if _structured_endpoint_config(inference.configuration)
-        else None
-    )
+    # The browser has already read this source's events. When its HTTP replay is
+    # blocked, the equivalent browser configuration is the successor: a structured
+    # endpoint captures the page's own JSON; a rendered-HTML source (schema.org
+    # JSON-LD, framework JSON the browser read straight from the page) renders the
+    # page. Either way we skip leaving a fresh source stuck on an HTTP draft we
+    # know will 403. When the current version already IS that browser config, we
+    # don't re-create it (§8).
+    if _structured_endpoint_config(inference.configuration):
+        browser_config = _browser_structured_config(
+            inference.configuration, source_page_url=listing_url
+        )
+    elif observation.chosen_source == "rendered_html":
+        browser_config = _browser_rendered_config(
+            inference.configuration, source_page_url=listing_url
+        )
+    else:
+        browser_config = None
 
     async def _browser_preview(config):
         return await extraction_runs.preview_extraction_detailed(
@@ -465,7 +494,8 @@ async def browser_retry_recovery(
             db, website, correlation_id=correlation_id
         )
 
-        # The HTTP replay of a structured endpoint the browser already read was
+        # The HTTP replay of a source the browser already read (a structured
+        # endpoint, or a rendered-HTML page carrying its own JSON-LD) was
         # rejected at the request layer (any 403/429, not only a recognised
         # edge signature). The source is browser-required: within THIS same
         # recovery operation, create an execution_strategy="browser" successor

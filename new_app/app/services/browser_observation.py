@@ -24,7 +24,7 @@ import hashlib
 from dataclasses import dataclass, field
 
 from app.extraction.browser import BrowserFetchStrategy, BrowserRenderResult
-from app.extraction.detection import run_detection
+from app.extraction.detection import MIN_PATTERN_CONFIDENCE, run_all_detectors, run_detection
 from app.extraction.registry import REGISTRY
 from app.extraction.structured_candidates import (
     THIRD_PARTY_FUNCTIONAL,
@@ -120,6 +120,61 @@ def _is_structured_pattern(pattern_name: str) -> bool:
         return REGISTRY.get(pattern_name).classification == "structured"
     except Exception:  # noqa: BLE001 - unknown pattern is simply "not structured"
         return False
+
+
+# Patterns whose extractor fetches a *separate* first-party endpoint rather than
+# reading events from the response body it was given. On rendered HTML their
+# detector still fires (a Tribe/WordPress page advertises its REST route), but
+# extraction would then call an endpoint we never observed the page use — and we
+# only reached the browser because ordinary HTTP was blocked, so that same-origin
+# API is very likely blocked too.
+_EXTERNAL_API_PATTERNS = frozenset(
+    {
+        "the_events_calendar",
+        "wordpress_rest",
+        "livewhale_json",
+        "simpleview_events",
+        "algolia_search",
+    }
+)
+
+# Patterns whose extractor reads events straight from the body we already hold,
+# tried in registry-reliability order. In the rendered path these are strictly
+# safer than an external-API pattern: no second fetch, and the data is exactly
+# what rendered.
+_PAGE_EMBEDDED_STRUCTURED_PATTERNS = (
+    "json_ld_event",
+    "next_data",
+    "nuxt_payload",
+    "embedded_json",
+    "inline_json_events",
+)
+
+
+def _detect_rendered(rendered: FetchResponse) -> PatternDetectionResult:
+    """Detection over rendered HTML, biased toward extract-from-this-body.
+
+    Ordinary `run_detection` breaks a confidence tie by reliability order, which
+    puts the vendor-API patterns (the_events_calendar, wordpress_rest, …) first.
+    On a rendered page that carries its own structured events (schema.org
+    JSON-LD, framework JSON) that hands the extractor an endpoint we never saw
+    the page fetch and which the site's edge protection is very likely blocking.
+    When the winner is such an external-API pattern but a page-embedded
+    structured pattern independently clears the detection bar on the same HTML,
+    prefer the page-embedded one — it extracts from what actually rendered."""
+    results = run_all_detectors(rendered)
+    winner = run_detection(rendered)
+    if winner.pattern_name not in _EXTERNAL_API_PATTERNS:
+        return winner
+    for name in _PAGE_EMBEDDED_STRUCTURED_PATTERNS:
+        embedded = results.get(name)
+        if (
+            embedded is not None
+            and embedded.pattern_name is not None
+            and embedded.confidence >= MIN_PATTERN_CONFIDENCE
+        ):
+            return embedded
+    return winner
 
 
 async def render_and_observe(
@@ -224,7 +279,7 @@ async def render_and_observe(
         # structured data, so the deliberate bias against rendered HTML when a
         # real API exists is preserved for everything but genuine page-embedded
         # structured events.
-        rendered_detection = run_detection(rendered)
+        rendered_detection = _detect_rendered(rendered)
         if rendered_detection.pattern_name and _is_structured_pattern(
             rendered_detection.pattern_name
         ):
@@ -282,7 +337,7 @@ async def render_and_observe(
 
     # 3. No structured candidate at all — only now may rendered HTML be
     # considered, and it still goes through the ordinary proposal + preview.
-    rendered_detection = run_detection(rendered)
+    rendered_detection = _detect_rendered(rendered)
     outcome = (
         OUTCOME_RENDERED_SELECTED if rendered_detection.pattern_name else OUTCOME_NO_SOURCE
     )
