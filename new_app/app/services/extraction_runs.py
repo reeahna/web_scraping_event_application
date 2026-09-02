@@ -19,6 +19,7 @@ just conventional:
 
 from __future__ import annotations
 
+import asyncio
 import hashlib
 from dataclasses import dataclass
 from datetime import UTC, datetime
@@ -434,6 +435,7 @@ async def _fetch_legacy_pages(
     )
     response: FetchResponse | None = None
     first_response: FetchResponse | None = None
+    last_ok_response: FetchResponse | None = None
     page_index = 0
     max_events_reached = False
     while current_request is not None:
@@ -441,11 +443,20 @@ async def _fetch_legacy_pages(
         if first_response is None:
             first_response = response
         if response.blocked_reason is not None:
+            # A block on a *later* page (after earlier pages already yielded
+            # events — often a rate-limit 429 on a paginated calendar) just ends
+            # the walk; the events already gathered stand and the run is not a
+            # failure. Only a block with no events at all is a real block, so
+            # keep the blocked response as the outcome in that case.
+            if all_candidates and last_ok_response is not None:
+                warnings.append(f"pagination_stopped_at_block:{response.blocked_reason}")
+                response = last_ok_response
             break
         if not content_type_allowed(response.content_type, config.fetch):
             warnings.append(f"unexpected_content_type:{response.content_type}")
             break
         response_hash_by_page[response.final_url] = response.body_hash
+        last_ok_response = response
         page_candidates = pattern.extract(response, config)
         remaining_capacity = config.pagination.max_events - len(all_candidates)
         if len(page_candidates) > remaining_capacity:
@@ -467,6 +478,11 @@ async def _fetch_legacy_pages(
             break
         current_request = next_request
         page_index += 1
+        # Space out page requests: many calendars rate-limit (HTTP 429) a rapid
+        # sequential walk. The per-source delay applies only between pages, never
+        # before the first fetch.
+        if config.fetch.rate_limit_delay_seconds > 0:
+            await asyncio.sleep(config.fetch.rate_limit_delay_seconds)
     return first_response, response, max_events_reached
 
 

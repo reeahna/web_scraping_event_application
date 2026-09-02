@@ -210,3 +210,55 @@ def test_detect_path_pagination_ignores_cross_origin_and_page_one():
     html = '<a href="https://other.com/events/2">x</a><a href="/events">home</a>'
     soup = BeautifulSoup(html, "html.parser")
     assert detect_path_pagination(soup, "https://example.com/events") is None
+
+
+# --- a block mid-walk ends pagination gracefully -----------------------------
+
+import pytest  # noqa: E402
+
+
+@pytest.mark.asyncio
+async def test_a_block_after_valid_pages_does_not_fail_the_run():
+    # A rate-limit (429) on a later page must not discard the earlier pages'
+    # events or mark the whole preview blocked — the walk just stops.
+    from app.services.extraction_runs import _execute_pipeline
+
+    cards = "<html><body>" + "".join(
+        f'<a class="ev" href="/e/{i}"><span class="date">Sep {i}, 2026</span>'
+        f'<span class="heading2">Event {i}</span></a>'
+        for i in range(1, 4)
+    ) + "</body></html>"
+
+    config = SiteConfiguration(
+        pattern_name="generic_html_cards",
+        listing_url="https://ex.com/cal",
+        event_container_selector="a.ev",
+        field_selectors={
+            "title": {"kind": "css", "selector": ".heading2"},
+            "canonical_url": {"kind": "css", "selector": ":scope", "attribute": "href"},
+            "start_datetime": {"kind": "css", "selector": ".date"},
+        },
+        date_formats=["%b %d, %Y"],
+        pagination={
+            "strategy": "path_page",
+            "page_path_template": "https://ex.com/cal/{page}",
+            "max_pages": 5,
+        },
+        fetch={"rate_limit_delay_seconds": 0.0},
+    )
+
+    class SeqFetch:
+        async def fetch(self, request, _config):
+            if request.url == "https://ex.com/cal":
+                return make_response(cards, final_url=request.url)
+            return make_response(
+                "rate limited", final_url=request.url, status_code=429, blocked_reason="http_429"
+            )
+
+    outcome = await _execute_pipeline(
+        config, config.pattern_name, SeqFetch(), fallback_timezone="America/New_York"
+    )
+    valid = [c for c, r in outcome.outcomes if r.is_valid]
+    assert len(valid) == 3  # page 1's events survive the later block
+    assert outcome.last_response.blocked_reason is None  # run is not marked blocked
+    assert any("pagination_stopped_at_block" in w for w in outcome.warnings)

@@ -31,7 +31,9 @@ from app.schemas.extraction import FetchConfig
 USER_AGENT = "CityEventsBot/1.0 (+https://example.invalid/bot-info)"
 
 _REDIRECT_STATUSES = frozenset({301, 302, 303, 307, 308})
-_RETRYABLE_STATUSES = frozenset({500, 502, 503, 504})
+# 429 (Too Many Requests) is a rate limit, not a hard denial like 403 — a short
+# backoff often clears it, so it retries here before being reported as blocked.
+_RETRYABLE_STATUSES = frozenset({429, 500, 502, 503, 504})
 
 # Short, frozen — deliberately not a growing heuristic pile.
 _BLOCK_MARKERS: tuple[str, ...] = ("cloudflare", "access denied", "are you a robot", "captcha")
