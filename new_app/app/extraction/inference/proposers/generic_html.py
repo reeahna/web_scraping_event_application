@@ -119,6 +119,17 @@ def _regex_rule(field_name: str, pattern: str, group: int = 1) -> Transformation
     )
 
 
+def _year_assumed_rule(field_name: str, formats: list[str]) -> TransformationRuleConfig:
+    """A parse_date transformation that resolves a year-less date to its next
+    occurrence (this year if still upcoming, otherwise next year) — used when
+    the listing omits the year entirely."""
+    return TransformationRuleConfig(
+        field=field_name,
+        kind="parse_date",
+        params={"formats": formats, "assume_next_occurrence": True},
+    )
+
+
 def _extracted(values: list[str], pattern: str, group: int = 1) -> list[str]:
     compiled = re.compile(pattern)
     out: list[str] = []
@@ -140,8 +151,21 @@ def _infer_date_configuration(
 
     candidates, rate = infer_date_formats(normalized, max_formats=policy.max_date_formats_proposed)
     if rate >= policy.min_date_format_match_rate:
+        accepted_formats = [c.format for c in candidates if c.accepted and c.format]
+        # A year-less listing: parse via a transformation that assumes the
+        # next occurrence, rather than a plain format that would parse to 1900.
+        if any("year_assumed" in c.warnings for c in candidates if c.accepted):
+            transformations.append(_year_assumed_rule(field_name, accepted_formats))
+            return _DateOutcome(
+                formats=[],
+                candidates=candidates,
+                transformations=transformations,
+                end_transformation=None,
+                match_rate=rate,
+                warnings=[*warnings, "year_assumed"],
+            )
         return _DateOutcome(
-            formats=[c.format for c in candidates if c.accepted and c.format],
+            formats=accepted_formats,
             candidates=candidates,
             transformations=transformations,
             end_transformation=None,

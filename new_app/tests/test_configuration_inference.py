@@ -209,11 +209,50 @@ def test_whitespace_is_normalized_before_formats_are_tried():
     assert normalize_whitespace("  Oct   6 ,\n 2026 ") == "Oct 6 , 2026"
 
 
-def test_a_missing_year_is_never_invented():
-    candidates, rate = infer_date_formats(["24 / July / Friday", "02 / August / Saturday"])
+def test_a_missing_year_assumes_the_next_occurrence():
+    # A year-less date now infers a year-less format flagged for next-occurrence
+    # resolution, rather than being dropped for a detail-page probe.
+    candidates, rate = infer_date_formats(["03 September Thursday", "04 September Friday"])
+    assert rate == 1.0
+    assert candidates[0].format == "%d %B %A"
+    assert candidates[0].accepted is True
+    assert "year_assumed" in candidates[0].warnings
+
+
+def test_an_unparseable_date_still_reports_no_year():
+    # Nothing month-shaped to match: still a clean failure, never a guess.
+    candidates, rate = infer_date_formats(["sometime soon", "later this week"])
     assert rate == 0.0
     assert candidates[0].accepted is False
     assert "no_year_in_text" in candidates[0].warnings
+
+
+def test_yearless_listing_gets_a_parse_date_transformation():
+    # End to end: a card listing whose dates omit the year onboards with a
+    # parse_date transformation that assumes the next occurrence.
+    html = (
+        '<html><body><div class="list">'
+        + "".join(
+            f'<div class="card"><a href="/event/{i}">Show {i}</a>'
+            f'<ul class="when"><li>0{i}</li><li>September</li></ul></div>'
+            for i in range(1, 5)
+        )
+        + "</div></body></html>"
+    )
+    from tests.extraction_helpers import make_response
+
+    response = make_response(html, final_url="https://x.org/events/")
+    detection = run_detection(response)
+    service = ConfigurationInferenceService(REGISTRY)
+    context = service.build_context(
+        response=response, detection=detection,
+        listing_url="https://x.org/events/", fallback_timezone="America/Indiana/Indianapolis",
+    )
+    proposal = service.propose(context)
+    config = proposal.configuration
+    assert config is not None
+    rules = [t for t in config.transformations if t.kind == "parse_date"]
+    assert rules and rules[0].params.get("assume_next_occurrence") is True
 
 
 def test_time_formats_with_am_pm_are_inferred():

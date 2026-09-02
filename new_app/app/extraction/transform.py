@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import re
 import unicodedata
+import warnings
 from collections.abc import Callable
 from datetime import date, datetime, time
 from typing import Any
@@ -18,6 +19,15 @@ from urllib.parse import urljoin
 
 from app.core.safe_regex import validate_safe_regex
 from app.schemas.extraction import TransformationRuleConfig
+
+# Parsing a year-less date resolves to 1900, which Python 3.12+ warns about as
+# ambiguous. That is intentional here — such dates are then resolved to their
+# next occurrence — so silence just this one message rather than log it per row.
+warnings.filterwarnings(
+    "ignore",
+    message="Parsing dates involving a day of month without a year",
+    category=DeprecationWarning,
+)
 
 _WHITESPACE_RE = re.compile(r"\s+")
 _TAG_RE = re.compile(r"<[^>]+>")

@@ -10,10 +10,11 @@ Two rules the rest of the engine depends on:
 * Whitespace is normalized before any format is tried, because
   `resolve_css` joins a nested `<span>` date with single spaces — so
   "Tuesday | Oct  6 ,\\n 2026" is tested as "Tuesday | Oct 6 , 2026".
-* A missing year is never invented. If no sample carries a four-digit year,
-  inference returns no date formats at all and reports `no_year_in_text`;
-  the caller's response to that is a bounded detail-page probe, never a
-  fabricated "current year" default.
+* A missing year: when no sample carries a four-digit year, a year-less
+  format is inferred (from YEARLESS_DATE_FORMAT_TABLE) and flagged
+  `year_assumed`, so the caller can parse it as the next occurrence (this
+  year if still upcoming, else next). Only if no year-less format matches
+  either does inference give up with `no_year_in_text`.
 """
 
 from __future__ import annotations
@@ -70,6 +71,31 @@ DATE_FORMAT_TABLE: tuple[str, ...] = (
     "%b %d · %Y",
     "%B %d | %Y",
     "%b %d | %Y",
+)
+
+# Year-less date shapes, tried only when no sampled value carries a year. A
+# month name is always required, so these never match a bare number. Paired
+# with assume_next_occurrence, they resolve to the current or next year.
+YEARLESS_DATE_FORMAT_TABLE: tuple[str, ...] = (
+    "%d %B %A",
+    "%d %b %A",
+    "%A %d %B",
+    "%A %d %b",
+    "%B %d %A",
+    "%b %d %A",
+    "%A %B %d",
+    "%A %b %d",
+    "%a %B %d",
+    "%a %b %d",
+    "%A, %B %d",
+    "%A, %b %d",
+    "%a, %B %d",
+    "%a, %b %d",
+    "%d %B",
+    "%d %b",
+    "%B %d",
+    "%b %d",
+    "%b. %d",
 )
 
 TIME_FORMAT_TABLE: tuple[str, ...] = (
@@ -187,6 +213,30 @@ def infer_date_formats(
         ], 1.0
 
     if not any(has_year(v) for v in values):
+        # No year in the text. Rather than give up, infer a year-less format and
+        # let the config assume the current/next occurrence at parse time — the
+        # right reading for an upcoming-events listing that omits the year. The
+        # `year_assumed` warning tells the proposer to emit a parse_date
+        # transformation with assume_next_occurrence rather than a plain format.
+        chosen = _cover(values, YEARLESS_DATE_FORMAT_TABLE, max_formats)
+        if chosen:
+            matched = sum(1 for v in values if any(_matches(v, fmt) for fmt in chosen))
+            match_rate = matched / len(values)
+            return [
+                DateFormatCandidate(
+                    kind="date",
+                    format=fmt,
+                    match_rate=sum(1 for v in values if _matches(v, fmt)) / len(values),
+                    samples=tuple(v for v in values if _matches(v, fmt))[:max_samples],
+                    evidence=(
+                        f"matches {_hits(values, fmt)}/{len(values)} samples; no year in "
+                        "text, so the current/next occurrence is assumed",
+                    ),
+                    warnings=("year_assumed",),
+                    accepted=True,
+                )
+                for fmt in chosen
+            ], match_rate
         return [
             DateFormatCandidate(
                 kind="date",

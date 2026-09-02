@@ -517,8 +517,15 @@ def _score_role(
     if role in IDENTITY_ROLES and variation < policy.min_variation_for_identity_fields:
         return None
     # No naming evidence, no schema evidence, and an unremarkable element:
-    # nothing here distinguishes this selector from any other text node.
-    if semantic == 0.0 and schema < 1.0 and tag_score < 0.6:
+    # nothing here distinguishes this selector from any other text node — unless
+    # the value itself parses cleanly as a date/time on nearly every card, which
+    # is unambiguous evidence of the role even when the element is plainly
+    # classed (a card can render its date in a bare <ul>/<span>).
+    parse_is_evidence = (
+        role in ("start_datetime", "end_datetime", "start_time", "end_time")
+        and parse >= 0.8
+    )
+    if semantic == 0.0 and schema < 1.0 and tag_score < 0.6 and not parse_is_evidence:
         return None
     if observation.selector == "a" and role in ("canonical_url", "detail_link"):
         warnings.append("broad_anchor_selector")
