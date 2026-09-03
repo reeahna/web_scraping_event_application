@@ -1,0 +1,35 @@
+# Render Blueprint — one always-on Docker web service that also runs the
+# scheduler, with a persistent disk for the SQLite database.
+#
+# Create it in Render: New + -> Blueprint -> pick this repo. Render reads this
+# file, provisions the service and disk, and deploys. See DEPLOY_RENDER.md.
+services:
+  - type: web
+    name: bethlehem-events
+    runtime: docker
+    # The app lives in new_app/; build and run from there.
+    rootDir: new_app
+    dockerfilePath: ./Dockerfile
+    dockerContext: .
+    region: virginia          # US East, closest to PA. Options: oregon, ohio, virginia, frankfurt, singapore.
+    plan: starter             # ~$7/mo, always-on. Do NOT use the free plan — it sleeps and would stop the scheduler.
+    healthCheckPath: /health/live
+    autoDeploy: true          # redeploy on every push to the connected branch
+    disk:
+      name: data
+      mountPath: /data        # DATABASE_URL below points here; survives deploys and restarts
+      sizeGB: 1
+    envVars:
+      # SQLite on the persistent disk. Four slashes = an absolute path (/data/app.db).
+      - key: DATABASE_URL
+        value: sqlite:////data/app.db
+      # Turn on the restricted headless-browser fetch fallback (off by default).
+      - key: BROWSER_EXTRACTION_ENABLED
+        value: "true"
+      - key: APP_ENV
+        value: production
+      # Cookies are HTTPS-only in production (Render terminates TLS for you).
+      - key: COOKIE_SECURE
+        value: "true"
+      - key: SECURITY_HEADERS_ENABLED
+        value: "true"

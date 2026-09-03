@@ -1,13 +1,14 @@
 # Web Scraping Event Application
 
-This repository contains two independent applications:
+A city-events aggregator: a FastAPI application that discovers, extracts, and
+schedules imports of public event listings, with a public site and an admin UI.
 
-- [`legacy_app/`](legacy_app/) is the existing city-events aggregator. It is
-  preserved unmodified and has its own setup instructions.
-- [`new_app/`](new_app/) is the replacement FastAPI application under active
-  development. It currently provides database foundations, local
-  authentication, RBAC, public registration, and account management.
-  Extraction and scheduling remain deferred.
+- [`new_app/`](new_app/) is the application — extraction patterns, the
+  onboarding/inference pipeline, the restricted headless-browser fallback, the
+  durable scheduler, authentication/RBAC, and the public + admin interfaces.
 
-See [`docs/migration-notes.md`](docs/migration-notes.md) for repository history
-and [`new_app/README.md`](new_app/README.md) for current setup and verification.
+See [`new_app/README.md`](new_app/README.md) for local setup and verification,
+and [`DEPLOY_RENDER.md`](DEPLOY_RENDER.md) for deploying to Render.
+
+> The original standalone scraper (`legacy_app/`) has been removed now that
+> `new_app/` fully replaces it; it remains in the git history if ever needed.

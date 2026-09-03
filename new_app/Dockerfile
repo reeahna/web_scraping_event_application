@@ -1,34 +1,38 @@
-# Production image for the city-events application (Phase 18).
-# Builds one image used for every process (web, scheduler, worker, browser
-# worker); the command chosen at run time decides the role. Building the image
-# is not a deployment — see docs/deployment.md.
-FROM python:3.13-slim AS base
+# Event scraping app — web + scheduler in one container.
+#
+# Python 3.13 (the project's required floor) plus Chromium and its system
+# libraries for the restricted headless-browser fetch strategy. Runs as root so
+# the mounted persistent disk (the SQLite database) is writable — standard for a
+# single-container Render Docker service.
+FROM python:3.13-slim-bookworm
 
 ENV PYTHONUNBUFFERED=1 \
     PIP_NO_CACHE_DIR=1 \
-    PYTHONDONTWRITEBYTECODE=1
+    PIP_DISABLE_PIP_VERSION_CHECK=1 \
+    PLAYWRIGHT_BROWSERS_PATH=/ms-playwright
 
 WORKDIR /app
 
-# System deps for psycopg (PostgreSQL) and Playwright's chromium.
+# Build tools for wheels that need compiling (e.g. bcrypt); curl for healthchecks.
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    build-essential libpq-dev curl \
+        build-essential curl \
     && rm -rf /var/lib/apt/lists/*
 
-COPY pyproject.toml ./
-RUN pip install --upgrade pip && pip install ".[dev]" "psycopg[binary]>=3.1"
+# 1) Python dependencies first, so this layer is cached across code changes.
+COPY requirements.txt ./
+RUN pip install --upgrade pip && pip install -r requirements.txt
 
-# Browser worker only: install chromium. Harmless for other roles.
-RUN python -m playwright install --with-deps chromium || true
+# 2) Chromium + all the OS libraries Playwright needs. Done after pip so the
+#    playwright CLI is available; --with-deps installs the apt packages too.
+RUN playwright install --with-deps chromium
 
+# 3) Application code.
 COPY . .
 
-# Runs as an unprivileged user.
-RUN useradd -m appuser && chown -R appuser /app
-USER appuser
+RUN chmod +x ./start.sh
 
-EXPOSE 8000
+# Render provides $PORT at runtime; this is just documentation.
+ENV PORT=8100
+EXPOSE 8100
 
-# Default role is the web server; override `command` for other roles
-# (see docker-compose.prod.yml / docs/deployment.md).
-CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--workers", "4"]
+CMD ["./start.sh"]

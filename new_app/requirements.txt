@@ -1,0 +1,22 @@
+# Runtime dependencies (mirrors [project.dependencies] in pyproject.toml).
+# Kept as a separate file so Docker can install deps in a cached layer before
+# the app code is copied. When you change a dependency, update both places.
+fastapi>=0.115.0
+uvicorn[standard]>=0.32.0
+sqlalchemy>=2.0.36
+alembic>=1.14.0
+pydantic>=2.9.0
+pydantic-settings>=2.6.0
+jinja2>=3.1.4
+python-multipart>=0.0.12
+bcrypt>=4.2.0
+tzdata>=2024.1
+httpx>=0.27.0
+beautifulsoup4>=4.12.3
+icalendar>=6.0
+defusedxml>=0.7
+python-dateutil>=2.9
+APScheduler>=3.10,<4
+playwright>=1.47
+Authlib>=1.3
+redis>=5

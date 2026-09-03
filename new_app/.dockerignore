@@ -1,0 +1,20 @@
+# Keep the image small and never bake local state into it.
+venv/
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+.ruff_cache/
+tests/
+tests/.tmp/
+
+# Local database + backups live on the persistent disk in production, never in
+# the image (DATABASE_URL points at /data/app.db).
+app.db
+app.db-*
+app.db.backup-*
+*.db
+*.sqlite3
+
+# Local secrets / env — production config comes from Render env vars.
+.env
