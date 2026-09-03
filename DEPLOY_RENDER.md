@@ -25,11 +25,11 @@ Render deploys from GitHub, so anything not pushed won't be deployed.
 ### 2. Create the service from the Blueprint
 1. Go to **dashboard.render.com** → **New +** → **Blueprint**.
 2. Connect your GitHub account and pick this repository.
-3. Render reads `render.yaml`, shows the **bethlehem-events** web service and a
+3. Render reads `render.yaml`, shows the **city-events** web service and a
    1 GB disk. Click **Apply**.
 4. First build takes ~5–10 min (it installs Chromium). Watch the deploy log.
 
-When it finishes you get a URL like `https://bethlehem-events.onrender.com`
+When it finishes you get a URL like `https://city-events.onrender.com`
 with HTTPS already set up.
 
 ### 3. Create your admin login

@@ -5,7 +5,7 @@
 # file, provisions the service and disk, and deploys. See DEPLOY_RENDER.md.
 services:
   - type: web
-    name: bethlehem-events
+    name: city-events
     runtime: docker
     # The app lives in new_app/; build and run from there.
     rootDir: new_app
