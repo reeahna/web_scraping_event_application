@@ -130,6 +130,20 @@ DATE_SUBSTRING_PATTERNS: tuple[str, ...] = (
     r"(\d{1,2}/\d{1,2}/\d{2,4})",
 )
 
+# Year-less date substrings for a date embedded in prose with no year
+# ("...Sunday, October 25th (Rain date...)", "Market: Saturday, September 19;
+# 10 AM"). Each captured substring is validated against YEARLESS_DATE_FORMAT_TABLE
+# (ordinals tolerated), so a non-date capture is discarded. The first match in a
+# blob wins, which is the primary date on the cards that carry more than one.
+# The ordinal group is a *capturing* group, not "(?:...)", because the shared
+# ReDoS validator (app.core.safe_regex) forbids "(?" in a stored extraction
+# regex; the outer group 1 still captures the whole date.
+YEARLESS_DATE_SUBSTRING_PATTERNS: tuple[str, ...] = (
+    r"([A-Z][a-z]{2,8},?\s+[A-Z][a-z]{2,8}\.?\s+\d{1,2}(st|nd|rd|th)?)",
+    r"([A-Z][a-z]{2,8}\.?\s+\d{1,2}(st|nd|rd|th)?)",
+    r"(\d{1,2}(st|nd|rd|th)?\s+[A-Z][a-z]{2,8})",
+)
+
 TIME_SUBSTRING_PATTERN = r"(\d{1,2}:\d{2}\s*[APap]\.?[Mm]\.?)"
 
 # A range whose two halves are each a complete, independently parseable
@@ -167,7 +181,7 @@ def _hits(values: list[str], fmt: str) -> int:
 
 def _matches(value: str, fmt: str) -> bool:
     try:
-        datetime.strptime(value, fmt)
+        datetime.strptime(strip_ordinals(value), fmt)
     except ValueError:
         return False
     return True

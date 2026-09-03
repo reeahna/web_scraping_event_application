@@ -174,6 +174,14 @@ def _raw_selectors(card: Tag, element: Tag) -> list[tuple[str, frozenset[str]]]:
     if tag_name in _SEMANTIC_TAGS:
         selectors.append((tag_name, none))
 
+    # A bare "a" for a classless link. It resolves to the card's *first* anchor,
+    # so candidate_selectors' uniqueness check keeps it only for that anchor —
+    # exactly the whole-card / primary event link on layouts that give it no
+    # class and no titled ancestor (otherwise it would generate no selector at
+    # all and the event URL would be lost).
+    if tag_name == "a":
+        selectors.append(("a", none))
+
     # Ancestor-qualified form. This is what produces `h3.event-title a` for a
     # classless anchor inside a titled heading — the specific event-title
     # link, rather than the broad `a` that would also match a category chip

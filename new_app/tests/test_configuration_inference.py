@@ -545,3 +545,76 @@ def test_ordinal_and_at_time_date_format_is_inferred():
     )
     assert rate == 1.0
     assert any("%A %b %d, %Y @ %I:%M %p" == c.format for c in candidates if c.accepted)
+
+
+# --- dates embedded in prose + classless whole-card anchors -------------------
+
+_BLOB_DATE_HTML = """
+<html><body><div class="events">
+""" + "".join(
+    f'<div class="event-content"><a href="/event/{i}/"><h3>Fall Event {i}</h3>'
+    f'<ul><li>Sunday, October {i}th (Rain date: Sunday, November 1st)</li>'
+    f'<li>Everyone</li></ul><p class="links">Learn more</p></a></div>'
+    for i in (11, 12, 18, 25)
+) + """
+</div></body></html>
+"""
+
+
+def _blob_soup():
+    return BeautifulSoup(_BLOB_DATE_HTML, "html.parser")
+
+
+def _blob_config():
+    from app.extraction.detection import run_detection
+    from app.extraction.inference.service import ConfigurationInferenceService
+    from app.extraction.registry import REGISTRY
+    from tests.extraction_helpers import make_response
+
+    response = make_response(_BLOB_DATE_HTML, final_url="https://city.example.gov/events/")
+    detection = run_detection(response)
+    service = ConfigurationInferenceService(REGISTRY)
+
+    def _propose(detail_documents=None):
+        return service.propose(
+            service.build_context(
+                response=response, detection=detection,
+                listing_url="https://city.example.gov/events/",
+                fallback_timezone="America/New_York",
+                detail_documents=detail_documents,
+            )
+        )
+
+    proposal = _propose()
+    # The listing already carries the date; satisfy the one bounded detail probe
+    # with a stub so the proposer finalizes on the listing's own fields.
+    if getattr(proposal, "detail_probe_url", None):
+        proposal = _propose({proposal.detail_probe_url: "<html><body></body></html>"})
+    return proposal
+
+
+def test_classless_whole_card_anchor_becomes_the_event_url():
+    proposal = _blob_config()
+    assert proposal.configuration is not None
+    url = proposal.configuration.field_selectors["canonical_url"]
+    assert url.selector == "a"  # the card's first/primary anchor, classless
+    assert url.attribute == "href"
+
+
+def test_yearless_date_buried_in_prose_is_extracted_and_assumed():
+    # A year-less date embedded in a longer text blob becomes a regex extraction
+    # followed by a next-occurrence parse.
+    from app.extraction.inference.proposers.generic_html import _infer_date_configuration
+
+    blobs = [
+        "Join us! Sunday, October 25th (Rain date: Sunday, November 1st) Everyone",
+        "A fall tradition. Saturday, September 19; 10 AM - 4 PM Everyone",
+    ]
+    outcome = _infer_date_configuration(blobs, field_name="start_datetime", policy=DEFAULT_POLICY)
+    kinds = [(t.field, t.kind) for t in outcome.transformations]
+    assert ("start_datetime", "regex_extract_group") in kinds
+    assert any(
+        t.kind == "parse_date" and t.params.get("assume_next_occurrence")
+        for t in outcome.transformations
+    )
+    assert "year_assumed" in outcome.warnings

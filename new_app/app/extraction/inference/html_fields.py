@@ -29,7 +29,12 @@ from bs4 import BeautifulSoup, Tag
 from app.core.url_safety import UnsafeURLError, validate_public_url
 from app.extraction.detection import DATE_LIKE_RE
 from app.extraction.inference.dates import (
+    DATE_FORMAT_TABLE,
+    DATE_SUBSTRING_PATTERNS,
+    YEARLESS_DATE_FORMAT_TABLE,
+    YEARLESS_DATE_SUBSTRING_PATTERNS,
     infer_date_formats,
+    infer_extraction_pattern,
     infer_time_formats,
     is_all_day,
     normalize_whitespace,
@@ -152,6 +157,11 @@ _BARE_TAG_PENALTY = 0.04
 # Enough to win a tie against the same element's rendered text, not enough to
 # rescue a candidate that has no other evidence for it.
 _MACHINE_READABLE_BONUS = 0.08
+# A date/time field whose values reliably parse (directly or via a date
+# substring in a text blob) is a date field even with no naming or schema
+# evidence — the parse itself is the evidence. A small bonus lets such a plainly
+# classed date clear the bar the way a named one would.
+_PARSE_EVIDENCE_BONUS = 0.1
 _BARE_TAG_RE = re.compile(r"[a-z][a-z0-9]*")
 
 
@@ -478,6 +488,18 @@ def _parse_success(role: str, values: list[str], base_url: str) -> tuple[float, 
         )
     if role in ("start_datetime", "end_datetime"):
         _, rate = infer_date_formats(list(values))
+        # A date living inside a longer text blob ("...Sunday, October 25th
+        # (Rain date...)") won't parse whole, but the proposer can extract it
+        # with a regex. Credit the field for a reliably extractable date
+        # substring (with a year, then year-less) so it is scored as a date.
+        if rate < 0.6:
+            for patterns, table in (
+                (DATE_SUBSTRING_PATTERNS, DATE_FORMAT_TABLE),
+                (YEARLESS_DATE_SUBSTRING_PATTERNS, YEARLESS_DATE_FORMAT_TABLE),
+            ):
+                best = infer_extraction_pattern(list(values), patterns, table)
+                if best is not None:
+                    rate = max(rate, best[1])
         return rate, ["values parse under an inferred date format"]
     if role in ("start_time", "end_time"):
         _, rate = infer_time_formats(list(values))
@@ -592,7 +614,13 @@ def _score_role(
     )
     if semantic == 0.0 and schema < 1.0 and tag_score < 0.6 and not parse_is_evidence:
         return None
-    if observation.selector == "a" and role in ("canonical_url", "detail_link"):
+    if (
+        observation.selector == "a"
+        and role in ("canonical_url", "detail_link")
+        and not observation.first_anchor
+    ):
+        # A bare "a" is broad — unless it is the card's own first anchor, which
+        # is exactly the primary event link on whole-card-link layouts.
         warnings.append("broad_anchor_selector")
 
     # A machine-readable `datetime` attribute is the site telling us the date
@@ -622,6 +650,7 @@ def _score_role(
         - _W_STABILITY_PENALTY * (1.0 - stability)
         - (_BARE_TAG_PENALTY if bare_tag else 0.0)
         + (_MACHINE_READABLE_BONUS if machine_readable else 0.0)
+        + (_PARSE_EVIDENCE_BONUS if parse_is_evidence else 0.0)
     )
     if warnings:
         confidence -= 0.15

@@ -35,6 +35,8 @@ from app.extraction.inference.dates import (
     DATE_SUBSTRING_PATTERNS,
     TIME_FORMAT_TABLE,
     TIME_SUBSTRING_PATTERN,
+    YEARLESS_DATE_FORMAT_TABLE,
+    YEARLESS_DATE_SUBSTRING_PATTERNS,
     infer_date_formats,
     infer_extraction_pattern,
     infer_time_formats,
@@ -217,6 +219,31 @@ def _infer_date_configuration(
             end_transformation=None,
             match_rate=sub_rate,
             warnings=[*warnings, "date_extracted_from_surrounding_text"],
+        )
+
+    # A *year-less* date embedded in prose ("...Sunday, October 25th (Rain
+    # date...)", "Market: Saturday, September 19; 10 AM"). Extract the date
+    # substring, then parse it assuming the next occurrence — the year-less
+    # counterpart of the block above.
+    yearless_best = infer_extraction_pattern(
+        normalized, YEARLESS_DATE_SUBSTRING_PATTERNS, YEARLESS_DATE_FORMAT_TABLE
+    )
+    if yearless_best is not None and yearless_best[1] >= policy.min_date_format_match_rate:
+        pattern, _ = yearless_best
+        extracted = _extracted(normalized, pattern)
+        sub_candidates, sub_rate = infer_date_formats(
+            extracted, max_formats=policy.max_date_formats_proposed
+        )
+        accepted_formats = [c.format for c in sub_candidates if c.accepted and c.format]
+        transformations.append(_regex_rule(field_name, pattern))
+        transformations.append(_year_assumed_rule(field_name, accepted_formats))
+        return _DateOutcome(
+            formats=[],
+            candidates=sub_candidates,
+            transformations=transformations,
+            end_transformation=None,
+            match_rate=sub_rate,
+            warnings=[*warnings, "date_extracted_from_surrounding_text", "year_assumed"],
         )
 
     for candidate in candidates:
