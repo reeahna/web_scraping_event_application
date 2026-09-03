@@ -1,0 +1,6 @@
+# Shell scripts and the Dockerfile run on Linux and MUST use LF line endings,
+# even though this repo is edited on Windows. Without this, a CRLF checkout can
+# break the container entrypoint ("bad interpreter: bash\r").
+*.sh text eol=lf
+Dockerfile text eol=lf
+start.sh text eol=lf
