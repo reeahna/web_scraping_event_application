@@ -129,7 +129,7 @@
         <img src="{{ fallback_image_url }}" alt="" loading="lazy" />
       </div>
       {% else %}
-      <div class="event-card-image event-card-image-fallback" aria-hidden="true">
+      <div class="event-card-image event-card-image-fallback ph-{{ event.id % 8 }}" aria-hidden="true">
         <svg viewBox="0 0 24 24" width="36" height="36" fill="none" stroke="currentColor" stroke-width="1.5">
           <rect x="3" y="5" width="18" height="16" rx="2" />
           <path d="M3 9h18" />

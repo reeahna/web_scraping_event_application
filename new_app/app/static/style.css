@@ -862,9 +862,22 @@ button:hover {
   display: flex;
   align-items: center;
   justify-content: center;
-  color: var(--muted);
+  color: rgba(255, 255, 255, 0.9);
   background: linear-gradient(135deg, var(--accent-soft), var(--bg));
 }
+
+/* Colorful placeholders for events with no photo. The template picks one by
+   event id (ph-0 .. ph-7 = event.id % 8), so each event keeps the same one
+   rather than changing on every reload, and the grid gets pleasant variety.
+   Reused on the card and the detail page; the icon sits on top of each. */
+.ph-0 { background: linear-gradient(135deg, #6366f1, #8b5cf6); }
+.ph-1 { background: linear-gradient(135deg, #0ea5e9, #22d3ee); }
+.ph-2 { background: linear-gradient(135deg, #f59e0b, #ef4444); }
+.ph-3 { background: linear-gradient(135deg, #10b981, #059669); }
+.ph-4 { background: linear-gradient(135deg, #ec4899, #f43f5e); }
+.ph-5 { background: linear-gradient(135deg, #a855f7, #6366f1); }
+.ph-6 { background: linear-gradient(135deg, #14b8a6, #0ea5e9); }
+.ph-7 { background: linear-gradient(135deg, #f97316, #eab308); }
 
 .event-card-body {
   padding: var(--space-3);
@@ -1027,6 +1040,13 @@ button:hover {
   object-fit: cover;
   object-position: center;
   display: block;
+}
+
+.event-detail-image-fallback {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: rgba(255, 255, 255, 0.9);
 }
 
 .event-detail-header h1 {
