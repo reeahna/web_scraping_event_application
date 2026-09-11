@@ -144,12 +144,28 @@ def assign_category(db: Session, event: Event) -> CategorizationResult | None:
     caller owns the transaction). Used from the import pipeline. When no rules
     are configured at all it leaves the event unchanged: with none, everything
     would just become 'Other', so skipping keeps a rule-less deployment behaving
-    exactly as it did before categorization existed."""
+    exactly as it did before categorization existed.
+
+    An event already labeled by the AI categorizer (category_source == "ai") is
+    left alone: the Gemini label is more accurate than the keyword rules, so a
+    re-scrape must never downgrade it back to a keyword guess."""
+    if event.category_source == "ai" and event.category_id is not None:
+        return None
     if not _active_rules_exist(db):
         return None
     result = categorize_event(db, event)
     _set_category_fields(event, result)
     return result
+
+
+def set_ai_category(event: Event, category: EventCategory) -> None:
+    """Apply a category chosen by the Gemini categorizer. Writes the automatic
+    category only and marks its source "ai"; an administrator's manual override
+    (category_override_id) is a separate field and is never touched here. Does
+    not commit — the caller owns the transaction."""
+    event.category_id = category.id
+    event.categorization_rule_id = None
+    event.category_source = "ai"
 
 
 def apply_categorization(db: Session, event: Event) -> CategorizationResult:

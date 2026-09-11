@@ -102,6 +102,21 @@ class Settings(BaseSettings):
     ai_max_sample_cards: int = 6
     ai_max_evidence_chars: int = 20000
 
+    # Gemini event categorization (app.services.ai_categorizer). A separate,
+    # opt-in labeling pass that assigns each event a category with far better
+    # accuracy than the keyword rules — it understands that a "cooking class" is
+    # food, not education. Off unless a key is present. Runs once per event and
+    # writes category_source="ai", so a re-scrape never re-calls the API and the
+    # keyword rules never overwrite an AI label. Only the Google AI Studio API
+    # key is needed (free tier). Batching + a minimum inter-request interval keep
+    # a full-catalog pass inside the free rate limits.
+    gemini_api_key: str | None = None
+    gemini_model: str = "gemini-2.5-flash"
+    gemini_batch_size: int = 20
+    gemini_min_interval_seconds: float = 4.0
+    gemini_timeout_seconds: float = 60.0
+    gemini_max_retries: int = 4
+
     # Asynchronous geocoding (app.services.geocoding). Disabled by default: the
     # application is fully functional without it and no live third-party
     # request is ever made unless an administrator turns it on. `geocoding_provider`

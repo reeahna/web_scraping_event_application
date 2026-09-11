@@ -43,6 +43,21 @@ python scripts/create_superadmin.py --email you@example.com --password "a-strong
 
 Then visit your URL and log in.
 
+### 4. (Optional) AI event categorization
+The keyword rules categorize events for free, but Gemini labels them much more
+accurately (it knows a "cooking class" is food, not education). Get a free key
+at https://aistudio.google.com/apikey, add it in the Render dashboard under the
+service's **Environment** as `GEMINI_API_KEY`, then from the **Shell** run:
+
+```bash
+python scripts/categorize_events_ai.py
+```
+
+Re-running it is safe and cheap — it only spends API calls on events it has not
+labeled yet. Use `--only-other` to relabel just the "Other" pile, or `--force`
+to redo everything. New events keep getting the instant keyword category on
+import; run this again whenever you want to upgrade the backlog to AI labels.
+
 ---
 
 ## Updating the app later

@@ -3,7 +3,8 @@
 from __future__ import annotations
 
 from app.models.categorization_rule import CategorizationRule
-from app.services.categorization import assign_category, seed_rules
+from app.models.event_category import EventCategory
+from app.services.categorization import assign_category, seed_rules, set_ai_category
 
 
 def test_seed_rules_creates_defaults_and_is_idempotent(db_session):
@@ -43,3 +44,19 @@ def test_uncategorizable_event_falls_back_to_other(db_session, make_city, make_e
     result = assign_category(db_session, event)
     assert result is not None
     assert result.category.slug == "other"
+
+
+def test_keyword_pass_never_overwrites_an_ai_label(db_session, make_city, make_event):
+    # A "cooking class" keyword-matches Education, but AI knows it is food. Once
+    # AI has labeled it, a re-scrape's keyword pass must leave it alone.
+    seed_rules(db_session)
+    food = db_session.query(EventCategory).filter_by(slug="food-and-drink").one()
+    event = make_event(make_city(), title="Empanada Cooking Class")
+
+    set_ai_category(event, food)
+    db_session.flush()
+    assert event.category_source == "ai"
+
+    assert assign_category(db_session, event) is None
+    assert event.category.slug == "food-and-drink"
+    assert event.category_source == "ai"
