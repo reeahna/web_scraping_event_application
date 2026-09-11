@@ -1049,6 +1049,30 @@ button:hover {
   color: rgba(255, 255, 255, 0.9);
 }
 
+/* Category placeholder photos (from Unsplash) carry a small photographer credit
+   in the corner, as Unsplash attribution requires. */
+.event-card-image-photo,
+.event-detail-image-photo {
+  position: relative;
+}
+
+.photo-credit {
+  position: absolute;
+  bottom: 0;
+  right: 0;
+  font-size: 0.62rem;
+  line-height: 1.5;
+  padding: 1px 6px;
+  background: rgba(0, 0, 0, 0.45);
+  color: rgba(255, 255, 255, 0.85);
+  border-top-left-radius: 6px;
+}
+
+.photo-credit a {
+  color: #fff;
+  text-decoration: underline;
+}
+
 .event-detail-header h1 {
   font-size: var(--font-xl);
   font-weight: 800;

@@ -8,6 +8,7 @@ from app.models.auto_onboarding_policy import (
 )
 from app.models.bulk_import import BulkImportItem, BulkImportRun
 from app.models.categorization_rule import CategorizationRule
+from app.models.category_photo import CategoryPhoto
 from app.models.city import City
 from app.models.event import Event
 from app.models.event_category import EventCategory
@@ -46,6 +47,7 @@ __all__ = [
     "AutoOnboardingPolicyCity",
     "AutoOnboardingPolicyRole",
     "CategorizationRule",
+    "CategoryPhoto",
     "City",
     "Event",
     "EventCategory",

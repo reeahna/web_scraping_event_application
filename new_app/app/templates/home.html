@@ -124,6 +124,13 @@
       <div class="event-card-image">
         <img src="{{ event.image_url }}" alt="{{ event.title }}" loading="lazy" />
       </div>
+      {% else %}
+      {% set ph = category_photo(event) %}
+      {% if ph %}
+      <div class="event-card-image event-card-image-photo">
+        <img src="{{ ph.thumb_url or ph.image_url }}" alt="" loading="lazy" />
+        <span class="photo-credit">{{ ph.photographer }} / Unsplash</span>
+      </div>
       {% elif fallback_image_url %}
       <div class="event-card-image">
         <img src="{{ fallback_image_url }}" alt="" loading="lazy" />
@@ -136,6 +143,7 @@
           <path d="M8 3v4M16 3v4" />
         </svg>
       </div>
+      {% endif %}
       {% endif %}
       <div class="event-card-body">
         {% if event.effective_category %}<span class="badge badge-pending">{{ event.effective_category.name }}</span>{% endif %}

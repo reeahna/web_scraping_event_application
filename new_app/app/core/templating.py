@@ -47,6 +47,19 @@ templates.env.globals["unread_notification_count"] = _unread_notification_count
 templates.env.globals["current_year"] = lambda: datetime.now(UTC).year
 
 
+def _category_photo(event: Any):
+    """A category-relevant placeholder photo for an event with no image of its
+    own, or None (the template then shows the gradient). Reads from the cached
+    category-photo pool, so it is a dict lookup, not a per-event query."""
+    from app.services.category_photos import photo_for
+
+    category = event.effective_category
+    return photo_for(category.slug if category else None, event.id)
+
+
+templates.env.globals["category_photo"] = _category_photo
+
+
 def render(
     request: Request,
     template_name: str,

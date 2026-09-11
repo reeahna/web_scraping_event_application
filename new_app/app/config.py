@@ -124,6 +124,10 @@ class Settings(BaseSettings):
     # Public UI (Phase 12). A configurable fallback image shown on event cards
     # and detail pages that have no image; None uses the built-in inline icon.
     public_fallback_image_url: str | None = None
+    # Unsplash Access Key (Client-ID) for the category-photo placeholder pool.
+    # Only the Access Key is needed (read-only search); the Secret Key is not
+    # used. When unset, imageless events fall back to the gradient placeholders.
+    unsplash_access_key: str | None = None
     # OpenStreetMap raster tile template for the Leaflet map. Overridable so an
     # operator can point at their own tile server / attribution.
     public_map_tile_url: str = "https://tile.openstreetmap.org/{z}/{x}/{y}.png"
