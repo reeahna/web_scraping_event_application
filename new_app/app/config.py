@@ -111,7 +111,7 @@ class Settings(BaseSettings):
     # key is needed (free tier). Batching + a minimum inter-request interval keep
     # a full-catalog pass inside the free rate limits.
     gemini_api_key: str | None = None
-    gemini_model: str = "gemini-2.5-flash"
+    gemini_model: str = "gemini-3.6-flash"
     gemini_batch_size: int = 20
     gemini_min_interval_seconds: float = 4.0
     gemini_timeout_seconds: float = 60.0
