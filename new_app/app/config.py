@@ -113,6 +113,11 @@ class Settings(BaseSettings):
     gemini_api_key: str | None = None
     gemini_model: str = "gemini-3.6-flash"
     gemini_batch_size: int = 20
+    # When a key is set, the scheduler process also labels newly imported events
+    # in the background (one batch per dispatch tick), so events added by the
+    # daily scrape get an AI category without a manual run. Turn off to keep the
+    # key for the manual script only.
+    gemini_scheduled_enabled: bool = True
     gemini_min_interval_seconds: float = 4.0
     gemini_timeout_seconds: float = 60.0
     gemini_max_retries: int = 4

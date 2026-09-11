@@ -13,6 +13,7 @@ from app.services.ai_categorizer import (
     EventToClassify,
     GeminiCategorizer,
     GeminiError,
+    GeminiQuotaExceeded,
     GeminiUnavailable,
     _parse_labels,
     build_prompt,
@@ -110,3 +111,38 @@ def test_no_candidates_raises(monkeypatch):
     monkeypatch.setattr(categorizer, "_post", lambda prompt: {"promptFeedback": {}})
     with pytest.raises(GeminiError):
         categorizer.classify_batch(CATEGORIES, [EventToClassify(id=1, title="x")])
+
+
+class _FakeResponse:
+    def __init__(self, status_code: int, text: str = "", body: dict | None = None):
+        self.status_code = status_code
+        self.text = text
+        self._body = body or {}
+        self.headers: dict[str, str] = {}
+
+    def json(self) -> dict:
+        return self._body
+
+
+class _FakeClient:
+    def __init__(self, response: _FakeResponse):
+        self._response = response
+
+    def post(self, url, json):
+        return self._response
+
+    def close(self):
+        pass
+
+
+def test_http_429_raises_quota_exceeded():
+    # max_retries=0 so it fails fast with no backoff sleep.
+    categorizer = GeminiCategorizer("test-key", "m", min_interval_seconds=0.0, max_retries=0)
+    categorizer._client = _FakeClient(_FakeResponse(429, text="quota exceeded"))
+    with pytest.raises(GeminiQuotaExceeded):
+        categorizer.classify_batch(CATEGORIES, [EventToClassify(id=1, title="x")])
+
+
+def test_quota_exceeded_is_a_gemini_error():
+    # The script and the scheduler both rely on this subclass relationship.
+    assert issubclass(GeminiQuotaExceeded, GeminiError)

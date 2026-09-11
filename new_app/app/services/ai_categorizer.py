@@ -51,6 +51,12 @@ class GeminiUnavailable(GeminiError):
     """No API key is configured, so categorization cannot run at all."""
 
 
+class GeminiQuotaExceeded(GeminiError):
+    """The API returned 429 after retries: the rate or daily-quota limit is
+    reached. Callers stop cleanly and resume later — the free-tier daily quota
+    resets on its own, and already-labeled events are skipped on the next run."""
+
+
 @dataclass(frozen=True)
 class CategoryOption:
     slug: str
@@ -232,7 +238,10 @@ class GeminiCategorizer:
                 time.sleep(wait)
                 continue
             if response.status_code != 200:
-                raise GeminiError(f"HTTP {response.status_code}: {response.text[:200]}")
+                message = f"HTTP {response.status_code}: {response.text[:200]}"
+                if response.status_code == 429:
+                    raise GeminiQuotaExceeded(message)
+                raise GeminiError(message)
             return response.json()
 
     def classify_batch(

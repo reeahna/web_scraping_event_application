@@ -17,7 +17,7 @@ from __future__ import annotations
 import asyncio
 import os
 import socket
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from sqlalchemy import select
@@ -69,6 +69,10 @@ class SchedulerRuntime:
         self._heartbeats_between_reconciles = 10
         self._heartbeat_count = 0
         self._geocoder = None  # built in start() when geocoding is enabled
+        # AI categorization backs off for a while after the free-tier quota is
+        # hit, then resumes on its own; the daily quota resets independently.
+        self._categorization_cooldown_until: datetime | None = None
+        self._categorization_cooldown = timedelta(hours=1)
 
     def start(self) -> None:
         db = self._session_factory()
@@ -129,6 +133,16 @@ class SchedulerRuntime:
             self._bulk_import_tick, "interval", seconds=self._dispatch_interval,
             id="bulk_import", max_instances=1, coalesce=True,
         )
+        # Background AI categorization (opt-in): label events the daily scrape
+        # adds so they get an accurate category without a manual script run.
+        # Only when a Gemini key is configured — otherwise this tick never runs.
+        from app.services.ai_categorization import scheduled_categorization_enabled
+
+        if scheduled_categorization_enabled():
+            self._scheduler.add_job(
+                self._categorization_tick, "interval", seconds=self._dispatch_interval,
+                id="categorization", max_instances=1, coalesce=True,
+            )
         self._scheduler.start()
 
     async def _heartbeat_tick(self) -> None:
@@ -233,6 +247,35 @@ class SchedulerRuntime:
                 logger.info("executed %d bulk import operation(s)", processed)
         except Exception as exc:  # noqa: BLE001
             logger.warning("bulk import tick failed: %s", exc)
+
+    async def _categorization_tick(self) -> None:
+        if not self._is_leader:
+            return
+        now = datetime.now(UTC)
+        if self._categorization_cooldown_until and now < self._categorization_cooldown_until:
+            return
+        from app.config import get_settings
+        from app.services.ai_categorization import drain_categorization_queue
+        from app.services.ai_categorizer import GeminiQuotaExceeded
+
+        try:
+            # The Gemini client is synchronous (blocking httpx + sleeps); run it
+            # off the event loop so a tick never stalls the scheduler.
+            labeled = await asyncio.to_thread(
+                drain_categorization_queue,
+                self._session_factory,
+                limit=get_settings().gemini_batch_size,
+            )
+            if labeled:
+                logger.info("AI-categorized %d event(s)", labeled)
+        except GeminiQuotaExceeded:
+            self._categorization_cooldown_until = now + self._categorization_cooldown
+            logger.info(
+                "AI categorization quota reached; pausing until %s",
+                self._categorization_cooldown_until.isoformat(),
+            )
+        except Exception as exc:  # noqa: BLE001 - a tick must never kill the loop
+            logger.warning("categorization tick failed: %s", exc)
 
     async def _run_one(self, website_id: int) -> None:
         async with self._semaphore:

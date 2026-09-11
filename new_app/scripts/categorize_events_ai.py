@@ -35,6 +35,7 @@ from app.services.ai_categorizer import (
     EventToClassify,
     GeminiCategorizer,
     GeminiError,
+    GeminiQuotaExceeded,
 )
 from app.services.categorization import set_ai_category
 
@@ -115,6 +116,7 @@ def main() -> None:
         counts: Counter[str] = Counter()
         labeled = 0
         failed_batches = 0
+        quota_reached = False
 
         with GeminiCategorizer(
             settings.gemini_api_key,
@@ -137,6 +139,12 @@ def main() -> None:
                 ]
                 try:
                     labels = categorizer.classify_batch(options, to_classify)
+                except GeminiQuotaExceeded:
+                    # The free-tier quota is used up. Everything committed so far
+                    # is saved; stop cleanly rather than churning through the
+                    # rest, and let the user resume when the quota resets.
+                    quota_reached = True
+                    break
                 except GeminiError as exc:
                     failed_batches += 1
                     print(f"  batch {start}-{start + len(chunk)} failed: {exc}")
@@ -153,6 +161,13 @@ def main() -> None:
                 db.commit()
                 print(f"  ...{min(start + batch_size, total)}/{total} ({labeled} labeled)")
 
+        if quota_reached:
+            remaining = total - labeled
+            print(
+                f"\nQuota reached. Labeled {labeled} this run; {remaining} still to go. "
+                "Re-run the same command when your quota resets (usually the next "
+                "day) and it will resume where it stopped."
+            )
         print(f"\nLabeled {labeled} of {total} events by AI ({failed_batches} batches failed):")
         for slug, count in counts.most_common():
             print(f"  {slug}: {count}")
