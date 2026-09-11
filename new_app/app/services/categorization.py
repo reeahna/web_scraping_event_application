@@ -124,13 +124,112 @@ def categorize_event(db: Session, event: Event) -> CategorizationResult:
     )
 
 
-def apply_categorization(db: Session, event: Event) -> CategorizationResult:
-    result = categorize_event(db, event)
+def _set_category_fields(event: Event, result: CategorizationResult) -> None:
     event.category_id = result.category.id if result.category else None
     event.categorization_rule_id = result.rule_id
     event.category_source = result.rule_type or (
         "fallback" if result.fallback_used else "uncategorized"
     )
+
+
+def _active_rules_exist(db: Session) -> bool:
+    return (
+        db.query(CategorizationRule.id).filter(CategorizationRule.is_active.is_(True)).first()
+        is not None
+    )
+
+
+def assign_category(db: Session, event: Event) -> CategorizationResult | None:
+    """Set an event's category from the active rules, without committing (the
+    caller owns the transaction). Used from the import pipeline. When no rules
+    are configured at all it leaves the event unchanged: with none, everything
+    would just become 'Other', so skipping keeps a rule-less deployment behaving
+    exactly as it did before categorization existed."""
+    if not _active_rules_exist(db):
+        return None
+    result = categorize_event(db, event)
+    _set_category_fields(event, result)
+    return result
+
+
+def apply_categorization(db: Session, event: Event) -> CategorizationResult:
+    result = categorize_event(db, event)
+    _set_category_fields(event, result)
     db.commit()
     db.refresh(event)
     return result
+
+
+# Starter keyword rules mapping common event language to the seeded categories.
+# Each is a case-insensitive regex over the event's title, description and raw
+# source category. Priorities break ties so a distinctive category (Music) wins
+# over a broad one (Community) when both match. Administrators can edit or delete
+# these in the Category Rules screen; they are only ever created when no rule
+# exists yet, so edits are never overwritten.
+DEFAULT_KEYWORD_RULES: tuple[tuple[str, str, str, int], ...] = (
+    ("Music", "music",
+     r"\b(concert|music|band|orchestra|symphony|philharmonic|jazz|blues|"
+     r"choir|chorale|recital|acoustic|open mic|karaoke|songwriter|opera|dj)\b", 95),
+    ("Sports", "sports",
+     r"\b(game|match|tournament|race|marathon|5k|10k|running|cycling|basketball|"
+     r"soccer|hockey|baseball|football|volleyball|golf|tennis|athletic)\b", 90),
+    ("Food and drink", "food-and-drink",
+     r"\b(food truck|dinner|brunch|tasting|wine|beer|brewery|brewing|cocktail|"
+     r"culinary|dining|happy hour|bbq|barbecue|farmers market)\b", 88),
+    ("Arts and culture", "arts-and-culture",
+     r"\b(art|arts|gallery|exhibit|exhibition|museum|theatre|theater|play|drama|"
+     r"dance|ballet|film|movie|cinema|screening|comedy|poetry|literary|author|"
+     r"painting|sculpture)\b", 85),
+    ("Family", "family",
+     r"\b(kids|children|family|storytime|toddler|all ages|youth)\b", 82),
+    ("Education", "education",
+     r"\b(class|classes|workshop|seminar|lecture|course|training|tutorial|lesson|"
+     r"webinar)\b", 78),
+    ("Health and wellness", "health-and-wellness",
+     r"\b(yoga|wellness|fitness|meditation|mindfulness|pilates|nutrition|"
+     r"wellbeing)\b", 75),
+    ("Nightlife", "nightlife",
+     r"\b(nightlife|nightclub|club night|trivia|pub|bar crawl|drag|late night)\b", 70),
+    ("Outdoors", "outdoors",
+     r"\b(outdoor|hike|hiking|trail|nature|garden|camping|kayak|canoe|birding)\b", 65),
+    ("Religious", "religious",
+     r"\b(church|worship|mass|sermon|faith|prayer|bible|gospel|temple|synagogue|"
+     r"spiritual|ministry)\b", 60),
+    ("Community", "community",
+     r"\b(festival|fair|market|community|parade|fundraiser|benefit|volunteer|"
+     r"meetup|celebration|block party)\b", 55),
+    ("Business", "business",
+     r"\b(business|networking|conference|professional|entrepreneur|career|"
+     r"startup|expo|summit)\b", 50),
+    ("Government", "government",
+     r"\b(city council|town hall|council meeting|government|public meeting|"
+     r"election|civic)\b", 45),
+)
+
+
+def seed_rules(db: Session) -> int:
+    """Create the starter keyword rules when the deployment has none. Idempotent:
+    a no-op once any rule exists. Returns the number of rules created."""
+    if db.query(CategorizationRule.id).first() is not None:
+        return 0
+    categories = {category.slug: category for category in db.query(EventCategory).all()}
+    created = 0
+    for name, slug, pattern, priority in DEFAULT_KEYWORD_RULES:
+        category = categories.get(slug)
+        if category is None:
+            continue
+        db.add(
+            CategorizationRule(
+                name=name,
+                rule_type="keyword",
+                category_id=category.id,
+                is_active=True,
+                priority=priority,
+                pattern=pattern,
+                is_regex=True,
+                case_sensitive=False,
+            )
+        )
+        created += 1
+    db.commit()
+    return created

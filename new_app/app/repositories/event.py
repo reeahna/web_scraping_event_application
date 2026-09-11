@@ -6,6 +6,7 @@ from app.extraction.dedup import candidate_fingerprint
 from app.extraction.types import EventCandidate
 from app.models.event import Event
 from app.schemas.event import EventCreate
+from app.services.categorization import assign_category
 from app.services.fingerprints import update_fingerprint_and_duplicates
 
 
@@ -88,6 +89,9 @@ def create_event_from_candidate(
         is_active=not candidate.is_cancelled,
     )
     db.add(event)
+    # Categorize from the active rules as part of this same transaction (a no-op
+    # when no rules are configured).
+    assign_category(db, event)
     db.commit()
     db.refresh(event)
     update_fingerprint_and_duplicates(db, event)
@@ -142,6 +146,10 @@ def update_event(db: Session, event: Event, candidate: EventCandidate) -> Event:
         event.is_cancelled = True
         event.is_active = False
     event.scraped_at = datetime.now(UTC)
+    # Re-categorize from the active rules on re-scrape. This sets the automatic
+    # category only; an administrator's category override is a separate field and
+    # is left untouched.
+    assign_category(db, event)
     db.commit()
     db.refresh(event)
     update_fingerprint_and_duplicates(db, event)
