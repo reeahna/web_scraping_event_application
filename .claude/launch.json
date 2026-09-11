@@ -1,0 +1,11 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "city-events",
+      "runtimeExecutable": "new_app/venv/Scripts/python.exe",
+      "runtimeArgs": ["-m", "uvicorn", "app.main:app", "--app-dir", "new_app", "--port", "8100"],
+      "port": 8100
+    }
+  ]
+}
