@@ -1,4 +1,5 @@
 import json
+import re
 
 import pytest
 
@@ -248,19 +249,25 @@ def test_admin_account_uses_full_admin_navigation(client, make_super_admin, logi
 
     response = client.get("/account")
     assert response.status_code == 200
+    # Matched loosely: nav links now carry aria-current and sit inside <li>,
+    # so asserting the exact tag shape pinned markup rather than behaviour.
     expected_links = {
         "/admin": "Dashboard",
         "/admin/cities": "Cities",
         "/admin/websites": "Websites",
         "/admin/users": "Users",
         "/admin/roles": "Roles",
-        "/admin/audit": "Audit Log",
+        "/admin/audit": "Audit log",
         "/account": "My Account",
     }
     for path, label in expected_links.items():
-        assert f'<a href="{path}">{label}</a>' in response.text
+        assert re.search(rf'<a href="{re.escape(path)}"[^>]*>\s*{re.escape(label)}', response.text), path
     assert user.email in response.text
     assert 'action="/auth/logout"' in response.text
+
+    # The groups the links now live behind.
+    for heading in ("Sources", "Events", "Imports", "Administration"):
+        assert f">{heading}</button>" in response.text
 
 
 def test_account_layout_uses_effective_permissions_not_known_role_name(
@@ -279,8 +286,8 @@ def test_account_layout_uses_effective_permissions_not_known_role_name(
 
     response = client.get("/account")
     assert response.status_code == 200
-    assert '<a href="/admin">Dashboard</a>' in response.text
-    assert '<a href="/admin/cities">Cities</a>' in response.text
+    assert re.search(r'<a href="/admin"[^>]*>\s*Dashboard', response.text)
+    assert re.search(r'<a href="/admin/cities"[^>]*>\s*Cities', response.text)
 
 
 def test_account_and_public_navigation_have_no_separate_admin_dashboard_button(

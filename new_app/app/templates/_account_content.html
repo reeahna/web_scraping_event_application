@@ -41,7 +41,22 @@
   <table>
     <tbody>
       <tr><th>Email</th><td>{{ current_user.email }}</td></tr>
-      <tr><th>Role</th><td>{{ role_names | join(", ") if role_names else "No role assigned" }}</td></tr>
+      <tr>
+        <th>Role</th>
+        <td>
+          {{ role_names | join(", ") if role_names else "No role assigned" }}
+          {% if permissions %}
+          {# <details> rather than a always-open list: this is something you
+             check when an action is denied, not something you read. #}
+          <details class="permission-details">
+            <summary>{{ permissions | length }} effective permission{{ "s" if permissions | length != 1 }}</summary>
+            <ul class="permission-list">
+              {% for p in permissions %}<li>{{ p }}</li>{% endfor %}
+            </ul>
+          </details>
+          {% endif %}
+        </td>
+      </tr>
       <tr><th>Account status</th><td>{{ "Active" if current_user.is_active else "Inactive" }}</td></tr>
       <tr><th>Last login</th><td>{{ current_user.last_login_at or "This is your first login" }}</td></tr>
     </tbody>

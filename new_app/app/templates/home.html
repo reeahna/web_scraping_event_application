@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% from "_pagination.html" import paginate %}
 
 {% block title %}New City Events — Find Events Near You{% endblock %}
 
@@ -162,21 +163,11 @@
     {% endfor %}
   </div>
 
-  <nav class="pagination" aria-label="Pagination">
-    <span class="pagination-links">
-      {% if page > 1 %}
-      <a href="{{ base_path }}?{{ query_string }}{{ sep }}page={{ page - 1 }}{% if filters.view == 'map' %}&view=map{% endif %}">&larr; Previous</a>
-      {% else %}
-      <span class="pagination-disabled">&larr; Previous</span>
-      {% endif %}
-      <span class="pagination-current">Page {{ page }}</span>
-      {% if has_next %}
-      <a href="{{ base_path }}?{{ query_string }}{{ sep }}page={{ page + 1 }}{% if filters.view == 'map' %}&view=map{% endif %}">Next &rarr;</a>
-      {% else %}
-      <span class="pagination-disabled">Next &rarr;</span>
-      {% endif %}
-    </span>
-  </nav>
+  {{ paginate(
+       page, per_page, total,
+       base_path ~ "?" ~ query_string ~ sep,
+       "&view=map" if filters.view == 'map' else ""
+     ) }}
   {% else %}
   <div class="empty-state">
     <svg viewBox="0 0 24 24" width="48" height="48" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true">

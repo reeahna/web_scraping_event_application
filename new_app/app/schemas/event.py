@@ -28,7 +28,7 @@ class EventBase(BaseModel):
     city_id: int | None = None
     website_id: int | None = None
     category_id: int | None = None
-    review_status: str = "needs_review"
+    review_status: str = "reviewed"
     duplicate_status: str = "not_reviewed"
     category_source: str = "uncategorized"
 

@@ -70,3 +70,36 @@ TRANSITION_PERMISSIONS: dict[str, str] = {
 
 def can_transition(current: str, target: str) -> bool:
     return target in ALLOWED_TRANSITIONS.get(current, frozenset())
+
+
+# Human-readable labels. The state identifiers above are storage values; they
+# used to be rendered straight into the admin UI, so operators read "needs_review"
+# and "browser_required" instead of English.
+ONBOARDING_LABELS: dict[str, str] = {
+    DRAFT: "Draft",
+    DETECTING: "Detecting",
+    DETECTED: "Detected",
+    NEEDS_REVIEW: "Needs review",
+    APPROVED: "Approved",
+    ACTIVE: "Active",
+    INACTIVE: "Inactive",
+    UNSUPPORTED: "Unsupported",
+    FAILING: "Failing",
+    ARCHIVED: "Archived",
+}
+
+# Grouped for the status filter. All ten stay selectable — each is a real state
+# a site can be in, and dropping one would make those sites unfindable — but a
+# flat list of ten similar words is hard to scan, so the dropdown groups them by
+# what they mean for the reader. Order matches the lifecycle.
+ONBOARDING_STATE_GROUPS: tuple[tuple[str, tuple[str, ...]], ...] = (
+    ("Live", (ACTIVE,)),
+    ("Waiting on you", (DRAFT, DETECTING, DETECTED, NEEDS_REVIEW, APPROVED)),
+    ("Problem", (UNSUPPORTED, FAILING)),
+    ("Retired", (INACTIVE, ARCHIVED)),
+)
+
+
+def onboarding_label(status: str) -> str:
+    """Fall back to a de-underscored form so an unknown state is still readable."""
+    return ONBOARDING_LABELS.get(status, status.replace("_", " ").capitalize())

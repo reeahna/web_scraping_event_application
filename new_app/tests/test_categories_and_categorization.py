@@ -402,3 +402,84 @@ def test_rule_creation_and_status_are_audited(client, make_user, login, db_sessi
         "categorization_rule_updated",
         "categorization_rule_deactivated",
     }.issubset(actions)
+
+
+def test_category_rows_are_read_only_until_edit_is_requested(
+    client, make_user, login, db_session
+):
+    """Rows render as plain text; only the row named by ?edit= becomes inputs.
+
+    Previously every category rendered an always-open form, so the whole list
+    was live editable fields.
+    """
+    _admin(make_user, login)
+    category = (
+        db_session.query(EventCategory).order_by(EventCategory.display_order).first()
+    )
+
+    read_only = client.get("/admin/event-categories")
+    assert read_only.status_code == 200
+    assert f'name="name" value="{category.name}"' not in read_only.text
+    assert f"/admin/event-categories?edit={category.id}" in read_only.text
+
+    editing = client.get(f"/admin/event-categories?edit={category.id}")
+    assert editing.status_code == 200
+    assert f'name="name" value="{category.name}"' in editing.text
+    # Exactly one row is editable at a time: three inputs plus the Save button
+    # all join the single out-of-table form.
+    assert editing.text.count('form="category-edit-form"') == 4
+
+
+def test_unknown_edit_id_renders_the_list_read_only(client, make_user, login):
+    _admin(make_user, login)
+    response = client.get("/admin/event-categories?edit=999999")
+    assert response.status_code == 200
+    assert 'form="category-edit-form"' not in response.text
+
+
+def test_rule_editor_opens_as_one_full_width_row_not_inside_every_actions_cell(
+    client, make_user, login, db_session
+):
+    """Only the rule named by ?edit= renders a form, and it does so in its own
+    colspan row below the summary — the nine-field form used to live in every
+    row's Actions cell, stretching each row to the form's height.
+    """
+    _admin(make_user, login)
+    category = _category(db_session, "music")
+    client.post(
+        "/admin/categorization-rules",
+        data={
+            "name": "Editable Keyword",
+            "rule_type": "keyword",
+            "category_id": category.id,
+            "priority": 10,
+            "website_id": "",
+            "source_category_value": "",
+            "pattern": "jazz",
+            "csrf_token": _csrf(client),
+        },
+        follow_redirects=False,
+    )
+    rule = (
+        db_session.query(CategorizationRule)
+        .filter(CategorizationRule.name == "Editable Keyword")
+        .one()
+    )
+
+    read_only = client.get("/admin/categorization-rules")
+    assert read_only.status_code == 200
+    assert "rule-editor-row" not in read_only.text
+    assert f'value="{rule.pattern}"' not in read_only.text
+    assert f"/admin/categorization-rules?edit={rule.id}" in read_only.text
+
+    editing = client.get(f"/admin/categorization-rules?edit={rule.id}")
+    assert editing.status_code == 200
+    assert editing.text.count("rule-editor-row") == 1
+    assert f'value="{rule.pattern}"' in editing.text
+
+
+def test_unknown_rule_edit_id_renders_the_list_read_only(client, make_user, login):
+    _admin(make_user, login)
+    response = client.get("/admin/categorization-rules?edit=999999")
+    assert response.status_code == 200
+    assert "rule-editor-row" not in response.text

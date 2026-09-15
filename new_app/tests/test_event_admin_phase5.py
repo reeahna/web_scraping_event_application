@@ -85,7 +85,14 @@ def test_event_list_search_and_filters(
         review_status="reviewed",
         duplicate_status="possible_duplicate",
     )
-    make_event(city_b, title="Different Event", canonical_url="https://example.com/different")
+    # "reviewed" is now the default, so the control event has to be flagged for
+    # the review filter to distinguish anything.
+    make_event(
+        city_b,
+        title="Different Event",
+        canonical_url="https://example.com/different",
+        review_status="needs_review",
+    )
 
     paths = (
         "/admin/events?q=Unique",
@@ -127,8 +134,35 @@ def test_event_list_pagination(client, make_user, make_city, make_event, login):
 
     first = client.get("/admin/events")
     second = client.get("/admin/events?page=2")
-    assert 'href="/admin/events?page=2">Next</a>' in first.text
     assert "Paged Event" in second.text
+
+    # Numbered links, not just Prev/Next: page 2 is reachable in one click.
+    assert 'aria-label="Page 2"' in first.text
+    assert "page=2" in first.text
+    # Range readout rather than a bare page number.
+    assert "Showing 1–20 of 21" in first.text
+    # The current page is not a link.
+    assert '<span class="pagination-page is-current" aria-current="page">1</span>' in first.text
+
+
+def test_event_pagination_links_keep_the_active_filters(
+    client, make_user, make_city, make_event, login
+):
+    """Paging a filtered list used to jump back to the unfiltered first page,
+    because the links were a bare /admin/events?page=N."""
+    _admin(make_user, login)
+    city = make_city()
+    for index in range(21):
+        make_event(
+            city,
+            title=f"Filtered Event {index:02d}",
+            canonical_url=f"https://example.com/filtered/{index}",
+        )
+
+    response = client.get(f"/admin/events?q=Filtered&city_id={city.id}&archived=no")
+    assert response.status_code == 200
+    assert "q=Filtered" in response.text
+    assert f"city_id={city.id}" in response.text
 
 
 def test_event_detail_source_fields_are_read_only(client, make_user, make_city, make_event, login):

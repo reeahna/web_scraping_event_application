@@ -1,43 +1,125 @@
 {% extends "admin_base.html" %}
 {% block title %}Categorization Rules{% endblock %}
+
+{# One field grid, shared by the create panel and the inline editor, so both
+   lay out as columns instead of a nine-field vertical stack. `prefix` keeps
+   label/input ids unique between them. #}
+{% macro rule_fields(prefix, rule_types, categories, websites, rule=None) %}
+<div class="field-grid">
+  <div class="field">
+    <label for="{{ prefix }}-name">Rule name</label>
+    <input id="{{ prefix }}-name" name="name" value="{{ rule.name if rule else '' }}" required />
+  </div>
+  <div class="field">
+    <label for="{{ prefix }}-rule-type">Rule type</label>
+    <select id="{{ prefix }}-rule-type" name="rule_type">
+      {% for type in rule_types %}<option value="{{ type }}" {% if rule and type == rule.rule_type %}selected{% endif %}>{{ type }}</option>{% endfor %}
+    </select>
+  </div>
+  <div class="field">
+    <label for="{{ prefix }}-category">Category</label>
+    <select id="{{ prefix }}-category" name="category_id">
+      {% for category in categories %}<option value="{{ category.id }}" {% if rule and category.id == rule.category_id %}selected{% endif %}>{{ category.name }}</option>{% endfor %}
+    </select>
+  </div>
+  <div class="field">
+    <label for="{{ prefix }}-priority">Priority</label>
+    <input id="{{ prefix }}-priority" name="priority" type="number" value="{{ rule.priority if rule else 0 }}" />
+  </div>
+  <div class="field">
+    <label for="{{ prefix }}-website">Website</label>
+    <select id="{{ prefix }}-website" name="website_id">
+      <option value="">Any</option>
+      {% for website in websites %}<option value="{{ website.id }}" {% if rule and website.id == rule.website_id %}selected{% endif %}>{{ website.name }}</option>{% endfor %}
+    </select>
+  </div>
+  <div class="field">
+    <label for="{{ prefix }}-source-value">Source category value</label>
+    <input id="{{ prefix }}-source-value" name="source_category_value" value="{{ rule.source_category_value or '' if rule else '' }}" />
+  </div>
+  <div class="field field-wide">
+    <label for="{{ prefix }}-pattern">Venue/keyword pattern</label>
+    <input id="{{ prefix }}-pattern" name="pattern" value="{{ rule.pattern or '' if rule else '' }}" class="input-mono" />
+  </div>
+  <div class="field field-wide field-checkboxes">
+    <label class="checkbox-label"><input type="checkbox" name="is_regex" {% if rule and rule.is_regex %}checked{% endif %} /> Validated regular expression</label>
+    <label class="checkbox-label"><input type="checkbox" name="case_sensitive" {% if rule and rule.case_sensitive %}checked{% endif %} /> Case sensitive</label>
+  </div>
+</div>
+{% endmacro %}
+
 {% block admin_content %}
 <h1>Categorization Rules</h1>
-<p>Precedence: source mapping, administrator mapping, website mapping, venue, keyword, fallback.</p>
-<form method="post" action="/admin/categorization-rules" class="admin-form">
-  <input type="hidden" name="csrf_token" value="{{ csrf_token }}" />
-  <label for="name">Rule name</label><input id="name" name="name" required />
-  <label for="rule_type">Rule type</label><select id="rule_type" name="rule_type">{% for type in rule_types %}<option value="{{ type }}">{{ type }}</option>{% endfor %}</select>
-  <label for="category_id">Category</label><select id="category_id" name="category_id">{% for category in categories %}<option value="{{ category.id }}">{{ category.name }}</option>{% endfor %}</select>
-  <label for="priority">Priority</label><input id="priority" name="priority" type="number" value="0" />
-  <label for="website_id">Website</label><select id="website_id" name="website_id"><option value="">Any</option>{% for website in websites %}<option value="{{ website.id }}">{{ website.name }}</option>{% endfor %}</select>
-  <label for="source_category_value">Source category value</label><input id="source_category_value" name="source_category_value" />
-  <label for="pattern">Venue/keyword pattern</label><input id="pattern" name="pattern" />
-  <label class="checkbox-label"><input type="checkbox" name="is_regex" /> Validated regular expression</label>
-  <label class="checkbox-label"><input type="checkbox" name="case_sensitive" /> Case sensitive</label>
-  <button type="submit">Create rule</button>
-</form>
-<table><thead><tr><th>Name</th><th>Type</th><th>Category</th><th>Priority</th><th>Status</th><th>Actions</th></tr></thead><tbody>
-{% for rule in rules %}<tr>
-  <td>{{ rule.name }}</td><td>{{ rule.rule_type }}</td><td>{{ rule.category.name }}</td><td>{{ rule.priority }}</td><td>{{ 'Active' if rule.is_active else 'Inactive' }}</td>
-  <td>
-    <form method="post" action="/admin/categorization-rules/{{ rule.id }}/status"><input type="hidden" name="csrf_token" value="{{ csrf_token }}" /><input type="hidden" name="action" value="{{ 'deactivate' if rule.is_active else 'activate' }}" /><button type="submit">{{ 'Deactivate' if rule.is_active else 'Activate' }}</button></form>
-    <details>
-      <summary>Edit rule</summary>
-      <form method="post" action="/admin/categorization-rules/{{ rule.id }}" class="admin-form">
-        <input type="hidden" name="csrf_token" value="{{ csrf_token }}" />
-        <label for="name-{{ rule.id }}">Rule name</label><input id="name-{{ rule.id }}" name="name" value="{{ rule.name }}" required />
-        <label for="type-{{ rule.id }}">Rule type</label><select id="type-{{ rule.id }}" name="rule_type">{% for type in rule_types %}<option value="{{ type }}" {% if type == rule.rule_type %}selected{% endif %}>{{ type }}</option>{% endfor %}</select>
-        <label for="category-{{ rule.id }}">Category</label><select id="category-{{ rule.id }}" name="category_id">{% for category in categories %}<option value="{{ category.id }}" {% if category.id == rule.category_id %}selected{% endif %}>{{ category.name }}</option>{% endfor %}</select>
-        <label for="priority-{{ rule.id }}">Priority</label><input id="priority-{{ rule.id }}" name="priority" type="number" value="{{ rule.priority }}" />
-        <label for="website-{{ rule.id }}">Website</label><select id="website-{{ rule.id }}" name="website_id"><option value="">Any</option>{% for website in websites %}<option value="{{ website.id }}" {% if website.id == rule.website_id %}selected{% endif %}>{{ website.name }}</option>{% endfor %}</select>
-        <label for="source-value-{{ rule.id }}">Source category value</label><input id="source-value-{{ rule.id }}" name="source_category_value" value="{{ rule.source_category_value or '' }}" />
-        <label for="pattern-{{ rule.id }}">Venue/keyword pattern</label><input id="pattern-{{ rule.id }}" name="pattern" value="{{ rule.pattern or '' }}" />
-        <label class="checkbox-label"><input type="checkbox" name="is_regex" {% if rule.is_regex %}checked{% endif %} /> Validated regular expression</label>
-        <label class="checkbox-label"><input type="checkbox" name="case_sensitive" {% if rule.case_sensitive %}checked{% endif %} /> Case sensitive</label>
-        <button type="submit">Save rule</button>
-      </form>
-    </details>
-  </td>
-</tr>{% endfor %}
-</tbody></table>
+<p class="audit-meta">Precedence: source mapping, administrator mapping, website mapping, venue, keyword, fallback.</p>
+
+<details class="create-panel">
+  <summary>Add a rule</summary>
+  <form method="post" action="/admin/categorization-rules">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}" />
+    {{ rule_fields("new", rule_types, categories, websites) }}
+    <button type="submit">Create rule</button>
+  </form>
+</details>
+
+{% if rules %}
+<table class="rules-table">
+  <thead>
+    <tr>
+      <th scope="col">Name</th>
+      <th scope="col">Type</th>
+      <th scope="col">Category</th>
+      <th scope="col">Priority</th>
+      <th scope="col">Status</th>
+      <th scope="col"><span class="visually-hidden">Actions</span></th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for rule in rules %}
+    {% set is_editing = editing and editing.id == rule.id %}
+    <tr class="{{ 'rule-row-editing' if is_editing }}">
+      <td>{{ rule.name }}</td>
+      <td>{{ rule.rule_type }}</td>
+      <td>{{ rule.category.name }}</td>
+      <td>{{ rule.priority }}</td>
+      <td>{{ 'Active' if rule.is_active else 'Inactive' }}</td>
+      <td class="row-actions">
+        {% if is_editing %}
+        <a href="/admin/categorization-rules" class="button-link btn-secondary">Cancel</a>
+        {% else %}
+        <a href="/admin/categorization-rules?edit={{ rule.id }}" class="btn-icon" title="Edit {{ rule.name }}" aria-label="Edit {{ rule.name }}">
+          <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true">
+            <path d="M12 20h9" />
+            <path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z" />
+          </svg>
+        </a>
+        {% endif %}
+        <form method="post" action="/admin/categorization-rules/{{ rule.id }}/status" class="inline-form">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token }}" />
+          <input type="hidden" name="action" value="{{ 'deactivate' if rule.is_active else 'activate' }}" />
+          <button type="submit" class="btn-secondary">{{ 'Deactivate' if rule.is_active else 'Activate' }}</button>
+        </form>
+      </td>
+    </tr>
+    {% if is_editing %}
+    {# Full-width row beneath the summary, so the form gets the whole table
+       width instead of being squeezed into the last column. #}
+    <tr class="rule-editor-row">
+      <td colspan="6">
+        <form method="post" action="/admin/categorization-rules/{{ rule.id }}">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token }}" />
+          {{ rule_fields("edit-%s" % rule.id, rule_types, categories, websites, rule) }}
+          <div class="form-actions">
+            <button type="submit">Save rule</button>
+            <a href="/admin/categorization-rules" class="button-link btn-secondary">Cancel</a>
+          </div>
+        </form>
+      </td>
+    </tr>
+    {% endif %}
+    {% endfor %}
+  </tbody>
+</table>
+{% else %}
+<p class="audit-meta">No categorization rules yet.</p>
+{% endif %}
 {% endblock %}

@@ -2,6 +2,7 @@ from typing import Annotated
 
 from fastapi import APIRouter, Depends, Form, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
+from sqlalchemy import func
 
 from app.core.csrf import verify_csrf
 from app.core.exceptions import AppError, NotFoundError
@@ -40,13 +41,82 @@ ManageRoles = Annotated[User, Depends(require_permission("roles.manage"))]
 
 # --- Dashboard (any logged-in user) ---------------------------------------------
 
+# The dashboard splits onboarding statuses by what the reader has to DO, not by
+# where they sit in the state machine. Only DETECTING is genuinely in-flight —
+# every other pre-active status waits on a human (see app.core.onboarding:
+# DETECTED -> APPROVED needs sites.approve, APPROVED -> ACTIVE needs
+# sites.activate, DRAFT -> DETECTING needs someone to start detection). Calling
+# those "in progress" told the reader the machine was working when in fact it
+# was parked waiting on them.
+#
+# Labels name the action, not the status, and are stored in both singular and
+# plural because several don't pluralize on the last word. Only non-zero rows
+# render, so a healthy install shows two short lines instead of eight zeros.
+BROKEN_STATES = (
+    ("unsupported", "unsupported website", "unsupported websites"),
+    ("failing", "website failing extraction", "websites failing extraction"),
+)
+
+WAITING_STATES = (
+    ("draft", "website awaiting detection", "websites awaiting detection"),
+    ("needs_review", "website awaiting pattern review", "websites awaiting pattern review"),
+    ("detected", "website awaiting preview & approval", "websites awaiting preview & approval"),
+    ("approved", "website awaiting activation", "websites awaiting activation"),
+    ("detecting", "website currently detecting", "websites currently detecting"),
+)
+
+
+def _onboarding_groups(db) -> tuple[list[dict], list[dict]]:
+    """Return (broken, waiting) display rows, each non-zero only.
+
+    One GROUP BY replaces the seven separate COUNT queries this used to run.
+    """
+    counts = dict(
+        db.query(Website.onboarding_status, func.count(Website.id))
+        .group_by(Website.onboarding_status)
+        .all()
+    )
+
+    def rows(states: tuple[tuple[str, str, str], ...]) -> list[dict]:
+        out = []
+        for status, singular, plural in states:
+            count = counts.get(status, 0)
+            if count:
+                out.append(
+                    {
+                        "count": count,
+                        "label": singular if count == 1 else plural,
+                        "url": f"/admin/websites?onboarding_status={status}",
+                    }
+                )
+        return out
+
+    broken = rows(BROKEN_STATES)
+
+    browser_required = (
+        db.query(Website.id)
+        .filter(Website.onboarding_status.in_(("unsupported", "needs_review")))
+        .join(UnsupportedSiteReport, UnsupportedSiteReport.website_id == Website.id)
+        .filter(UnsupportedSiteReport.browser_required.is_(True))
+        .distinct()
+        .count()
+    )
+    if browser_required:
+        broken.append(
+            {
+                "count": browser_required,
+                "label": "of those blocked on browser rendering",
+                "url": "/admin/unsupported-reports?browser_required=true",
+            }
+        )
+
+    return broken, rows(WAITING_STATES)
+
 
 @router.get("", response_class=HTMLResponse)
 def dashboard(request: Request, current_user: CurrentUser, db: DbSession):
     if not can_access_admin(db, current_user):
         raise AppError("Forbidden: no admin access", status_code=403)
-
-    permissions = sorted(get_effective_permissions(db, current_user))
 
     metrics = {
         "active_cities": db.query(City).filter(City.is_active.is_(True)).count(),
@@ -55,29 +125,10 @@ def dashboard(request: Request, current_user: CurrentUser, db: DbSession):
         "events": db.query(Event).count(),
     }
 
-    onboarding_metrics = None
+    broken = None
+    waiting = None
     if user_has_permission(db, current_user, "sites.view"):
-        onboarding_metrics = {
-            "draft": db.query(Website).filter(Website.onboarding_status == "draft").count(),
-            "detecting": db.query(Website).filter(Website.onboarding_status == "detecting").count(),
-            "needs_review": db.query(Website)
-            .filter(Website.onboarding_status == "needs_review")
-            .count(),
-            "detected": db.query(Website).filter(Website.onboarding_status == "detected").count(),
-            "approved_awaiting_activation": db.query(Website)
-            .filter(Website.onboarding_status == "approved")
-            .count(),
-            "unsupported": db.query(Website)
-            .filter(Website.onboarding_status == "unsupported")
-            .count(),
-            "failing": db.query(Website).filter(Website.onboarding_status == "failing").count(),
-            "browser_required": db.query(Website)
-            .filter(Website.onboarding_status.in_(("unsupported", "needs_review")))
-            .join(UnsupportedSiteReport, UnsupportedSiteReport.website_id == Website.id)
-            .filter(UnsupportedSiteReport.browser_required.is_(True))
-            .distinct()
-            .count(),
-        }
+        broken, waiting = _onboarding_groups(db)
 
     unresolved_reports = None
     if user_has_permission(db, current_user, "reports.view"):
@@ -98,9 +149,9 @@ def dashboard(request: Request, current_user: CurrentUser, db: DbSession):
         "admin/dashboard.html",
         {
             "current_user": current_user,
-            "permissions": permissions,
             "metrics": metrics,
-            "onboarding_metrics": onboarding_metrics,
+            "broken": broken,
+            "waiting": waiting,
             "unresolved_reports": unresolved_reports,
             "unread_notifications": unread_notifications,
             "recent_audit": recent_audit,

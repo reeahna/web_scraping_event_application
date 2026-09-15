@@ -6,7 +6,7 @@ from app.core.flash import set_flash
 from app.core.templating import render
 from app.dependencies import ClientIp, CorrelationId, CurrentUser, DbSession
 from app.services.audit import record_audit
-from app.services.rbac import can_access_admin
+from app.services.rbac import can_access_admin, get_effective_permissions
 
 router = APIRouter(tags=["account"])
 
@@ -26,12 +26,17 @@ def _render_account(
 ) -> HTMLResponse:
     has_admin_access = can_access_admin(db, current_user)
     role_names = sorted({ur.role.name for ur in current_user.user_roles if ur.role.is_active})
+    # Only admins have a meaningful permission set, and the list is long enough
+    # (28 for a super admin) that it is reference material, not something to
+    # read top to bottom — the template keeps it collapsed.
+    permissions = sorted(get_effective_permissions(db, current_user)) if has_admin_access else []
     return render(
         request,
         "admin/account.html" if has_admin_access else "account.html",
         {
             "current_user": current_user,
             "role_names": role_names,
+            "permissions": permissions,
             "display_name": current_user.full_name if display_name is None else display_name,
             "errors": errors or {},
             "edit_mode": edit_mode,

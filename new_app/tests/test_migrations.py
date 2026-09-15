@@ -263,7 +263,10 @@ def test_phase5_migration_round_trip_preserves_existing_events():
             ),
             {"id": event_id},
         ).one()
-        assert row == ("Preserved Event", "extracted", "needs_review", "not_reviewed")
+        # "reviewed", not "needs_review": upgrading to head runs
+        # c4a7e2b91d63, which clears the blanket needs_review that every event
+        # used to be created with. The row is otherwise preserved intact.
+        assert row == ("Preserved Event", "extracted", "reviewed", "not_reviewed")
         assert connection.execute(text("SELECT COUNT(*) FROM event_categories")).scalar_one() >= 14
 
     downgrade = _run_alembic(database_url, "downgrade", "c8abf388f25c")

@@ -1,0 +1,61 @@
+{#
+  Windowed numbered pagination, shared by the admin lists and the public event
+  list.
+
+  `base_url` must be a string that `page=N` can be appended to directly — it
+  already carries the current filters and ends in "?" or "&", so paging never
+  drops what the reader filtered down to. `suffix` is appended after the page
+  number for anything that must stay last (e.g. "&view=map").
+
+  Only a window of pages is printed: always the first and last, plus `window`
+  either side of the current page, with an ellipsis across any gap. That caps
+  the control at nine slots, so it is the same width on page 1 as on page 137
+  and nothing shifts under the pointer as you click through. The arrows are
+  always rendered — disabled at the ends rather than removed, for the same
+  reason.
+#}
+{% macro paginate(page, per_page, total, base_url, suffix="", window=2) %}
+{% set total_pages = ((total - 1) // per_page) + 1 if total > 0 else 1 %}
+{% set first_item = (page - 1) * per_page + 1 if total > 0 else 0 %}
+{% set last_item = [page * per_page, total] | min %}
+{% set lo = [page - window, 1] | max %}
+{% set hi = [page + window, total_pages] | min %}
+{% set slots = [] %}
+{% if lo > 1 %}{% set _ = slots.append(1) %}{% endif %}
+{% if lo > 2 %}{% set _ = slots.append(none) %}{% endif %}
+{% for p in range(lo, hi + 1) %}{% set _ = slots.append(p) %}{% endfor %}
+{% if hi < total_pages - 1 %}{% set _ = slots.append(none) %}{% endif %}
+{% if hi < total_pages %}{% set _ = slots.append(total_pages) %}{% endif %}
+<nav class="pagination" aria-label="Pagination">
+  <p class="pagination-range">
+    {% if total > 0 %}
+    Showing {{ first_item }}–{{ last_item }} of {{ total }}
+    {% else %}
+    No results
+    {% endif %}
+  </p>
+  <div class="pagination-controls">
+    {% if page > 1 %}
+    <a class="pagination-step" href="{{ base_url }}page={{ page - 1 }}{{ suffix }}" rel="prev" aria-label="Previous page">&larr;</a>
+    {% else %}
+    <span class="pagination-step is-disabled" aria-disabled="true" aria-label="Previous page">&larr;</span>
+    {% endif %}
+
+    {% for slot in slots %}
+      {% if slot is none %}
+      <span class="pagination-gap" aria-hidden="true">…</span>
+      {% elif slot == page %}
+      <span class="pagination-page is-current" aria-current="page">{{ slot }}</span>
+      {% else %}
+      <a class="pagination-page" href="{{ base_url }}page={{ slot }}{{ suffix }}" aria-label="Page {{ slot }}">{{ slot }}</a>
+      {% endif %}
+    {% endfor %}
+
+    {% if page < total_pages %}
+    <a class="pagination-step" href="{{ base_url }}page={{ page + 1 }}{{ suffix }}" rel="next" aria-label="Next page">&rarr;</a>
+    {% else %}
+    <span class="pagination-step is-disabled" aria-disabled="true" aria-label="Next page">&rarr;</span>
+    {% endif %}
+  </div>
+</nav>
+{% endmacro %}

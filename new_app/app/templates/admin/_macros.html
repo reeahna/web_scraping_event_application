@@ -1,12 +1,9 @@
+{% from "_pagination.html" import paginate %}
+
+{# Existing callers pass a base_url with no trailing separator (they used to
+   append "&page="), so add it here rather than touching every call site. #}
 {% macro pagination(page, per_page, total, base_url) %}
-  {% set total_pages = ((total - 1) // per_page) + 1 if total > 0 else 1 %}
-  <div class="pagination">
-    <span class="pagination-info">Page {{ page }} of {{ total_pages }} ({{ total }} total)</span>
-    <span class="pagination-links">
-      {% if page > 1 %}<a href="{{ base_url }}&page={{ page - 1 }}">&laquo; Prev</a>{% endif %}
-      {% if page < total_pages %}<a href="{{ base_url }}&page={{ page + 1 }}">Next &raquo;</a>{% endif %}
-    </span>
-  </div>
+  {{ paginate(page, per_page, total, base_url ~ "&") }}
 {% endmacro %}
 
 {% macro field_error(errors, field) %}
@@ -25,14 +22,14 @@
 
 {% macro onboarding_badge(status) %}
   {% if status in ("active",) %}
-    <span class="badge badge-active">{{ status }}</span>
+    <span class="badge badge-active">{{ status | onboarding_label }}</span>
   {% elif status in ("unsupported", "failing") %}
-    <span class="badge badge-danger">{{ status }}</span>
+    <span class="badge badge-danger">{{ status | onboarding_label }}</span>
   {% elif status in ("archived",) %}
-    <span class="badge badge-archived">{{ status }}</span>
+    <span class="badge badge-archived">{{ status | onboarding_label }}</span>
   {% elif status in ("draft", "inactive") %}
-    <span class="badge badge-inactive">{{ status }}</span>
+    <span class="badge badge-inactive">{{ status | onboarding_label }}</span>
   {% else %}
-    <span class="badge badge-pending">{{ status }}</span>
+    <span class="badge badge-pending">{{ status | onboarding_label }}</span>
   {% endif %}
 {% endmacro %}

@@ -23,8 +23,42 @@ async def test_onboarding_metrics_reflect_real_counts(
     login("dash-root@example.com", "root-pass-1234")
     resp = client.get("/admin")
     assert resp.status_code == 200
-    assert "Website onboarding" in resp.text
-    assert "1 unresolved unsupported-site report" in resp.text
+    assert "Broken" in resp.text
+    assert "1</strong> unsupported website" in resp.text
+    assert "1</strong> open failure report to triage" in resp.text
+    assert "/admin/websites?onboarding_status=unsupported" in resp.text
+
+
+def test_zero_count_statuses_are_not_rendered(client, make_super_admin, login):
+    """The dashboard lists only non-zero statuses — an empty install should not
+    render a row of permanent zeros."""
+    make_super_admin(email="dash-empty@example.com", password="root-pass-1234")
+    login("dash-empty@example.com", "root-pass-1234")
+
+    resp = client.get("/admin")
+    assert resp.status_code == 200
+    assert "Nothing is broken." in resp.text
+    assert "Nothing is waiting on you." in resp.text
+    assert "onboarding_status=draft" not in resp.text
+
+
+def test_detected_website_is_waiting_on_a_human_not_in_progress(
+    client, make_super_admin, make_city, make_website, login, db_session
+):
+    """DETECTED needs an operator to preview and approve (app.core.onboarding),
+    so it belongs under "Waiting on you" — grouping it as in-progress work
+    implied the system was still busy with it."""
+    make_super_admin(email="dash-detected@example.com", password="root-pass-1234")
+    city = make_city(name="Detected City", slug="detected-city")
+    website = make_website(city, name="Detected Site")
+    website.onboarding_status = "detected"
+    db_session.commit()
+
+    login("dash-detected@example.com", "root-pass-1234")
+    resp = client.get("/admin")
+    assert resp.status_code == 200
+    assert "Waiting on you" in resp.text
+    assert "1</strong> website awaiting preview &amp; approval" in resp.text
 
 
 def test_editor_sees_onboarding_metrics_but_not_audit_log(client, make_user, login):
@@ -33,8 +67,28 @@ def test_editor_sees_onboarding_metrics_but_not_audit_log(client, make_user, log
 
     resp = client.get("/admin")
     assert resp.status_code == 200
-    assert "Website onboarding" in resp.text
+    assert "Waiting on you" in resp.text
     assert "Recent audit actions" not in resp.text
+
+
+def test_welcome_prefers_display_name_over_email(client, make_super_admin, db_session, login):
+    admin = make_super_admin(email="dash-named@example.com", password="root-pass-1234")
+    admin.full_name = "Reeahna Patel"
+    db_session.commit()
+
+    login("dash-named@example.com", "root-pass-1234")
+    resp = client.get("/admin")
+    assert resp.status_code == 200
+    assert "Welcome, Reeahna Patel" in resp.text
+
+
+def test_welcome_falls_back_to_email_without_display_name(client, make_super_admin, login):
+    make_super_admin(email="dash-unnamed@example.com", password="root-pass-1234")
+    login("dash-unnamed@example.com", "root-pass-1234")
+
+    resp = client.get("/admin")
+    assert resp.status_code == 200
+    assert "Welcome, dash-unnamed@example.com" in resp.text
 
 
 def test_unread_notification_count_shown_on_dashboard(client, make_super_admin, db_session, login):
@@ -54,7 +108,8 @@ def test_unread_notification_count_shown_on_dashboard(client, make_super_admin, 
 
     resp = client.get("/admin")
     assert resp.status_code == 200
-    assert "Unread notifications" in resp.text
+    # The count lives in the nav, not a dashboard tile — one place, always visible.
+    assert "Notifications (1)" in resp.text
 
 
 def test_dashboard_queries_stay_bounded_count_only(db_session, make_city, make_website):

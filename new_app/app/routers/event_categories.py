@@ -57,14 +57,25 @@ def _audit_category(
 
 
 @router.get("", response_class=HTMLResponse)
-def list_categories(request: Request, current_user: ManageCategories, db: DbSession):
+def list_categories(
+    request: Request,
+    current_user: ManageCategories,
+    db: DbSession,
+    edit: int | None = None,
+):
+    """`edit` names the one row rendered as inputs; every other row is read-only.
+
+    Server-rendered rather than JS-toggled, matching how /account already does
+    inline editing. An unknown id simply renders the list read-only.
+    """
     categories = (
         db.query(EventCategory).order_by(EventCategory.display_order, EventCategory.name).all()
     )
+    editing = next((c for c in categories if c.id == edit), None) if edit is not None else None
     return render(
         request,
         "admin/categories/list.html",
-        {"current_user": current_user, "categories": categories},
+        {"current_user": current_user, "categories": categories, "editing": editing},
     )
 
 

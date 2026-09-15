@@ -11,6 +11,7 @@ from app.dependencies import DbSession, OptionalCurrentUser
 from app.repositories.city import get_city_by_slug, list_cities
 from app.repositories.event_category import list_active_categories
 from app.repositories.public_events import (
+    PUBLIC_EVENTS_PER_PAGE,
     current_public_date,
     list_public_events,
     list_public_sources,
@@ -149,6 +150,7 @@ def _render_events(
             "total": total,
             "page": page,
             "has_next": has_next,
+            "per_page": PUBLIC_EVENTS_PER_PAGE,
             "cities": list_cities(db),
             "selected_city": selected_city,
             "categories": list_active_categories(db),

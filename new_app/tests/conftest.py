@@ -131,7 +131,7 @@ def make_event(db_session):
         website: Website | None = None,
         category: EventCategory | None = None,
         is_active: bool = True,
-        review_status: str = "needs_review",
+        review_status: str = "reviewed",  # mirrors the model default
         duplicate_status: str = "not_reviewed",
         **values,
     ) -> Event:

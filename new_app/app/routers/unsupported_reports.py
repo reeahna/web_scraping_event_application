@@ -7,6 +7,7 @@ from app.core.csrf import verify_csrf
 from app.core.exceptions import AppError, NotFoundError
 from app.core.flash import set_flash
 from app.core.report_status import ALLOWED_REPORT_TRANSITIONS, REPORT_STATUSES
+from app.core.forms import OptionalFlag, OptionalId, OptionalText
 from app.core.templating import render
 from app.dependencies import ClientIp, CorrelationId, DbSession
 from app.models.user import User
@@ -29,10 +30,10 @@ def list_reports_view(
     request: Request,
     current_user: ViewReports,
     db: DbSession,
-    status: str | None = None,
-    city_id: int | None = None,
-    website_id: int | None = None,
-    browser_required: bool | None = None,
+    status: OptionalText = None,
+    city_id: OptionalId = None,
+    website_id: OptionalId = None,
+    browser_required: OptionalFlag = None,
     page: int = 1,
 ):
     reports, total = list_reports(

@@ -6,30 +6,79 @@
    navigation renders as a second header row below the brand. #}
 {% block header_nav %}{% endblock %}
 
+{#
+  Fifteen flat links gave the eye nothing to anchor on, so they are grouped
+  behind four headings. Each group opens from a <button>, not a link: it leads
+  nowhere, so it must not behave like a destination, and a button is focusable
+  and announced correctly without extra ARIA.
+
+  Opening is CSS-driven (:hover for the pointer, :focus-within for the
+  keyboard), so the menus still work with JavaScript disabled. The script at the
+  bottom only refines that: keeping aria-expanded truthful, Escape to close,
+  tap-to-open where there is no hover, and the small-screen toggle.
+#}
+{% set nav_path = request.url.path %}
+
+{% macro nav_link(href, label) %}
+<li><a href="{{ href }}" {% if nav_path == href %}aria-current="page"{% endif %}>{{ label }}</a></li>
+{% endmacro %}
+
 {% block header_nav_row %}
 <nav class="admin-nav" aria-label="Admin">
-  <a href="/admin">Dashboard</a>
-  <a href="/admin/cities">Cities</a>
-  <a href="/admin/websites">Websites</a>
-  <a href="/admin/scheduler">Scheduler</a>
-  <a href="/admin/onboarding/batches">Onboarding</a>
-  <a href="/admin/events">Events</a>
-  <a href="/admin/event-categories">Categories</a>
-  <a href="/admin/categorization-rules">Category Rules</a>
-  <a href="/admin/users">Users</a>
-  <a href="/admin/roles">Roles</a>
-  <a href="/admin/audit">Audit Log</a>
-  <a href="/admin/settings/onboarding-policies">Auto Policies</a>
-  <a href="/admin/reports">Reports</a>
-  <a href="/admin/unsupported-reports">Unsupported Reports</a>
-  <a href="/admin/notifications">Notifications{% if current_user %} ({{ unread_notification_count(current_user.id) }}){% endif %}</a>
-  <span class="admin-nav-spacer"></span>
-  <a href="/account">My Account</a>
-  <span class="admin-nav-user">{{ current_user.email }}</span>
-  <form method="post" action="/auth/logout" class="inline-form">
-    <input type="hidden" name="csrf_token" value="{{ csrf_token }}" />
-    <button type="submit">Log out</button>
-  </form>
+  <button type="button" class="admin-nav-toggle" aria-expanded="false" aria-controls="admin-nav-sections">
+    Menu
+  </button>
+
+  <ul class="admin-nav-sections" id="admin-nav-sections">
+    {{ nav_link("/admin", "Dashboard") }}
+
+    <li class="admin-nav-group">
+      <button type="button" class="admin-nav-trigger" aria-expanded="false">Sources</button>
+      <ul class="admin-nav-menu">
+        {{ nav_link("/admin/cities", "Cities") }}
+        {{ nav_link("/admin/websites", "Websites") }}
+      </ul>
+    </li>
+
+    <li class="admin-nav-group">
+      <button type="button" class="admin-nav-trigger" aria-expanded="false">Events</button>
+      <ul class="admin-nav-menu">
+        {{ nav_link("/admin/events", "All events") }}
+        {{ nav_link("/admin/event-categories", "Categories") }}
+        {{ nav_link("/admin/categorization-rules", "Category rules") }}
+      </ul>
+    </li>
+
+    <li class="admin-nav-group">
+      <button type="button" class="admin-nav-trigger" aria-expanded="false">Imports</button>
+      <ul class="admin-nav-menu">
+        {{ nav_link("/admin/onboarding/batches", "Onboarding") }}
+        {{ nav_link("/admin/scheduler", "Scheduler") }}
+        {{ nav_link("/admin/settings/onboarding-policies", "Auto policies") }}
+        {{ nav_link("/admin/unsupported-reports", "Unsupported reports") }}
+      </ul>
+    </li>
+
+    <li class="admin-nav-group">
+      <button type="button" class="admin-nav-trigger" aria-expanded="false">Administration</button>
+      <ul class="admin-nav-menu">
+        {{ nav_link("/admin/users", "Users") }}
+        {{ nav_link("/admin/roles", "Roles") }}
+        {{ nav_link("/admin/reports", "Reports") }}
+        {{ nav_link("/admin/audit", "Audit log") }}
+      </ul>
+    </li>
+  </ul>
+
+  <div class="admin-nav-end">
+    <a href="/admin/notifications" {% if nav_path == "/admin/notifications" %}aria-current="page"{% endif %}>Notifications{% if current_user %} ({{ unread_notification_count(current_user.id) }}){% endif %}</a>
+    <a href="/account" {% if nav_path == "/account" %}aria-current="page"{% endif %}>My Account</a>
+    <span class="admin-nav-user">{{ current_user.full_name or current_user.email }}</span>
+    <form method="post" action="/auth/logout" class="inline-form">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}" />
+      <button type="submit">Log out</button>
+    </form>
+  </div>
 </nav>
 {% endblock %}
 
@@ -37,4 +86,11 @@
 <div class="admin-body">
   {% block admin_content %}{% endblock %}
 </div>
+{% endblock %}
+
+{% block scripts %}
+{# External, not inline: the app's CSP is `script-src 'self'` with no
+   'unsafe-inline', so an inline <script> is blocked by the browser. #}
+<script src="/static/js/admin-nav.js" defer></script>
+<script src="/static/js/admin-confirm.js" defer></script>
 {% endblock %}

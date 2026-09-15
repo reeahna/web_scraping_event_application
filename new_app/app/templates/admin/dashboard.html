@@ -3,16 +3,15 @@
 {% block title %}Admin Dashboard{% endblock %}
 
 {% block admin_content %}
-<h1>Welcome, {{ current_user.email }}</h1>
+<h1>Welcome, {{ current_user.full_name or current_user.email }}</h1>
 
 <div class="metrics-grid">
   <div class="metric-tile">
     <div class="metric-value">{{ metrics.active_cities }}</div>
     <div class="metric-label">Active cities</div>
-  </div>
-  <div class="metric-tile">
-    <div class="metric-value">{{ metrics.inactive_cities }}</div>
-    <div class="metric-label">Inactive cities</div>
+    {% if metrics.inactive_cities %}
+    <div class="metric-note">{{ metrics.inactive_cities }} inactive</div>
+    {% endif %}
   </div>
   <div class="metric-tile">
     <div class="metric-value">{{ metrics.websites }}</div>
@@ -22,28 +21,38 @@
     <div class="metric-value">{{ metrics.events }}</div>
     <div class="metric-label">Events</div>
   </div>
-  <div class="metric-tile">
-    <div class="metric-value">{{ unread_notifications }}</div>
-    <div class="metric-label">Unread notifications</div>
-  </div>
 </div>
 
-{% if onboarding_metrics is not none %}
-<h2>Website onboarding</h2>
-<div class="metrics-grid">
-  <div class="metric-tile"><div class="metric-value">{{ onboarding_metrics.draft }}</div><div class="metric-label">Draft</div></div>
-  <div class="metric-tile"><div class="metric-value">{{ onboarding_metrics.detecting }}</div><div class="metric-label">Detecting</div></div>
-  <div class="metric-tile"><div class="metric-value">{{ onboarding_metrics.detected }}</div><div class="metric-label">Detected</div></div>
-  <div class="metric-tile"><div class="metric-value">{{ onboarding_metrics.needs_review }}</div><div class="metric-label">Needs review</div></div>
-  <div class="metric-tile"><div class="metric-value">{{ onboarding_metrics.approved_awaiting_activation }}</div><div class="metric-label">Approved (awaiting activation)</div></div>
-  <div class="metric-tile"><div class="metric-value">{{ onboarding_metrics.unsupported }}</div><div class="metric-label">Unsupported</div></div>
-  <div class="metric-tile"><div class="metric-value">{{ onboarding_metrics.failing }}</div><div class="metric-label">Failing</div></div>
-  <div class="metric-tile"><div class="metric-value">{{ onboarding_metrics.browser_required }}</div><div class="metric-label">Browser required</div></div>
-</div>
+{% if broken is not none or unresolved_reports is not none %}
+<h2>Broken</h2>
+{% if broken or unresolved_reports %}
+<ul class="status-list">
+  {% for row in broken or [] %}
+  <li><a href="{{ row.url }}"><strong>{{ row.count }}</strong> {{ row.label }}</a></li>
+  {% endfor %}
+  {% if unresolved_reports %}
+  {# Counted separately from the "unsupported website" row above: a report is
+     filed per distinct failure, so one website can hold several, and a website
+     that has since been fixed can still have an open report outstanding. #}
+  <li><a href="/admin/unsupported-reports"><strong>{{ unresolved_reports }}</strong> open failure report{{ "s" if unresolved_reports != 1 }} to triage</a></li>
+  {% endif %}
+</ul>
+{% else %}
+<p class="audit-meta">Nothing is broken.</p>
+{% endif %}
 {% endif %}
 
-{% if unresolved_reports is not none %}
-<p><a href="/admin/unsupported-reports">{{ unresolved_reports }} unresolved unsupported-site report(s)</a></p>
+{% if waiting is not none %}
+<h2>Waiting on you</h2>
+{% if waiting %}
+<ul class="status-list">
+  {% for row in waiting %}
+  <li><a href="{{ row.url }}"><strong>{{ row.count }}</strong> {{ row.label }}</a></li>
+  {% endfor %}
+</ul>
+{% else %}
+<p class="audit-meta">Nothing is waiting on you.</p>
+{% endif %}
 {% endif %}
 
 {% if recent_audit is not none %}
@@ -66,14 +75,5 @@
 {% else %}
 <p>No audit activity yet.</p>
 {% endif %}
-{% endif %}
-
-<h2>Your effective permissions</h2>
-{% if permissions %}
-<ul>
-  {% for p in permissions %}<li>{{ p }}</li>{% endfor %}
-</ul>
-{% else %}
-<p>No permissions assigned.</p>
 {% endif %}
 {% endblock %}

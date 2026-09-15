@@ -109,6 +109,65 @@ def _website_action_url(website: Website) -> str:
     return f"/admin/websites/{website.id}"
 
 
+# Notification.message is String(1000); the reason clause is capped well under
+# that so the surrounding sentence is never what gets cut off.
+_REASON_MAX_CHARS = 400
+
+_FAILURE_REASON_PROSE = {
+    "no_pattern_matched": "no detector matched the page structure",
+    "browser_rendering_disabled": (
+        "the page needs browser rendering, which is disabled for this deployment"
+    ),
+}
+
+
+def _reason_prose(reason: str | None) -> str:
+    """Turn a machine failure code into a phrase an operator can act on.
+
+    Failure notifications used to say only *that* something failed, leaving the
+    reader to open the extraction run to find out why. `describe_block_reason`
+    deliberately returns None for codes it considers self-explanatory to a
+    developer (`http_403`), so this adds the plain-language rendering that a
+    notification needs.
+    """
+    if not reason:
+        return "no reason was recorded"
+    if reason in _FAILURE_REASON_PROSE:
+        return _FAILURE_REASON_PROSE[reason]
+    explanation = describe_block_reason(reason)
+    if explanation:
+        return explanation
+    prefix, _, detail = reason.partition(":")
+    if prefix == "challenge_marker":
+        return f"the page returned an anti-bot challenge ({detail})"
+    if prefix == "browser_error":
+        return f"browser rendering raised {detail}"
+    if prefix == "ssrf_blocked":
+        return f"the URL was refused by SSRF protection ({detail})"
+    if reason.startswith("http_"):
+        return f"the site responded with HTTP {reason.removeprefix('http_')}"
+    return reason
+
+
+def _truncate_reason(text: str) -> str:
+    if len(text) <= _REASON_MAX_CHARS:
+        return text
+    return text[: _REASON_MAX_CHARS - 1].rstrip() + "…"
+
+
+def _failure_detail(*, blocked_reason: str | None, error_summary: str | None) -> str:
+    """The 'why' sentence appended to a failure notification.
+
+    Prefers the block reason (a fetch never happened) over candidate-level
+    validation errors (the fetch worked, the data didn't).
+    """
+    if blocked_reason:
+        return _truncate_reason(f"Reason: {_reason_prose(blocked_reason)}.")
+    if error_summary:
+        return _truncate_reason(f"Reason: {error_summary}")
+    return "No specific error was recorded — open the extraction run for the full response."
+
+
 def _draft_fetch_config(website: Website) -> FetchConfig:
     if website.configuration:
         try:
@@ -298,8 +357,9 @@ async def run_detection_detailed(
                 severity=SEVERITY_WARNING,
                 title=f"{website.name}: detection unsupported",
                 message=(
-                    f"No detector could confidently match '{website.name}' "
-                    f"(reason: {report_data.failure_reason})."
+                    f"No detector could confidently match '{website.name}': "
+                    f"{_reason_prose(report_data.failure_reason)}. "
+                    "Open the website to review the detector evidence."
                 ),
                 recipients=_review_recipients(db),
                 related_resource_type="website",
@@ -844,7 +904,13 @@ async def preview_extraction_detailed(
             title=f"{website.name}: preview failed",
             message=(
                 f"Preview of '{website.name}' at configuration version "
-                f"{website.configuration_version} found no valid events."
+                f"{website.configuration_version} found no valid events. "
+                + _failure_detail(
+                    blocked_reason=outcome.last_response.blocked_reason
+                    if outcome.last_response
+                    else None,
+                    error_summary=run.error_summary,
+                )
             ),
             recipients=_review_recipients(db),
             related_resource_type="website",
@@ -1056,7 +1122,14 @@ async def run_extraction(
     run.duplicates_skipped = dedup_outcome.duplicates_skipped
     db.commit()
 
-    _update_website_health(db, website, status, correlation_id=correlation_id)
+    _update_website_health(
+        db,
+        website,
+        status,
+        blocked_reason=outcome.last_response.blocked_reason if outcome.last_response else None,
+        error_summary=run.error_summary,
+        correlation_id=correlation_id,
+    )
 
     return ExtractionResult(
         status=status,
@@ -1097,7 +1170,13 @@ def _fire_alerts(db: Session, event, *, new: bool, cancelled: bool) -> None:
 
 
 def _update_website_health(
-    db: Session, website: Website, status: str, *, correlation_id: str | None = None
+    db: Session,
+    website: Website,
+    status: str,
+    *,
+    blocked_reason: str | None = None,
+    error_summary: str | None = None,
+    correlation_id: str | None = None,
 ) -> None:
     now = datetime.now(UTC)
     if status in ("success", "partial"):
@@ -1118,7 +1197,10 @@ def _update_website_health(
                 title=f"{website.name}: extraction failing",
                 message=(
                     f"'{website.name}' has failed {website.consecutive_failure_count} "
-                    "consecutive persistent extraction runs and moved to FAILING."
+                    "consecutive persistent extraction runs and moved to FAILING. "
+                    + _failure_detail(
+                        blocked_reason=blocked_reason, error_summary=error_summary
+                    )
                 ),
                 recipients=_review_recipients(db),
                 related_resource_type="website",

@@ -1,4 +1,4 @@
-from sqlalchemy import or_
+from sqlalchemy import func, or_
 from sqlalchemy.orm import Session
 
 from app.core.onboarding import DRAFT
@@ -68,3 +68,16 @@ def count_websites(db: Session, *, active: bool | None = None) -> int:
     if active is not None:
         q = q.filter(Website.is_active.is_(active))
     return q.count()
+
+
+def count_by_onboarding_status(db: Session) -> dict[str, int]:
+    """Website counts keyed by onboarding status, in one GROUP BY.
+
+    States with no websites are simply absent from the mapping; callers decide
+    whether to render a zero.
+    """
+    return dict(
+        db.query(Website.onboarding_status, func.count(Website.id))
+        .group_by(Website.onboarding_status)
+        .all()
+    )

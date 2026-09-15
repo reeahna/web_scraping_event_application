@@ -1,4 +1,5 @@
 {% extends "admin_base.html" %}
+{% from "_pagination.html" import paginate %}
 
 {% block title %}Events{% endblock %}
 
@@ -63,11 +64,5 @@
 <p>No events match these filters.</p>
 {% endif %}
 
-<div class="pagination">
-  <span>{{ total }} event(s)</span>
-  <span class="pagination-links">
-    {% if page > 1 %}<a href="/admin/events?page={{ page - 1 }}">Previous</a>{% endif %}
-    {% if has_next %}<a href="/admin/events?page={{ page + 1 }}">Next</a>{% endif %}
-  </span>
-</div>
+{{ paginate(page, per_page, total, base_url) }}
 {% endblock %}

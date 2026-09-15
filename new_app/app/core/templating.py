@@ -9,6 +9,7 @@ from fastapi.templating import Jinja2Templates
 
 from app.core.csrf import get_or_create_csrf_token, set_csrf_cookie
 from app.core.formatting import human_date, human_date_long, human_time
+from app.core.onboarding import onboarding_label
 from app.services.quality_presentation import format_percent, quality_view
 
 TEMPLATES_DIR = Path(__file__).resolve().parent.parent / "templates"
@@ -45,6 +46,7 @@ def _unread_notification_count(user_id: int) -> int:
 
 templates.env.globals["unread_notification_count"] = _unread_notification_count
 templates.env.globals["current_year"] = lambda: datetime.now(UTC).year
+templates.env.filters["onboarding_label"] = onboarding_label
 
 
 def _category_photo(event: Any):

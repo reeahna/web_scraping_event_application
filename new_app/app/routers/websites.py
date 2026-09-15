@@ -9,7 +9,14 @@ from app.config import get_settings
 from app.core.csrf import verify_csrf
 from app.core.exceptions import AppError, NotFoundError
 from app.core.flash import set_flash
-from app.core.onboarding import ALLOWED_TRANSITIONS, ONBOARDING_STATES, TRANSITION_PERMISSIONS
+from app.core.onboarding import (
+    ALLOWED_TRANSITIONS,
+    ONBOARDING_STATE_GROUPS,
+    ONBOARDING_STATES,
+    TRANSITION_PERMISSIONS,
+    onboarding_label,
+)
+from app.core.forms import OptionalId, OptionalText
 from app.core.templating import render
 from app.core.timezones import dst_warning
 from app.dependencies import ClientIp, CorrelationId, CurrentUser, DbSession
@@ -27,6 +34,7 @@ from app.repositories.extraction_run import get_extraction_run, list_extraction_
 from app.repositories.onboarding import find_website_match
 from app.repositories.unsupported_site_report import list_reports_for_website
 from app.repositories.website import (
+    count_by_onboarding_status,
     create_website,
     get_website,
     search_websites,
@@ -121,14 +129,35 @@ def _json_error_context() -> dict[str, str]:
 # --- List / filter -----------------------------------------------------------------
 
 
+
+def _status_filter_groups(db) -> list[dict]:
+    """The status dropdown, grouped and labelled, with a count per state.
+
+    The counts come from one GROUP BY. Showing zeroes rather than hiding empty
+    states keeps the option list stable between visits and lets the reader
+    confirm a negative ("no sites are failing") without running a search.
+    """
+    counts = count_by_onboarding_status(db)
+    return [
+        {
+            "label": group_label,
+            "options": [
+                {"value": state, "label": onboarding_label(state), "count": counts.get(state, 0)}
+                for state in states
+            ],
+        }
+        for group_label, states in ONBOARDING_STATE_GROUPS
+    ]
+
+
 @router.get("", response_class=HTMLResponse)
 def list_websites_view(
     request: Request,
     current_user: ViewSites,
     db: DbSession,
-    q: str | None = None,
-    city_id: int | None = None,
-    onboarding_status: str | None = None,
+    q: OptionalText = None,
+    city_id: OptionalId = None,
+    onboarding_status: OptionalText = None,
     page: int = 1,
 ):
     websites, total = search_websites(
@@ -157,7 +186,7 @@ def list_websites_view(
             "city_id": city_id,
             "onboarding_status": onboarding_status or "",
             "cities": cities,
-            "all_statuses": ONBOARDING_STATES,
+            "status_groups": _status_filter_groups(db),
             "base_url": base_url,
         },
     )

@@ -73,7 +73,13 @@ class Event(Base, TimestampMixin):
     # Distinct from is_active: archiving is a deliberate curatorial step (a
     # prerequisite for deleting the event's city), not just a visibility toggle.
     archived_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), default=None)
-    review_status: Mapped[str] = mapped_column(String(32), default="needs_review", index=True)
+    # Defaults to "reviewed": a scraped event is trusted unless something
+    # actually flags it. When every new event defaulted to "needs_review" the
+    # status never distinguished anything — the genuinely suspect events (see
+    # app.services.geographic_filter.geo_needs_review, the one automated
+    # writer) were indistinguishable from the thousands nobody had looked at,
+    # and the admin filter partitioned the list into "everything" and "nothing".
+    review_status: Mapped[str] = mapped_column(String(32), default="reviewed", index=True)
     duplicate_status: Mapped[str] = mapped_column(String(32), default="not_reviewed", index=True)
     category_source: Mapped[str] = mapped_column(String(32), default="uncategorized")
     categorization_rule_id: Mapped[int | None] = mapped_column(

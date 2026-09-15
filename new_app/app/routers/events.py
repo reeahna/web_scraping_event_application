@@ -1,5 +1,6 @@
 from datetime import UTC, datetime
 from typing import Annotated
+from urllib.parse import urlencode
 
 from fastapi import APIRouter, Depends, Form, Query, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
@@ -8,7 +9,7 @@ from sqlalchemy import or_
 from app.core.csrf import verify_csrf
 from app.core.exceptions import AppError, NotFoundError
 from app.core.flash import set_flash
-from app.core.forms import reject_unexpected_form_fields
+from app.core.forms import OptionalId, reject_unexpected_form_fields
 from app.core.templating import render
 from app.dependencies import ClientIp, CorrelationId, DbSession
 from app.models.city import City
@@ -69,9 +70,9 @@ def list_events(
     current_user: ViewEvents,
     db: DbSession,
     q: str = "",
-    city_id: int | None = None,
-    website_id: int | None = None,
-    category_id: int | None = None,
+    city_id: OptionalId = None,
+    website_id: OptionalId = None,
+    category_id: OptionalId = None,
     active: str = "all",
     archived: str = "no",
     review_status: str = "all",
@@ -130,8 +131,26 @@ def list_events(
                 "duplicate_status": duplicate_status,
             },
             "page": page,
+            "per_page": PER_PAGE,
             "total": total,
-            "has_next": page * PER_PAGE < total,
+            # Carries the active filters, so paging a filtered list no longer
+            # drops back to the unfiltered first page.
+            "base_url": (
+                "/admin/events?"
+                + urlencode(
+                    {
+                        "q": q,
+                        "city_id": city_id or "",
+                        "website_id": website_id or "",
+                        "category_id": category_id or "",
+                        "active": active,
+                        "archived": archived,
+                        "review_status": review_status,
+                        "duplicate_status": duplicate_status,
+                    }
+                )
+                + "&"
+            ),
         },
     )
 

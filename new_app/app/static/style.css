@@ -442,30 +442,189 @@ button:hover {
 .admin-nav {
   display: flex;
   align-items: center;
-  gap: var(--space-4);
+  gap: var(--space-2);
   background: var(--surface);
   border-bottom: 1px solid var(--border);
-  padding: var(--space-3) var(--space-5);
+  padding: var(--space-2) var(--space-5);
   flex-wrap: wrap;
 }
 
-.admin-nav a {
+.admin-nav-sections {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.admin-nav-end {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  margin-left: auto;
+}
+
+/* Top-level items: the Dashboard link and each group's trigger share one shape
+   so the row reads as a single bar rather than links plus buttons. */
+.admin-nav-sections > li > a,
+.admin-nav-trigger {
+  display: inline-flex;
+  align-items: center;
+  height: 36px;
+  padding: 0 var(--space-3);
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: none;
+  color: var(--text);
+  font: inherit;
+  font-size: 0.9rem;
+  text-decoration: none;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.admin-nav-sections > li > a:hover,
+.admin-nav-trigger:hover,
+.admin-nav-group:hover > .admin-nav-trigger,
+.admin-nav-group.is-open > .admin-nav-trigger {
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+
+.admin-nav [aria-current="page"] {
+  color: var(--accent);
+  font-weight: 600;
+}
+
+.admin-nav-group {
+  position: relative;
+}
+
+.admin-nav-menu {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  z-index: 40;
+  display: none;
+  min-width: 200px;
+  list-style: none;
+  margin: 0;
+  /* Padding, not margin: the panel needs to touch the trigger so the pointer
+     can travel between them without the menu closing underneath it. */
+  padding: var(--space-2) 0;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-md);
+}
+
+/* :hover drives the pointer, :focus-within the keyboard, so the menus work
+   with no JavaScript at all. .is-open is what the script adds on top. */
+.admin-nav-group:hover > .admin-nav-menu,
+.admin-nav-group:focus-within > .admin-nav-menu,
+.admin-nav-group.is-open > .admin-nav-menu {
+  display: block;
+}
+
+.admin-nav-menu a {
+  display: block;
+  padding: var(--space-2) var(--space-4);
+  color: var(--text);
+  text-decoration: none;
+  font-size: 0.9rem;
+  white-space: nowrap;
+}
+
+.admin-nav-menu a:hover,
+.admin-nav-menu a:focus-visible {
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+
+.admin-nav-end a {
   color: var(--text);
   text-decoration: none;
   font-size: 0.9rem;
 }
 
-.admin-nav a:hover {
+.admin-nav-end a:hover {
   color: var(--accent);
-}
-
-.admin-nav-spacer {
-  flex: 1;
 }
 
 .admin-nav-user {
   font-size: 0.85rem;
   color: var(--muted);
+}
+
+/* Shown only on small screens; see the media query below. */
+.admin-nav-toggle {
+  display: none;
+  height: 36px;
+  padding: 0 var(--space-3);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: none;
+  color: var(--text);
+  font: inherit;
+  font-size: 0.9rem;
+  cursor: pointer;
+}
+
+@media (max-width: 900px) {
+  .admin-nav {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .admin-nav-toggle {
+    display: inline-flex;
+    align-items: center;
+    align-self: flex-start;
+  }
+
+  .admin-nav-sections,
+  .admin-nav-end {
+    display: none;
+  }
+
+  .admin-nav.is-expanded .admin-nav-sections,
+  .admin-nav.is-expanded .admin-nav-end {
+    display: flex;
+    flex-direction: column;
+    align-items: stretch;
+    gap: 0;
+    margin-left: 0;
+    padding-top: var(--space-2);
+  }
+
+  /* No hover on touch: the submenus sit open in the flow, indented, rather
+     than floating over the page. */
+  .admin-nav.is-expanded .admin-nav-menu {
+    position: static;
+    display: block;
+    border: 0;
+    box-shadow: none;
+    padding: 0 0 var(--space-2) var(--space-4);
+    min-width: 0;
+  }
+
+  .admin-nav.is-expanded .admin-nav-trigger {
+    width: 100%;
+    font-weight: 600;
+    color: var(--muted);
+    cursor: default;
+  }
+
+  .admin-nav.is-expanded .admin-nav-trigger:hover {
+    background: none;
+    color: var(--muted);
+  }
+
+  .admin-nav-end {
+    border-top: 1px solid var(--border);
+    margin-top: var(--space-2);
+  }
 }
 
 .admin-body {
@@ -669,6 +828,231 @@ button:hover {
   color: var(--muted);
   text-transform: uppercase;
   letter-spacing: 0.03em;
+}
+
+.metric-note {
+  margin-top: var(--space-1);
+  font-size: 0.78rem;
+  color: var(--muted);
+}
+
+/* Dashboard status groups. Deliberately not tiles: these are counts that are
+   usually zero and are only worth reading when they aren't, so they render as
+   a short list of links rather than a grid of empty boxes. */
+.status-list {
+  list-style: none;
+  margin-bottom: var(--space-5);
+}
+
+.status-list li {
+  padding: var(--space-2) 0;
+  border-bottom: 1px solid var(--border);
+  font-size: 0.95rem;
+}
+
+.status-list li:last-child {
+  border-bottom: none;
+}
+
+.status-list a {
+  color: var(--text);
+  text-decoration: none;
+}
+
+.status-list a:hover {
+  color: var(--accent);
+}
+
+.status-list strong {
+  display: inline-block;
+  min-width: 1.75rem;
+  font-size: 1.05rem;
+}
+
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+/* Collapsed "add a new X" form above a list. */
+.create-panel {
+  margin-bottom: var(--space-5);
+}
+
+.create-panel summary {
+  cursor: pointer;
+  font-weight: 600;
+  padding: var(--space-2) 0;
+}
+
+.create-panel summary:hover {
+  color: var(--accent);
+}
+
+.create-panel .admin-form {
+  margin-top: var(--space-3);
+}
+
+/* Compact action cell: a pencil plus the destructive buttons, on one line. */
+.row-actions {
+  display: flex;
+  gap: var(--space-2);
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.btn-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  color: var(--muted);
+}
+
+.btn-icon:hover {
+  color: var(--accent);
+  border-color: var(--accent);
+}
+
+.category-editing td {
+  background: var(--accent-soft);
+  vertical-align: middle;
+}
+
+.category-editing input {
+  width: 100%;
+  padding: 6px 8px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-sm);
+  font-size: 0.9rem;
+}
+
+.category-editing .input-order {
+  width: 5rem;
+}
+
+/* Multi-field form laid out in columns. Nine stacked full-width inputs is a
+   scroll, not a form — these wrap into as many columns as the width allows. */
+.field-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: var(--space-3) var(--space-4);
+  margin-bottom: var(--space-4);
+}
+
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  min-width: 0;
+}
+
+.field label {
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: var(--muted);
+}
+
+.field input,
+.field select {
+  padding: 7px 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  font-size: 0.9rem;
+  width: 100%;
+}
+
+/* Patterns are long; give them the full row rather than one narrow column. */
+.field-wide {
+  grid-column: 1 / -1;
+}
+
+.field-checkboxes {
+  flex-direction: row;
+  gap: var(--space-5);
+  flex-wrap: wrap;
+  align-items: center;
+}
+
+/* Without this the checkbox and its text are separate flex items and the text
+   wraps to three lines beside a lone box. */
+.field-checkboxes .checkbox-label {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  flex: 0 0 auto;
+  font-weight: 400;
+  font-size: 0.9rem;
+  color: var(--text);
+  white-space: nowrap;
+}
+
+.field-checkboxes input[type="checkbox"] {
+  width: auto;
+  margin: 0;
+}
+
+.input-mono {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 0.85rem;
+}
+
+.form-actions {
+  display: flex;
+  gap: var(--space-2);
+  align-items: center;
+}
+
+/* The editor is a second, full-width row directly under its summary row. */
+.rule-row-editing td {
+  background: var(--accent-soft);
+  border-bottom: none;
+}
+
+.rule-editor-row td {
+  background: var(--accent-soft);
+  padding: var(--space-4);
+}
+
+.permission-details {
+  margin-top: var(--space-2);
+}
+
+.permission-details summary {
+  cursor: pointer;
+  font-size: 0.85rem;
+  color: var(--muted);
+}
+
+.permission-details summary:hover {
+  color: var(--accent);
+}
+
+.permission-list {
+  columns: 2;
+  column-gap: var(--space-5);
+  list-style: none;
+  margin-top: var(--space-2);
+  font-size: 0.85rem;
+  color: var(--muted);
+}
+
+.permission-list li {
+  break-inside: avoid;
+  padding: 1px 0;
+}
+
+@media (max-width: 560px) {
+  .permission-list { columns: 1; }
 }
 
 /* ==========================================================================
@@ -974,6 +1358,90 @@ button:hover {
   margin-bottom: var(--space-6);
   flex-wrap: wrap;
   gap: var(--space-3);
+}
+
+/* "Showing 13–24 of 149" answers "how far in am I" in a way a page number
+   doesn't. On a narrow screen it stacks above the control instead of shrinking. */
+.pagination-range {
+  font-size: var(--font-sm);
+  color: var(--muted);
+}
+
+.pagination-controls {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  flex-wrap: wrap;
+}
+
+/* Numbers and arrows share one square so the row reads as a single control. */
+.pagination-page,
+.pagination-step {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 40px;
+  height: 40px;
+  padding: 0 var(--space-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  color: var(--text);
+  text-decoration: none;
+  font-size: 0.9rem;
+  font-weight: 600;
+  background: var(--surface);
+}
+
+.pagination-page:hover,
+.pagination-step:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+/* Not a link: clicking the page you are on should be impossible, not a no-op. */
+.pagination-page.is-current {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #fff;
+  cursor: default;
+}
+
+.pagination-page.is-current:hover {
+  color: #fff;
+}
+
+/* Disabled rather than removed — if the arrows vanished at the ends, the
+   numbers would slide sideways exactly when you arrive at page 1. */
+.pagination-step.is-disabled {
+  color: var(--border-strong);
+  background: transparent;
+  cursor: default;
+}
+
+.pagination-step.is-disabled:hover {
+  border-color: var(--border);
+  color: var(--border-strong);
+}
+
+.pagination-gap {
+  padding: 0 var(--space-1);
+  color: var(--muted);
+}
+
+@media (max-width: 560px) {
+  .pagination {
+    justify-content: center;
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .pagination-controls {
+    justify-content: center;
+  }
+
+  .pagination-range {
+    text-align: center;
+  }
 }
 
 .pagination-links {

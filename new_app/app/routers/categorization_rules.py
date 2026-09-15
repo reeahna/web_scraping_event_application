@@ -82,13 +82,25 @@ def _validated_fields(
 
 
 @router.get("", response_class=HTMLResponse)
-def list_rules(request: Request, current_user: ManageRules, db: DbSession):
+def list_rules(
+    request: Request,
+    current_user: ManageRules,
+    db: DbSession,
+    edit: int | None = None,
+):
+    """`edit` names the one rule opened for editing, below its own summary row.
+
+    The nine-field form used to render inside every row's Actions cell, which
+    stretched the row to the form's height. An unknown id renders read-only.
+    """
+    rules = db.query(CategorizationRule).order_by(CategorizationRule.name).all()
     return render(
         request,
         "admin/rules/list.html",
         {
             "current_user": current_user,
-            "rules": db.query(CategorizationRule).order_by(CategorizationRule.name).all(),
+            "rules": rules,
+            "editing": next((r for r in rules if r.id == edit), None) if edit is not None else None,
             "categories": (
                 db.query(EventCategory)
                 .filter(EventCategory.is_active.is_(True))

@@ -1,32 +1,87 @@
 {% extends "admin_base.html" %}
+{% from "admin/_macros.html" import status_badge %}
 {% block title %}Event Categories{% endblock %}
 {% block admin_content %}
 <h1>Event Categories</h1>
-<form method="post" action="/admin/event-categories" class="admin-form">
+
+{# Collapsed by default: adding a category is occasional, reading the list is
+   the common case, so the form shouldn't sit open above the data. #}
+<details class="create-panel">
+  <summary>Add a category</summary>
+  <form method="post" action="/admin/event-categories" class="admin-form">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}" />
+    <label for="name">Name</label><input id="name" name="name" required />
+    <label for="description">Description</label><input id="description" name="description" />
+    <label for="display_order">Display order</label><input id="display_order" name="display_order" type="number" value="0" />
+    <button type="submit">Create category</button>
+  </form>
+</details>
+
+{# The edit form lives outside the table and its inputs join it via the HTML5
+   `form` attribute — a <form> cannot wrap a <tr>. Only one row is editable at
+   a time, so one form is enough. #}
+{% if editing %}
+<form id="category-edit-form" method="post" action="/admin/event-categories/{{ editing.id }}">
   <input type="hidden" name="csrf_token" value="{{ csrf_token }}" />
-  <label for="name">Name</label><input id="name" name="name" required />
-  <label for="description">Description</label><input id="description" name="description" />
-  <label for="display_order">Display order</label><input id="display_order" name="display_order" type="number" value="0" />
-  <button type="submit">Create category</button>
 </form>
-{% for category in categories %}
-<section class="metric-tile">
-  <form method="post" action="/admin/event-categories/{{ category.id }}" class="admin-form">
-    <input type="hidden" name="csrf_token" value="{{ csrf_token }}" />
-    <label>Name</label><input name="name" value="{{ category.name }}" required />
-    <label>Description</label><input name="description" value="{{ category.description or '' }}" />
-    <label>Display order</label><input name="display_order" type="number" value="{{ category.display_order }}" />
-    <button type="submit">Save</button>
-  </form>
-  <form method="post" action="/admin/event-categories/{{ category.id }}/status" class="inline-form">
-    <input type="hidden" name="csrf_token" value="{{ csrf_token }}" />
-    <input type="hidden" name="action" value="{{ 'deactivate' if category.is_active else 'activate' }}" />
-    <button type="submit">{{ 'Deactivate' if category.is_active else 'Activate' }}</button>
-  </form>
-  <form method="post" action="/admin/event-categories/{{ category.id }}/delete" class="inline-form">
-    <input type="hidden" name="csrf_token" value="{{ csrf_token }}" />
-    <button type="submit" class="btn-danger">Delete</button>
-  </form>
-</section>
-{% endfor %}
+{% endif %}
+
+{% if categories %}
+<table class="category-table">
+  <thead>
+    <tr>
+      <th scope="col">Order</th>
+      <th scope="col">Name</th>
+      <th scope="col">Description</th>
+      <th scope="col">Status</th>
+      <th scope="col"><span class="visually-hidden">Actions</span></th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for category in categories %}
+    {% if editing and editing.id == category.id %}
+    <tr class="category-editing">
+      <td><input form="category-edit-form" name="display_order" type="number" value="{{ category.display_order }}" class="input-order" aria-label="Display order" /></td>
+      <td><input form="category-edit-form" name="name" value="{{ category.name }}" required aria-label="Name" /></td>
+      <td><input form="category-edit-form" name="description" value="{{ category.description or '' }}" aria-label="Description" /></td>
+      <td>{{ status_badge(category.is_active) }}</td>
+      <td class="row-actions">
+        <button form="category-edit-form" type="submit">Save</button>
+        <a href="/admin/event-categories" class="button-link btn-secondary">Cancel</a>
+      </td>
+    </tr>
+    {% else %}
+    <tr>
+      <td>{{ category.display_order }}</td>
+      <td>{{ category.name }}</td>
+      <td>{{ category.description or "—" }}</td>
+      <td>{{ status_badge(category.is_active) }}</td>
+      <td class="row-actions">
+        <a href="/admin/event-categories?edit={{ category.id }}" class="btn-icon" title="Edit {{ category.name }}" aria-label="Edit {{ category.name }}">
+          <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true">
+            <path d="M12 20h9" />
+            <path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z" />
+          </svg>
+        </a>
+        <form method="post" action="/admin/event-categories/{{ category.id }}/status" class="inline-form">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token }}" />
+          <input type="hidden" name="action" value="{{ 'deactivate' if category.is_active else 'activate' }}" />
+          <button type="submit" class="btn-secondary">{{ 'Deactivate' if category.is_active else 'Activate' }}</button>
+        </form>
+        {# data-confirm, not onsubmit: inline handlers are blocked by the CSP.
+           See app/static/js/admin-confirm.js. #}
+        <form method="post" action="/admin/event-categories/{{ category.id }}/delete" class="inline-form"
+              data-confirm="Permanently delete the category &ldquo;{{ category.name }}&rdquo;? This cannot be undone.">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token }}" />
+          <button type="submit" class="btn-danger">Delete</button>
+        </form>
+      </td>
+    </tr>
+    {% endif %}
+    {% endfor %}
+  </tbody>
+</table>
+{% else %}
+<p class="audit-meta">No categories yet.</p>
+{% endif %}
 {% endblock %}
