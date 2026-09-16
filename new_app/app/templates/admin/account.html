@@ -5,3 +5,8 @@
 {% block admin_content %}
 {% include "_account_content.html" %}
 {% endblock %}
+
+{% block scripts %}
+{{ super() }}
+<script src="/static/js/account-display-name.js" defer></script>
+{% endblock %}

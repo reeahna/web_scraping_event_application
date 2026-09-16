@@ -254,7 +254,7 @@
 <div class="form-actions">
   {% if can_approve %}
   <form method="post" action="/admin/websites/{{ website.id }}/approve-configuration" class="inline-form"
-        onsubmit="return confirm('Approve this configuration for {{ website.name }}? Approval does not activate the website.');">
+        data-confirm="Approve this configuration for {{ website.name }}? Approval does not activate the website.">
     <input type="hidden" name="csrf_token" value="{{ csrf_token }}" />
     <button type="submit">Approve</button>
   </form>

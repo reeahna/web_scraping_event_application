@@ -64,7 +64,7 @@
       <strong>{{ plan.browser_count }}</strong> require browser rendering.
       Existing scheduled times will not be changed.</p>
     <form method="post" action="/admin/scheduler/bulk-import" class="inline-form"
-          onsubmit="this.querySelector('button').disabled = true;">
+          data-disable-on-submit>
       <input type="hidden" name="csrf_token" value="{{ csrf_token }}" />
       <button type="submit" class="wf-primary">Confirm import all</button>
     </form>

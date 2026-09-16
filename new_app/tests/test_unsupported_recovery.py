@@ -535,7 +535,10 @@ def test_pattern_options_cover_the_registry_without_hardcoding():
     options = pattern_options(REGISTRY)
     names = [o["name"] for o in options]
     assert set(names) == set(REGISTRY.names())
-    assert len(names) == 12
+    # No hardcoded total: the line above already pins the options to the
+    # registry, and a literal count made this fail every time a pattern was
+    # added (it broke at 13).
+    assert names
     assert "wordpress_rest" in names
     # Not preselected / not privileged: first by reliability order is the most
     # specific structured pattern, never wordpress_rest by default.

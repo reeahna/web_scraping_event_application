@@ -8,7 +8,7 @@
   <a href="{{ a.url }}" class="wf-{{ a.style }}">{{ a.label }}</a>
   {%- else -%}
   <form method="post" action="{{ a.url }}" class="inline-form"
-        {% if a.confirmation_text %}onsubmit="return confirm('{{ a.confirmation_text }}');"{% endif %}>
+        {% if a.confirmation_text %}data-confirm="{{ a.confirmation_text }}"{% endif %}>
     <input type="hidden" name="csrf_token" value="{{ csrf_token }}" />
     {% if a.status_target %}<input type="hidden" name="to_status" value="{{ a.status_target }}" />{% endif %}
     <button type="submit" class="wf-{{ a.style }}"{% if not a.enabled %} disabled aria-disabled="true"{% endif %}>{{ a.label }}</button>
@@ -70,6 +70,17 @@
   {% if workflow.config_warning %}
   <div class="wf-warn"><strong>Not eligible for approval:</strong> {{ workflow.config_warning }}</div>
   {% endif %}
+  {# Timezone is a property of the website, not of its configuration, so it sits
+     outside the table below. It used to live inside, which hid the DST warning
+     on exactly the sources that have no working configuration yet, i.e. the
+     ones an administrator is in the middle of fixing. #}
+  <table>
+    <tbody>
+      <tr><th>Timezone</th><td>{{ website.timezone_override or "(uses city timezone)" }}
+        {% if timezone_dst_warning %}<br/><span class="badge badge-pending">DST warning</span>
+        <span class="audit-meta">{{ timezone_dst_warning }}</span>{% endif %}</td></tr>
+    </tbody>
+  </table>
   {% if website.configuration or website.approved_pattern %}
   <table>
     <tbody>
@@ -84,8 +95,6 @@
           {% else %}<span class="badge badge-muted">draft</span>{% endif %}</td></tr>
       <tr><th>Source / endpoint</th><td><code>{{ website.configuration.api_endpoint or website.configuration.listing_url or website.event_listing_url or website.base_url }}</code></td></tr>
       {% endif %}
-      <tr><th>Timezone</th><td>{{ website.timezone_override or "(uses city timezone)" }}
-        {% if timezone_dst_warning %}<br/><span class="badge badge-pending">DST</span> <span class="audit-meta">{{ timezone_dst_warning }}</span>{% endif %}</td></tr>
       <tr><th>Execution strategy</th><td>{% if workflow.execution_strategy == "browser" %}<span class="badge badge-pending">Browser</span> <span class="audit-meta">renders the source page in a restricted browser</span>{% else %}HTTP{% endif %}</td></tr>
       <tr><th>Browser required</th><td>{{ "Yes" if workflow.browser_required else "No" }}</td></tr>
       <tr><th>Matching preview</th><td>{{ workflow.preview_status_label }}{% if latest_preview_run %} (used config v{{ latest_preview_run.configuration_version }}){% endif %}</td></tr>
@@ -224,7 +233,7 @@
   {% if can_approve and not website.approved_pattern and not workflow.approval_blockers %}
   <div class="wf-card-cta">
     <form method="post" action="/admin/websites/{{ website.id }}/approve-configuration" class="inline-form"
-          onsubmit="return confirm('Approve the configuration for {{ website.name }}?');">
+          data-confirm="Approve the configuration for {{ website.name }}?">
       <input type="hidden" name="csrf_token" value="{{ csrf_token }}" />
       <button type="submit" class="wf-secondary">Approve configuration</button>
     </form>
@@ -264,7 +273,7 @@
   <div class="wf-card-cta">
     {% if browser_extraction_enabled and can_test and not website_is_archived %}
     <form method="post" action="/admin/websites/{{ website.id }}/browser-retry" class="inline-form"
-          onsubmit="return confirm('Retry detection for {{ website.name }} using the restricted browser?');">
+          data-confirm="Retry detection for {{ website.name }} using the restricted browser?">
       <input type="hidden" name="csrf_token" value="{{ csrf_token }}" />
       <button type="submit" class="wf-secondary">Retry automatic recovery</button>
     </form>
@@ -418,7 +427,7 @@
   {% if can_approve and website.configuration and not website.approved_pattern %}
   <h3>Reject configuration</h3>
   <form method="post" action="/admin/websites/{{ website.id }}/reject-configuration" class="admin-form"
-        onsubmit="return confirm('Reject the proposed configuration for {{ website.name }}?');">
+        data-confirm="Reject the proposed configuration for {{ website.name }}?">
     <input type="hidden" name="csrf_token" value="{{ csrf_token }}" />
     <label for="reject-reason">Reason (required)</label>
     <input type="text" id="reject-reason" name="reason" required maxlength="500" />

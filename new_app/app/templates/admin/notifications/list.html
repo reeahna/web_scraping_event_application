@@ -7,7 +7,7 @@
 
 <form method="get" action="/admin/notifications" class="filter-bar">
   <label class="checkbox-label">
-    <input type="checkbox" name="unread_only" value="true" {% if unread_only %}checked{% endif %} onchange="this.form.submit()" />
+    <input type="checkbox" name="unread_only" value="true" {% if unread_only %}checked{% endif %} data-submit-on-change />
     Unread only
   </label>
 </form>

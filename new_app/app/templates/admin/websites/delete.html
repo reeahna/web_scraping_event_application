@@ -28,7 +28,7 @@
 <p class="impact-ok">No unarchived events remain — this website is eligible for permanent deletion.</p>
 
 <form method="post" action="/admin/websites/{{ website.id }}/delete" class="admin-form"
-      onsubmit="return confirm('This permanently deletes {{ website.name }} and cannot be undone. Continue?');">
+      data-confirm="This permanently deletes {{ website.name }} and cannot be undone. Continue?">
   <input type="hidden" name="csrf_token" value="{{ csrf_token }}" />
   <label for="confirm_name">Type the website's name (<code>{{ website.name }}</code>) to confirm permanent deletion</label>
   <input type="text" id="confirm_name" name="confirm_name" required autocomplete="off" />

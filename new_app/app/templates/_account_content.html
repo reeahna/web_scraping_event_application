@@ -70,20 +70,3 @@
   </ul>
 </div>
 
-<script>
-  (() => {
-    const editRequest = document.getElementById("display-name-edit-request");
-    const readOnlyView = document.getElementById("display-name-readonly");
-    const editForm = document.getElementById("display-name-edit-form");
-    const displayNameInput = document.getElementById("display_name");
-
-    if (!editRequest || !readOnlyView || !editForm || !displayNameInput) return;
-
-    editRequest.addEventListener("submit", (event) => {
-      event.preventDefault();
-      readOnlyView.hidden = true;
-      editForm.hidden = false;
-      displayNameInput.focus();
-    });
-  })();
-</script>

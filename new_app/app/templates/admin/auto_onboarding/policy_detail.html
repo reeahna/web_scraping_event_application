@@ -40,7 +40,7 @@
   </form>
   {% if not policy.is_global_default and policy.active %}
   <form method="post" action="/admin/settings/onboarding-policies/{{ policy.id }}/global-default" class="inline-form"
-        onsubmit="return confirm('Make this the global default policy? The current default will be demoted.');">
+        data-confirm="Make this the global default policy? The current default will be demoted.">
     <input type="hidden" name="csrf_token" value="{{ csrf_token }}" />
     <button type="submit" class="btn-secondary">Make global default</button>
   </form>
