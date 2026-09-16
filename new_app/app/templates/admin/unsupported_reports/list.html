@@ -1,5 +1,5 @@
 {% extends "admin_base.html" %}
-{% from "admin/_macros.html" import pagination %}
+{% from "admin/_macros.html" import pagination, report_status_badge %}
 
 {% block title %}Unsupported-site reports{% endblock %}
 
@@ -10,7 +10,7 @@
   <select name="status">
     <option value="">All statuses</option>
     {% for st in all_statuses %}
-    <option value="{{ st }}" {% if status == st %}selected{% endif %}>{{ st }}</option>
+    <option value="{{ st }}" {% if status == st %}selected{% endif %}>{{ st | report_status_label }}</option>
     {% endfor %}
   </select>
   <select name="city_id">
@@ -37,7 +37,7 @@
     <tr>
       <td>{{ report.created_at }}</td>
       <td><a href="/admin/websites/{{ report.website_id }}">{{ report.website.name }}</a></td>
-      <td>{{ report.status }}</td>
+      <td>{{ report_status_badge(report.status) }}</td>
       <td>{{ report.http_status or "—" }}</td>
       <td>{{ "Yes" if report.browser_required else "No" }}</td>
       <td>{{ report.occurrence_count }}</td>

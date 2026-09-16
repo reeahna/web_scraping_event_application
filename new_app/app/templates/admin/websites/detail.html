@@ -419,7 +419,7 @@
   <h3>Unsupported-site reports</h3>
   <ul class="audit-meta">
     {% for report in unsupported_reports %}
-    <li><a href="/admin/unsupported-reports/{{ report.id }}">Report #{{ report.id }}</a> — {{ report.status }}, {{ report.occurrence_count }} occurrence(s), {{ report.failure_reason or "—" }}</li>
+    <li><a href="/admin/unsupported-reports/{{ report.id }}">Report #{{ report.id }}</a> — {{ report.status | report_status_label }}, {{ report.occurrence_count }} occurrence(s), {{ report.failure_reason or "—" }}</li>
     {% endfor %}
   </ul>
   {% endif %}

@@ -10,6 +10,7 @@ from fastapi.templating import Jinja2Templates
 from app.core.csrf import get_or_create_csrf_token, set_csrf_cookie
 from app.core.formatting import human_date, human_date_long, human_time
 from app.core.onboarding import onboarding_label
+from app.core.report_status import report_status_label
 from app.services.quality_presentation import format_percent, quality_view
 from app.services.schedule_admin import format_admin_datetime
 
@@ -50,7 +51,23 @@ templates.env.globals["current_year"] = lambda: datetime.now(UTC).year
 templates.env.filters["onboarding_label"] = onboarding_label
 # Registered globally so no template has to render a naive UTC string with
 # microseconds; several were doing exactly that.
-templates.env.filters["admin_datetime"] = format_admin_datetime
+def _admin_datetime(value: Any) -> str:
+    """Template-safe wrapper around format_admin_datetime.
+
+    Several places hold a timestamp that came back out of a JSON column, where
+    it is a string rather than a datetime. Passing one of those to the formatter
+    raised AttributeError and took the whole page down with a 500, so anything
+    that is not a datetime is passed through as-is.
+    """
+    if value is None:
+        return "—"
+    if not isinstance(value, datetime):
+        return str(value)
+    return format_admin_datetime(value)
+
+
+templates.env.filters["admin_datetime"] = _admin_datetime
+templates.env.filters["report_status_label"] = report_status_label
 
 
 def _category_photo(event: Any):

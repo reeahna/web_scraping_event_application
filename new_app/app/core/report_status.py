@@ -39,3 +39,23 @@ ALLOWED_REPORT_TRANSITIONS: dict[str, frozenset[str]] = {
 
 def can_transition_report(current: str, target: str) -> bool:
     return target in ALLOWED_REPORT_TRANSITIONS.get(current, frozenset())
+
+
+# Written labels. The state names above are storage values; they were rendered
+# straight into the admin, so an operator read "waiting_for_browser_support"
+# in the status column, the filter dropdown and the transition buttons.
+REPORT_STATUS_LABELS: dict[str, str] = {
+    OPEN: "Open",
+    INVESTIGATING: "Investigating",
+    WAITING_FOR_BROWSER_SUPPORT: "Waiting for browser support",
+    CONFIGURATION_CREATED: "Configuration created",
+    RESOLVED: "Resolved",
+    DISMISSED: "Dismissed",
+}
+
+
+def report_status_label(status: str | None) -> str:
+    """Fall back to a de-underscored form so an unknown state stays readable."""
+    if not status:
+        return "—"
+    return REPORT_STATUS_LABELS.get(status, status.replace("_", " ").capitalize())

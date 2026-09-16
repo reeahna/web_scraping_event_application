@@ -1,4 +1,5 @@
 {% extends "admin_base.html" %}
+{% from "admin/_macros.html" import report_status_badge %}
 
 {% block title %}Report #{{ report.id }}{% endblock %}
 
@@ -9,7 +10,7 @@
 
 <table>
   <tbody>
-    <tr><th>Status</th><td>{{ report.status }}</td></tr>
+    <tr><th>Status</th><td>{{ report_status_badge(report.status) }}</td></tr>
     <tr><th>Submitted URL</th><td><code>{{ report.submitted_url }}</code></td></tr>
     <tr><th>Final URL</th><td><code>{{ report.final_url or "—" }}</code></td></tr>
     <tr><th>HTTP status</th><td>{{ report.http_status or "—" }}</td></tr>
@@ -142,7 +143,7 @@
   <form method="post" action="/admin/unsupported-reports/{{ report.id }}/status" class="inline-form">
     <input type="hidden" name="csrf_token" value="{{ csrf_token }}" />
     <input type="hidden" name="target_status" value="{{ target }}" />
-    <button type="submit" class="{{ 'btn-danger' if target == 'dismissed' else 'btn-secondary' }}">Move to {{ target }}</button>
+    <button type="submit" class="{{ 'btn-danger' if target == 'dismissed' else 'btn-secondary' }}">Move to {{ target | report_status_label | lower }}</button>
   </form>
   {% endfor %}
 </div>

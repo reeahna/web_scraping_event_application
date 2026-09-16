@@ -85,6 +85,11 @@ def report_detail(report_id: int, request: Request, current_user: ViewReports, d
             "report": report,
             "next_statuses": sorted(ALLOWED_REPORT_TRANSITIONS.get(report.status, frozenset())),
             "assignable_users": users_with_permission(db, "reports.manage"),
+            # The list route passed this and the detail route did not, so the
+            # template's `{% if can_manage %}` was always falsy here and the
+            # notes, assignment and status-change controls were invisible to
+            # everyone, including a super administrator.
+            "can_manage": user_has_permission(db, current_user, "reports.manage"),
         },
     )
 
