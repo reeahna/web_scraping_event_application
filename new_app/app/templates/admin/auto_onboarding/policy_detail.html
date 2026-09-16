@@ -135,23 +135,46 @@
   <div class="form-actions"><button type="submit">Save role restrictions</button></div>
 </form>
 
-<h2>Recent decisions</h2>
-{% if decisions %}
+{# One row macro for both tables below, so the collapsed half cannot drift
+   from the visible half. #}
+{% macro decision_rows(rows) %}
+  {% for decision in rows %}
+  <tr>
+    <td>{{ decision.created_at | admin_datetime }}</td>
+    <td><a href="/admin/websites/{{ decision.website_id }}">#{{ decision.website_id }}</a></td>
+    <td>v{{ decision.policy_version }}</td>
+    <td class="audit-meta">{{ decision.final_decision.replace("_", " ") }}</td>
+    <td>{{ outcome_badge(effective[decision.id]) }}</td>
+    <td><a href="/admin/onboarding/decisions/{{ decision.id }}">Explain</a></td>
+  </tr>
+  {% endfor %}
+{% endmacro %}
+
+{% macro decision_table(rows) %}
+<div class="table-scroll">
 <table>
   <thead><tr><th>When</th><th>Website</th><th>Policy version</th><th>Evaluation</th><th>Outcome</th><th></th></tr></thead>
-  <tbody>
-    {% for decision in decisions %}
-    <tr>
-      <td>{{ decision.created_at | admin_datetime }}</td>
-      <td><a href="/admin/websites/{{ decision.website_id }}">#{{ decision.website_id }}</a></td>
-      <td>v{{ decision.policy_version }}</td>
-      <td class="audit-meta">{{ decision.final_decision.replace("_", " ") }}</td>
-      <td>{{ outcome_badge(effective[decision.id]) }}</td>
-      <td><a href="/admin/onboarding/decisions/{{ decision.id }}">Explain</a></td>
-    </tr>
-    {% endfor %}
-  </tbody>
+  <tbody>{{ decision_rows(rows) }}</tbody>
 </table>
+</div>
+{% endmacro %}
+
+<h2>Recent decisions</h2>
+{% if decisions %}
+{{ decision_table(decisions) }}
+{% if older_decisions %}
+{# The rest stay on this page, collapsed, rather than pushing everything below
+   them out of reach on a policy that has decided a lot. #}
+<details class="policy-section">
+  <summary><h2>{{ older_decisions | length }} older decision{{ "s" if older_decisions | length != 1 }}</h2></summary>
+  {{ decision_table(older_decisions) }}
+</details>
+{% endif %}
+{% if decision_count > decisions | length + older_decisions | length %}
+<p class="audit-meta">
+  Showing the {{ decisions | length + older_decisions | length }} most recent of {{ decision_count }}.
+</p>
+{% endif %}
 {% else %}
 <p class="audit-meta">No decisions have been made under this policy yet.</p>
 {% endif %}

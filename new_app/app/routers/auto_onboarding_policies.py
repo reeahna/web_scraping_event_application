@@ -53,6 +53,11 @@ router = APIRouter(prefix="/admin/settings/onboarding-policies", tags=["admin-au
 ManageSettings = Annotated[User, Depends(require_permission("settings.manage"))]
 ViewSites = Annotated[User, Depends(require_permission("sites.view"))]
 
+# The policy page lists this many decisions outright; any beyond it go in a
+# collapsed block on the same page, so a busy policy does not push the rest
+# of the page out of reach.
+DECISIONS_SHOWN = 5
+
 # Written labels. Without these the form rendered `field.replace("_", " ")`,
 # so an administrator read "minimum start date parse success" and had to infer
 # what it measured. The column name stays the form field name; only the visible
@@ -315,7 +320,10 @@ def policy_detail(
             request,
             current_user,
             policy=policy,
-            decisions=decisions,
+            # Split here rather than in the template: two lists read better than
+            # a template doing arithmetic on slice offsets.
+            decisions=decisions[:DECISIONS_SHOWN],
+            older_decisions=decisions[DECISIONS_SHOWN:],
             effective={d.id: effective_decision(d) for d in decisions},
             decision_count=count_decisions_for_policy(db, policy.id),
         ),

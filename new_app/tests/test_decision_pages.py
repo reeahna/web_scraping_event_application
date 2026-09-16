@@ -114,3 +114,63 @@ def test_policy_page_uses_the_same_outcome_badge(client, decision):
     response = client.get(f"/admin/settings/onboarding-policies/{decision.policy_id}")
     assert response.status_code == 200
     assert "badge-danger" in response.text
+
+
+# --- the policy page's decision list ----------------------------------------
+
+
+@pytest.fixture
+def policy_with_decisions(db_session, make_city, make_website, make_super_admin, login):
+    """A policy with more decisions than the page lists outright."""
+    make_super_admin(email="many@example.com", password="dec-pass-1234")
+    city = make_city(name="Many City", slug="many-city")
+    db_session.commit()
+    policy = db_session.query(AutoOnboardingPolicy).first()
+    for index in range(12):
+        website = make_website(city, name=f"Many {index}", base_url=f"https://m{index}.example.org")
+        db_session.commit()
+        db_session.add(
+            AutoOnboardingDecision(
+                website_id=website.id,
+                policy_id=policy.id,
+                policy_version=policy.version,
+                decision_kind="initial",
+                final_decision="not_eligible",
+                eligible_for_automatic_approval=False,
+                eligible_for_automatic_activation=False,
+                activation_policy_enabled=False,
+                system_actor_type="system",
+            )
+        )
+    db_session.commit()
+    login("many@example.com", "dec-pass-1234")
+    return policy
+
+
+def test_only_a_few_decisions_are_listed_outright(client, policy_with_decisions):
+    from app.routers.auto_onboarding_policies import DECISIONS_SHOWN
+
+    html = client.get(f"/admin/settings/onboarding-policies/{policy_with_decisions.id}").text
+    visible, _, collapsed = html.partition("older decision")
+    assert visible.count("/admin/onboarding/decisions/") == DECISIONS_SHOWN
+
+
+def test_the_rest_stay_on_the_page_behind_a_disclosure(client, policy_with_decisions):
+    """Collapsed, not on another page: the reader keeps their place."""
+    html = client.get(f"/admin/settings/onboarding-policies/{policy_with_decisions.id}").text
+    assert "7 older decisions" in html
+    # All twelve are present in the markup, so nothing needs a second request.
+    assert html.count("/admin/onboarding/decisions/") == 12
+
+
+def test_no_disclosure_when_everything_fits(client, decision):
+    html = client.get(f"/admin/settings/onboarding-policies/{decision.policy_id}").text
+    assert "older decision" not in html
+    assert "Recent decisions" in html
+
+
+def test_both_tables_render_the_same_columns(client, policy_with_decisions):
+    """The collapsed half is built from the same macro as the visible half."""
+    html = client.get(f"/admin/settings/onboarding-policies/{policy_with_decisions.id}").text
+    assert html.count("<th>Policy version</th>") == 2
+    assert html.count("<th>Outcome</th>") == 2
