@@ -1,4 +1,5 @@
 {% extends "admin_base.html" %}
+{% from "admin/auto_onboarding/_decision_macros.html" import outcome_badge %}
 
 {% block title %}Decision history — {{ website.name }}{% endblock %}
 
@@ -25,30 +26,36 @@
 {% endif %}
 
 {% if decisions %}
+{# Eight columns of mostly-dashes became five. Evaluation and outcome differ
+   only when an action ran afterwards, so the evaluation sits under the outcome
+   rather than taking a column of its own, and config version and re-evaluates
+   ride along with the entries they describe. #}
+<div class="table-scroll">
 <table>
   <thead>
-    <tr><th>When</th><th>Kind</th><th>Policy</th><th>Evaluation</th><th>Outcome</th>
-      <th>Config version</th><th>Re-evaluates</th><th></th></tr>
+    <tr><th>When</th><th>Outcome</th><th>Policy</th><th>Configuration</th><th></th></tr>
   </thead>
   <tbody>
     {% for decision in decisions %}
     <tr>
-      <td>{{ decision.created_at }}</td>
-      <td>{{ decision.decision_kind }}</td>
+      <td>{{ decision.created_at | admin_datetime }}<br />
+        <span class="audit-meta">{{ decision.decision_kind | replace("_", " ") }}</span></td>
+      <td>{{ outcome_badge(effective[decision.id]) }}
+        {% if effective[decision.id] != decision.final_decision %}<br />
+        <span class="audit-meta">evaluated {{ decision.final_decision | replace("_", " ") }}</span>{% endif %}</td>
       <td>{% if decision.policy %}
         <a href="/admin/settings/onboarding-policies/{{ decision.policy_id }}">{{ decision.policy.name }}</a>
-        v{{ decision.policy_version }}{% else %}none{% endif %}</td>
-      <td>{{ decision.final_decision.replace("_", " ") }}</td>
-      <td><strong>{{ effective[decision.id].replace("_", " ") }}</strong></td>
-      <td>{{ decision.configuration_version or "—" }}</td>
-      <td>{% if decision.reevaluates_decision_id %}
-        <a href="/admin/onboarding/decisions/{{ decision.reevaluates_decision_id }}">#{{ decision.reevaluates_decision_id }}</a>
-        {% else %}—{% endif %}</td>
+        <span class="audit-meta">v{{ decision.policy_version }}</span>{% else %}<span class="audit-meta">none</span>{% endif %}</td>
+      <td>{% if decision.configuration_version %}v{{ decision.configuration_version }}{% else %}—{% endif %}
+        {% if decision.reevaluates_decision_id %}<br />
+        <span class="audit-meta">re-evaluates
+          <a href="/admin/onboarding/decisions/{{ decision.reevaluates_decision_id }}">#{{ decision.reevaluates_decision_id }}</a></span>{% endif %}</td>
       <td><a href="/admin/onboarding/decisions/{{ decision.id }}">Explain</a></td>
     </tr>
     {% endfor %}
   </tbody>
 </table>
+</div>
 {% else %}
 <p class="audit-meta">No automatic-onboarding decisions have been recorded for this website.</p>
 {% endif %}

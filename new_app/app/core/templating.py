@@ -11,6 +11,7 @@ from app.core.csrf import get_or_create_csrf_token, set_csrf_cookie
 from app.core.formatting import human_date, human_date_long, human_time
 from app.core.onboarding import onboarding_label
 from app.services.quality_presentation import format_percent, quality_view
+from app.services.schedule_admin import format_admin_datetime
 
 TEMPLATES_DIR = Path(__file__).resolve().parent.parent / "templates"
 templates = Jinja2Templates(directory=str(TEMPLATES_DIR))
@@ -47,6 +48,9 @@ def _unread_notification_count(user_id: int) -> int:
 templates.env.globals["unread_notification_count"] = _unread_notification_count
 templates.env.globals["current_year"] = lambda: datetime.now(UTC).year
 templates.env.filters["onboarding_label"] = onboarding_label
+# Registered globally so no template has to render a naive UTC string with
+# microseconds; several were doing exactly that.
+templates.env.filters["admin_datetime"] = format_admin_datetime
 
 
 def _category_photo(event: Any):

@@ -940,6 +940,68 @@ button:hover {
   width: 5rem;
 }
 
+/* The verdict on a decision page. This is the answer the reader came for, so
+   it leads the page rather than sitting as one row of a long table. */
+.verdict {
+  border: 1px solid var(--border);
+  border-left: 4px solid var(--border-strong);
+  border-radius: var(--radius-md);
+  background: var(--surface);
+  padding: var(--space-4);
+  margin-bottom: var(--space-5);
+}
+
+.verdict-good { border-left-color: var(--success); }
+.verdict-bad { border-left-color: var(--danger); }
+
+.verdict-line {
+  margin-bottom: var(--space-2);
+  font-size: 1.05rem;
+}
+
+.verdict p {
+  margin-bottom: var(--space-2);
+}
+
+.verdict p:last-child {
+  margin-bottom: 0;
+}
+
+/* Failed rules are the actionable half; as plain bullets they looked identical
+   to the rules that passed. */
+.reason-list {
+  list-style: none;
+  margin: var(--space-2) 0;
+}
+
+.reason-list li {
+  position: relative;
+  padding: 3px 0 3px var(--space-5);
+  font-size: 0.92rem;
+}
+
+.reason-list li::before {
+  position: absolute;
+  left: 0;
+  font-weight: 700;
+}
+
+.reason-list-failed li::before {
+  content: "✕";
+  color: var(--danger);
+}
+
+.reason-list-passed li::before {
+  content: "✓";
+  color: var(--success);
+}
+
+/* Wide tables scroll inside their own box rather than widening the page. */
+.table-scroll {
+  overflow-x: auto;
+  margin-bottom: var(--space-5);
+}
+
 /* Read-only label/value pairs in columns. Replaces a key/value <table> whose
    narrow first column wrapped every label onto two lines. */
 .summary-grid {

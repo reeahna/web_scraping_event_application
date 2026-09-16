@@ -331,7 +331,10 @@ def test_the_decision_pages_render(admin_client, db_session, policy, make_city, 
     detail = admin_client.get(f"/admin/onboarding/decisions/{decision.id}")
     assert detail.status_code == 200
     assert "no automatic-onboarding policy applies" in detail.text
-    assert "Rules that failed" in detail.text
+    # The failed rules now lead the page inside the verdict block rather than
+    # sitting under a "Rules that failed" heading further down.
+    assert "verdict-bad" in detail.text
+    assert "reason-list-failed" in detail.text
     assert "Manual approval remains available" in detail.text
 
     history = admin_client.get(f"/admin/websites/{website.id}/decisions")

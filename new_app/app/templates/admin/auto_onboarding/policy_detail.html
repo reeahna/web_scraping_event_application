@@ -1,4 +1,5 @@
 {% extends "admin_base.html" %}
+{% from "admin/auto_onboarding/_decision_macros.html" import outcome_badge %}
 
 {% block title %}{{ policy.name }}{% endblock %}
 
@@ -141,11 +142,11 @@
   <tbody>
     {% for decision in decisions %}
     <tr>
-      <td>{{ decision.created_at }}</td>
+      <td>{{ decision.created_at | admin_datetime }}</td>
       <td><a href="/admin/websites/{{ decision.website_id }}">#{{ decision.website_id }}</a></td>
       <td>v{{ decision.policy_version }}</td>
-      <td>{{ decision.final_decision.replace("_", " ") }}</td>
-      <td>{{ effective[decision.id].replace("_", " ") }}</td>
+      <td class="audit-meta">{{ decision.final_decision.replace("_", " ") }}</td>
+      <td>{{ outcome_badge(effective[decision.id]) }}</td>
       <td><a href="/admin/onboarding/decisions/{{ decision.id }}">Explain</a></td>
     </tr>
     {% endfor %}

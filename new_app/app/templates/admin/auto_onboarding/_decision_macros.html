@@ -1,0 +1,52 @@
+{#
+  Shared presentation for automatic-onboarding decisions, used by the decision
+  detail page, a website's decision history, and the policy detail page. Kept in
+  one file so the three cannot disagree about what an outcome looks like.
+#}
+
+{# Outcome colour. "approved"/"activated" are the only outcomes where the system
+   acted; everything else either stopped short or failed, and a reader scanning a
+   list needs to tell those apart at a glance rather than by reading. #}
+{% macro outcome_badge(outcome) %}
+  {%- set text = (outcome or "unknown") | replace("_", " ") -%}
+  {%- if outcome in ("approved", "activated", "approved_and_activated") -%}
+    <span class="badge badge-active">{{ text }}</span>
+  {%- elif outcome in ("not_eligible", "failed", "error") -%}
+    <span class="badge badge-danger">{{ text }}</span>
+  {%- elif outcome in ("eligible", "eligible_for_approval") -%}
+    <span class="badge badge-pending">{{ text }}</span>
+  {%- else -%}
+    <span class="badge badge-muted">{{ text }}</span>
+  {%- endif -%}
+{% endmacro %}
+
+{% macro pass_fail_badge(passed) %}
+  {%- if passed -%}<span class="badge badge-active">Pass</span>
+  {%- else -%}<span class="badge badge-danger">Fail</span>{%- endif -%}
+{% endmacro %}
+
+{#
+  Whether an observed metric satisfies its threshold. Returns none when the
+  policy set no bound for it, so the table can say so rather than implying a
+  pass. The snapshots are plain numbers recorded at decision time; this only
+  restates the comparison the engine already made.
+#}
+{% macro metric_status(key, value, thresholds) %}
+  {%- set minimum = thresholds.get("minimum_" ~ key) -%}
+  {%- set maximum = thresholds.get("maximum_" ~ key) -%}
+  {%- if minimum is not none -%}
+    {{ pass_fail_badge(value >= minimum) }}
+  {%- elif maximum is not none -%}
+    {{ pass_fail_badge(value <= maximum) }}
+  {%- else -%}
+    <span class="audit-meta">not bounded</span>
+  {%- endif -%}
+{% endmacro %}
+
+{% macro threshold_text(key, thresholds) %}
+  {%- set minimum = thresholds.get("minimum_" ~ key) -%}
+  {%- set maximum = thresholds.get("maximum_" ~ key) -%}
+  {%- if minimum is not none -%}at least {{ minimum }}
+  {%- elif maximum is not none -%}at most {{ maximum }}
+  {%- else -%}—{%- endif -%}
+{% endmacro %}
