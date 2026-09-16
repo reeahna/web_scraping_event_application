@@ -69,7 +69,7 @@
           <button type="submit" class="btn-secondary">{{ 'Deactivate' if category.is_active else 'Activate' }}</button>
         </form>
         {# data-confirm, not onsubmit: inline handlers are blocked by the CSP.
-           See app/static/js/admin-confirm.js. #}
+           See app/static/js/admin-forms.js. #}
         <form method="post" action="/admin/event-categories/{{ category.id }}/delete" class="inline-form"
               data-confirm="Permanently delete the category &ldquo;{{ category.name }}&rdquo;? This cannot be undone.">
           <input type="hidden" name="csrf_token" value="{{ csrf_token }}" />
