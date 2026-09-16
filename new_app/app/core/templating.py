@@ -61,6 +61,14 @@ def _admin_datetime(value: Any) -> str:
     """
     if value is None:
         return "—"
+    if isinstance(value, str):
+        # Values that came back out of a JSON column, or through a service that
+        # already called .isoformat(), arrive as strings. Parse what we can and
+        # pass anything else through rather than raising and 500-ing the page.
+        try:
+            value = datetime.fromisoformat(value)
+        except ValueError:
+            return value
     if not isinstance(value, datetime):
         return str(value)
     return format_admin_datetime(value)

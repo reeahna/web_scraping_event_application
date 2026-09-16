@@ -86,8 +86,11 @@ def test_website_detail_labels_its_linked_reports(client, report):
 
 def test_admin_datetime_survives_a_string_from_a_json_column():
     """browser_recovery is a JSON column, so its timestamps are strings.
-    Passing one to the formatter used to raise and 500 the whole page."""
-    assert _admin_datetime("2026-09-16T19:05:05") == "2026-09-16T19:05:05"
+    Passing one to the formatter used to raise and 500 the whole page. An ISO
+    string is now parsed and formatted rather than merely passed through; see
+    tests/test_reports_dashboard.py for the full contract."""
+    assert " at " in _admin_datetime("2026-09-16T19:05:05")
+    assert _admin_datetime("never ran") == "never ran"
     assert _admin_datetime(None) == "—"
     assert " at " in _admin_datetime(datetime(2026, 9, 16, 19, 5, tzinfo=UTC))
 

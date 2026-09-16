@@ -940,6 +940,17 @@ button:hover {
   width: 5rem;
 }
 
+/* A zero on the operational dashboard is worth showing but not worth reading
+   first; dimming it lets the non-zero counts carry the eye. */
+.metric-card.is-zero .metric-value {
+  color: var(--border-strong);
+  font-weight: 600;
+}
+
+.metric-card.is-zero .metric-label {
+  color: var(--border-strong);
+}
+
 /* The verdict on a decision page. This is the answer the reader came for, so
    it leads the page rather than sitting as one row of a long table. */
 .verdict {

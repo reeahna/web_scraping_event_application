@@ -2,9 +2,17 @@
 
 {% block title %}Operational dashboard — Admin{% endblock %}
 
+{#
+  Keys the recent tables should format rather than print verbatim. The macro
+  renders whatever columns it is given, so without these an ISO timestamp with
+  microseconds and a raw state name both went straight to the page.
+#}
+{% set DATE_KEYS = ["created_at", "started_at", "completed_at", "attempted_at"] %}
+{% set STATUS_KEYS = ["status", "final_decision", "origin", "run_type", "stage", "severity", "type"] %}
+
 {% block admin_content %}
 <h1>Operational dashboard</h1>
-<p class="audit-meta">Generated {{ report.generated_at }}. Counts and recent activity only — no secrets or raw source content are shown.</p>
+<p class="audit-meta">Generated {{ report.generated_at | admin_datetime }}. Counts and recent activity only — no secrets or raw source content are shown.</p>
 
 <section aria-label="Key metrics">
   <div class="metric-grid">
@@ -23,8 +31,15 @@
       ("recurrence_truncations", "Recurrence truncations"),
       ("geography_exclusions", "Geography exclusions")
     ] %}
-    <div class="metric-card">
-      <span class="metric-value">{{ report.counts.get(key, 0) }}</span>
+    {#
+      A zero is dimmed rather than hidden. On the main dashboard an empty state
+      was pure noise, but this page exists to be monitored: "0 failing sources"
+      is a thing the reader came to confirm. Dimming lets the numbers that are
+      not zero carry the eye without removing the reassurance.
+    #}
+    {% set value = report.counts.get(key, 0) %}
+    <div class="metric-card{{ ' is-zero' if not value }}">
+      <span class="metric-value">{{ value }}</span>
       <span class="metric-label">{{ label }}</span>
     </div>
     {% endfor %}
@@ -34,24 +49,37 @@
 <section aria-label="Scheduler and AI health">
   <h2>Scheduler &amp; workers</h2>
   <table><tbody>
-    <tr><th>Leader</th><td>{{ report.scheduler.leader_holder or '—' }} ({{ 'fresh' if report.scheduler.leader_is_fresh else 'stale' }})</td></tr>
+    <tr><th>Leader</th>
+      <td>{% if not report.scheduler.leader_holder %}<span class="badge badge-inactive">Not detected</span>
+        {% elif report.scheduler.leader_is_fresh %}<span class="badge badge-active">Running</span>
+          <span class="audit-meta">{{ report.scheduler.leader_holder }}</span>
+        {% else %}<span class="badge badge-danger">Stale</span>
+          <span class="audit-meta">{{ report.scheduler.leader_holder }}</span>{% endif %}</td></tr>
     <tr><th>Scheduled / running / paused</th><td>{{ report.scheduler.scheduled_count }} / {{ report.scheduler.running_count }} / {{ report.scheduler.paused_count }}</td></tr>
-    <tr><th>AI provider</th><td>{{ report.ai_usage.provider }} — {{ 'enabled' if report.ai_usage.enabled else 'disabled' }}{% if report.ai_usage.enabled %}, {{ 'healthy' if report.ai_usage.healthy else 'unhealthy' }}, {{ report.ai_usage.daily_used }} today / {{ report.ai_usage.monthly_used }} this month{% endif %}</td></tr>
+    <tr><th>AI provider</th>
+      <td>{% if not report.ai_usage.enabled %}<span class="badge badge-inactive">Disabled</span>
+        {% elif report.ai_usage.healthy %}<span class="badge badge-active">Healthy</span>
+        {% else %}<span class="badge badge-danger">Unhealthy</span>{% endif %}
+        {# The provider name is itself "disabled" when AI is off, so naming it
+           alongside the badge read "Disabled disabled". #}
+        {% if report.ai_usage.enabled %}
+        <span class="audit-meta">{{ report.ai_usage.provider }} · {{ report.ai_usage.daily_used }} today, {{ report.ai_usage.monthly_used }} this month</span>
+        {% endif %}</td></tr>
   </tbody></table>
 </section>
 
 <section aria-label="Sources by status">
   <h2>Sources by status</h2>
   {% if report.sources_by_status %}
-  <ul class="inline-stats">{% for status, count in report.sources_by_status.items() %}<li>{{ status }}: <strong>{{ count }}</strong></li>{% endfor %}</ul>
+  <ul class="inline-stats">{% for status, count in report.sources_by_status.items() %}<li>{{ status | onboarding_label }}: <strong>{{ count }}</strong></li>{% endfor %}</ul>
   {% else %}<p class="empty-inline">No sources yet.</p>{% endif %}
   <h2>Onboarding queue</h2>
   {% if report.onboarding_queue %}
-  <ul class="inline-stats">{% for status, count in report.onboarding_queue.items() %}<li>{{ status }}: <strong>{{ count }}</strong></li>{% endfor %}</ul>
+  <ul class="inline-stats">{% for status, count in report.onboarding_queue.items() %}<li>{{ status | replace("_", " ") | capitalize }}: <strong>{{ count }}</strong></li>{% endfor %}</ul>
   {% else %}<p class="empty-inline">The onboarding queue is empty.</p>{% endif %}
   <h2>Geocoding</h2>
   {% if report.geocoding %}
-  <ul class="inline-stats">{% for status, count in report.geocoding.items() %}<li>{{ status }}: <strong>{{ count }}</strong></li>{% endfor %}</ul>
+  <ul class="inline-stats">{% for status, count in report.geocoding.items() %}<li>{{ status | replace("_", " ") | capitalize }}: <strong>{{ count }}</strong></li>{% endfor %}</ul>
   {% else %}<p class="empty-inline">No geocoding activity.</p>{% endif %}
 </section>
 
@@ -63,7 +91,17 @@
     <thead><tr>{% for _, header in columns %}<th>{{ header }}</th>{% endfor %}</tr></thead>
     <tbody>
       {% for row in rows %}
-      <tr>{% for keyname, _ in columns %}<td>{{ row.get(keyname) if row.get(keyname) is not none else '—' }}</td>{% endfor %}</tr>
+      <tr>
+        {%- for keyname, _ in columns -%}
+        {%- set value = row.get(keyname) -%}
+        <td{% if keyname in DATE_KEYS %} class="audit-meta"{% endif %}>
+          {%- if value is none %}—
+          {%- elif keyname in DATE_KEYS %}{{ value | admin_datetime }}
+          {%- elif keyname in STATUS_KEYS %}{{ value | replace("_", " ") }}
+          {%- else %}{{ value }}{% endif -%}
+        </td>
+        {%- endfor -%}
+      </tr>
       {% endfor %}
     </tbody>
   </table>
@@ -104,11 +142,11 @@
       {% for a in report.recent_audits %}
       <tr>
         <td>{{ a.id }}</td>
-        <td>{{ a.action }}</td>
+        <td>{{ a.action | replace("_", " ") }}</td>
         <td>{{ a.entity_type or '—' }}{% if a.entity_id %} #{{ a.entity_id }}{% endif %}</td>
         <td>{{ a.actor_label or a.actor_type }}</td>
         <td>{{ a.detail or '—' }}</td>
-        <td>{{ a.created_at }}</td>
+        <td class="audit-meta">{{ a.created_at | admin_datetime }}</td>
       </tr>
       {% endfor %}
     </tbody>
