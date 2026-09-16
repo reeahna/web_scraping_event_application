@@ -53,6 +53,59 @@ router = APIRouter(prefix="/admin/settings/onboarding-policies", tags=["admin-au
 ManageSettings = Annotated[User, Depends(require_permission("settings.manage"))]
 ViewSites = Annotated[User, Depends(require_permission("sites.view"))]
 
+# Written labels. Without these the form rendered `field.replace("_", " ")`,
+# so an administrator read "minimum start date parse success" and had to infer
+# what it measured. The column name stays the form field name; only the visible
+# text changes.
+FIELD_LABELS: dict[str, str] = {
+    "automatic_configuration_enabled": "Build a configuration automatically",
+    "automatic_preview_enabled": "Run a preview automatically",
+    "automatic_approval_enabled": "Approve automatically",
+    "automatic_activation_enabled": "Activate automatically (goes public)",
+    "allow_generic_html_cards": "Allow generic HTML card sources",
+    "allow_browser_required": "Allow sources needing a browser",
+    "allow_ai_origin": "Allow AI-authored configurations",
+    "allow_administrator_manual_origin": "Allow hand-written configurations",
+    "allow_imported_configuration": "Allow imported configurations",
+    "allow_detail_page_enrichment": "Allow detail-page enrichment",
+    "minimum_detector_confidence": "Minimum detector confidence",
+    "minimum_events_found": "Minimum events found",
+    "minimum_valid_events": "Minimum valid events",
+    "minimum_valid_percentage": "Minimum share of events that are valid",
+    "maximum_rejected_percentage": "Maximum share rejected",
+    "minimum_canonical_url_coverage": "Minimum events with a usable link",
+    "minimum_start_date_coverage": "Minimum events with a start date",
+    "minimum_start_date_parse_success": "Minimum start dates that parse",
+    "maximum_duplicate_rate": "Maximum duplicate rate",
+    "maximum_warning_count": "Maximum warnings",
+    "maximum_critical_warning_count": "Maximum critical warnings",
+    "minimum_distinct_events": "Minimum distinct events",
+    "require_absolute_public_urls": "Require absolute public URLs",
+    "require_zero_critical_warnings": "Require zero critical warnings",
+    "require_distinct_events": "Require events to be distinct",
+    "require_date_range_parse_success": "Require date ranges to parse",
+    "minimum_date_range_parse_success": "Minimum date ranges that parse",
+    "require_geographic_filter": "Require the geographic filter to pass",
+    "minimum_geographic_inclusion_rate": "Minimum events inside the area",
+    "generic_html_minimum_detector_confidence": "Minimum detector confidence",
+    "generic_html_minimum_events_found": "Minimum events found",
+    "generic_html_minimum_valid_events": "Minimum valid events",
+    "generic_html_minimum_valid_percentage": "Minimum share that are valid",
+    "generic_html_maximum_rejected_percentage": "Maximum share rejected",
+    "generic_html_minimum_required_field_confidence": "Minimum required-field confidence",
+    "generic_html_minimum_required_field_coverage": "Minimum required-field coverage",
+    "generic_html_minimum_date_format_confidence": "Minimum date-format confidence",
+    "generic_html_minimum_distinct_event_count": "Minimum distinct events",
+    "generic_html_reject_broad_canonical_selector": "Reject an over-broad link selector",
+    "generic_html_reject_unstable_required_selectors": "Reject unstable field selectors",
+}
+
+# Sections an administrator rarely touches, collapsed by default.
+COLLAPSED_SECTIONS: frozenset[str] = frozenset({
+    "Shared date-range and geographic quality",
+    "Generic HTML thresholds (stricter)",
+})
+
 # Rendered as grouped sections so the form reads as decisions rather than as
 # forty anonymous numbers.
 FORM_SECTIONS: tuple[tuple[str, tuple[str, ...]], ...] = (
@@ -178,6 +231,8 @@ def _form_context(db, request: Request, current_user, policy=None, **extra) -> d
         "percentage_fields": PERCENTAGE_FIELDS,
         "count_fields": COUNT_FIELDS,
         "boolean_fields": BOOLEAN_FIELDS,
+        "field_labels": FIELD_LABELS,
+        "collapsed_sections": COLLAPSED_SECTIONS,
         "pattern_names": REGISTRY.names(),
         "cities": list_cities(db, active_only=False),
         "roles": db.query(Role).order_by(Role.name).all(),
@@ -203,6 +258,9 @@ def policy_list(request: Request, current_user: ManageSettings, db: DbSession):
             "policies": policies,
             "decision_counts": {p.id: count_decisions_for_policy(db, p.id) for p in policies},
             "city_counts": {p.id: len(policy_city_ids(db, p.id)) for p in policies},
+            # The list shows "n of m" allowed patterns rather than a long
+            # comma-joined string that wraps the row.
+            "pattern_names": REGISTRY.names(),
         },
     )
 

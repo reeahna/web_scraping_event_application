@@ -940,6 +940,118 @@ button:hover {
   width: 5rem;
 }
 
+/* The two settings that can put a source in front of the public without a
+   human. Styled as a warning, not as .placeholder-note, which means "not yet
+   available" everywhere else in the admin. */
+.confirm-callout {
+  border: 1px solid var(--border-strong);
+  border-left: 3px solid var(--warning);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+  padding: var(--space-3) var(--space-4);
+  margin-bottom: var(--space-3);
+}
+
+.confirm-callout p {
+  font-size: 0.88rem;
+  margin-bottom: var(--space-2);
+}
+
+.confirm-callout label {
+  margin-top: 0;
+}
+
+.confirm-callout input {
+  max-width: 320px;
+}
+
+/* The shared .admin-form caps at 520px, which suits a login or a three-field
+   create form. A policy has sixty controls, so it opts out of that cap and
+   lets its grids use the full admin column. */
+.admin-form.policy-form {
+  max-width: none;
+}
+
+.admin-form.policy-form .field-grid,
+.admin-form.policy-form .checkbox-grid {
+  width: 100%;
+}
+
+/* The shared rule gives every label a top margin for a stacked form; inside a
+   grid cell that pushes the control away from its own label. */
+.admin-form.policy-form .field label,
+.admin-form.policy-form .checkbox-grid label {
+  margin-top: 0;
+}
+
+/* Checkboxes in columns rather than a tall stack: a policy form has 31 of
+   them, and read as one column they look like a list to work through. */
+.checkbox-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: var(--space-2) var(--space-4);
+  margin-bottom: var(--space-4);
+}
+
+.checkbox-grid .checkbox-label {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  font-size: 0.9rem;
+  font-weight: 400;
+  margin: 0;
+}
+
+.checkbox-grid input[type="checkbox"] {
+  width: auto;
+  margin: 0;
+  flex: 0 0 auto;
+}
+
+.field-hint {
+  font-size: 0.75rem;
+  color: var(--muted);
+}
+
+/* A form section that can be folded away. The <summary> carries an <h2>, so
+   the heading keeps its meaning in the outline while staying clickable. */
+.policy-section {
+  border-top: 1px solid var(--border);
+  padding-top: var(--space-3);
+  margin-bottom: var(--space-4);
+}
+
+.policy-section > summary {
+  cursor: pointer;
+  list-style: none;
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.policy-section > summary::-webkit-details-marker { display: none; }
+
+.policy-section > summary::before {
+  content: "▸";
+  color: var(--muted);
+  font-size: 0.8rem;
+  transition: transform 0.12s ease;
+}
+
+.policy-section[open] > summary::before {
+  transform: rotate(90deg);
+}
+
+.policy-section > summary h2 {
+  display: inline;
+  margin: 0;
+  font-size: 1.05rem;
+}
+
+.policy-section > summary:hover h2 {
+  color: var(--accent);
+}
+
 /* Multi-field form laid out in columns. Nine stacked full-width inputs is a
    scroll, not a form — these wrap into as many columns as the width allows. */
 .field-grid {

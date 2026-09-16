@@ -1,4 +1,5 @@
 {% extends "admin_base.html" %}
+{% from "admin/_macros.html" import status_badge %}
 
 {% block title %}Automatic onboarding policies{% endblock %}
 
@@ -25,11 +26,14 @@
     <tr>
       <td>{{ policy.name }}{% if policy.is_global_default %}
         <span class="badge badge-active">global default</span>{% endif %}</td>
-      <td>{{ "Active" if policy.active else "Inactive" }}</td>
+      <td>{{ status_badge(policy.active) }}</td>
       <td>v{{ policy.version }}</td>
-      <td>{{ "Yes" if policy.automatic_approval_enabled else "No" }}</td>
-      <td>{{ "Yes" if policy.automatic_activation_enabled else "No" }}</td>
-      <td>{% if policy.allowed_pattern_names %}{{ policy.allowed_pattern_names | join(", ") }}
+      {# Badged rather than plain "Yes"/"No": these two decide whether a source
+         can reach the public without a human, so they should be the first
+         thing the eye lands on in the row. #}
+      <td>{% if policy.automatic_approval_enabled %}<span class="badge badge-danger">On</span>{% else %}<span class="badge badge-muted">Off</span>{% endif %}</td>
+      <td>{% if policy.automatic_activation_enabled %}<span class="badge badge-danger">On</span>{% else %}<span class="badge badge-muted">Off</span>{% endif %}</td>
+      <td class="audit-meta">{% if policy.allowed_pattern_names %}{{ policy.allowed_pattern_names | length }} of {{ pattern_names | length }}
         {% else %}none{% endif %}</td>
       <td>{{ city_counts[policy.id] }}</td>
       <td>{{ decision_counts[policy.id] }}</td>

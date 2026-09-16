@@ -13,7 +13,7 @@
 
 <form method="post"
       action="{{ ('/admin/settings/onboarding-policies/' ~ policy.id) if mode == 'edit' else '/admin/settings/onboarding-policies' }}"
-      class="admin-form">
+      class="admin-form policy-form">
   <input type="hidden" name="csrf_token" value="{{ csrf_token }}" />
 
   <h2>Identity</h2>
@@ -35,43 +35,72 @@
     Only these extraction patterns may ever be approved automatically. An empty selection means
     no source qualifies, whatever the other settings say.
   </p>
-  {% for name in pattern_names %}
-  <label class="checkbox-label">
-    <input type="checkbox" name="allowed_pattern_names" value="{{ name }}"
-           {% if policy and name in (policy.allowed_pattern_names or []) %}checked{% endif %} />
-    {{ name }}
-  </label>
-  {% endfor %}
-
-  {% for section_title, fields in sections %}
-  <h2>{{ section_title }}</h2>
-  {% if section_title.startswith("Generic HTML") %}
-  <p class="audit-meta">
-    A generic HTML configuration is inferred from markup with no schema behind it, so it carries
-    a higher bar than the structured patterns.
-  </p>
-  {% endif %}
-  {% for field in fields %}
-    {% if field in boolean_fields %}
+  <div class="checkbox-grid">
+    {% for name in pattern_names %}
     <label class="checkbox-label">
-      <input type="checkbox" name="{{ field }}" {% if policy and policy[field] %}checked{% endif %} />
-      {{ field.replace("_", " ") }}
+      <input type="checkbox" name="allowed_pattern_names" value="{{ name }}"
+             {% if policy and name in (policy.allowed_pattern_names or []) %}checked{% endif %} />
+      <code>{{ name }}</code>
     </label>
-    {% elif field in percentage_fields %}
-    <label for="{{ field }}">{{ field.replace("_", " ") }} (0–1)</label>
-    <input type="number" id="{{ field }}" name="{{ field }}" step="0.01" min="0" max="1"
-           value="{{ policy[field] if policy else '' }}" />
-    {% else %}
-    <label for="{{ field }}">{{ field.replace("_", " ") }}</label>
-    <input type="number" id="{{ field }}" name="{{ field }}" step="1" min="0"
-           value="{{ policy[field] if policy else '' }}" />
+    {% endfor %}
+  </div>
+
+  {#
+    Each section lays its fields out in a grid and splits the checkboxes from
+    the numbers, rather than stacking sixty full-width controls in one column.
+    Sections an administrator rarely opens start collapsed.
+  #}
+  {% for section_title, fields in sections %}
+  {% set collapsed = section_title in collapsed_sections %}
+  {% set booleans = fields | select("in", boolean_fields) | list %}
+  {% set numbers = fields | reject("in", boolean_fields) | list %}
+
+  <details class="policy-section" {% if not collapsed %}open{% endif %}>
+    <summary><h2>{{ section_title }}</h2></summary>
+
+    {% if section_title.startswith("Generic HTML") %}
+    <p class="audit-meta">
+      A generic HTML configuration is inferred from markup with no schema behind it, so it
+      carries a higher bar than the structured patterns.
+    </p>
     {% endif %}
-    {{ field_error(errors, field) }}
-  {% endfor %}
+
+    {% if booleans %}
+    <div class="checkbox-grid">
+      {% for field in booleans %}
+      <label class="checkbox-label">
+        <input type="checkbox" name="{{ field }}" {% if policy and policy[field] %}checked{% endif %} />
+        {{ field_labels.get(field, field.replace("_", " ")) }}
+      </label>
+      {{ field_error(errors, field) }}
+      {% endfor %}
+    </div>
+    {% endif %}
+
+    {% if numbers %}
+    <div class="field-grid">
+      {% for field in numbers %}
+      <div class="field">
+        <label for="{{ field }}">{{ field_labels.get(field, field.replace("_", " ")) }}</label>
+        {% if field in percentage_fields %}
+        <input type="number" id="{{ field }}" name="{{ field }}" step="0.01" min="0" max="1"
+               value="{{ policy[field] if policy else '' }}" />
+        <span class="field-hint">a share, 0 to 1</span>
+        {% else %}
+        <input type="number" id="{{ field }}" name="{{ field }}" step="1" min="0"
+               value="{{ policy[field] if policy else '' }}" />
+        {% endif %}
+        {{ field_error(errors, field) }}
+      </div>
+      {% endfor %}
+    </div>
+    {% endif %}
+  </details>
   {% endfor %}
 
   <h2>Confirmations</h2>
-  <div class="placeholder-note">
+  <p class="audit-meta">Only needed when you are switching one of these on for the first time.</p>
+  <div class="confirm-callout">
     <p>
       <strong>Enabling automatic approval</strong> lets qualifying sources have their
       configuration approved with no human review. Type
@@ -81,7 +110,7 @@
     <input type="text" id="confirm_approval" name="confirm_approval"
            placeholder="{{ approval_phrase }}" autocomplete="off" />
   </div>
-  <div class="placeholder-note">
+  <div class="confirm-callout">
     <p>
       <strong>Enabling automatic activation</strong> is a bigger step: qualifying sources may
       become publicly active without any human looking at them first. Type
@@ -91,10 +120,6 @@
     <input type="text" id="confirm_activation" name="confirm_activation"
            placeholder="{{ activation_phrase }}" autocomplete="off" />
   </div>
-  <p class="audit-meta">
-    A confirmation phrase is only required when you are switching one of these on. Leaving them
-    blank keeps the current setting.
-  </p>
 
   <div class="form-actions">
     <button type="submit">{{ "Save policy" if mode == "edit" else "Create policy" }}</button>
