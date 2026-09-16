@@ -7,6 +7,8 @@ from __future__ import annotations
 
 from unittest.mock import AsyncMock, patch
 
+import re
+
 import pytest
 
 from app.config import get_settings
@@ -15,6 +17,10 @@ from app.models.audit_log import AuditLog
 from app.services.browser_recovery import BrowserRecoveryResult
 
 STALE_SENTENCE = "wordpress_rest &gt; json_ld_event &gt; generic_html_cards"
+# The button's visible label. Kept in one place because the hidden-case test
+# asserts its absence: with the label inlined and stale, that assertion passed
+# no matter what the page did.
+RETRY_BUTTON_LABEL = "Retry automatic recovery"
 
 
 def _csrf(client) -> str:
@@ -88,7 +94,8 @@ def test_detail_page_selector_is_registry_driven_without_stale_sentence(
     # Not preselected: a disabled placeholder option is present.
     assert "Choose a pattern…" in body
     # Advanced framing for the manual fallback.
-    assert "manually select an extraction pattern" in body
+    assert "Manual pattern selection" in body
+    assert "A fallback when automatic recovery cannot resolve the source" in body
 
 
 def test_detector_explanation_is_honest_with_no_evidence(
@@ -100,8 +107,9 @@ def test_detector_explanation_is_honest_with_no_evidence(
 
     body = client.get(f"/admin/websites/{website.id}").text
     assert "No detector evidence was recorded for this run." in body
-    # No fictional winner or tie-break story.
-    assert "No detector qualified" in body
+    # No fictional winner: the selected-pattern row says "none" rather than
+    # naming a detector the run never actually chose.
+    assert re.search(r"<th>Selected pattern</th>\s*<td>\s*none", body)
     assert STALE_SENTENCE not in body
 
 
@@ -144,7 +152,7 @@ def test_retry_button_hidden_when_browser_disabled(
     login("rec-off@example.com", "root-pass-1234")
 
     body = client.get(f"/admin/websites/{website.id}").text
-    assert "Retry with restricted browser detection" not in body
+    assert RETRY_BUTTON_LABEL not in body
     assert "disabled for this deployment" in body
 
 
@@ -156,7 +164,7 @@ def test_retry_button_shown_when_browser_enabled(
     login("rec-on@example.com", "root-pass-1234")
 
     body = client.get(f"/admin/websites/{website.id}").text
-    assert "Retry with restricted browser detection" in body
+    assert RETRY_BUTTON_LABEL in body
 
 
 # --- route: permission, CSRF, disabled guard --------------------------------
@@ -357,9 +365,12 @@ def test_website_detail_shows_recovery_candidates(
     login("rec-wd@example.com", "root-pass-1234")
 
     body = client.get(f"/admin/websites/{website.id}").text
-    assert "Candidate event endpoints" in body
+    # The website detail page words this differently from the reports page:
+    # a "Browser diagnostics" section with a "Candidate endpoint" column.
+    assert "Browser diagnostics" in body
+    assert "Candidate endpoint" in body
     assert "Preferred structured event endpoint found" in body
-    assert "No registered extraction pattern supports this response shape yet" in body
+    assert "No registered extraction pattern was recorded for this shape" in body
     assert "plugins_events_events_by_date/find/" in body
 
 
