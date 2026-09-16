@@ -74,3 +74,41 @@ def test_confirmations_are_not_styled_as_unavailable(form_html):
 
 def test_policy_form_opts_out_of_the_narrow_shared_form_width(form_html):
     assert 'class="admin-form policy-form"' in form_html
+
+
+@pytest.fixture
+def detail_html(client, make_super_admin, login, db_session):
+    from app.models.auto_onboarding_policy import AutoOnboardingPolicy
+
+    make_super_admin(email="policy-detail@example.com", password="policy-pass-123")
+    login("policy-detail@example.com", "policy-pass-123")
+    policy = db_session.query(AutoOnboardingPolicy).first()
+    response = client.get(f"/admin/settings/onboarding-policies/{policy.id}")
+    assert response.status_code == 200
+    return response.text
+
+
+def test_detail_shows_every_setting_not_a_chosen_ten(detail_html):
+    """It used to render a 13-row table covering 10 of the 44 settings, so a
+    policy's thresholds were invisible until you opened the edit form."""
+    for _, fields in FORM_SECTIONS:
+        for field in fields:
+            assert FIELD_LABELS[field] in detail_html, field
+
+
+def test_detail_mirrors_the_form_sections(detail_html):
+    for title, _ in FORM_SECTIONS:
+        assert f"<h2>{title}</h2>" in detail_html
+    assert detail_html.count('class="policy-section"') == len(FORM_SECTIONS)
+
+
+def test_detail_uses_badges_for_on_off_not_prose(detail_html):
+    assert "<td>Enabled</td>" not in detail_html
+    assert "<td>Disabled</td>" not in detail_html
+    assert 'class="badge badge-muted">Off<' in detail_html
+
+
+def test_detail_page_actions_precede_the_settings(detail_html):
+    """Edit/Deactivate are page-level actions; stranded after the collapsed
+    sections they read as belonging to the last section."""
+    assert detail_html.index('class="form-actions"') < detail_html.index('class="policy-section"')

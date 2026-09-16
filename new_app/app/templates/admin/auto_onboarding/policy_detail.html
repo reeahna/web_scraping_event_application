@@ -9,28 +9,6 @@
 </h1>
 <p class="audit-meta"><a href="/admin/settings/onboarding-policies">&laquo; All policies</a></p>
 
-<table>
-  <tbody>
-    <tr><th>Version</th><td>v{{ policy.version }}</td></tr>
-    <tr><th>Description</th><td>{{ policy.description or "—" }}</td></tr>
-    <tr><th>Automatic configuration</th><td>{{ "Enabled" if policy.automatic_configuration_enabled else "Disabled" }}</td></tr>
-    <tr><th>Automatic preview</th><td>{{ "Enabled" if policy.automatic_preview_enabled else "Disabled" }}</td></tr>
-    <tr><th>Automatic approval</th>
-      <td>{{ "Enabled" if policy.automatic_approval_enabled else "Disabled" }}</td></tr>
-    <tr><th>Automatic activation</th>
-      <td>{{ "Enabled" if policy.automatic_activation_enabled else "Disabled" }}</td></tr>
-    <tr><th>Allowed patterns</th>
-      <td>{% if policy.allowed_pattern_names %}{{ policy.allowed_pattern_names | join(", ") }}
-        {% else %}none — no source can qualify{% endif %}</td></tr>
-    <tr><th>Generic HTML cards</th><td>{{ "Allowed" if policy.allow_generic_html_cards else "Denied" }}</td></tr>
-    <tr><th>Browser-required sources</th><td>{{ "Allowed" if policy.allow_browser_required else "Denied" }}</td></tr>
-    <tr><th>AI-origin configurations</th><td>{{ "Allowed" if policy.allow_ai_origin else "Denied" }}</td></tr>
-    <tr><th>Decisions recorded</th><td>{{ decision_count }}</td></tr>
-    <tr><th>Created by</th><td>{{ policy.created_by.email if policy.created_by else "—" }}</td></tr>
-    <tr><th>Last updated by</th><td>{{ policy.updated_by.email if policy.updated_by else "—" }}</td></tr>
-  </tbody>
-</table>
-
 <div class="form-actions">
   <a href="/admin/settings/onboarding-policies/{{ policy.id }}/edit"><button type="button">Edit</button></a>
   <form method="post" action="/admin/settings/onboarding-policies/{{ policy.id }}/status" class="inline-form">
@@ -47,6 +25,62 @@
   {% endif %}
 </div>
 
+{#
+  A read-only mirror of the edit form: same sections, same labels, same order.
+  This used to be a 13-row key/value table showing 10 of the 44 settings, so a
+  policy's actual thresholds were invisible until you clicked Edit.
+#}
+<dl class="summary-grid">
+  <div><dt>Version</dt><dd>v{{ policy.version }}</dd></div>
+  <div><dt>Decisions recorded</dt><dd>{{ decision_count }}</dd></div>
+  <div><dt>Created by</dt><dd>{{ policy.created_by.email if policy.created_by else "—" }}</dd></div>
+  <div><dt>Last updated by</dt><dd>{{ policy.updated_by.email if policy.updated_by else "—" }}</dd></div>
+</dl>
+{% if policy.description %}<p>{{ policy.description }}</p>{% endif %}
+
+<h2>Allowed patterns</h2>
+{% if policy.allowed_pattern_names %}
+<p class="pattern-chips">
+  {% for name in policy.allowed_pattern_names %}<code>{{ name }}</code>{% endfor %}
+</p>
+<p class="audit-meta">{{ policy.allowed_pattern_names | length }} of {{ pattern_names | length }} registered patterns.</p>
+{% else %}
+<p class="wf-warn"><strong>No patterns allowed.</strong> No source can qualify under this policy,
+  whatever the other settings say.</p>
+{% endif %}
+
+{% for section_title, fields in sections %}
+{% set booleans = fields | select("in", boolean_fields) | list %}
+{% set numbers = fields | reject("in", boolean_fields) | list %}
+<details class="policy-section" {% if section_title not in collapsed_sections %}open{% endif %}>
+  <summary><h2>{{ section_title }}</h2></summary>
+
+  {% if booleans %}
+  <dl class="summary-grid">
+    {% for field in booleans %}
+    <div>
+      <dt>{{ field_labels.get(field, field.replace("_", " ")) }}</dt>
+      <dd>{% if policy[field] %}<span class="badge badge-active">On</span>
+          {% else %}<span class="badge badge-muted">Off</span>{% endif %}</dd>
+    </div>
+    {% endfor %}
+  </dl>
+  {% endif %}
+
+  {% if numbers %}
+  <dl class="summary-grid">
+    {% for field in numbers %}
+    <div>
+      <dt>{{ field_labels.get(field, field.replace("_", " ")) }}</dt>
+      <dd>{{ policy[field] }}</dd>
+    </div>
+    {% endfor %}
+  </dl>
+  {% endif %}
+</details>
+{% endfor %}
+
+
 <h2>City assignments</h2>
 <p class="audit-meta">
   A city may be assigned to at most one policy. An assigned city uses this policy instead of the
@@ -54,7 +88,7 @@
   than silently falling back.
 </p>
 {% if assigned_city_ids %}
-<ul>
+<ul class="status-list">
   {% for city in cities if city.id in assigned_city_ids %}
   <li>{{ city.name }}
     <form method="post" action="/admin/settings/onboarding-policies/{{ policy.id }}/cities" class="inline-form">
@@ -86,15 +120,17 @@
   evaluated at submission time and recorded on the decision, so a later role change never
   rewrites history. Selecting none means any submitter.
 </p>
-<form method="post" action="/admin/settings/onboarding-policies/{{ policy.id }}/roles" class="admin-form">
+<form method="post" action="/admin/settings/onboarding-policies/{{ policy.id }}/roles" class="admin-form policy-form">
   <input type="hidden" name="csrf_token" value="{{ csrf_token }}" />
-  {% for role in roles %}
-  <label class="checkbox-label">
-    <input type="checkbox" name="role_ids" value="{{ role.id }}"
-           {% if role.id in assigned_role_ids %}checked{% endif %} />
-    {{ role.name }}
-  </label>
-  {% endfor %}
+  <div class="checkbox-grid">
+    {% for role in roles %}
+    <label class="checkbox-label">
+      <input type="checkbox" name="role_ids" value="{{ role.id }}"
+             {% if role.id in assigned_role_ids %}checked{% endif %} />
+      {{ role.name }}
+    </label>
+    {% endfor %}
+  </div>
   <div class="form-actions"><button type="submit">Save role restrictions</button></div>
 </form>
 

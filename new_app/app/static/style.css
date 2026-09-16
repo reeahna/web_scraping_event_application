@@ -940,6 +940,50 @@ button:hover {
   width: 5rem;
 }
 
+/* Read-only label/value pairs in columns. Replaces a key/value <table> whose
+   narrow first column wrapped every label onto two lines. */
+.summary-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: var(--space-3) var(--space-4);
+  margin-bottom: var(--space-4);
+}
+
+.summary-grid > div {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.summary-grid dt {
+  font-size: 0.78rem;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+}
+
+.summary-grid dd {
+  font-size: 0.95rem;
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+.pattern-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  margin-bottom: var(--space-2);
+}
+
+.pattern-chips code {
+  background: var(--accent-soft);
+  color: var(--accent);
+  border-radius: var(--radius-pill);
+  padding: 2px var(--space-3);
+  font-size: 0.82rem;
+}
+
 /* The two settings that can put a source in front of the public without a
    human. Styled as a warning, not as .placeholder-note, which means "not yet
    available" everywhere else in the admin. */
