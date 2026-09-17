@@ -8,9 +8,10 @@ from __future__ import annotations
 
 import secrets
 
-from sqlalchemy import delete, select
+from sqlalchemy import delete, func, select
 from sqlalchemy.orm import Session
 
+from app.models.city import City
 from app.models.event import Event
 from app.models.user_engagement import (
     ALERT_FREQUENCIES,
@@ -95,6 +96,29 @@ def follow(db: Session, *, user_id: int, follow_type: str, target_id: int) -> Us
     db.commit()
     db.refresh(row)
     return row
+
+
+def followed_cities(db: Session, *, user_id: int) -> list[City]:
+    """The cities this user follows, resolved to City rows and ordered by name.
+
+    A follow stores only a type and a target id, so nothing could list what a
+    user follows without this join; the account page said "coming soon" for a
+    feature that already worked from the event page.
+    """
+    return list(
+        db.scalars(
+            select(City)
+            .join(UserFollow, UserFollow.target_id == City.id)
+            .where(UserFollow.user_id == user_id, UserFollow.follow_type == "city")
+            .order_by(City.name)
+        )
+    )
+
+
+def saved_event_count(db: Session, *, user_id: int) -> int:
+    return db.scalar(
+        select(func.count()).select_from(SavedEvent).where(SavedEvent.user_id == user_id)
+    ) or 0
 
 
 def unfollow(db: Session, *, user_id: int, follow_type: str, target_id: int) -> None:

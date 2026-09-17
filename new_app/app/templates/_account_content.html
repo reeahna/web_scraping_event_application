@@ -58,15 +58,48 @@
         </td>
       </tr>
       <tr><th>Account status</th><td>{{ "Active" if current_user.is_active else "Inactive" }}</td></tr>
-      <tr><th>Last login</th><td>{{ current_user.last_login_at or "This is your first login" }}</td></tr>
+      <tr><th>Last login</th><td>{% if current_user.last_login_at %}{{ current_user.last_login_at | admin_datetime }}{% else %}This is your first login{% endif %}</td></tr>
     </tbody>
   </table>
 
-  <h2>Coming soon</h2>
-  <ul class="impact-list">
-    <li><strong>Saved Events</strong> — <span class="placeholder-note">not yet available</span></li>
-    <li><strong>Followed Cities</strong> — <span class="placeholder-note">not yet available</span></li>
-    <li><strong>Alerts</strong> — <span class="placeholder-note">not yet available</span></li>
+  {#
+    These three were listed as "coming soon" long after they shipped: saved
+    events and alerts each have a page, and following works from any event.
+    Nothing listed a user's follows, which is why that one looked unbuilt.
+  #}
+  <h2>Your events</h2>
+  <ul class="status-list">
+    <li>
+      <a href="/account/saved"><strong>{{ saved_event_count }}</strong>
+        saved event{{ "s" if saved_event_count != 1 }}</a>
+    </li>
+    <li>
+      <a href="/account/alerts">Alert preferences</a>
+      <span class="audit-meta">when and how you hear about new events</span>
+    </li>
   </ul>
+
+  <h2>Cities you follow</h2>
+  {% if followed_cities %}
+  <ul class="status-list">
+    {% for city in followed_cities %}
+    <li class="follow-row">
+      <a href="/city/{{ city.slug }}">{{ city.name }}</a>
+      <form method="post" action="/account/follow" class="inline-form">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}" />
+        <input type="hidden" name="follow_type" value="city" />
+        <input type="hidden" name="target_id" value="{{ city.id }}" />
+        <input type="hidden" name="action" value="unfollow" />
+        <input type="hidden" name="next" value="/account" />
+        <button type="submit" class="btn-secondary">Unfollow</button>
+      </form>
+    </li>
+    {% endfor %}
+  </ul>
+  {% else %}
+  <p class="audit-meta">
+    You are not following any cities yet. Follow one from any event to hear about new events there.
+  </p>
+  {% endif %}
 </div>
 

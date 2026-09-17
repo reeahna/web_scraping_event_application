@@ -32,9 +32,12 @@ def test_account_available_to_registered_users_and_administrators(
     assert response.status_code == 200
     assert email in response.text
     assert role_name in response.text
-    for placeholder in ("Saved Events", "Followed Cities", "Alerts"):
-        assert placeholder in response.text
-    assert "not yet available" in response.text
+    # These three used to be "coming soon" placeholders. They are shipped
+    # features now, so the page links to them rather than naming them.
+    for destination in ("/account/saved", "/account/alerts"):
+        assert destination in response.text
+    assert "Cities you follow" in response.text
+    assert "not yet available" not in response.text
 
 
 def test_registered_user_account_has_no_admin_controls(client, make_user, login):

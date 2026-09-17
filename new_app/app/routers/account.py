@@ -6,6 +6,7 @@ from app.core.flash import set_flash
 from app.core.templating import render
 from app.dependencies import ClientIp, CorrelationId, CurrentUser, DbSession
 from app.services.audit import record_audit
+from app.services import engagement
 from app.services.rbac import can_access_admin, get_effective_permissions
 
 router = APIRouter(tags=["account"])
@@ -37,6 +38,10 @@ def _render_account(
             "current_user": current_user,
             "role_names": role_names,
             "permissions": permissions,
+            # Saved events, follows and alerts are all built; the page used to
+            # advertise them as "coming soon".
+            "saved_event_count": engagement.saved_event_count(db, user_id=current_user.id),
+            "followed_cities": engagement.followed_cities(db, user_id=current_user.id),
             "display_name": current_user.full_name if display_name is None else display_name,
             "errors": errors or {},
             "edit_mode": edit_mode,

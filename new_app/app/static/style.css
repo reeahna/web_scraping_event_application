@@ -940,6 +940,13 @@ button:hover {
   width: 5rem;
 }
 
+.follow-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+}
+
 /* A zero on the operational dashboard is worth showing but not worth reading
    first; dimming it lets the non-zero counts carry the eye. */
 .metric-card.is-zero .metric-value {
