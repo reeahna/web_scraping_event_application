@@ -8,6 +8,17 @@ TOMORROW = TODAY + timedelta(days=1)
 YESTERDAY = TODAY - timedelta(days=1)
 
 
+def _listing(city) -> str:
+    """The public listing URL for a town.
+
+    The home page chooses a town and never lists events, so a listing
+    assertion has to name one. Written as a helper because a test that fetches
+    "/" and asserts an event is *absent* would pass for the wrong reason: the
+    chooser shows no events at all.
+    """
+    return f"/city/{city.slug}"
+
+
 def _visible_website(make_city, make_website, **city_kwargs):
     city = make_city(**city_kwargs) if city_kwargs else make_city()
     website = make_website(city, is_active=True, approved_pattern={"pattern_name": "static_html"})
@@ -26,19 +37,21 @@ def _visible_event(make_city, make_website, make_event, **event_overrides):
 
 
 class TestHomepageAccess:
-    def test_anonymous_gets_200(self, client):
-        response = client.get("/")
-        assert response.status_code == 200
+    def test_anonymous_gets_200(self, client, make_city, make_website):
+        city, _ = _visible_website(make_city, make_website)
+        assert client.get("/").status_code == 200
+        assert client.get(_listing(city)).status_code == 200
 
-    def test_registered_user_gets_200(self, client, make_user, login):
+    def test_registered_user_gets_200(self, client, make_user, login, make_city, make_website):
+        city, _ = _visible_website(make_city, make_website)
         make_user(email="reg@example.com", password="password12345", role_name=REGISTERED_USER)
         login("reg@example.com", "password12345")
-        response = client.get("/")
-        assert response.status_code == 200
+        assert client.get("/").status_code == 200
+        assert client.get(_listing(city)).status_code == 200
 
     def test_visible_event_appears_on_homepage(self, client, make_city, make_website, make_event):
-        _, _, event = _visible_event(make_city, make_website, make_event, title="Visible Event")
-        response = client.get("/")
+        city, _, event = _visible_event(make_city, make_website, make_event, title="Visible Event")
+        response = client.get(_listing(city))
         assert response.status_code == 200
         assert "Visible Event" in response.text
 
@@ -50,10 +63,10 @@ class TestVisibilityMatrix:
             city, website=website, title="Archived Event", start_date=TOMORROW, archived=True
         )
         assert client.get(f"/events/{event.id}").status_code == 404
-        assert "Archived Event" not in client.get("/").text
+        assert "Archived Event" not in client.get(_listing(city)).text
 
     def test_confirmed_duplicate_hidden(self, client, make_city, make_website, make_event):
-        _, _, event = _visible_event(
+        city, _, event = _visible_event(
             make_city,
             make_website,
             make_event,
@@ -61,10 +74,10 @@ class TestVisibilityMatrix:
             duplicate_status="confirmed_duplicate",
         )
         assert client.get(f"/events/{event.id}").status_code == 404
-        assert "Duplicate Event" not in client.get("/").text
+        assert "Duplicate Event" not in client.get(_listing(city)).text
 
     def test_possible_duplicate_stays_visible(self, client, make_city, make_website, make_event):
-        _, _, event = _visible_event(
+        city, _, event = _visible_event(
             make_city,
             make_website,
             make_event,
@@ -72,14 +85,14 @@ class TestVisibilityMatrix:
             duplicate_status="possible_duplicate",
         )
         assert client.get(f"/events/{event.id}").status_code == 200
-        assert "Possible Duplicate Event" in client.get("/").text
+        assert "Possible Duplicate Event" in client.get(_listing(city)).text
 
     def test_inactive_website_hidden(self, client, make_city, make_website, make_event):
         city = make_city()
         website = make_website(city, is_active=False, approved_pattern={"pattern_name": "x"})
         event = make_event(city, website=website, title="Inactive Site Event", start_date=TOMORROW)
         assert client.get(f"/events/{event.id}").status_code == 404
-        assert "Inactive Site Event" not in client.get("/").text
+        assert "Inactive Site Event" not in client.get(_listing(city)).text
 
     def test_unapproved_website_hidden(self, client, make_city, make_website, make_event):
         city = make_city()
@@ -88,14 +101,14 @@ class TestVisibilityMatrix:
             city, website=website, title="Unapproved Site Event", start_date=TOMORROW
         )
         assert client.get(f"/events/{event.id}").status_code == 404
-        assert "Unapproved Site Event" not in client.get("/").text
+        assert "Unapproved Site Event" not in client.get(_listing(city)).text
 
     def test_inactive_city_hidden(self, client, make_city, make_website, make_event):
         city = make_city(name="Inactive City", slug="inactive-city", is_active=False)
         website = make_website(city, is_active=True, approved_pattern={"pattern_name": "x"})
         event = make_event(city, website=website, title="Inactive City Event", start_date=TOMORROW)
         assert client.get(f"/events/{event.id}").status_code == 404
-        assert "Inactive City Event" not in client.get("/").text
+        assert "Inactive City Event" not in client.get(_listing(city)).text
 
     def test_past_dated_event_hidden(self, client, make_city, make_website, make_event):
         city, website = _visible_website(make_city, make_website)
@@ -103,11 +116,11 @@ class TestVisibilityMatrix:
             city, website=website, title="Past Event", start_date=YESTERDAY, end_date=YESTERDAY
         )
         assert client.get(f"/events/{event.id}").status_code == 404
-        assert "Past Event" not in client.get("/").text
+        assert "Past Event" not in client.get(_listing(city)).text
 
     def test_ongoing_event_visible(self, client, make_city, make_website, make_event):
         """start_date in the past but end_date today/future stays visible."""
-        _, _, event = _visible_event(
+        city, _, event = _visible_event(
             make_city,
             make_website,
             make_event,
@@ -116,7 +129,7 @@ class TestVisibilityMatrix:
             end_date=TOMORROW,
         )
         assert client.get(f"/events/{event.id}").status_code == 200
-        assert "Ongoing Event" in client.get("/").text
+        assert "Ongoing Event" in client.get(_listing(city)).text
 
 
 class TestFilters:
@@ -127,9 +140,13 @@ class TestFilters:
         make_event(city_a, website=website_a, title="Event A", start_date=TOMORROW)
         make_event(city_b, website=website_b, title="Event B", start_date=TOMORROW)
 
-        response = client.get(f"/?city_id={city_a.id}")
+        response = client.get(_listing(city_a))
         assert "Event A" in response.text
         assert "Event B" not in response.text
+
+        other = client.get(_listing(city_b))
+        assert "Event B" in other.text
+        assert "Event A" not in other.text
 
     def test_category_filter(self, client, make_city, make_website, make_event, make_category):
         city, website = _visible_website(make_city, make_website)
@@ -138,7 +155,7 @@ class TestFilters:
         make_event(city, website=website, title="Cat A Event", start_date=TOMORROW, category=cat_a)
         make_event(city, website=website, title="Cat B Event", start_date=TOMORROW, category=cat_b)
 
-        response = client.get(f"/?category_id={cat_a.id}")
+        response = client.get(f"{_listing(city)}?category_id={cat_a.id}")
         assert "Cat A Event" in response.text
         assert "Cat B Event" not in response.text
 
@@ -149,7 +166,7 @@ class TestFilters:
         make_event(city, website=website, title="Near Event", start_date=near)
         make_event(city, website=website, title="Far Event", start_date=far)
 
-        response = client.get(f"/?date_to={near.isoformat()}")
+        response = client.get(f"{_listing(city)}?date_to={near.isoformat()}")
         assert "Near Event" in response.text
         assert "Far Event" not in response.text
 
@@ -160,11 +177,11 @@ class TestFilters:
         make_event(city, website=website, title="Today Event", start_date=TODAY)
         make_event(city, website=website, title="Tomorrow Event", start_date=TOMORROW)
 
-        default_response = client.get("/")
+        default_response = client.get(_listing(city))
         assert "Today Event" in default_response.text
         assert "Tomorrow Event" in default_response.text
 
-        upcoming_response = client.get("/?upcoming_only=1")
+        upcoming_response = client.get(f"{_listing(city)}?upcoming_only=1")
         assert "Today Event" not in upcoming_response.text
         assert "Tomorrow Event" in upcoming_response.text
 
@@ -185,7 +202,7 @@ class TestPagination:
                 start_date=TOMORROW,
             )
 
-        first_page = client.get("/")
+        first_page = client.get(_listing(city))
         assert first_page.status_code == 200
         second_page = client.get("/?page=2")
         assert second_page.status_code == 200
@@ -195,7 +212,7 @@ class TestPagination:
 
 class TestEventDetailPage:
     def test_renders_public_fields(self, client, make_city, make_website, make_event):
-        _, _, event = _visible_event(
+        city, _, event = _visible_event(
             make_city,
             make_website,
             make_event,
@@ -217,14 +234,14 @@ class TestEventDetailPage:
         assert client.get(f"/events/{event.id}").status_code == 404
 
     def test_admin_block_hidden_for_anonymous(self, client, make_city, make_website, make_event):
-        _, _, event = _visible_event(make_city, make_website, make_event)
+        city, _, event = _visible_event(make_city, make_website, make_event)
         response = client.get(f"/events/{event.id}")
         assert f"/admin/events/{event.id}" not in response.text
 
     def test_admin_block_hidden_for_registered_user(
         self, client, make_city, make_website, make_event, make_user, login
     ):
-        _, _, event = _visible_event(make_city, make_website, make_event)
+        city, _, event = _visible_event(make_city, make_website, make_event)
         make_user(email="reg2@example.com", password="password12345", role_name=REGISTERED_USER)
         login("reg2@example.com", "password12345")
         response = client.get(f"/events/{event.id}")
@@ -233,7 +250,7 @@ class TestEventDetailPage:
     def test_admin_block_shown_for_administrator(
         self, client, make_city, make_website, make_event, make_user, login
     ):
-        _, _, event = _visible_event(make_city, make_website, make_event)
+        city, _, event = _visible_event(make_city, make_website, make_event)
         make_user(email="admin@example.com", password="password12345", role_name=ADMINISTRATOR)
         login("admin@example.com", "password12345")
         response = client.get(f"/events/{event.id}")

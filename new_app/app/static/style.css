@@ -219,6 +219,108 @@ button, input, select, textarea { font: inherit; color: inherit; }
 }
 
 /* ==========================================================================
+   City chooser (the home page)
+   ========================================================================== */
+.chooser-hero {
+  background: linear-gradient(180deg, var(--accent-soft), transparent);
+  border-bottom: 1px solid var(--border);
+}
+
+.chooser-inner {
+  max-width: var(--max-width-narrow);
+  margin: 0 auto;
+  padding: var(--space-7) var(--space-5) var(--space-6);
+  text-align: center;
+}
+
+.chooser-inner h1 {
+  font-size: var(--font-2xl);
+  font-weight: 800;
+  letter-spacing: -0.02em;
+  margin-bottom: var(--space-3);
+}
+
+.chooser-subtext {
+  color: var(--muted);
+  font-size: var(--font-md);
+  margin-bottom: var(--space-5);
+}
+
+.chooser-form {
+  display: flex;
+  gap: var(--space-2);
+  max-width: 520px;
+  margin: 0 auto;
+}
+
+.chooser-form input {
+  flex: 1;
+  min-width: 0;
+  padding: var(--space-3) var(--space-4);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-sm);
+  font-size: 1rem;
+}
+
+.chooser-form button {
+  padding: var(--space-3) var(--space-5);
+  font-size: 1rem;
+}
+
+.city-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+  gap: var(--space-4);
+  list-style: none;
+  padding: 0;
+}
+
+.city-card {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  height: 100%;
+  padding: var(--space-4);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  text-decoration: none;
+  transition: border-color 0.12s ease, box-shadow 0.12s ease;
+}
+
+.city-card:hover {
+  border-color: var(--accent);
+  box-shadow: var(--shadow-md);
+}
+
+.city-card-name {
+  font-weight: 700;
+  font-size: 1.05rem;
+}
+
+/* The school is how a reader recognises a college town, so it reads as a
+   subtitle rather than as incidental metadata. */
+.city-card-school {
+  color: var(--accent);
+  font-size: 0.88rem;
+}
+
+.city-card-count {
+  margin-top: var(--space-2);
+  color: var(--muted);
+  font-size: 0.82rem;
+}
+
+.hero-switch {
+  margin-top: var(--space-3);
+  font-size: var(--font-sm);
+}
+
+.hero-switch a {
+  color: var(--accent);
+}
+
+/* ==========================================================================
    6. Hero
    ========================================================================== */
 .hero {

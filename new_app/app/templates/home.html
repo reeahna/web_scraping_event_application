@@ -1,7 +1,8 @@
 {% extends "base.html" %}
 {% from "_pagination.html" import paginate %}
 
-{% block title %}New City Events — Find Events Near You{% endblock %}
+{% block title %}Events in {{ selected_city.name }}{% if selected_city.university_name %} — {{ selected_city.university_name }}{% endif %}{% endblock %}
+{% block meta_description %}What is on in {{ selected_city.name }}{% if selected_city.state_or_region %}, {{ selected_city.state_or_region }}{% endif %}: concerts, theater, festivals and {% if selected_city.university_name %}{{ selected_city.university_name }} {% endif %}campus events, gathered from every local source.{% endblock %}
 
 {% block head_extra %}
 {% if filters.view == "map" %}
@@ -15,42 +16,22 @@
 {% set sep = "&" if query_string else "" %}
 <section class="hero">
   <div class="hero-inner">
-    <h1>Find events near you</h1>
-    {% if selected_city %}
-    <p class="hero-subtext">Showing events in {{ selected_city.name }}{% if selected_city.state_or_region %}, {{ selected_city.state_or_region }}{% endif %}.</p>
-    {% else %}
-    <p class="hero-subtext">Concerts, theater, festivals, and more — gathered from local sources in one place.</p>
-    {% endif %}
+    <h1>{{ selected_city.name }}</h1>
+    <p class="hero-subtext">
+      {% if selected_city.university_name %}{{ selected_city.university_name }} · {% endif %}
+      Everything on in town and on campus.
+    </p>
+    <p class="hero-switch"><a href="/">Choose a different town</a></p>
   </div>
 </section>
 
 <div class="page-container">
-  {% if not selected_city and cities %}
-  <nav class="city-picker" aria-label="Choose a city">
-    <span class="city-picker-label">Cities:</span>
-    {% for city in cities %}
-    <a class="city-picker-link" href="/city/{{ city.slug }}">{{ city.name }}</a>
-    {% endfor %}
-  </nav>
-  {% endif %}
-
   <section class="filter-panel" aria-label="Filter events">
     <form method="get" action="{{ base_path }}" class="filter-form" role="search">
       <div class="filter-field filter-field-search">
         <label for="q">Search</label>
         <input type="search" id="q" name="q" value="{{ filters.q }}" placeholder="Title or venue" />
       </div>
-      {% if not selected_city %}
-      <div class="filter-field">
-        <label for="city_id">City</label>
-        <select id="city_id" name="city_id">
-          <option value="">All cities</option>
-          {% for city in cities %}
-          <option value="{{ city.id }}"{% if filters.city_id == city.id %} selected{% endif %}>{{ city.name }}</option>
-          {% endfor %}
-        </select>
-      </div>
-      {% endif %}
       <div class="filter-field">
         <label for="category_id">Category</label>
         <select id="category_id" name="category_id">

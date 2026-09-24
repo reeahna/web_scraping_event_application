@@ -19,7 +19,7 @@ series never renders as a parent card duplicating its occurrence cards.
 from datetime import date, datetime, timedelta
 from zoneinfo import ZoneInfo
 
-from sqlalchemy import and_, or_
+from sqlalchemy import func, and_, or_
 from sqlalchemy.orm import Session
 
 from app.config import get_settings
@@ -80,6 +80,21 @@ def _base_public_query(db: Session, *, today: date):
             upcoming_or_ongoing,
         )
     )
+
+
+def upcoming_counts_by_city(db: Session, *, today: date) -> dict[int, int]:
+    """How many publicly-visible upcoming events each city has, in one query.
+
+    Uses the same base query as the listing, so a count can never promise
+    events the city page would not then show.
+    """
+    rows = (
+        _base_public_query(db, today=today)
+        .with_entities(Event.city_id, func.count(Event.id))
+        .group_by(Event.city_id)
+        .all()
+    )
+    return {city_id: count for city_id, count in rows if city_id is not None}
 
 
 def public_event_ids(db: Session, *, today: date, limit: int) -> list[int]:

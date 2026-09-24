@@ -111,8 +111,13 @@ def make_city(db_session):
         slug: str = "test-city",
         timezone: str = "UTC",
         is_active: bool = True,
+        **values,
     ) -> City:
-        city = City(name=name, slug=slug, timezone=timezone, is_active=is_active)
+        # **values so a test can set any other column (state_or_region,
+        # university_name, ...) without this signature growing each time.
+        city = City(
+            name=name, slug=slug, timezone=timezone, is_active=is_active, **values
+        )
         db_session.add(city)
         db_session.commit()
         db_session.refresh(city)

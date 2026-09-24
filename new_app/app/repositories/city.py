@@ -36,6 +36,26 @@ def list_cities(db: Session, *, active_only: bool = True) -> list[City]:
     return query.order_by(City.name).all()
 
 
+def search_public_cities(db: Session, *, query: str | None = None) -> list[City]:
+    """Active cities matching a free-text query, for the public city chooser.
+
+    Matches the town, the school and the state, because a visitor is as likely
+    to think "Lehigh" or "Indiana" as "Bethlehem" or "Bloomington".
+    """
+    statement = db.query(City).filter(City.is_active.is_(True))
+    term = (query or "").strip()
+    if term:
+        like = f"%{term}%"
+        statement = statement.filter(
+            or_(
+                City.name.ilike(like),
+                City.university_name.ilike(like),
+                City.state_or_region.ilike(like),
+            )
+        )
+    return statement.order_by(City.name).all()
+
+
 def search_cities(
     db: Session,
     *,

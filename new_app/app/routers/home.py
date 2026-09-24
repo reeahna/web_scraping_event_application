@@ -8,15 +8,17 @@ from app.config import get_settings
 from app.core.exceptions import NotFoundError
 from app.core.templating import render
 from app.dependencies import DbSession, OptionalCurrentUser
-from app.repositories.city import get_city_by_slug, list_cities
+from app.repositories.city import get_city_by_slug, list_cities, search_public_cities
 from app.repositories.event_category import list_active_categories
 from app.repositories.public_events import (
     PUBLIC_EVENTS_PER_PAGE,
     current_public_date,
     list_public_events,
     list_public_sources,
+    upcoming_counts_by_city,
     this_weekend,
 )
+from app.services import seo
 from app.services.rbac import can_access_admin
 
 router = APIRouter()
@@ -158,6 +160,7 @@ def _render_events(
             "filters": filters.template_context(),
             "query_string": filters.query_string(),
             "base_path": base_path,
+            "canonical_url": seo.absolute_url(base_path),
             "fallback_image_url": settings.public_fallback_image_url,
             "map_tile_url": settings.public_map_tile_url,
             "map_attribution": settings.public_map_attribution,
@@ -167,8 +170,28 @@ def _render_events(
 
 @router.get("/", response_class=HTMLResponse)
 def home(request: Request, current_user: OptionalCurrentUser, db: DbSession):
-    filters = _Filters(dict(request.query_params), today=current_public_date())
-    return _render_events(request, db, current_user, filters, base_path="/")
+    """Choose a college town. Deliberately not an events listing.
+
+    This covers college towns, where "what is on" only means something once a
+    town is chosen; a feed mixing Bloomington and Bethlehem is noise to a reader
+    who lives in one of them. There is no route that lists every city's events
+    together, and this page is the reason: the only way into the listing is
+    through a city.
+    """
+    query = (request.query_params.get("q") or "").strip()
+    cities = search_public_cities(db, query=query)
+    return render(
+        request,
+        "city_chooser.html",
+        {
+            "current_user": current_user,
+            "can_access_admin": can_access_admin(db, current_user) if current_user else False,
+            "registration_enabled": get_settings().registration_enabled,
+            "cities": cities,
+            "query": query,
+            "event_counts": upcoming_counts_by_city(db, today=current_public_date()),
+        },
+    )
 
 
 @router.get("/city/{slug}", response_class=HTMLResponse)

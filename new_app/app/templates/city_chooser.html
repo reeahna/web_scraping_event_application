@@ -1,0 +1,59 @@
+{% extends "base.html" %}
+
+{% block title %}New City Events — Find events in your college town{% endblock %}
+{% block meta_description %}Find out what is on in your college town: concerts, theater, festivals and campus events, gathered from every local source.{% endblock %}
+
+{% block content %}
+<section class="chooser-hero">
+  <div class="chooser-inner">
+    <h1>What college town?</h1>
+    <p class="chooser-subtext">
+      Everything happening in town and on campus, gathered from every local source.
+    </p>
+
+    {#
+      A plain GET form, so choosing a town works with no JavaScript and the
+      result is a shareable URL. The page always asks for a town first: there
+      is deliberately no view that mixes every city's events together.
+    #}
+    <form method="get" action="/" class="chooser-form" role="search">
+      <label for="city-search" class="visually-hidden">Search for a college town or school</label>
+      <input type="search" id="city-search" name="q" value="{{ query }}"
+             placeholder="Search by town or school"
+             autocomplete="off" autofocus />
+      <button type="submit">Search</button>
+    </form>
+  </div>
+</section>
+
+<div class="page-container">
+  {% if cities %}
+  <ul class="city-grid">
+    {% for city in cities %}
+    <li>
+      <a class="city-card" href="/city/{{ city.slug }}">
+        <span class="city-card-name">{{ city.name }}{% if city.state_or_region %}, {{ city.state_or_region }}{% endif %}</span>
+        {% if city.university_name %}
+        <span class="city-card-school">{{ city.university_name }}</span>
+        {% endif %}
+        <span class="city-card-count">
+          {{ event_counts.get(city.id, 0) }} upcoming event{{ "s" if event_counts.get(city.id, 0) != 1 }}
+        </span>
+      </a>
+    </li>
+    {% endfor %}
+  </ul>
+  {% elif query %}
+  <div class="empty-state">
+    <h2>No college town matches “{{ query }}”</h2>
+    <p>We cover a small number of towns so far. Try a different name, or browse them all.</p>
+    <a href="/" class="filter-clear-link">Show every town</a>
+  </div>
+  {% else %}
+  <div class="empty-state">
+    <h2>No towns are available yet</h2>
+    <p>Check back soon.</p>
+  </div>
+  {% endif %}
+</div>
+{% endblock %}
