@@ -12,6 +12,8 @@ class CityBase(BaseModel):
     name: str
     slug: str
     state_or_region: str | None = None
+    # The school this college town is known for; shown on the public chooser.
+    university_name: str | None = None
     country: str | None = None
     timezone: str = "UTC"
     default_latitude: float | None = None

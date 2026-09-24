@@ -8,6 +8,16 @@ TODAY = datetime.now(UTC).date()
 TOMORROW = TODAY + timedelta(days=1)
 
 
+def _listing(city) -> str:
+    """The public listing URL for a town.
+
+    "/" is the town chooser and lists no events, so a filter assertion has to
+    name a town. Note that an assertion of the form "X not in /" would pass
+    there for the wrong reason.
+    """
+    return f"/city/{city.slug}"
+
+
 def _visible_website(make_city, make_website, city=None, name="Src"):
     city = city or make_city()
     website = make_website(
@@ -22,7 +32,7 @@ def test_search_filters_by_title(client, make_city, make_website, make_event):
     make_event(city, website=website, title="Jazz Night", start_date=TOMORROW)
     make_event(city, website=website, title="Poetry Slam", start_date=TOMORROW,
                canonical_url="https://x/p")
-    resp = client.get("/?q=jazz")
+    resp = client.get(f"{_listing(city)}?q=jazz")
     assert "Jazz Night" in resp.text
     assert "Poetry Slam" not in resp.text
 
@@ -34,7 +44,7 @@ def test_source_filter(client, make_city, make_website, make_event):
     make_event(city, website=site_a, title="Alpha Event", start_date=TOMORROW)
     make_event(city, website=site_b, title="Beta Event", start_date=TOMORROW,
                canonical_url="https://x/b")
-    resp = client.get(f"/?source_id={site_a.id}")
+    resp = client.get(f"{_listing(city)}?source_id={site_a.id}")
     assert "Alpha Event" in resp.text
     assert "Beta Event" not in resp.text
 
@@ -45,10 +55,10 @@ def test_recurrence_filter(client, make_city, make_website, make_event):
                recurrence_parent_id="P1")
     make_event(city, website=website, title="One Off Gala", start_date=TOMORROW,
                canonical_url="https://x/g")
-    recurring = client.get("/?recurrence=recurring")
+    recurring = client.get(f"{_listing(city)}?recurrence=recurring")
     assert "Weekly Market" in recurring.text
     assert "One Off Gala" not in recurring.text
-    single = client.get("/?recurrence=single")
+    single = client.get(f"{_listing(city)}?recurrence=single")
     assert "One Off Gala" in single.text
     assert "Weekly Market" not in single.text
 
@@ -58,7 +68,7 @@ def test_today_preset(client, make_city, make_website, make_event):
     make_event(city, website=website, title="Today Show", start_date=TODAY)
     make_event(city, website=website, title="Tomorrow Show", start_date=TOMORROW,
                canonical_url="https://x/t")
-    resp = client.get("/?preset=today")
+    resp = client.get(f"{_listing(city)}?preset=today")
     assert "Today Show" in resp.text
     assert "Tomorrow Show" not in resp.text
 
@@ -67,7 +77,7 @@ def test_recurrence_parent_is_never_shown(client, make_city, make_website, make_
     city, website = _visible_website(make_city, make_website)
     make_event(city, website=website, title="Series Parent", start_date=TOMORROW,
                is_recurrence_parent=True)
-    resp = client.get("/")
+    resp = client.get(_listing(city))
     assert "Series Parent" not in resp.text
 
 
@@ -129,6 +139,6 @@ def test_map_view_renders_container(client, make_city, make_website, make_event)
     city, website = _visible_website(make_city, make_website)
     make_event(city, website=website, title="X", start_date=TOMORROW,
                latitude=39.8, longitude=-89.6)
-    resp = client.get("/?view=map")
+    resp = client.get(f"{_listing(city)}?view=map")
     assert 'id="event-map"' in resp.text
     assert "leaflet" in resp.text.lower()

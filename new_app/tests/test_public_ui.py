@@ -4,6 +4,16 @@ TODAY = datetime.now(UTC).date()
 TOMORROW = TODAY + timedelta(days=1)
 
 
+def _listing(city) -> str:
+    """The public listing URL for a town.
+
+    "/" is the town chooser and shows no events at all, so a test asserting an
+    event is present there would fail, and one asserting it is absent would
+    pass for the wrong reason.
+    """
+    return f"/city/{city.slug}"
+
+
 def _visible_event(make_city, make_website, make_event, **event_overrides):
     city = make_city()
     website = make_website(city, is_active=True, approved_pattern={"pattern_name": "x"})
@@ -32,7 +42,7 @@ class TestHumanReadableDateTime:
     def test_homepage_card_shows_human_readable_date_and_time_not_raw_values(
         self, client, make_city, make_website, make_event
     ):
-        _, _, event = _visible_event(
+        city, _, event = _visible_event(
             make_city,
             make_website,
             make_event,
@@ -40,7 +50,7 @@ class TestHumanReadableDateTime:
             start_date=TOMORROW,
             start_time=time(18, 0),
         )
-        resp = client.get("/")
+        resp = client.get(_listing(city))
         assert resp.status_code == 200
         assert "Readable Date Event" in resp.text
         assert event.start_date.isoformat() not in resp.text
@@ -50,7 +60,7 @@ class TestHumanReadableDateTime:
     def test_detail_page_shows_human_readable_date_and_time_not_raw_values(
         self, client, make_city, make_website, make_event
     ):
-        _, _, event = _visible_event(
+        city, _, event = _visible_event(
             make_city,
             make_website,
             make_event,
@@ -60,31 +70,38 @@ class TestHumanReadableDateTime:
         )
         resp = client.get(f"/events/{event.id}")
         assert resp.status_code == 200
-        assert event.start_date.isoformat() not in resp.text
-        assert "09:30:00" not in resp.text
-        assert "9:30 AM" in resp.text
+        # The page also carries schema.org JSON-LD, where an ISO 8601 date is
+        # required; this is about what a person reads, so exclude that block.
+        import re as _re
+
+        visible = _re.sub(
+            r'<script type="application/ld\+json">.*?</script>', "", resp.text, flags=_re.S
+        )
+        assert event.start_date.isoformat() not in visible
+        assert "09:30:00" not in visible
+        assert "9:30 AM" in visible
 
 
 class TestImageFallback:
     def test_event_with_image_renders_img_tag(self, client, make_city, make_website, make_event):
-        _, _, event = _visible_event(
+        city, _, event = _visible_event(
             make_city,
             make_website,
             make_event,
             title="Image Event",
             image_url="https://example.com/poster.jpg",
         )
-        resp = client.get("/")
+        resp = client.get(_listing(city))
         assert f'<img src="{event.image_url}" alt="Image Event"' in resp.text
         assert "event-card-image-fallback" not in resp.text.split("Image Event")[0][-600:]
 
     def test_event_without_image_renders_fallback(
         self, client, make_city, make_website, make_event
     ):
-        _, _, event = _visible_event(
+        city, _, event = _visible_event(
             make_city, make_website, make_event, title="No Image Event", image_url=None
         )
-        resp = client.get("/")
+        resp = client.get(_listing(city))
         assert "No Image Event" in resp.text
         assert "event-card-image-fallback" in resp.text
         assert "<svg" in resp.text
@@ -99,11 +116,12 @@ class TestFilterValuesPreserved:
         make_event(city, website=website, category=category, start_date=TOMORROW)
 
         resp = client.get(
-            f"/?city_id={city.id}&category_id={category.id}"
+            f"{_listing(city)}?category_id={category.id}"
             f"&date_from={TOMORROW.isoformat()}&date_to={TOMORROW.isoformat()}&upcoming_only=1"
         )
         assert resp.status_code == 200
-        assert f'value="{city.id}" selected' in resp.text
+        # No city control: the town is pinned by the route.
+        assert 'name="city_id"' not in resp.text
         assert f'value="{category.id}" selected' in resp.text
         assert f'value="{TOMORROW.isoformat()}"' in resp.text
         assert 'name="upcoming_only" value="1" checked' in resp.text
@@ -112,12 +130,13 @@ class TestFilterValuesPreserved:
 class TestEmptyState:
     def test_empty_state_shown_when_no_events_match(self, client, make_city):
         city = make_city(name="Empty City", slug="empty-city")
-        resp = client.get(f"/?city_id={city.id}")
+        resp = client.get(_listing(city))
         assert resp.status_code == 200
         assert "No events match these filters" in resp.text
-        assert 'href="/" class="filter-clear-link"' in resp.text
+        # Clearing returns to this town unfiltered, not to the chooser.
+        assert f'href="{_listing(city)}" class="filter-clear-link"' in resp.text
 
     def test_events_present_hides_empty_state(self, client, make_city, make_website, make_event):
-        _visible_event(make_city, make_website, make_event, title="Present Event")
-        resp = client.get("/")
+        city, _, _ = _visible_event(make_city, make_website, make_event, title="Present Event")
+        resp = client.get(_listing(city))
         assert "No events match these filters" not in resp.text

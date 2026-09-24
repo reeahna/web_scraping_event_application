@@ -22,6 +22,12 @@
   <input type="text" id="state_or_region" name="state_or_region" value="{{ form.state_or_region or '' }}" />
   {{ field_error(errors, "state_or_region") }}
 
+  <label for="university_name">University</label>
+  <input type="text" id="university_name" name="university_name"
+         value="{{ form.university_name or '' }}" placeholder="Indiana University" />
+  <span class="field-hint">Shown on the public town chooser; leave blank if the town has no school.</span>
+  {{ field_error(errors, "university_name") }}
+
   <label for="country">Country</label>
   <input type="text" id="country" name="country" value="{{ form.country or '' }}" />
   {{ field_error(errors, "country") }}
