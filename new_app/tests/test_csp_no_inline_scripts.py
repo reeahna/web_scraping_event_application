@@ -21,10 +21,10 @@ TEMPLATES_DIR = Path(__file__).resolve().parent.parent / "app" / "templates"
 INLINE_HANDLER = re.compile(r"""\son[a-z]+\s*=\s*["']""", re.I)
 # A <script> with no src, EXCEPT a data block. CSP's script-src governs script
 # execution, and a block whose type is not a JavaScript MIME type is never
-# executed, so application/ld+json is unaffected by the policy. The lookahead
+# executed, so application/json and application/ld+json are unaffected. The lookahead
 # is deliberately narrow: any other typeless or JS-typed inline block still fails.
 INLINE_SCRIPT = re.compile(
-    r"<script(?![^>]*\ssrc=)(?![^>]*type=[\"']application/ld\+json[\"'])[^>]*>",
+    r"<script(?![^>]*\ssrc=)(?![^>]*type=[\"']application/(ld\+)?json[\"'])[^>]*>",
     re.I,
 )
 JS_URL = re.compile(r"""(?:href|action)\s*=\s*["']\s*javascript:""", re.I)

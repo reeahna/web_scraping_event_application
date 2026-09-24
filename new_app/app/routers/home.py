@@ -180,6 +180,21 @@ def home(request: Request, current_user: OptionalCurrentUser, db: DbSession):
     """
     query = (request.query_params.get("q") or "").strip()
     cities = search_public_cities(db, query=query)
+    counts = upcoming_counts_by_city(db, today=current_public_date())
+
+    # The whole town list travels with the page so the suggestions appear on the
+    # keystroke rather than after a round trip. This is a few dozen towns; if it
+    # ever reaches a few thousand, move it behind an endpoint.
+    city_index = [
+        {
+            "name": city.name,
+            "school": city.university_name or "",
+            "state": city.state_or_region or "",
+            "slug": city.slug,
+            "count": counts.get(city.id, 0),
+        }
+        for city in search_public_cities(db)
+    ]
     return render(
         request,
         "city_chooser.html",
@@ -189,7 +204,8 @@ def home(request: Request, current_user: OptionalCurrentUser, db: DbSession):
             "registration_enabled": get_settings().registration_enabled,
             "cities": cities,
             "query": query,
-            "event_counts": upcoming_counts_by_city(db, today=current_public_date()),
+            "event_counts": counts,
+            "city_index": city_index,
         },
     )
 

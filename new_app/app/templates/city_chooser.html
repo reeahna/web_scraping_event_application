@@ -3,6 +3,11 @@
 {% block title %}New City Events — Find events in your college town{% endblock %}
 {% block meta_description %}Find out what is on in your college town: concerts, theater, festivals and campus events, gathered from every local source.{% endblock %}
 
+{% block head_extra %}
+<script type="application/json" id="city-index">{{ city_index | tojson }}</script>
+<script src="/static/js/city-search.js" defer></script>
+{% endblock %}
+
 {% block content %}
 <section class="chooser-hero">
   <div class="chooser-inner">
@@ -18,9 +23,22 @@
     #}
     <form method="get" action="/" class="chooser-form" role="search">
       <label for="city-search" class="visually-hidden">Search for a college town or school</label>
-      <input type="search" id="city-search" name="q" value="{{ query }}"
-             placeholder="Search by town or school"
-             autocomplete="off" autofocus />
+      {#
+        A combobox over the form's own input. Submitting still works with no
+        JavaScript, so the suggestions are an enhancement rather than the only
+        way through. The ARIA attributes start in their no-script state and the
+        script turns them on, so a reader is never told about a listbox that is
+        not there.
+      #}
+      <div class="chooser-field">
+        <input type="search" id="city-search" name="q" value="{{ query }}"
+               placeholder="Search by town or school"
+               autocomplete="off" autofocus
+               role="combobox" aria-expanded="false" aria-autocomplete="list"
+               aria-controls="city-suggestions" />
+        <ul id="city-suggestions" class="suggestions" role="listbox"
+            aria-label="Matching towns" hidden></ul>
+      </div>
       <button type="submit">Search</button>
     </form>
   </div>
