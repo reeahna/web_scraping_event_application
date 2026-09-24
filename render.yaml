@@ -33,3 +33,15 @@ services:
         value: "true"
       - key: SECURITY_HEADERS_ENABLED
         value: "true"
+      # Canonical links, Open Graph URLs and the sitemap are absolute and are
+      # built from this, never from the request Host header. Without it they
+      # point at localhost, which tells search engines the real pages live at
+      # an unreachable address. Change this when a custom domain is added.
+      - key: PUBLIC_BASE_URL
+        value: https://city-events-ryjd.onrender.com
+      # Render terminates TLS ahead of the app; this turns on HSTS.
+      - key: BEHIND_HTTPS
+        value: "true"
+      # Host-header validation. Add the custom domain here too when there is one.
+      - key: TRUSTED_HOSTS
+        value: city-events-ryjd.onrender.com

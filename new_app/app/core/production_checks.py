@@ -49,6 +49,24 @@ def production_blockers(settings) -> list[ReadinessIssue]:
             "trusted_hosts is empty; set it to enable host-header validation.",
             "blocker",
         ))
+    base_url = (settings.public_base_url or "").lower()
+    if not base_url or "localhost" in base_url or "127.0.0.1" in base_url:
+        issues.append(ReadinessIssue(
+            "local_public_base_url",
+            "public_base_url still points at localhost; canonical links, Open "
+            "Graph URLs and the sitemap would name an unreachable host, which "
+            "is worse for search engines than omitting them. Set "
+            "PUBLIC_BASE_URL to the site's real address.",
+            "blocker",
+        ))
+    elif not base_url.startswith("https://"):
+        issues.append(ReadinessIssue(
+            "insecure_public_base_url",
+            "public_base_url is not https; canonical links would advertise "
+            "the insecure address.",
+            "warning",
+        ))
+
     if settings.rate_limit_backend == "memory":
         issues.append(ReadinessIssue(
             "in_process_rate_limit",

@@ -12,6 +12,9 @@ def _settings(**over):
         database_url="sqlite:///app.db", cookie_secure=False, behind_https=False,
         trusted_hosts=[], rate_limit_backend="memory",
         local_login_enabled=True, registration_enabled=True,
+        # The real development default, so this stands in for an unconfigured
+        # deployment rather than an impossible one.
+        public_base_url="http://localhost:8100",
     )
     base.update(over)
     return SimpleNamespace(**base)
@@ -24,6 +27,9 @@ def test_dev_defaults_are_not_production_ready():
     assert "no_https" in codes
     assert "no_trusted_hosts" in codes
     assert "in_process_rate_limit" in codes
+    # The development default points at localhost, which would put an
+    # unreachable host in every canonical link and sitemap entry.
+    assert "local_public_base_url" in codes
     assert is_production_ready(_settings()) is False
 
 
@@ -32,6 +38,7 @@ def test_hardened_settings_are_production_ready():
         database_url="postgresql://user:pw@db/app", cookie_secure=True, behind_https=True,
         trusted_hosts=["events.example.com"], rate_limit_backend="redis",
         registration_enabled=False,
+        public_base_url="https://events.example.com",
     )
     assert is_production_ready(hardened) is True
 
