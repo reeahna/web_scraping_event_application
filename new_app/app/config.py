@@ -10,6 +10,14 @@ class Settings(BaseSettings):
     app_name: str = "New City Events App"
     app_env: str = "development"
     app_port: int = 8100
+    # The site's own address, used for canonical links, Open Graph URLs and the
+    # sitemap. Those have to be absolute, and a request's Host header is
+    # attacker-controlled, so it is configuration rather than something derived
+    # per request.
+    public_base_url: str = "http://localhost:8100"
+    # A short public description, used as the default meta description and as
+    # the Open Graph site name's companion text.
+    public_tagline: str = "Local events, gathered in one place."
     database_url: str = f"sqlite:///{(BASE_DIR / 'app.db').as_posix()}"
     log_level: str = "INFO"
 

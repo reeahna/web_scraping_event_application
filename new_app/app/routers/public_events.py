@@ -14,6 +14,7 @@ from app.repositories.public_events import (
     list_public_map_points,
     this_weekend,
 )
+from app.services import seo
 from app.services.rbac import can_access_admin
 
 router = APIRouter(prefix="/events", tags=["public-events"])
@@ -97,5 +98,8 @@ def event_detail(event_id: int, request: Request, current_user: OptionalCurrentU
             "fallback_image_url": get_settings().public_fallback_image_url,
             "is_saved": is_saved,
             "is_following_city": is_following_city,
+            "structured_data": seo.event_structured_data(event),
+            "meta_description": seo.event_meta_description(event),
+            "canonical_url": seo.absolute_url(f"/events/{event.id}"),
         },
     )

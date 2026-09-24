@@ -13,6 +13,7 @@ from app.core.onboarding import onboarding_label
 from app.core.report_status import report_status_label
 from app.services.quality_presentation import format_percent, quality_view
 from app.services.schedule_admin import format_admin_datetime
+from app.services.seo import absolute_url
 
 TEMPLATES_DIR = Path(__file__).resolve().parent.parent / "templates"
 templates = Jinja2Templates(directory=str(TEMPLATES_DIR))
@@ -76,6 +77,7 @@ def _admin_datetime(value: Any) -> str:
 
 templates.env.filters["admin_datetime"] = _admin_datetime
 templates.env.filters["report_status_label"] = report_status_label
+templates.env.globals["absolute_url"] = absolute_url
 
 
 def _category_photo(event: Any):

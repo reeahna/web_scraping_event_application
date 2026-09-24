@@ -41,6 +41,7 @@ from app.routers import (
     scheduler,
     unsupported_reports,
     websites,
+    seo,
 )
 
 settings = get_settings()
@@ -61,7 +62,23 @@ async def lifespan(app: FastAPI):
     logger.info("New app shutting down")
 
 
-app = FastAPI(title=settings.app_name, lifespan=lifespan)
+# The interactive API docs enumerate every route, including all 96 admin
+# endpoints, to anyone who asks — no authentication is involved in serving
+# them. Useful in development, an unnecessary map of the attack surface in
+# production, so they are switched off outside development.
+def docs_enabled_for(app_env: str) -> bool:
+    return app_env == "development"
+
+
+_docs_enabled = docs_enabled_for(settings.app_env)
+
+app = FastAPI(
+    title=settings.app_name,
+    lifespan=lifespan,
+    docs_url="/docs" if _docs_enabled else None,
+    redoc_url="/redoc" if _docs_enabled else None,
+    openapi_url="/openapi.json" if _docs_enabled else None,
+)
 app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
 
 # Middleware is applied in reverse registration order, so register the
@@ -84,6 +101,7 @@ app.add_exception_handler(NotAuthenticatedError, not_authenticated_handler)
 app.add_exception_handler(Exception, unhandled_exception_handler)
 
 app.include_router(home.router)
+app.include_router(seo.router)
 app.include_router(public_events.router)
 app.include_router(health.router)
 app.include_router(auth.router)

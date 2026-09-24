@@ -19,7 +19,14 @@ from pathlib import Path
 TEMPLATES_DIR = Path(__file__).resolve().parent.parent / "app" / "templates"
 
 INLINE_HANDLER = re.compile(r"""\son[a-z]+\s*=\s*["']""", re.I)
-INLINE_SCRIPT = re.compile(r"<script(?![^>]*\ssrc=)[^>]*>", re.I)
+# A <script> with no src, EXCEPT a data block. CSP's script-src governs script
+# execution, and a block whose type is not a JavaScript MIME type is never
+# executed, so application/ld+json is unaffected by the policy. The lookahead
+# is deliberately narrow: any other typeless or JS-typed inline block still fails.
+INLINE_SCRIPT = re.compile(
+    r"<script(?![^>]*\ssrc=)(?![^>]*type=[\"']application/ld\+json[\"'])[^>]*>",
+    re.I,
+)
 JS_URL = re.compile(r"""(?:href|action)\s*=\s*["']\s*javascript:""", re.I)
 
 
@@ -70,4 +77,19 @@ def test_the_scan_actually_detects_a_violation(tmp_path, monkeypatch):
         encoding="utf-8",
     )
     assert _offenders(INLINE_HANDLER)
+    assert _offenders(INLINE_SCRIPT)
+
+
+def test_the_json_ld_exemption_is_narrow(tmp_path, monkeypatch):
+    """A data block is allowed; a typed or typeless executable one is not."""
+    monkeypatch.setattr(f"{__name__}.TEMPLATES_DIR", tmp_path)
+    target = tmp_path / "probe.html"
+
+    target.write_text('<script type="application/ld+json">{"a": 1}</script>', encoding="utf-8")
+    assert _offenders(INLINE_SCRIPT) == []
+
+    target.write_text('<script type="text/javascript">alert(1)</script>', encoding="utf-8")
+    assert _offenders(INLINE_SCRIPT)
+
+    target.write_text("<script>alert(1)</script>", encoding="utf-8")
     assert _offenders(INLINE_SCRIPT)

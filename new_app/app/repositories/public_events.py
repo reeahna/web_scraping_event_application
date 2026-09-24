@@ -82,6 +82,21 @@ def _base_public_query(db: Session, *, today: date):
     )
 
 
+def public_event_ids(db: Session, *, today: date, limit: int) -> list[int]:
+    """Ids of the events the public site would currently show, newest first.
+
+    Shares _base_public_query with the listing, so the sitemap can never
+    advertise an event the site itself would not serve.
+    """
+    return [
+        row.id
+        for row in _base_public_query(db, today=today)
+        .order_by(Event.start_date.asc(), Event.id.asc())
+        .limit(limit)
+        .all()
+    ]
+
+
 def _apply_filters(
     query,
     *,

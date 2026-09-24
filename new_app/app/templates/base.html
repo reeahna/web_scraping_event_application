@@ -3,8 +3,26 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <meta name="description" content="Find local events — concerts, theater, festivals, and more." />
   <title>{% block title %}New City Events{% endblock %}</title>
+  {#
+    Per-page metadata. Pages override meta_description and canonical_path;
+    anything that does not gets the site defaults, which is still better than
+    every page sharing one description.
+  #}
+  <meta name="description" content="{% block meta_description %}Find local events: concerts, theater, festivals, and more.{% endblock %}" />
+  <link rel="canonical" href="{{ canonical_url or absolute_url(request.url.path) }}" />
+  <meta name="robots" content="{% block robots %}index, follow{% endblock %}" />
+
+  {# Social previews. og:url is built from configuration, never from the
+     request Host header, which a visitor controls. #}
+  <meta property="og:type" content="{% block og_type %}website{% endblock %}" />
+  <meta property="og:site_name" content="New City Events" />
+  <meta property="og:title" content="{{ self.title() | trim }}" />
+  <meta property="og:description" content="{{ self.meta_description() | trim }}" />
+  <meta property="og:url" content="{{ canonical_url or absolute_url(request.url.path) }}" />
+  {% block og_extra %}{% endblock %}
+  <meta name="twitter:card" content="{% block twitter_card %}summary{% endblock %}" />
+
   <link rel="stylesheet" href="/static/style.css" />
   {% block head_extra %}{% endblock %}
 </head>
