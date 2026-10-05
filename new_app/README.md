@@ -125,6 +125,23 @@ confidence label, explanation, manual-review recommendation, and fallback
 state. Rules contain data only—never executable Python—and regular expressions
 are length-limited, compiled before storage, and reject dangerous constructs.
 
+## What counts as an event
+
+Imports leave out anything a person cannot actually go to: online-only
+sessions, conferences, certification courses, internal staff/faculty business
+("faculty meeting", "employees only", "by invitation"), and calendar entries
+that are deadlines or reminders ("Last day to drop", "Registration closes",
+"Fall Break"). The rules are in `app/services/attendability.py`; each import
+run records how many it left out (`not_attendable_excluded:N`), and an event
+imported before the filter is taken down the next time its source lists it.
+Set `ATTENDABILITY_FILTER_ENABLED=false` to turn it off. To clear older events
+right away:
+
+```bash
+python scripts/hide_unattendable_events.py           # dry run: lists them
+python scripts/hide_unattendable_events.py --apply   # deactivates them
+```
+
 ## Fingerprints and duplicate review
 
 Fingerprint selection is deterministic: source website plus external ID wins;

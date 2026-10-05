@@ -149,6 +149,9 @@ class JsonLdEventPattern:
 
             raw["image"] = _extract_image(raw.get("image"))
             raw["address"] = _extract_address(raw.get("address"))
+            # Kept so an online-only event can be told apart from one at a place
+            # (app.services.attendability); a hybrid event declares "Mixed".
+            raw["attendance_mode"] = node.get("eventAttendanceMode")
 
             canonical_url = raw.get("canonical_url")
             if not canonical_url and config.allow_page_url_as_canonical_fallback:
