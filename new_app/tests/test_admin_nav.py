@@ -50,7 +50,11 @@ def test_group_triggers_are_buttons_not_links(nav_html):
     """A group heading goes nowhere, so it must not look like a destination to
     assistive tech or open in a new tab on middle-click."""
     for heading in ("Sources", "Events", "Imports", "Administration"):
-        assert f'<button type="button" class="admin-nav-trigger" aria-expanded="false">{heading}</button>' in nav_html
+        trigger = (
+            '<button type="button" class="admin-nav-trigger" aria-expanded="false">'
+            f"{heading}</button>"
+        )
+        assert trigger in nav_html
         assert f'>{heading}</a>' not in nav_html
 
 

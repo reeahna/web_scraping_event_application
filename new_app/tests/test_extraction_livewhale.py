@@ -519,7 +519,8 @@ def test_events_from_data_envelope_are_extracted():
         "]}"
     )
     config = SiteConfiguration(pattern_name="livewhale_json", api_endpoint="https://x.edu/live/json/events")
-    candidates = LiveWhalePattern().extract(make_response(body, content_type="application/json"), config)
+    response = make_response(body, content_type="application/json")
+    candidates = LiveWhalePattern().extract(response, config)
     assert {c.raw["title"] for c in candidates} == {"Convocation", "Concert"}
 
 

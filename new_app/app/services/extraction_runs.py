@@ -786,7 +786,9 @@ def _browser_pagination_bounds(config: SiteConfiguration) -> dict:
     }
 
 
-def _detail_fetch_strategy(config: SiteConfiguration, listing_fetch: FetchStrategy) -> FetchStrategy:
+def _detail_fetch_strategy(
+    config: SiteConfiguration, listing_fetch: FetchStrategy
+) -> FetchStrategy:
     """Transport for detail-page enrichment fetches. Detail pages are always
     HTML, so a browser-execution source — whose listing transport captures the
     page's JSON, not arbitrary HTML — reads them by rendering the page, while an

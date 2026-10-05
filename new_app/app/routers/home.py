@@ -15,8 +15,8 @@ from app.repositories.public_events import (
     current_public_date,
     list_public_events,
     list_public_sources,
-    upcoming_counts_by_city,
     this_weekend,
+    upcoming_counts_by_city,
 )
 from app.services import seo
 from app.services.rbac import can_access_admin

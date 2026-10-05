@@ -6,8 +6,8 @@ from fastapi.responses import HTMLResponse, RedirectResponse
 from app.core.csrf import verify_csrf
 from app.core.exceptions import AppError, NotFoundError
 from app.core.flash import set_flash
-from app.core.report_status import ALLOWED_REPORT_TRANSITIONS, REPORT_STATUSES
 from app.core.forms import OptionalFlag, OptionalId, OptionalText
+from app.core.report_status import ALLOWED_REPORT_TRANSITIONS, REPORT_STATUSES
 from app.core.templating import render
 from app.dependencies import ClientIp, CorrelationId, DbSession
 from app.models.user import User

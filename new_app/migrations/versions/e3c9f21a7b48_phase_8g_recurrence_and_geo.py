@@ -41,12 +41,12 @@ def upgrade() -> None:
     op.add_column(
         "events",
         sa.Column(
-            "is_recurrence_parent", sa.Boolean(), nullable=False, server_default=sa.text("0")
+            "is_recurrence_parent", sa.Boolean(), nullable=False, server_default=sa.false()
         ),
     )
     op.add_column(
         "events",
-        sa.Column("is_cancelled", sa.Boolean(), nullable=False, server_default=sa.text("0")),
+        sa.Column("is_cancelled", sa.Boolean(), nullable=False, server_default=sa.false()),
     )
     op.create_index("ix_events_occurrence_id", "events", ["occurrence_id"], unique=False)
     op.create_index(
@@ -57,7 +57,7 @@ def upgrade() -> None:
         "auto_onboarding_policies",
         sa.Column(
             "require_date_range_parse_success",
-            sa.Boolean(), nullable=False, server_default=sa.text("0"),
+            sa.Boolean(), nullable=False, server_default=sa.false(),
         ),
     )
     op.add_column(
@@ -71,7 +71,7 @@ def upgrade() -> None:
         "auto_onboarding_policies",
         sa.Column(
             "require_geographic_filter",
-            sa.Boolean(), nullable=False, server_default=sa.text("0"),
+            sa.Boolean(), nullable=False, server_default=sa.false(),
         ),
     )
     op.add_column(

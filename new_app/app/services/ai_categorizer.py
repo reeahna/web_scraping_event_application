@@ -194,7 +194,7 @@ class GeminiCategorizer:
         # never goes in a logged header.
         self._client = httpx.Client(timeout=timeout, params={"key": api_key})
 
-    def __enter__(self) -> "GeminiCategorizer":
+    def __enter__(self) -> GeminiCategorizer:
         return self
 
     def __exit__(self, *exc: object) -> None:

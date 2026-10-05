@@ -118,9 +118,14 @@ def upgrade() -> None:
         session.execute(
             sa.text(
                 "INSERT INTO roles (name, description, is_active, created_at, updated_at) "
-                "VALUES (:name, :description, 1, :now, :now)"
+                "VALUES (:name, :description, :active, :now, :now)"
             ),
-            {"name": _NEW_NAME, "description": _NEW_DESCRIPTION, "now": _now()},
+            {
+                "name": _NEW_NAME,
+                "description": _NEW_DESCRIPTION,
+                "active": True,
+                "now": _now(),
+            },
         )
         registered_user_id = session.execute(
             sa.text("SELECT id FROM roles WHERE name = :name"), {"name": _NEW_NAME}

@@ -25,7 +25,7 @@ from __future__ import annotations
 import hashlib
 import json
 import re
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Any
 from urllib.parse import urljoin
 
@@ -185,7 +185,7 @@ def _recurrence_until(end_iso: Any) -> str | None:
     if not isinstance(end_iso, str) or not end_iso:
         return None
     try:
-        moment = datetime.fromisoformat(end_iso.replace("Z", "+00:00")).astimezone(timezone.utc)
+        moment = datetime.fromisoformat(end_iso.replace("Z", "+00:00")).astimezone(UTC)
     except ValueError:
         return None
     return moment.strftime("%Y%m%dT%H%M%S")

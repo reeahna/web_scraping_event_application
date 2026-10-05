@@ -34,7 +34,7 @@ def upgrade() -> None:
         sa.Column("provider", sa.String(length=32), nullable=False),
         sa.Column("subject", sa.String(length=255), nullable=False),
         sa.Column("email", sa.String(length=255), nullable=True),
-        sa.Column("email_verified", sa.Boolean(), nullable=False, server_default=sa.text("0")),
+        sa.Column("email_verified", sa.Boolean(), nullable=False, server_default=sa.false()),
         sa.Column("display_name", sa.String(length=255), nullable=True),
         sa.Column("avatar_url", sa.String(length=2000), nullable=True),
         sa.Column("last_login_at", sa.DateTime(timezone=True), nullable=True),

@@ -231,7 +231,8 @@ def print_report(report: Report, routes) -> None:
         print(f"  {t}")
 
     total_empty = sum(len(v) for v in report.empties_by_page.values())
-    print(f"\nEMPTY / '#' ANCHORS & BUTTONS ({total_empty} on {len(report.empties_by_page)} pages):")
+    pages = len(report.empties_by_page)
+    print(f"\nEMPTY / '#' ANCHORS & BUTTONS ({total_empty} on {pages} pages):")
     for page, items in sorted(report.empties_by_page.items()):
         print(f"  {page}")
         for it in sorted(set(items)):

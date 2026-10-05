@@ -39,9 +39,9 @@ from app.routers import (
     registration,
     reporting,
     scheduler,
+    seo,
     unsupported_reports,
     websites,
-    seo,
 )
 
 settings = get_settings()

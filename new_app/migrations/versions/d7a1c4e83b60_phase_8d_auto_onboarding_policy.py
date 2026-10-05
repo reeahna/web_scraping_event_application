@@ -49,7 +49,10 @@ def _int_column(name: str, default: str) -> sa.Column:
 
 
 def _bool_column(name: str, default: str) -> sa.Column:
-    return sa.Column(name, sa.Boolean(), nullable=False, server_default=sa.text(default))
+    # sa.true()/sa.false() render as 1/0 on SQLite and TRUE/FALSE on PostgreSQL,
+    # which rejects an integer default on a boolean column.
+    server_default = sa.true() if default == "1" else sa.false()
+    return sa.Column(name, sa.Boolean(), nullable=False, server_default=server_default)
 
 
 def upgrade() -> None:

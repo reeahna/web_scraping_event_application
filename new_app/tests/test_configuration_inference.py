@@ -529,7 +529,9 @@ def test_anchor_card_fields_are_inferred_from_self_and_nested_spans():
     soup = _anchor_cards_soup()
     container = infer_container(soup, DEFAULT_POLICY)
     cards = sample_cards(soup, container.selector, DEFAULT_POLICY)
-    accepted, _ = infer_fields(cards, base_url="https://godfreydaniels.org/upcoming-events/", policy=DEFAULT_POLICY)
+    accepted, _ = infer_fields(
+        cards, base_url="https://godfreydaniels.org/upcoming-events/", policy=DEFAULT_POLICY
+    )
     # The card's own href becomes the event URL via :scope.
     assert accepted["canonical_url"].selector == ":scope"
     assert accepted["canonical_url"].attribute == "href"
@@ -544,7 +546,7 @@ def test_ordinal_and_at_time_date_format_is_inferred():
         ["Sunday Sep 6th, 2026 @ 07:00 PM", "Friday Sep 11th, 2026 @ 08:00 PM"]
     )
     assert rate == 1.0
-    assert any("%A %b %d, %Y @ %I:%M %p" == c.format for c in candidates if c.accepted)
+    assert any(c.format == "%A %b %d, %Y @ %I:%M %p" for c in candidates if c.accepted)
 
 
 # --- dates embedded in prose + classless whole-card anchors -------------------

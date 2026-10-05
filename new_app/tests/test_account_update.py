@@ -261,7 +261,8 @@ def test_admin_account_uses_full_admin_navigation(client, make_super_admin, logi
         "/account": "My Account",
     }
     for path, label in expected_links.items():
-        assert re.search(rf'<a href="{re.escape(path)}"[^>]*>\s*{re.escape(label)}', response.text), path
+        pattern = rf'<a href="{re.escape(path)}"[^>]*>\s*{re.escape(label)}'
+        assert re.search(pattern, response.text), path
     assert user.email in response.text
     assert 'action="/auth/logout"' in response.text
 

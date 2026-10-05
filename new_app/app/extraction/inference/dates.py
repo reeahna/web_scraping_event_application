@@ -226,7 +226,9 @@ def infer_date_formats(
     written into `SiteConfiguration.date_formats`; the ISO candidate is
     reported for evidence but needs no configuration, since
     `parse_date_value` already falls back to ISO 8601."""
-    values = [strip_ordinals(normalize_whitespace(v)) for v in raw_values if normalize_whitespace(v)]
+    values = [
+        strip_ordinals(normalize_whitespace(v)) for v in raw_values if normalize_whitespace(v)
+    ]
     if not values:
         return [], 0.0
 
