@@ -46,7 +46,7 @@ automatic onboarding is policy-gated and conservative by default. See
 ## Optional, disabled-by-default subsystems
 
 AI configuration assistance (8E), async geocoding (11), email alerts (13),
-external OAuth identities (14), and AI enrichment (17) are all **off by
+external OAuth identities (14), and AI categorization are all **off by
 default** and require explicit configuration; the app is fully functional
 without any of them, and none can fail extraction or public display.
 

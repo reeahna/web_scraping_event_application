@@ -1,8 +1,7 @@
 name: CI
 
 # Lint + full test suite for new_app on every push and PR. This is CI only —
-# it never deploys. A deployment workflow template lives in
-# .github/workflows/deploy.yml.disabled (kept disabled on purpose).
+# it never deploys (Render deploys from render.yaml).
 on:
   push:
     branches: [main]
