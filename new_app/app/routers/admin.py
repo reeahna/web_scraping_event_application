@@ -12,6 +12,7 @@ from app.core.templating import render
 from app.dependencies import ClientIp, CorrelationId, CurrentUser, DbSession
 from app.models.audit_log import AuditLog
 from app.models.city import City
+from app.models.city_university import CityUniversity
 from app.models.event import Event
 from app.models.permission import Permission
 from app.models.role import Role
@@ -121,6 +122,10 @@ def dashboard(request: Request, current_user: CurrentUser, db: DbSession):
     metrics = {
         "active_cities": db.query(City).filter(City.is_active.is_(True)).count(),
         "inactive_cities": db.query(City).filter(City.is_active.is_(False)).count(),
+        # Every row, not distinct names: a school with campuses in two towns is
+        # two things to cover, which is what this number is for. Matches the
+        # websites and events tiles, which also count everything.
+        "universities": db.query(CityUniversity).count(),
         "websites": db.query(Website).count(),
         "events": db.query(Event).count(),
     }

@@ -139,3 +139,52 @@ def test_dashboard_queries_stay_bounded_count_only(db_session, make_city, make_w
     from app.repositories.unsupported_site_report import count_unresolved_reports
 
     assert count_unresolved_reports(db_session) == 1
+
+
+def test_dashboard_counts_universities(
+    client, make_super_admin, make_city, login, db_session
+):
+    """Sits beside cities, websites and events, and counts the same way they
+    do: every row, including towns that are inactive."""
+    make_super_admin(email="dash-unis@example.com", password="root-pass-1234")
+    make_city(
+        name="Claremont", slug="claremont-ca",
+        universities=["Pomona College", "Harvey Mudd College"],
+    )
+    make_city(name="Bloomington", slug="bloomington-in", universities=["Indiana University"])
+    make_city(name="Nowhere", slug="nowhere-xx")
+    db_session.commit()
+
+    login("dash-unis@example.com", "root-pass-1234")
+    html = client.get("/admin").text
+    assert ">Universities</div>" in html
+    assert '<div class="metric-value">3</div>' in html
+
+
+def test_the_universities_tile_reads_zero_with_none(
+    client, make_super_admin, make_city, login, db_session
+):
+    make_super_admin(email="dash-nouni@example.com", password="root-pass-1234")
+    make_city(name="Plain", slug="plain-town")
+    db_session.commit()
+
+    login("dash-nouni@example.com", "root-pass-1234")
+    html = client.get("/admin").text
+    assert ">Universities</div>" in html
+
+
+def test_audit_timestamps_are_formatted_not_raw(
+    client, make_super_admin, login
+):
+    """These rendered as "2026-10-05 22:42:54.337938" on the dashboard and the
+    full audit log, after the same fix had been applied elsewhere."""
+    import re
+
+    make_super_admin(email="dash-stamp@example.com", password="root-pass-1234")
+    login("dash-stamp@example.com", "root-pass-1234")
+
+    raw = re.compile(r"\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}\.\d+")
+    for path in ("/admin", "/admin/audit"):
+        html = client.get(path).text
+        assert raw.search(html) is None, path
+        assert " at " in html, path

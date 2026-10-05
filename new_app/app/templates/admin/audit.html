@@ -13,7 +13,7 @@
   <tbody>
   {% for entry in entries %}
     <tr>
-      <td>{{ entry.created_at }}</td>
+      <td class="audit-meta">{{ entry.created_at | admin_datetime }}</td>
       <td>{{ entry.user_id or "—" }}</td>
       <td>{{ entry.action }}</td>
       <td>{{ entry.entity_type }}{% if entry.entity_id %}#{{ entry.entity_id }}{% endif %}</td>

@@ -14,6 +14,10 @@
     {% endif %}
   </div>
   <div class="metric-tile">
+    <div class="metric-value">{{ metrics.universities }}</div>
+    <div class="metric-label">Universities</div>
+  </div>
+  <div class="metric-tile">
     <div class="metric-value">{{ metrics.websites }}</div>
     <div class="metric-label">Websites</div>
   </div>
@@ -63,7 +67,7 @@
   <tbody>
   {% for entry in recent_audit %}
     <tr>
-      <td class="audit-meta">{{ entry.created_at }}</td>
+      <td class="audit-meta">{{ entry.created_at | admin_datetime }}</td>
       <td class="audit-meta">{{ entry.user_id or "—" }}</td>
       <td>{{ entry.action }}</td>
       <td class="audit-meta">{{ entry.entity_type }}{% if entry.entity_id %}#{{ entry.entity_id }}{% endif %}</td>
