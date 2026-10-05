@@ -5,7 +5,7 @@ extracts events on a schedule, and serves them publicly. It is built as a
 FastAPI app plus a dedicated background process, over a single relational
 database.
 
-## Processes (see docs/deployment.md)
+## Processes (see DEPLOY_RENDER.md)
 
 - **Web** (`app.main:app`) — HTTP: public event browsing, admin, auth. Starts
   **no** scheduler and makes no outbound scraping request on startup.
