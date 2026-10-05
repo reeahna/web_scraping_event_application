@@ -26,6 +26,10 @@ def map_data(request: Request, db: DbSession) -> JSONResponse:
     provenance, raw records, configuration, or correction history)."""
     today = current_public_date()
     filters = _Filters(request.query_params, today=today)
+    # Like the listing, the map is always one town's: without a town there is
+    # nothing to show, rather than every city's events at once.
+    if filters.city_id is None:
+        return JSONResponse({"points": [], "count": 0})
     points = list_public_map_points(db, today=today, **filters.as_query_kwargs())
     return JSONResponse({"points": points, "count": len(points)})
 
