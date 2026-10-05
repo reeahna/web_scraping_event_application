@@ -5,8 +5,8 @@ from app.core.csrf import verify_csrf
 from app.core.flash import set_flash
 from app.core.templating import render
 from app.dependencies import ClientIp, CorrelationId, CurrentUser, DbSession
-from app.services.audit import record_audit
 from app.services import engagement
+from app.services.audit import record_audit
 from app.services.rbac import can_access_admin, get_effective_permissions
 
 router = APIRouter(tags=["account"])

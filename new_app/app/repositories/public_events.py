@@ -19,7 +19,7 @@ series never renders as a parent card duplicating its occurrence cards.
 from datetime import date, datetime, timedelta
 from zoneinfo import ZoneInfo
 
-from sqlalchemy import func, and_, or_
+from sqlalchemy import and_, func, not_, or_
 from sqlalchemy.orm import Session
 
 from app.config import get_settings
@@ -124,6 +124,8 @@ def _apply_filters(
     upcoming_only: bool,
     date_from: date | None,
     date_to: date | None,
+    exclude_category_ids: tuple[int, ...] = (),
+    exclude_source_ids: tuple[int, ...] = (),
 ):
     if city_id is not None:
         query = query.filter(Event.city_id == city_id)
@@ -133,6 +135,16 @@ def _apply_filters(
         )
     if source_id is not None:
         query = query.filter(Event.website_id == source_id)
+    if exclude_category_ids:
+        # Against the category the event is shown under: an admin override
+        # wins over the scraped one. An uncategorised event is never excluded
+        # (NOT IN on a NULL would otherwise drop it).
+        effective = func.coalesce(Event.category_override_id, Event.category_id)
+        query = query.filter(
+            or_(effective.is_(None), not_(effective.in_(exclude_category_ids)))
+        )
+    if exclude_source_ids:
+        query = query.filter(not_(Event.website_id.in_(exclude_source_ids)))
     if search:
         like = f"%{search.strip()}%"
         query = query.filter(
@@ -173,6 +185,8 @@ def list_public_events(
     upcoming_only: bool = False,
     date_from: date | None = None,
     date_to: date | None = None,
+    exclude_category_ids: tuple[int, ...] = (),
+    exclude_source_ids: tuple[int, ...] = (),
     page: int = 1,
     per_page: int = PUBLIC_EVENTS_PER_PAGE,
 ) -> tuple[list[Event], int, bool]:
@@ -181,6 +195,7 @@ def list_public_events(
         today=today, city_id=city_id, category_id=category_id, source_id=source_id,
         search=search, recurrence=recurrence, upcoming_only=upcoming_only,
         date_from=date_from, date_to=date_to,
+        exclude_category_ids=exclude_category_ids, exclude_source_ids=exclude_source_ids,
     )
     total = query.count()
     page = max(page, 1)
@@ -206,6 +221,8 @@ def list_public_map_points(
     upcoming_only: bool = False,
     date_from: date | None = None,
     date_to: date | None = None,
+    exclude_category_ids: tuple[int, ...] = (),
+    exclude_source_ids: tuple[int, ...] = (),
 ) -> list[dict]:
     """Only visible, matching events that have usable public coordinates. The
     public coordinate (correction > source > geocoded) is computed in Python via
@@ -215,6 +232,7 @@ def list_public_map_points(
         today=today, city_id=city_id, category_id=category_id, source_id=source_id,
         search=search, recurrence=recurrence, upcoming_only=upcoming_only,
         date_from=date_from, date_to=date_to,
+        exclude_category_ids=exclude_category_ids, exclude_source_ids=exclude_source_ids,
     ).order_by(Event.start_date.asc(), Event.id.asc())
 
     points: list[dict] = []

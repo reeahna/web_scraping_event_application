@@ -1568,6 +1568,58 @@ button:hover {
   flex: 0 0 auto;
 }
 
+/* "Hide categories or sources": the inverse of the category/source selects.
+   A plain <details>, so it needs no script under the CSP. */
+.filter-exclude {
+  /* Full width on its own row below the actions. flex-basis stays auto (a
+     100% basis would become a 100% *height* in the phone column layout). */
+  width: 100%;
+  flex: 0 0 auto;
+  order: 1;
+  border-top: 1px solid var(--border);
+  padding-top: var(--space-3);
+}
+
+.filter-exclude summary {
+  cursor: pointer;
+  font-size: 0.9rem;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.filter-exclude-groups {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-5);
+  margin-top: var(--space-3);
+}
+
+.filter-exclude-group {
+  border: 0;
+  margin: 0;
+  padding: 0;
+  flex: 1 1 220px;
+  display: grid;
+  align-content: start;
+  grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+  gap: var(--space-1) var(--space-3);
+}
+
+.filter-exclude-group legend {
+  font-size: var(--font-xs);
+  font-weight: 700;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  margin-bottom: var(--space-2);
+}
+
+.filter-exclude-group .checkbox-label {
+  margin: 0;
+  font-size: 0.9rem;
+  font-weight: 500;
+}
+
 .filter-actions button {
   min-height: 40px;
   padding: 0 var(--space-5);
@@ -2160,6 +2212,13 @@ button:hover {
 
 .filter-field-search {
   flex: 1 1 220px;
+}
+/* In the phone layout the form is a column, where that 220px basis would be
+   a 220px-tall search box. */
+@media (max-width: 640px) {
+  .filter-field-search {
+    flex: 0 0 auto;
+  }
 }
 .filter-presets {
   display: flex;

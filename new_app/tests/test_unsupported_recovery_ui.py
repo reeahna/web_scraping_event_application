@@ -5,9 +5,8 @@ CSRF-gated restricted-browser retry action.
 
 from __future__ import annotations
 
-from unittest.mock import AsyncMock, patch
-
 import re
+from unittest.mock import AsyncMock, patch
 
 import pytest
 

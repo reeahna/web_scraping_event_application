@@ -98,7 +98,7 @@ def build_operational_report(
 
     # Recurrence truncations and geography exclusions live in run warnings;
     # scan a bounded window of recent runs for their markers.
-    recurrence_truncations = geography_exclusions = 0
+    recurrence_truncations = geography_exclusions = not_attendable_exclusions = 0
     recent_runs = list(
         db.scalars(select(ExtractionRun).order_by(ExtractionRun.id.desc()).limit(_RUN_WARNING_SCAN))
     )
@@ -108,8 +108,11 @@ def build_operational_report(
                 recurrence_truncations += 1
             if warning.startswith("geographic_filter_excluded"):
                 geography_exclusions += 1
+            if warning.startswith("not_attendable_excluded"):
+                not_attendable_exclusions += 1
     report.counts["recurrence_truncations"] = recurrence_truncations
     report.counts["geography_exclusions"] = geography_exclusions
+    report.counts["not_attendable_exclusions"] = not_attendable_exclusions
 
     report.recent_runs = [
         {

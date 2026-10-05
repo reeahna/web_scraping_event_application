@@ -18,24 +18,29 @@ from sqlalchemy.orm import Session
 
 from app.models.category_photo import CategoryPhoto
 
-# A good, safe Unsplash search term for each seeded category slug. Never a
-# per-site value; purely the category taxonomy.
-CATEGORY_QUERIES: dict[str, str] = {
-    "arts-and-culture": "art exhibition",
-    "business": "business conference",
-    "community": "community festival",
-    "education": "lecture hall",
-    "family": "family fun day",
-    "food-and-drink": "food festival",
-    "government": "town hall meeting",
-    "health-and-wellness": "yoga wellness",
-    "music": "live concert",
-    "nightlife": "nightclub party",
-    "other": "crowd event",
-    "outdoors": "outdoor park festival",
-    "religious": "church interior",
-    "sports": "sports stadium crowd",
+# Safe Unsplash search terms for each seeded category slug. Several per
+# category, so the pool is broad enough that a page of imageless events in one
+# category does not keep showing the same few photos. Never a per-site value;
+# purely the category taxonomy.
+CATEGORY_QUERIES: dict[str, tuple[str, ...]] = {
+    "arts-and-culture": ("art exhibition", "theater stage", "art gallery visitors"),
+    "business": ("networking event", "business meetup", "coworking workshop"),
+    "community": ("community festival", "farmers market", "street fair"),
+    "education": ("lecture hall", "university campus", "library study"),
+    "family": ("family fun day", "kids carnival", "family picnic"),
+    "food-and-drink": ("food festival", "restaurant dinner", "craft beer tasting"),
+    "government": ("town hall meeting", "city hall", "public meeting"),
+    "health-and-wellness": ("yoga class", "running group", "meditation"),
+    "music": ("live concert", "jazz band", "acoustic guitar performance"),
+    "nightlife": ("nightclub party", "bar night", "city lights at night"),
+    "other": ("crowd event", "college town", "people celebrating"),
+    "outdoors": ("outdoor park festival", "hiking trail", "lake kayaking"),
+    "religious": ("church interior", "choir singing", "candlelight service"),
+    "sports": ("sports stadium crowd", "basketball game", "college football"),
 }
+
+# Unsplash caps a search page at 30 results.
+_MAX_PER_PAGE = 30
 
 _UNSPLASH_SEARCH = "https://api.unsplash.com/search/photos"
 
@@ -97,8 +102,21 @@ def photo_for(category_slug: str | None, event_id: int) -> PhotoCredit | None:
     for slug in (category_slug or "other", "other"):
         photos = pool.get(slug)
         if photos:
-            return photos[event_id % len(photos)]
+            # Multiplying by a large odd constant scatters neighbouring ids
+            # across the pool, so events imported together (consecutive ids)
+            # do not walk through the photos in the same order on every page.
+            return photos[(event_id * 2654435761) % len(photos)]
     return None
+
+
+# The scheduler refills the pool when it holds fewer photos than this, e.g.
+# a deployment still carrying the older 10-per-category pool. Well below what
+# a fetch stores, so a full pool is never refetched; the photos stay stable.
+POOL_REFILL_THRESHOLD = 20 * len(CATEGORY_QUERIES)
+
+
+def pool_needs_refill(db: Session) -> bool:
+    return db.query(CategoryPhoto).count() < POOL_REFILL_THRESHOLD
 
 
 def _credit_link(url: str, app_name: str) -> str:
@@ -108,29 +126,38 @@ def _credit_link(url: str, app_name: str) -> str:
 
 
 def fetch_and_store(
-    db: Session, access_key: str, *, per_category: int = 10, app_name: str = "city-events"
+    db: Session, access_key: str, *, per_category: int = 60, app_name: str = "city-events"
 ) -> dict[str, int]:
-    """Refresh the whole pool from Unsplash: one search per category (well under
-    the demo rate limit), replacing all stored photos. Returns a per-category
-    count of photos stored. Requires only the Access Key (Client-ID)."""
+    """Refresh the whole pool from Unsplash, replacing all stored photos.
+
+    Each category's search terms share its per_category budget, one request per
+    term (42 in all, under the demo key's 50 requests an hour). Returns a
+    per-category count of photos stored. Requires only the Access Key
+    (Client-ID)."""
     headers = {"Authorization": f"Client-ID {access_key}", "Accept-Version": "v1"}
     db.query(CategoryPhoto).delete()
     seen: set[str] = set()
     stored: dict[str, int] = {}
     with httpx.Client(timeout=30, headers=headers) as client:
-        for slug, query in CATEGORY_QUERIES.items():
+        for slug, queries in CATEGORY_QUERIES.items():
             count = 0
-            response = client.get(
-                _UNSPLASH_SEARCH,
-                params={
-                    "query": query,
-                    "per_page": per_category,
-                    "orientation": "landscape",
-                    "content_filter": "high",
-                },
-            )
-            response.raise_for_status()
-            for result in response.json().get("results", []):
+            per_query = min(_MAX_PER_PAGE, max(1, -(-per_category // len(queries))))
+            results: list[dict] = []
+            for query in queries:
+                response = client.get(
+                    _UNSPLASH_SEARCH,
+                    params={
+                        "query": query,
+                        "per_page": per_query,
+                        "orientation": "landscape",
+                        "content_filter": "high",
+                    },
+                )
+                response.raise_for_status()
+                results.extend(response.json().get("results", []))
+            for result in results:
+                if count >= per_category:
+                    break
                 photo_id = result.get("id")
                 urls = result.get("urls") or {}
                 user = result.get("user") or {}

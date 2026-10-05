@@ -1,164 +1,144 @@
-# New App (Account management)
+# Bulletin
 
-Replacement city-events application built with FastAPI, SQLAlchemy, Alembic,
-Pydantic Settings, Jinja2, SQLite, pytest, and Ruff. The current phase provides
-database foundations, local authentication, RBAC, public self-registration,
-account management, and scraper-first event review. Live scraping, scheduling,
-OAuth, saved events, followed cities, alerts, geocoding, and LLM integration
-remain deferred.
+A college-town events site. It imports event listings from local sources
+(venue sites, university calendars, tourism boards, Eventbrite pages), keeps
+them up to date on a schedule, and shows them town by town. Built with
+FastAPI, SQLAlchemy/Alembic, Jinja2 and SQLite, with Playwright for sources that
+need a real browser.
 
-## Setup
+For deploying, see [`../DEPLOY_RENDER.md`](../DEPLOY_RENDER.md).
+
+## Running it locally
 
 ```bash
 cd new_app
 python -m venv venv
-venv\Scripts\activate
+venv\Scripts\activate            # Windows; on macOS/Linux: source venv/bin/activate
 pip install -e ".[dev]"
+python -m playwright install chromium
 python -m alembic upgrade head
+python scripts/create_superadmin.py --email you@example.com --password "..."
 uvicorn app.main:app --reload --port 8100
 ```
 
-The new app uses its own port and database; it does not read or modify
-`legacy_app/events.db`.
+The site is then at http://localhost:8100 and the admin at `/admin`.
+
+Scraping runs in a separate process, never inside the web server. To have
+imports run on their schedule locally, start it in a second terminal:
+
+```bash
+python -m app.scheduler
+```
+
+In production (`start.sh`) both run in one container, and the scheduler is
+restarted on its own if it ever exits.
+
+## How it fits together
+
+**Public site.** `/` is a town chooser with type-ahead (by town, state or
+university); there is deliberately no all-towns feed. `/city/{slug}` lists a
+town's upcoming events with search, category/source/date filters, "Today" and
+"This weekend" presets, a list/map toggle, and a "Hide categories or sources"
+panel for leaving things out. `/events/{id}` is the event page. Events without
+their own image get a category-matched Unsplash photo.
+
+**Accounts.** Anyone can sign up at `/register`. A new account gets only the
+**Registered User** role, which has no admin permissions. Signed-in users can
+save events (`/account/saved`), follow towns, and set alert preferences
+(`/account/alerts`). Google, Microsoft and Facebook sign-in switch on when their
+client IDs are set.
+
+**Admin** (`/admin`). Roles are Super Administrator, Administrator, Editor and
+Registered User, and every admin action is permission-checked and audited.
+Only a Super Administrator can grant the two administrator roles, and the last
+active Super Administrator cannot be removed.
+
+- *Towns* (`/admin/cities`): towns, their universities, and whether they are
+  shown.
+- *Sources* (`/admin/websites`): each website scraped for a town. Adding one
+  runs detection (which known listing format is it?), proposes a configuration,
+  previews the events it would import, and waits for approval before anything is
+  stored. Bulk onboarding accepts many URLs or a CSV at once, and
+  auto-onboarding policies decide how much of that runs without a person.
+- *Events* (`/admin/events`): review, archive, fix a category or a location,
+  and resolve possible duplicates. Scraped fields (title, dates, URL and so on)
+  are never edited by hand; corrections are stored alongside them.
+- *Categories and rules*: 14 seeded categories and keyword/venue/source rules
+  that assign them. With a Gemini key, the scheduler also labels new events
+  with AI.
+- *Scheduler*, *Reports*, *Notifications*: run status, failures, and the health
+  of each source.
+
+**Importing.** Every source is described by data, not code: one of 13 listing
+formats (JSON-LD, WordPress, The Events Calendar, LiveWhale, Simpleview, ICS,
+RSS, generic HTML cards, and others) plus selectors and settings. The pipeline
+is fetch → detect → extract → normalize → validate → de-duplicate → store. A
+source that only renders in a browser falls back to a restricted headless
+Chromium. Sources that fail repeatedly are flagged for review.
+
+**What counts as an event.** Imports leave out anything a person cannot
+actually go to: online-only sessions, conferences, certification courses,
+internal staff/faculty business ("faculty meeting", "employees only", "by
+invitation"), and calendar entries that are deadlines or reminders ("Last day
+to drop", "Registration closes", "Fall Break"). The rules are in
+`app/services/attendability.py`. Each import run records how many it left out
+(`not_attendable_excluded:N`), and an event imported before the filter existed
+is taken down the next time its source lists it.
 
 ## Configuration
 
-| Variable | Default | Description |
-|---|---:|---|
-| `APP_NAME` | `New City Events App` | Application name |
-| `APP_ENV` | `development` | Environment label |
-| `APP_PORT` | `8100` | App port |
-| `DATABASE_URL` | `sqlite:///<new_app>/app.db` | SQLAlchemy database URL |
-| `LOG_LEVEL` | `INFO` | Application log level |
-| `LOCAL_LOGIN_ENABLED` | `true` | Enable shared local email/password login |
-| `REGISTRATION_ENABLED` | `true` | Show and accept public registration |
-| `MINIMUM_PASSWORD_LENGTH` | `8` | Minimum local password length |
-| `REGISTRATION_RATE_LIMIT_PER_HOUR` | `20` | Development-only registration guard |
+Settings come from environment variables or `new_app/.env`. Copy
+`.env.example` to start. Everything optional is off by default, and the app runs
+without any of it.
 
-Copy `.env.example` to `.env` to override these values. Paths are resolved
-relative to `new_app/`, not the shell's current directory.
+| Variable | Default | What it does |
+|---|---|---|
+| `DATABASE_URL` | `sqlite:///new_app/app.db` | Database |
+| `APP_ENV` | `development` | `production` turns on the readiness checks at `/health/ready` and hides the API docs |
+| `APP_NAME` | `Bulletin` | Site name shown everywhere |
+| `PUBLIC_BASE_URL` | `http://localhost:8100` | Used for canonical links and the sitemap. On Render it is picked up automatically |
+| `APP_TIMEZONE` | `UTC` | Decides what "today" means for the listings |
+| `REGISTRATION_ENABLED` | `true` | Public sign-up |
+| `BROWSER_EXTRACTION_ENABLED` | `false` | Headless-browser fallback for sources that need it |
+| `ATTENDABILITY_FILTER_ENABLED` | `true` | Leave out non-events (see above) |
+| `UNSPLASH_ACCESS_KEY` | unset | Placeholder photos for imageless events |
+| `GEMINI_API_KEY` | unset | AI categorization of new events |
+| `GEOCODING_ENABLED`, `GEOCODING_PROVIDER` | off | Fill in map coordinates from addresses |
+| `EMAIL_ENABLED`, `EMAIL_BACKEND` | off | Alert emails |
+| `GOOGLE_/MICROSOFT_/FACEBOOK_CLIENT_ID` and `_SECRET` | unset | Social sign-in |
+| `COOKIE_SECURE`, `BEHIND_HTTPS`, `TRUSTED_HOSTS` | off | Set in production (already in `render.yaml`) |
+| `RATE_LIMIT_BACKEND`, `REDIS_URL` | `memory` | Use `redis` to share rate limits across processes |
 
-## Authentication and registration
+## Scripts
 
-- Shared login: `GET/POST /auth/login`
-- Registration: `GET/POST /register`
-- Personal account: `GET /account`
-- Logout: `POST /auth/logout`
+Run from `new_app/` with the venv active.
 
-Registration creates an active account with only the **Registered User** role,
-creates a fresh authenticated session, and redirects to `/account`. Registered
-User has zero effective permissions by default and cannot enter `/admin`.
-Registration accepts only display name, email, password, and password
-confirmation; role, permission, and account-state fields are rejected.
+| Script | Use |
+|---|---|
+| `scripts/create_superadmin.py` | Create the first admin login |
+| `scripts/hide_unattendable_events.py` | List (or with `--apply`, deactivate) existing events the import filter would now leave out |
+| `scripts/categorize_events.py` | Seed the starter category rules and re-run them over every event |
+| `scripts/categorize_events_ai.py` | Label events with Gemini (`--only-other`, `--force`, `--limit N`) |
+| `scripts/fetch_category_photos.py` | Refill the placeholder photo pool now (the scheduler also does this when it is small) |
+| `scripts/check_links.py` | Crawl the whole site for broken links and dead form targets |
 
-Email normalization strips leading/trailing whitespace and lowercases the
-entire address before lookup and storage. It intentionally does not apply
-provider-specific transformations such as Gmail dot stripping or plus-address
-removal.
-
-Set `REGISTRATION_ENABLED=false` to hide Create Account links and reject direct
-registration GET and POST requests server-side.
-
-After login, a valid same-application relative `next` path takes priority.
-Otherwise, users with effective admin permissions go to `/admin`, while users
-without them go to `/account`. Browser requests to protected pages redirect to
-login; API-style requests receive JSON 401 responses.
-
-Create the first Super Administrator with:
+## Tests and checks
 
 ```bash
-python scripts/create_superadmin.py --email admin@example.com --password "..."
-```
-
-## Roles and migration behavior
-
-The seeded roles are Super Administrator, Administrator, Editor, and Registered
-User. The migration renames Viewer in place when possible, retaining its role
-ID and all `UserRole` assignments, and removes its old permission grants. If
-both role names exist unexpectedly, assignments are merged deterministically
-without duplicates. Downgrade restores Viewer and its frozen historical
-permission set without consulting current seed code.
-
-Only a Super Administrator may grant Administrator or Super Administrator.
-All role assignments and removals are audited, and the last-active-Super-
-Administrator safeguard remains enforced.
-
-## Event review and lifecycle
-
-The protected event workspace is at `/admin/events`. It supports search,
-pagination, filters, read-only source details, review status, narrow category
-and location corrections, duplicate review, and provenance placeholders. There
-is deliberately no general event-create or event-update permission, route, or
-form. Extracted title, description, URLs, website, dates, times, image, and
-external source ID remain authoritative source values.
-
-The lifecycle has two independent, purposeful dimensions:
-
-- `is_active` controls eligibility for public display.
-- `review_status` is either `needs_review` or `reviewed`.
-- `archived_at` retains historical records outside the normal active set.
-
-Archiving deactivates an event. Restoring removes `archived_at` but leaves the
-event inactive so publication remains an explicit action. Only archived events
-can be permanently deleted. A separate deleted state is not used because it
-would overlap with archival. Administrators receive destructive permissions;
-Editors retain the configured non-destructive view/review permissions; and
-Registered Users receive none. Every action is checked server-side and audited.
-
-Category overrides and corrected public location values are stored separately
-from extracted values. Recategorization never erases an active administrator
-override. Venue/address/coordinate corrections can be cleared, validate
-coordinate ranges, reject unrelated fields, and record before/after audit data.
-
-## Categories and deterministic rules
-
-Administrators can manage the 14 idempotently seeded categories at
-`/admin/categories` and deterministic rules at
-`/admin/categorization-rules`. Referenced categories cannot be deleted, and
-inactive categories cannot be newly assigned. No category IDs are hardcoded.
-
-The fixed rule precedence is exact source mapping, administrator mapping,
-website-specific mapping, venue rule, keyword rule, then `Other` (or
-uncategorized when `Other` is inactive). Within one rule type, higher priority
-wins and the database ID is the stable tie-breaker. Results include the rule,
-confidence label, explanation, manual-review recommendation, and fallback
-state. Rules contain data only—never executable Python—and regular expressions
-are length-limited, compiled before storage, and reject dangerous constructs.
-
-## Fingerprints and duplicate review
-
-Fingerprint selection is deterministic: source website plus external ID wins;
-otherwise a normalized canonical URL is used; otherwise the fingerprint uses
-normalized title, occurrence date, start time, venue, and city. Text trims and
-collapses whitespace and uses case-folding. URLs lowercase scheme/host, remove
-fragments and trailing slashes, and sort query parameters. Dates and times use
-their ISO forms. Matching fingerprints create persisted possible-duplicate
-statuses but never merge, archive, or delete records automatically. Authorized
-reviewers may persist a duplicate decision and preferred record.
-
-City deletion remains blocked by unarchived events. Its impact screen offers
-explicitly confirmed, permission-protected bulk archival and deletion of
-already archived records. Those operations are transactional and audit affected
-counts.
-
-## Registration rate-limit limitation
-
-The current guard is development-only. It keeps per-IP timestamps in the
-current Python process, resets on restart, is not shared across workers, and is
-not a production anti-abuse control. Before deployment, replace the internals
-behind `app.services.rate_limit.check_registration_rate_limit` with a shared
-store such as Redis or a database-backed limiter.
-
-## Verification
-
-```bash
-python -m ruff format --check .
 python -m ruff check .
-python -m pytest
-python -m alembic upgrade head
-python -m alembic downgrade ac034c0f9ec1
-python -m alembic upgrade head
+python -m pytest            # about 2-3 minutes
 ```
 
-Tests use `tests/test_app.db`, separate from the development and legacy
-databases.
+Tests use their own database (`tests/test_app.db`). CI
+(`.github/workflows/ci.yml`) runs Ruff, a migration round trip, and the suite on
+every pull request and every push to `main`, plus the migrations against
+PostgreSQL.
+
+After changing a model, add a migration (`python -m alembic revision -m "..."`)
+and check it both ways:
+
+```bash
+python -m alembic upgrade head
+python -m alembic downgrade -1
+python -m alembic upgrade head
+```

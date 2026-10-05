@@ -9,6 +9,7 @@ from app.config import get_settings
 from app.core.csrf import verify_csrf
 from app.core.exceptions import AppError, NotFoundError
 from app.core.flash import set_flash
+from app.core.forms import OptionalId, OptionalText
 from app.core.onboarding import (
     ALLOWED_TRANSITIONS,
     ONBOARDING_STATE_GROUPS,
@@ -16,7 +17,6 @@ from app.core.onboarding import (
     TRANSITION_PERMISSIONS,
     onboarding_label,
 )
-from app.core.forms import OptionalId, OptionalText
 from app.core.templating import render
 from app.core.timezones import dst_warning
 from app.dependencies import ClientIp, CorrelationId, CurrentUser, DbSession

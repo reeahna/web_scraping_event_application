@@ -5,8 +5,8 @@ environment or new_app/.env):
 
     python scripts/fetch_category_photos.py
 
-Runs one Unsplash search per event category (well under the demo rate limit) and
-replaces the stored pool. Re-run any time you want fresh photos. Requires only
+Runs a few Unsplash searches per event category (42 requests, under the demo
+key's 50 an hour) and replaces the stored pool. Re-run any time you want fresh photos. Requires only
 the Unsplash Access Key (Client-ID); the Secret Key is not used.
 """
 
@@ -24,7 +24,7 @@ from app.services.category_photos import fetch_and_store
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
-        "--per-category", type=int, default=10, help="photos to fetch per category (default 10)"
+        "--per-category", type=int, default=60, help="photos to keep per category (default 60)"
     )
     args = parser.parse_args()
 

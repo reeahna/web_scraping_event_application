@@ -3,8 +3,7 @@ from pathlib import Path
 
 # Point the app at a dedicated test database *before* importing anything from
 # `app` — app.database builds its engine at import time from this env var, so
-# order matters. Keeps tests fully isolated from both the dev app.db and the
-# legacy_app database.
+# order matters. Keeps tests fully isolated from the dev app.db.
 TESTS_DIR = Path(__file__).resolve().parent
 TEST_DB_PATH = TESTS_DIR / "test_app.db"
 TEST_TMP_PATH = TESTS_DIR / ".tmp"
@@ -13,6 +12,7 @@ os.environ["DATABASE_URL"] = f"sqlite:///{TEST_DB_PATH.as_posix()}"
 os.environ["TEMP"] = str(TEST_TMP_PATH)
 os.environ["TMP"] = str(TEST_TMP_PATH)
 
+import bcrypt  # noqa: E402
 import pytest  # noqa: E402
 from starlette.testclient import TestClient  # noqa: E402
 
@@ -35,18 +35,43 @@ from app.services.rate_limit import _attempts_by_ip  # noqa: E402
 
 settings = get_settings()
 
+# bcrypt's production cost (12 rounds, ~0.25s a hash) is the single biggest
+# cost in this suite: nearly every test creates a user or logs in, often
+# several times. Tests check that hashing and verification work, not how slow
+# they are, so they run at bcrypt's minimum cost. checkpw reads the cost from
+# the stored hash, so verification speeds up with it.
+_real_gensalt = bcrypt.gensalt
+bcrypt.gensalt = lambda rounds=4, prefix=b"2b": _real_gensalt(rounds=4, prefix=prefix)
+
+
+def _empty_all_tables() -> None:
+    """Delete every row, children before parents. Much cheaper than dropping
+    and recreating ~60 tables and their indexes for every test."""
+    with engine.begin() as connection:
+        for table in reversed(Base.metadata.sorted_tables):
+            connection.execute(table.delete())
+
+
+@pytest.fixture(scope="session", autouse=True)
+def _schema():
+    """Create the schema once for the whole run; each test then starts from
+    empty tables (see _reset_db)."""
+    Base.metadata.drop_all(bind=engine)
+    Base.metadata.create_all(bind=engine)
+    yield
+    Base.metadata.drop_all(bind=engine)
+
 
 @pytest.fixture(autouse=True)
-def _reset_db():
+def _reset_db(_schema):
     _attempts_by_ip.clear()
-    Base.metadata.create_all(bind=engine)
+    _empty_all_tables()
     seed_session = SessionLocal()
     try:
         seed_defaults(seed_session)
     finally:
         seed_session.close()
     yield
-    Base.metadata.drop_all(bind=engine)
     _attempts_by_ip.clear()
 
 

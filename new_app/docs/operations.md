@@ -17,12 +17,12 @@ disabled by default.
   store off-box. **Restore**: `psql "$DATABASE_URL" < backup.sql` into an empty
   DB, then `alembic current` to confirm the revision.
 - **Rollback**: redeploy the previous image; undo a migration only with a
-  backup in hand: `alembic downgrade <previous_revision>`. See `docs/recovery.md`.
+  backup in hand: `alembic downgrade <previous_revision>`.
 
 ## Running the processes
 
-Web, one scheduler, optional browser worker — see `docs/deployment.md` and
-`docs/scheduler.md`. The scheduler is the single owner of all background work
+Web and exactly one scheduler — see `DEPLOY_RENDER.md` at the repository root
+and `docs/scheduler.md`. The scheduler is the single owner of all background work
 (refresh, onboarding drain, geocoding drain, alert reminders/digests).
 
 ## Observability
@@ -64,5 +64,4 @@ Web, one scheduler, optional browser worker — see `docs/deployment.md` and
 
 ## Secret rotation & incident recovery
 
-See `docs/security.md` (rotation) and `docs/recovery.md` (incidents,
-stuck scheduler, failing sources, restore).
+See `docs/security.md` for rotating secrets.

@@ -65,14 +65,14 @@ def upgrade() -> None:
         sa.Column(
             "user_id", sa.Integer(), sa.ForeignKey("users.id", ondelete="CASCADE"), nullable=False
         ),
-        sa.Column("in_app_enabled", sa.Boolean(), nullable=False, server_default=sa.text("1")),
-        sa.Column("email_enabled", sa.Boolean(), nullable=False, server_default=sa.text("0")),
+        sa.Column("in_app_enabled", sa.Boolean(), nullable=False, server_default=sa.true()),
+        sa.Column("email_enabled", sa.Boolean(), nullable=False, server_default=sa.false()),
         sa.Column(
             "frequency", sa.String(length=16), nullable=False, server_default=sa.text("'immediate'")
         ),
-        sa.Column("notify_new_events", sa.Boolean(), nullable=False, server_default=sa.text("1")),
-        sa.Column("notify_reminders", sa.Boolean(), nullable=False, server_default=sa.text("1")),
-        sa.Column("notify_updates", sa.Boolean(), nullable=False, server_default=sa.text("1")),
+        sa.Column("notify_new_events", sa.Boolean(), nullable=False, server_default=sa.true()),
+        sa.Column("notify_reminders", sa.Boolean(), nullable=False, server_default=sa.true()),
+        sa.Column("notify_updates", sa.Boolean(), nullable=False, server_default=sa.true()),
         sa.Column("unsubscribe_token", sa.String(length=64), nullable=False),
         sa.Column("last_digest_at", sa.DateTime(timezone=True), nullable=True),
         *_timestamps(),

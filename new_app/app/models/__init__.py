@@ -13,7 +13,6 @@ from app.models.city import City
 from app.models.city_university import CityUniversity
 from app.models.event import Event
 from app.models.event_category import EventCategory
-from app.models.event_enrichment import EventEnrichment
 from app.models.event_provenance import EventProvenance
 from app.models.external_identity import ExternalIdentity, OAuthLoginState
 from app.models.extraction_error import ExtractionError
@@ -53,7 +52,6 @@ __all__ = [
     "City",
     "Event",
     "EventCategory",
-    "EventEnrichment",
     "EventProvenance",
     "ExternalIdentity",
     "OAuthLoginState",

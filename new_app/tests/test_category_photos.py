@@ -45,8 +45,8 @@ def test_fetch_stores_photos_with_attribution(db_session, monkeypatch):
     _mock_unsplash(
         monkeypatch,
         {
-            cp.CATEGORY_QUERIES["music"]: [_photo("m1", "Jane"), _photo("m2", "Bob")],
-            cp.CATEGORY_QUERIES["sports"]: [_photo("s1", "Amy")],
+            cp.CATEGORY_QUERIES["music"][0]: [_photo("m1", "Jane"), _photo("m2", "Bob")],
+            cp.CATEGORY_QUERIES["sports"][0]: [_photo("s1", "Amy")],
         },
     )
     stored = cp.fetch_and_store(db_session, "FAKE", per_category=5, app_name="city-events")
@@ -65,7 +65,7 @@ def test_a_photo_is_never_stored_under_two_categories(db_session, monkeypatch):
     shared = _photo("dup", "Sam")
     _mock_unsplash(
         monkeypatch,
-        {cp.CATEGORY_QUERIES["music"]: [shared], cp.CATEGORY_QUERIES["sports"]: [shared]},
+        {cp.CATEGORY_QUERIES["music"][0]: [shared], cp.CATEGORY_QUERIES["sports"][0]: [shared]},
     )
     cp.fetch_and_store(db_session, "FAKE", per_category=5)
     assert db_session.query(CategoryPhoto).filter_by(unsplash_id="dup").count() == 1
@@ -75,8 +75,8 @@ def test_photo_for_is_deterministic_and_falls_back_to_other(db_session, monkeypa
     _mock_unsplash(
         monkeypatch,
         {
-            cp.CATEGORY_QUERIES["music"]: [_photo("m1", "A"), _photo("m2", "B")],
-            cp.CATEGORY_QUERIES["other"]: [_photo("o1", "C")],
+            cp.CATEGORY_QUERIES["music"][0]: [_photo("m1", "A"), _photo("m2", "B")],
+            cp.CATEGORY_QUERIES["other"][0]: [_photo("o1", "C")],
         },
     )
     cp.fetch_and_store(db_session, "FAKE", per_category=5)
@@ -89,3 +89,41 @@ def test_photo_for_is_deterministic_and_falls_back_to_other(db_session, monkeypa
     # A category with no photos of its own falls back to the 'other' pool.
     fallback = cp.photo_for("religious", 7)
     assert fallback is not None and fallback.image_url == "https://img/o1.jpg"
+
+
+def test_each_category_draws_on_several_searches_up_to_its_budget(db_session, monkeypatch):
+    first, second = cp.CATEGORY_QUERIES["music"][:2]
+    _mock_unsplash(
+        monkeypatch,
+        {
+            first: [_photo("a1", "A"), _photo("a2", "A")],
+            second: [_photo("b1", "B"), _photo("b2", "B")],
+        },
+    )
+    stored = cp.fetch_and_store(db_session, "FAKE", per_category=3)
+    # Photos from both search terms land in the one category, capped at 3.
+    assert stored["music"] == 3
+    ids = {r.unsplash_id for r in db_session.query(CategoryPhoto).filter_by(category_slug="music")}
+    assert ids == {"a1", "a2", "b1"}
+
+
+def test_neighbouring_events_spread_across_the_pool(db_session, monkeypatch):
+    _mock_unsplash(
+        monkeypatch,
+        {cp.CATEGORY_QUERIES["music"][0]: [_photo(f"m{i}", "A") for i in range(10)]},
+    )
+    cp.fetch_and_store(db_session, "FAKE", per_category=10)
+    monkeypatch.setattr(cp, "_CACHE_TTL", 1e9)
+    picks = {cp.photo_for("music", event_id).image_url for event_id in range(1, 11)}
+    assert len(picks) == 10
+
+
+def test_pool_needs_refill_only_while_small(db_session, monkeypatch):
+    assert cp.pool_needs_refill(db_session)
+    monkeypatch.setattr(cp, "POOL_REFILL_THRESHOLD", 2)
+    _mock_unsplash(
+        monkeypatch,
+        {cp.CATEGORY_QUERIES["music"][0]: [_photo("m1", "A"), _photo("m2", "B")]},
+    )
+    cp.fetch_and_store(db_session, "FAKE", per_category=5)
+    assert not cp.pool_needs_refill(db_session)

@@ -152,13 +152,14 @@ def upgrade() -> None:
                 sa.text(
                     "INSERT INTO event_categories "
                     "(name, slug, description, display_order, is_active, created_at, updated_at) "
-                    "VALUES (:name, :slug, NULL, :display_order, 1, :now, :now)"
+                    "VALUES (:name, :slug, NULL, :display_order, :active, :now, :now)"
                 ),
                 {
                     "name": name,
                     "slug": slug,
                     "display_order": display_order,
                     "now": now,
+                    "active": True,
                 },
             )
 

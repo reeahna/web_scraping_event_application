@@ -61,6 +61,8 @@ def test_default_registry_has_the_expected_patterns():
         "ics_calendar",
         "rss_atom_events",
         "algolia_search",
+        # Events assigned to an inline JS variable
+        "inline_json_events",
     }
     # Every registered pattern is automatically configurable.
     assert all(registry.get(name).proposer is not None for name in registry.names())

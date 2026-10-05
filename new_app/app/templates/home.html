@@ -73,6 +73,32 @@
           Upcoming only
         </label>
       </div>
+      {% set hidden_count = filters.exclude_category_ids | length + filters.exclude_source_ids | length %}
+      <details class="filter-exclude"{% if hidden_count %} open{% endif %}>
+        <summary>Hide categories or sources{% if hidden_count %} <span class="badge badge-muted">{{ hidden_count }} hidden</span>{% endif %}</summary>
+        <div class="filter-exclude-groups">
+          <fieldset class="filter-exclude-group">
+            <legend>Hide these categories</legend>
+            {% for category in categories %}
+            <label class="checkbox-label">
+              <input type="checkbox" name="exclude_category" value="{{ category.id }}"{% if category.id in filters.exclude_category_ids %} checked{% endif %} />
+              {{ category.name }}
+            </label>
+            {% endfor %}
+          </fieldset>
+          {% if sources %}
+          <fieldset class="filter-exclude-group">
+            <legend>Hide these sources</legend>
+            {% for source in sources %}
+            <label class="checkbox-label">
+              <input type="checkbox" name="exclude_source" value="{{ source.id }}"{% if source.id in filters.exclude_source_ids %} checked{% endif %} />
+              {{ source.source_display_name or source.name }}
+            </label>
+            {% endfor %}
+          </fieldset>
+          {% endif %}
+        </div>
+      </details>
       {% if filters.view == "map" %}<input type="hidden" name="view" value="map" />{% endif %}
       <div class="filter-actions">
         <button type="submit">Filter</button>

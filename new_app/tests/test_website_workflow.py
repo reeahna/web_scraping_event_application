@@ -11,6 +11,7 @@ from __future__ import annotations
 from datetime import UTC, datetime
 from types import SimpleNamespace as NS
 
+from app.config import get_settings
 from app.services.website_workflow import build_website_workflow
 
 PERMS = {"update": True, "test": True, "approve": True, "delete": True}
@@ -636,8 +637,11 @@ def test_historical_config_secondary_relabelled():
 
 
 def test_detail_renders_exactly_one_primary_styled_action(
-    client, make_super_admin, make_city, make_website, login, db_session
+    client, make_super_admin, make_city, make_website, login, db_session, monkeypatch
 ):
+    # The retry action is the primary one only when browser recovery is on,
+    # which it is in production (render.yaml) but not by default.
+    monkeypatch.setattr(get_settings(), "browser_extraction_enabled", True)
     from app.models.unsupported_site_report import UnsupportedSiteReport
 
     _login_admin(client, make_super_admin, login, "wf-1p@example.com")
@@ -804,8 +808,11 @@ def test_template_defense_drops_injected_approved_action(
 
 
 def test_bloomington_recovery_renders_single_primary_retry(
-    client, make_super_admin, make_city, make_website, login, db_session
+    client, make_super_admin, make_city, make_website, login, db_session, monkeypatch
 ):
+    # The retry action is the primary one only when browser recovery is on,
+    # which it is in production (render.yaml) but not by default.
+    monkeypatch.setattr(get_settings(), "browser_extraction_enabled", True)
     _login_admin(client, make_super_admin, login, "wf-blm@example.com")
     website = _failed_historical_website(db_session, make_city, make_website, "Bloomington Rec")
     body = client.get(f"/admin/websites/{website.id}").text

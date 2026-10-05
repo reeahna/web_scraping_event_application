@@ -87,9 +87,16 @@ def event_structured_data(event: Event) -> str:
     if event.canonical_url:
         data["sameAs"] = event.canonical_url
 
-    # ensure_ascii keeps the payload valid inside the <script> block whatever
-    # the source text contains.
-    return json.dumps(data, ensure_ascii=True)
+    # Rendered raw inside <script type="application/ld+json">, so escape the
+    # characters that could close that element or open another. A scraped title
+    # containing "</script><img ...>" would otherwise end the block and inject
+    # markup. \u003c etc. are the same characters to any JSON reader.
+    return (
+        json.dumps(data, ensure_ascii=True)
+        .replace("<", "\\u003c")
+        .replace(">", "\\u003e")
+        .replace("&", "\\u0026")
+    )
 
 
 def event_meta_description(event: Event) -> str:

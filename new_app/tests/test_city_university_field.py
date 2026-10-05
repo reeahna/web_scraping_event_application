@@ -7,7 +7,6 @@ would never show a school there.
 
 import pytest
 
-from app.core.permissions import SUPER_ADMINISTRATOR
 from app.models.city import City
 
 

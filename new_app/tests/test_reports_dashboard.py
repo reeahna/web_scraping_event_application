@@ -11,7 +11,6 @@ from datetime import UTC, datetime
 
 import pytest
 
-from app.core.permissions import SUPER_ADMINISTRATOR
 from app.core.templating import _admin_datetime
 from app.models.extraction_run import ExtractionRun
 

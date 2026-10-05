@@ -137,9 +137,10 @@ def test_build_pagination_strategy_dispatches_by_name():
 
 # --- path_page pagination (numbered pages in the URL path) --------------------
 
+from bs4 import BeautifulSoup  # noqa: E402
+
 from app.extraction.inference.html_fields import detect_path_pagination  # noqa: E402
 from app.extraction.pagination import PathPagePagination  # noqa: E402
-from bs4 import BeautifulSoup  # noqa: E402
 
 PATH_CONFIG = SiteConfiguration(
     pattern_name="json_ld_event",

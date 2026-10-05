@@ -83,6 +83,7 @@ from app.repositories.unsupported_site_report import (
 )
 from app.schemas.browser import BrowserPlan, NetworkIdleAction, WaitForSelectorAction
 from app.schemas.extraction import FetchConfig, SiteConfiguration
+from app.services.attendability import candidate_not_attendable_reason
 from app.services.geographic_filter import (
     annotate_candidate_geography,
     geo_needs_review,
@@ -786,7 +787,9 @@ def _browser_pagination_bounds(config: SiteConfiguration) -> dict:
     }
 
 
-def _detail_fetch_strategy(config: SiteConfiguration, listing_fetch: FetchStrategy) -> FetchStrategy:
+def _detail_fetch_strategy(
+    config: SiteConfiguration, listing_fetch: FetchStrategy
+) -> FetchStrategy:
     """Transport for detail-page enrichment fetches. Detail pages are always
     HTML, so a browser-execution source — whose listing transport captures the
     page's JSON, not arbitrary HTML — reads them by rendering the page, while an
@@ -1039,6 +1042,25 @@ async def run_extraction(
     status = _compute_status(
         blocked=blocked, events_found=len(outcome.outcomes), events_valid=len(valid)
     )
+    events_valid = len(valid)
+
+    # Not something a person can go to (online-only, a conference, a course, a
+    # deadline, internal business): left out of the site. Decided after the
+    # status above, so a source whose listing is all such entries still reads
+    # as healthy rather than as a broken extraction. Any copy imported before
+    # this filter existed is taken down as the source re-lists it.
+    not_attendable = []
+    if get_settings().attendability_filter_enabled:
+        not_attendable = [c for c in valid if candidate_not_attendable_reason(c)]
+    if not_attendable:
+        warnings.append(f"not_attendable_excluded:{len(not_attendable)}")
+        valid = [c for c in valid if not candidate_not_attendable_reason(c)]
+        for candidate in not_attendable:
+            existing = find_existing_event_for_candidate(
+                db, candidate, website_id=website.id, city_id=website.city_id
+            )
+            if existing is not None and existing.is_active:
+                existing.is_active = False
 
     errors = [
         f"candidate[{i}]: {err}" for i, (_, result) in enumerate(rejected) for err in result.errors
@@ -1062,7 +1084,7 @@ async def run_extraction(
         source_url=config.api_endpoint or config.listing_url or "",
         final_url=outcome.last_response.final_url if outcome.last_response else None,
         events_found=len(outcome.outcomes),
-        events_valid=len(valid),
+        events_valid=events_valid,
         events_rejected=len(rejected),
         warnings=warnings,
         error_summary="; ".join(errors[:5]) or None,
@@ -1138,7 +1160,7 @@ async def run_extraction(
         source_url=config.api_endpoint or config.listing_url or "",
         final_url=outcome.last_response.final_url if outcome.last_response else None,
         events_found=len(outcome.outcomes),
-        events_valid=len(valid),
+        events_valid=events_valid,
         events_rejected=len(rejected),
         events_inserted=events_inserted,
         events_updated=events_updated,

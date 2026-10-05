@@ -273,7 +273,15 @@ def test_run_browser_offloads_when_loop_cannot_spawn():
         return "offloaded"
 
     async def main():
-        with patch.object(browser_mod, "_loop_can_spawn_subprocess", return_value=False):
+        # ProactorEventLoop only exists on Windows; any real loop proves the
+        # offload, so stand in the Selector loop elsewhere.
+        with (
+            patch.object(browser_mod, "_loop_can_spawn_subprocess", return_value=False),
+            patch.object(
+                browser_mod.asyncio, "ProactorEventLoop", asyncio.SelectorEventLoop,
+                create=True,
+            ),
+        ):
             return await browser_mod._run_browser(work)
 
     assert asyncio.run(main()) == "offloaded"
@@ -288,7 +296,15 @@ def test_run_browser_propagates_exceptions_from_offload_thread():
         raise RuntimeError("kaboom")
 
     async def main():
-        with patch.object(browser_mod, "_loop_can_spawn_subprocess", return_value=False):
+        # ProactorEventLoop only exists on Windows; any real loop proves the
+        # offload, so stand in the Selector loop elsewhere.
+        with (
+            patch.object(browser_mod, "_loop_can_spawn_subprocess", return_value=False),
+            patch.object(
+                browser_mod.asyncio, "ProactorEventLoop", asyncio.SelectorEventLoop,
+                create=True,
+            ),
+        ):
             return await browser_mod._run_browser(boom)
 
     with pytest.raises(RuntimeError, match="kaboom"):

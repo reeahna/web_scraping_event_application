@@ -9,7 +9,6 @@ import re
 
 import pytest
 
-from app.core.permissions import SUPER_ADMINISTRATOR
 from app.routers.auto_onboarding_policies import (
     COLLAPSED_SECTIONS,
     FIELD_LABELS,
@@ -42,7 +41,7 @@ def test_no_label_is_just_the_underscored_column_name():
 
 def test_collapsed_sections_name_real_sections():
     titles = {title for title, _ in FORM_SECTIONS}
-    assert COLLAPSED_SECTIONS <= titles
+    assert titles >= COLLAPSED_SECTIONS
 
 
 def test_form_renders_written_labels_not_column_names(form_html):

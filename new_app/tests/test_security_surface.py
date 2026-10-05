@@ -6,7 +6,6 @@ Each of these was verified by probing the running app, not assumed.
 import pytest
 
 
-
 @pytest.mark.parametrize("env,expected", [
     ("development", True), ("production", False), ("staging", False), ("test", False),
 ])

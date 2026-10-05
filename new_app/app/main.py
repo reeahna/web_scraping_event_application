@@ -31,7 +31,6 @@ from app.routers import (
     geocoding,
     health,
     home,
-    legacy_comparison,
     notifications,
     oauth,
     onboarding,
@@ -39,9 +38,9 @@ from app.routers import (
     registration,
     reporting,
     scheduler,
+    seo,
     unsupported_reports,
     websites,
-    seo,
 )
 
 settings = get_settings()
@@ -113,9 +112,6 @@ app.include_router(cities.router)
 # Registered before the websites router so /admin/websites/onboard is
 # matched by the onboarding route rather than by /admin/websites/{website_id}.
 app.include_router(onboarding.router)
-# Registered before the websites router so the more specific
-# /admin/websites/{id}/legacy-comparison routes match first.
-app.include_router(legacy_comparison.router)
 app.include_router(websites.router)
 app.include_router(events.router)
 app.include_router(event_categories.router)

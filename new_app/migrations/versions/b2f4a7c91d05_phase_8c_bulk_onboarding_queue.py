@@ -30,7 +30,7 @@ def upgrade() -> None:
         sa.Column("default_city_id", sa.Integer(), nullable=True),
         sa.Column("default_timezone", sa.String(length=64), nullable=True),
         sa.Column(
-            "redetect_existing", sa.Boolean(), nullable=False, server_default=sa.text("0")
+            "redetect_existing", sa.Boolean(), nullable=False, server_default=sa.false()
         ),
         sa.Column(
             "source_kind", sa.String(length=16), nullable=False, server_default="paste"

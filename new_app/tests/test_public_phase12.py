@@ -107,7 +107,7 @@ def test_map_endpoint_returns_only_events_with_coordinates(
                latitude=39.8, longitude=-89.6)
     make_event(city, website=website, title="No Coords", start_date=TOMORROW,
                canonical_url="https://x/n")
-    resp = client.get("/events/map")
+    resp = client.get(f"/events/map?city_id={city.id}")
     assert resp.status_code == 200
     data = resp.json()
     titles = {p["title"] for p in data["points"]}
@@ -119,7 +119,7 @@ def test_map_payload_carries_nothing_sensitive(client, make_city, make_website, 
     city, website = _visible_website(make_city, make_website)
     make_event(city, website=website, title="Located", start_date=TOMORROW,
                latitude=39.8, longitude=-89.6)
-    point = client.get("/events/map").json()["points"][0]
+    point = client.get(f"/events/map?city_id={city.id}").json()["points"][0]
     assert set(point.keys()) == {
         "id", "title", "url", "latitude", "longitude", "start_date", "venue", "category"
     }
@@ -131,7 +131,7 @@ def test_map_prefers_geocoded_when_no_source_coords(
     city, website = _visible_website(make_city, make_website)
     make_event(city, website=website, title="Geo", start_date=TOMORROW,
                geocoded_latitude=40.0, geocoded_longitude=-88.0)
-    point = client.get("/events/map").json()["points"][0]
+    point = client.get(f"/events/map?city_id={city.id}").json()["points"][0]
     assert point["latitude"] == 40.0
 
 
@@ -142,3 +142,19 @@ def test_map_view_renders_container(client, make_city, make_website, make_event)
     resp = client.get(f"{_listing(city)}?view=map")
     assert 'id="event-map"' in resp.text
     assert "leaflet" in resp.text.lower()
+
+
+def test_map_never_returns_every_city_at_once(client, make_city, make_website, make_event):
+    """There is no all-cities view, and the map endpoint is no way around that:
+    without a town it returns nothing, and with one it returns only that town."""
+    here, here_site = _visible_website(make_city, make_website)
+    there = make_city(name="Elsewhere", slug="elsewhere")
+    _, there_site = _visible_website(make_city, make_website, city=there, name="There")
+    make_event(here, website=here_site, title="Here Show", start_date=TOMORROW,
+               latitude=39.8, longitude=-89.6)
+    make_event(there, website=there_site, title="There Show", start_date=TOMORROW,
+               canonical_url="https://x/t", latitude=40.6, longitude=-75.4)
+
+    assert client.get("/events/map").json() == {"points": [], "count": 0}
+    titles = {p["title"] for p in client.get(f"/events/map?city_id={here.id}").json()["points"]}
+    assert titles == {"Here Show"}

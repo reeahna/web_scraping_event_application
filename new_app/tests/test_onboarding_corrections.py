@@ -392,9 +392,10 @@ def test_a_source_with_no_inferable_date_is_needs_review_not_ready(db_session, c
     """No date selector -> the required field is reported missing, the outcome
     is needs_review, and nothing is eligible for approval."""
     url = "https://nodate.example.org/events"
-    # The listing carries month/day but no year, and the detail page it links
-    # to has no date either — so no year can be found anywhere without
-    # inventing one.
+    # The listing carries a numeric month/day but no year, and the detail page
+    # it links to has no date either — so no year can be found anywhere without
+    # inventing one. (Numeric on purpose: a year-less date with a month *name*,
+    # "Jul 24", is now inferred as its next occurrence.)
     batch = _run_batch(
         db_session,
         city,

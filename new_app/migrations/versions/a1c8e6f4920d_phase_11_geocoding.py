@@ -48,7 +48,7 @@ def upgrade() -> None:
         sa.Column("id", sa.Integer(), primary_key=True),
         sa.Column("address_hash", sa.String(length=64), nullable=False),
         sa.Column("normalized_address", sa.String(length=1000), nullable=False),
-        sa.Column("found", sa.Boolean(), nullable=False, server_default=sa.text("1")),
+        sa.Column("found", sa.Boolean(), nullable=False, server_default=sa.true()),
         sa.Column("latitude", sa.Float(), nullable=True),
         sa.Column("longitude", sa.Float(), nullable=True),
         sa.Column("provider", sa.String(length=64), nullable=False),

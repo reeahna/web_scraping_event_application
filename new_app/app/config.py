@@ -160,6 +160,12 @@ class Settings(BaseSettings):
     # How many events one background drain processes per tick.
     geocoding_batch_size: int = 10
 
+    # Leave out of the import anything that is not an event a person can go to:
+    # online-only sessions, conferences, certification courses, internal staff
+    # or faculty business, and deadline/reminder entries (see
+    # app/services/attendability.py). On by default.
+    attendability_filter_enabled: bool = True
+
     # Public UI (Phase 12). A configurable fallback image shown on event cards
     # and detail pages that have no image; None uses the built-in inline icon.
     public_fallback_image_url: str | None = None
