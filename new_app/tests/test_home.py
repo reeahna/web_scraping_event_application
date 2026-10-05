@@ -45,7 +45,7 @@ def test_home_does_not_require_login(client):
 def test_site_name_links_to_home_on_public_page(client):
     resp = client.get("/")
     assert resp.status_code == 200
-    assert '<a href="/" class="logo">New City Events</a>' in resp.text
+    assert '<a href="/" class="logo">Bulletin</a>' in resp.text
 
 
 def test_site_name_links_to_home_on_admin_page(client, make_super_admin, login):
@@ -54,4 +54,4 @@ def test_site_name_links_to_home_on_admin_page(client, make_super_admin, login):
 
     resp = client.get("/admin")
     assert resp.status_code == 200
-    assert '<a href="/" class="logo">New City Events</a>' in resp.text
+    assert '<a href="/" class="logo">Bulletin</a>' in resp.text

@@ -188,7 +188,7 @@ def home(request: Request, current_user: OptionalCurrentUser, db: DbSession):
     city_index = [
         {
             "name": city.name,
-            "school": city.university_name or "",
+            "school": ", ".join(u.name for u in city.universities),
             "state": city.state_or_region or "",
             "slug": city.slug,
             "count": counts.get(city.id, 0),

@@ -229,7 +229,7 @@ def test_registered_user_account_uses_public_navigation(client, make_user, login
 
     response = client.get("/account")
     assert response.status_code == 200
-    assert '<a href="/" class="logo">New City Events</a>' in response.text
+    assert '<a href="/" class="logo">Bulletin</a>' in response.text
     assert '<a href="/account">My Account</a>' in response.text
     assert 'action="/auth/logout"' in response.text
     for admin_path in (

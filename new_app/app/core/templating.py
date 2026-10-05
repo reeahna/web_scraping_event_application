@@ -7,6 +7,7 @@ from fastapi import Request
 from fastapi.responses import HTMLResponse
 from fastapi.templating import Jinja2Templates
 
+from app.config import get_settings
 from app.core.csrf import get_or_create_csrf_token, set_csrf_cookie
 from app.core.formatting import human_date, human_date_long, human_time
 from app.core.onboarding import onboarding_label
@@ -78,6 +79,7 @@ def _admin_datetime(value: Any) -> str:
 templates.env.filters["admin_datetime"] = _admin_datetime
 templates.env.filters["report_status_label"] = report_status_label
 templates.env.globals["absolute_url"] = absolute_url
+templates.env.globals["site_name"] = get_settings().app_name
 
 
 def _category_photo(event: Any):

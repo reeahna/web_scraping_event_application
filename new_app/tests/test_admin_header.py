@@ -13,7 +13,7 @@ def _login_admin(client, make_super_admin, login, email):
 def test_admin_brand_before_nav_before_content(client, make_super_admin, login):
     _login_admin(client, make_super_admin, login, "hdr1@example.com")
     body = client.get("/admin").text
-    brand = body.index('class="logo">New City Events')
+    brand = body.index('class="logo">Bulletin')
     nav = body.index('<nav class="admin-nav"')
     main = body.index('id="main-content"')
     # Brand precedes the admin navigation, which precedes the page content.
@@ -55,7 +55,7 @@ def test_public_header_is_unaffected(client, make_user, login):
     # Public pages keep the plain site-header with no admin nav row.
     body = client.get("/").text
     assert '<header class="site-header">' in body
-    assert '<a href="/" class="logo">New City Events</a>' in body
+    assert '<a href="/" class="logo">Bulletin</a>' in body
     assert '<nav class="admin-nav"' not in body
 
 

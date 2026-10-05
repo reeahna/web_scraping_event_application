@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>{% block title %}New City Events{% endblock %}</title>
+  <title>{% block title %}{{ site_name }}{% endblock %}</title>
   {#
     Per-page metadata. Pages override meta_description and canonical_path;
     anything that does not gets the site defaults, which is still better than
@@ -16,7 +16,7 @@
   {# Social previews. og:url is built from configuration, never from the
      request Host header, which a visitor controls. #}
   <meta property="og:type" content="{% block og_type %}website{% endblock %}" />
-  <meta property="og:site_name" content="New City Events" />
+  <meta property="og:site_name" content="{{ site_name }}" />
   <meta property="og:title" content="{{ self.title() | trim }}" />
   <meta property="og:description" content="{{ self.meta_description() | trim }}" />
   <meta property="og:url" content="{{ canonical_url or absolute_url(request.url.path) }}" />
@@ -30,7 +30,7 @@
   <a class="skip-link" href="#main-content">Skip to content</a>
   <header class="site-header{% block header_class %}{% endblock %}">
     <div class="site-header-inner">
-      <a href="/" class="logo">New City Events</a>
+      <a href="/" class="logo">{{ site_name }}</a>
       <nav class="site-nav" aria-label="Primary">
         {% block header_nav %}
         <a href="/">Find a town</a>
@@ -67,9 +67,9 @@
 
   <footer class="site-footer">
     <div class="site-footer-inner">
-      <p class="site-footer-name">New City Events</p>
+      <p class="site-footer-name">{{ site_name }}</p>
       <p class="site-footer-tagline">Local events, gathered in one place.</p>
-      <p class="site-footer-copyright">&copy; {{ current_year() }} New City Events</p>
+      <p class="site-footer-copyright">&copy; {{ current_year() }} {{ site_name }}</p>
     </div>
   </footer>
   {% block scripts %}{% endblock %}

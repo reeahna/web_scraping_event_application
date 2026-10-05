@@ -16,11 +16,11 @@ import pytest
 def towns(db_session, make_city):
     make_city(
         name="Bloomington", slug="bloomington-in",
-        state_or_region="Indiana", university_name="Indiana University",
+        state_or_region="Indiana", universities=["Indiana University"],
     )
     make_city(
         name="Bethlehem", slug="bethlehem-pa",
-        state_or_region="Pennsylvania", university_name="Lehigh University",
+        state_or_region="Pennsylvania", universities=["Lehigh University"],
     )
     make_city(name="Hidden", slug="hidden-town", is_active=False)
     db_session.commit()
@@ -97,7 +97,7 @@ def test_town_names_cannot_inject_markup(client, db_session, make_city):
     textContent; the transport has to be safe too."""
     make_city(
         name='<img src=x onerror=alert(1)>', slug="xss-town",
-        university_name='"></script><script>alert(2)</script>',
+        universities=['"></script><script>alert(2)</script>'],
     )
     db_session.commit()
     html = client.get("/").text

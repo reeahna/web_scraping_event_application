@@ -14,6 +14,10 @@
   <tbody>
     <tr><th>Slug</th><td><code>{{ city.slug }}</code></td></tr>
     <tr><th>Region</th><td>{{ city.state_or_region or "—" }}</td></tr>
+    {# Was only visible on the edit form, so viewing a town never showed it. #}
+    <tr><th>Universities</th>
+      <td>{% if city.universities %}{{ city.universities | map(attribute="name") | join(", ") }}
+        {% else %}—{% endif %}</td></tr>
     <tr><th>Country</th><td>{{ city.country or "—" }}</td></tr>
     <tr><th>Timezone</th><td>{{ city.timezone }}</td></tr>
     <tr><th>Default coordinates</th>

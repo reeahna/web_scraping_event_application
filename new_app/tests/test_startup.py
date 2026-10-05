@@ -1,8 +1,9 @@
+from app.config import get_settings
 from app.main import app
 
 
 def test_app_has_expected_title():
-    assert app.title == "New City Events App"
+    assert app.title == get_settings().app_name
 
 
 def test_expected_routes_are_registered(client):

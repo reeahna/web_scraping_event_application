@@ -7,6 +7,7 @@ from app.database import Base
 from app.models.base import TimestampMixin
 
 if TYPE_CHECKING:
+    from app.models.city_university import CityUniversity
     from app.models.event import Event
     from app.models.website import Website
 
@@ -27,11 +28,15 @@ class City(Base, TimestampMixin):
     # Free-form (e.g. GeoJSON) boundary definition; structure not enforced yet —
     # deliberately left generic until a future phase defines how boundaries are used.
     boundary_config: Mapped[dict[str, Any] | None] = mapped_column(JSON, default=None)
-    # The school the town is known for. This product covers college cities, so
-    # a reader recognises "Bloomington" by "Indiana University" far faster than
-    # by the state, and the chooser searches on it.
-    university_name: Mapped[str | None] = mapped_column(String(255), default=None)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
 
+    # The schools this college town is known for. A reader recognises
+    # "Bloomington" by "Indiana University" far faster than by the state, and
+    # the chooser searches on these. Ordered by name so the display is stable.
+    universities: Mapped[list["CityUniversity"]] = relationship(
+        back_populates="city",
+        cascade="all, delete-orphan",
+        order_by="CityUniversity.name",
+    )
     websites: Mapped[list["Website"]] = relationship(back_populates="city")
     events: Mapped[list["Event"]] = relationship(back_populates="city")

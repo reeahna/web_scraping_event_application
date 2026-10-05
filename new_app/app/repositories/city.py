@@ -1,12 +1,34 @@
-from sqlalchemy import or_
+from sqlalchemy import or_, select
 from sqlalchemy.orm import Session
 
 from app.models.city import City
+from app.models.city_university import CityUniversity
 from app.schemas.city import CityCreate, CityUpdate
 
 
+def _set_universities(city: City, names: list[str]) -> None:
+    """Replace a town's schools with `names`, keeping rows that already match.
+
+    Reusing the existing row for an unchanged name keeps its id stable, so a
+    plain edit elsewhere on the form does not churn these rows.
+    """
+    wanted = []
+    for name in names:
+        cleaned = name.strip()
+        if cleaned and cleaned not in wanted:
+            wanted.append(cleaned)
+
+    existing = {u.name: u for u in city.universities}
+    city.universities = [
+        existing.get(name) or CityUniversity(name=name) for name in wanted
+    ]
+
+
 def create_city(db: Session, data: CityCreate) -> City:
-    city = City(**data.model_dump())
+    values = data.model_dump()
+    universities = values.pop("universities", [])
+    city = City(**values)
+    _set_universities(city, universities)
     db.add(city)
     db.commit()
     db.refresh(city)
@@ -14,8 +36,11 @@ def create_city(db: Session, data: CityCreate) -> City:
 
 
 def update_city(db: Session, city: City, data: CityUpdate) -> City:
-    for field, value in data.model_dump().items():
+    values = data.model_dump()
+    universities = values.pop("universities", [])
+    for field, value in values.items():
         setattr(city, field, value)
+    _set_universities(city, universities)
     db.commit()
     db.refresh(city)
     return city
@@ -46,11 +71,18 @@ def search_public_cities(db: Session, *, query: str | None = None) -> list[City]
     term = (query or "").strip()
     if term:
         like = f"%{term}%"
+        # A correlated EXISTS rather than a join, so a town with two schools
+        # matching the term still comes back once.
+        matches_school = (
+            select(CityUniversity.id)
+            .where(CityUniversity.city_id == City.id, CityUniversity.name.ilike(like))
+            .exists()
+        )
         statement = statement.filter(
             or_(
                 City.name.ilike(like),
-                City.university_name.ilike(like),
                 City.state_or_region.ilike(like),
+                matches_school,
             )
         )
     return statement.order_by(City.name).all()

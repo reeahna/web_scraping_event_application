@@ -10,6 +10,7 @@ from app.models.bulk_import import BulkImportItem, BulkImportRun
 from app.models.categorization_rule import CategorizationRule
 from app.models.category_photo import CategoryPhoto
 from app.models.city import City
+from app.models.city_university import CityUniversity
 from app.models.event import Event
 from app.models.event_category import EventCategory
 from app.models.event_enrichment import EventEnrichment
@@ -38,6 +39,7 @@ from app.models.user_session import UserSession
 from app.models.website import Website
 
 __all__ = [
+    "CityUniversity",
     "AuditLog",
     "BulkImportItem",
     "BulkImportRun",

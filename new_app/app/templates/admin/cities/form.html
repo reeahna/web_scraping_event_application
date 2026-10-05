@@ -22,11 +22,13 @@
   <input type="text" id="state_or_region" name="state_or_region" value="{{ form.state_or_region or '' }}" />
   {{ field_error(errors, "state_or_region") }}
 
-  <label for="university_name">University</label>
-  <input type="text" id="university_name" name="university_name"
-         value="{{ form.university_name or '' }}" placeholder="Indiana University" />
-  <span class="field-hint">Shown on the public town chooser; leave blank if the town has no school.</span>
-  {{ field_error(errors, "university_name") }}
+  <label for="universities">Universities</label>
+  {# One per line rather than a comma-separated box: a school name can contain
+     a comma ("University of California, Berkeley") and a line never can. #}
+  <textarea id="universities" name="universities" rows="3"
+            placeholder="Indiana University">{{ form.universities or '' }}</textarea>
+  <span class="field-hint">One per line. Shown on the public town chooser and searchable there. Leave blank if the town has no school.</span>
+  {{ field_error(errors, "universities") }}
 
   <label for="country">Country</label>
   <input type="text" id="country" name="country" value="{{ form.country or '' }}" />

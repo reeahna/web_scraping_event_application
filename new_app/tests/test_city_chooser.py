@@ -31,11 +31,11 @@ def college_towns(db_session, make_city, make_website, make_event):
 
     bloomington = make_city(
         name="Bloomington", slug="bloomington-in",
-        state_or_region="Indiana", university_name="Indiana University",
+        state_or_region="Indiana", universities=["Indiana University"],
     )
     bethlehem = make_city(
         name="Bethlehem", slug="bethlehem-pa",
-        state_or_region="Pennsylvania", university_name="Lehigh University",
+        state_or_region="Pennsylvania", universities=["Lehigh University"],
     )
     _publish(bloomington, "Hoosier Concert")
     _publish(bethlehem, "Lehigh Lecture")

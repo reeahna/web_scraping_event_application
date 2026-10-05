@@ -1,6 +1,6 @@
 {% extends "base.html" %}
 
-{% block title %}New City Events — Find events in your college town{% endblock %}
+{% block title %}{{ site_name }} — Find events in your college town{% endblock %}
 {% block meta_description %}Find out what is on in your college town: concerts, theater, festivals and campus events, gathered from every local source.{% endblock %}
 
 {% block head_extra %}
@@ -51,8 +51,8 @@
     <li>
       <a class="city-card" href="/city/{{ city.slug }}">
         <span class="city-card-name">{{ city.name }}{% if city.state_or_region %}, {{ city.state_or_region }}{% endif %}</span>
-        {% if city.university_name %}
-        <span class="city-card-school">{{ city.university_name }}</span>
+        {% if city.universities %}
+        <span class="city-card-school">{{ city.universities | map(attribute="name") | join(" · ") }}</span>
         {% endif %}
         <span class="city-card-count">
           {{ event_counts.get(city.id, 0) }} upcoming event{{ "s" if event_counts.get(city.id, 0) != 1 }}

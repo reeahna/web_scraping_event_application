@@ -1,13 +1,24 @@
+import os
 from functools import lru_cache
 from pathlib import Path
 
+from pydantic import model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 
 
+def _is_local_url(value: str | None) -> bool:
+    """True for the development default and anything else pointing at this box."""
+    lowered = (value or "").lower()
+    return not lowered or "localhost" in lowered or "127.0.0.1" in lowered
+
+
 class Settings(BaseSettings):
-    app_name: str = "New City Events App"
+    # The brand, used for the page titles, the header, the footer and the
+    # Open Graph site name. Templates read it as `site_name`, so a rename is
+    # this line rather than a sweep through every template.
+    app_name: str = "Bulletin"
     app_env: str = "development"
     app_port: int = 8100
     # The site's own address, used for canonical links, Open Graph URLs and the
@@ -187,6 +198,27 @@ class Settings(BaseSettings):
         env_file_encoding="utf-8",
         extra="ignore",
     )
+
+    @model_validator(mode="after")
+    def _fill_from_platform(self) -> "Settings":
+        """Fall back to the host platform's own address when nothing is set.
+
+        Render sets RENDER_EXTERNAL_URL and RENDER_EXTERNAL_HOSTNAME on every
+        web service. Without this, a deployment that never set PUBLIC_BASE_URL
+        serves canonical links, Open Graph URLs and a sitemap that all name
+        localhost, which tells search engines the real pages live at an
+        unreachable address. An explicitly configured value always wins, so a
+        custom domain overrides this.
+        """
+        external_url = os.environ.get("RENDER_EXTERNAL_URL", "").strip()
+        if external_url and _is_local_url(self.public_base_url):
+            self.public_base_url = external_url.rstrip("/")
+
+        external_host = os.environ.get("RENDER_EXTERNAL_HOSTNAME", "").strip()
+        if external_host and not self.trusted_hosts:
+            self.trusted_hosts = [external_host]
+
+        return self
 
 
 @lru_cache

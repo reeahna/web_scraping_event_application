@@ -113,11 +113,17 @@ def make_city(db_session):
         is_active: bool = True,
         **values,
     ) -> City:
-        # **values so a test can set any other column (state_or_region,
-        # university_name, ...) without this signature growing each time.
+        # **values so a test can set any other column (state_or_region, ...)
+        # without this signature growing each time. `universities` is accepted
+        # as plain names, since every caller wants that rather than ORM rows.
+        from app.models.city_university import CityUniversity
+
+        universities = values.pop("universities", None)
         city = City(
             name=name, slug=slug, timezone=timezone, is_active=is_active, **values
         )
+        if universities:
+            city.universities = [CityUniversity(name=n) for n in universities]
         db_session.add(city)
         db_session.commit()
         db_session.refresh(city)

@@ -1,8 +1,9 @@
 {% extends "base.html" %}
 {% from "_pagination.html" import paginate %}
 
-{% block title %}Events in {{ selected_city.name }}{% if selected_city.university_name %} — {{ selected_city.university_name }}{% endif %}{% endblock %}
-{% block meta_description %}What is on in {{ selected_city.name }}{% if selected_city.state_or_region %}, {{ selected_city.state_or_region }}{% endif %}: concerts, theater, festivals and {% if selected_city.university_name %}{{ selected_city.university_name }} {% endif %}campus events, gathered from every local source.{% endblock %}
+{% set school_names = selected_city.universities | map(attribute="name") | join(", ") %}
+{% block title %}Events in {{ selected_city.name }}{% if school_names %} — {{ school_names }}{% endif %}{% endblock %}
+{% block meta_description %}What is on in {{ selected_city.name }}{% if selected_city.state_or_region %}, {{ selected_city.state_or_region }}{% endif %}: concerts, theater, festivals and {% if school_names %}{{ school_names }} {% endif %}campus events, gathered from every local source.{% endblock %}
 
 {% block head_extra %}
 {% if filters.view == "map" %}
@@ -18,7 +19,7 @@
   <div class="hero-inner">
     <h1>{{ selected_city.name }}</h1>
     <p class="hero-subtext">
-      {% if selected_city.university_name %}{{ selected_city.university_name }} · {% endif %}
+      {% if school_names %}{{ school_names }} · {% endif %}
       Everything on in town and on campus.
     </p>
     <p class="hero-switch"><a href="/">Choose a different town</a></p>
