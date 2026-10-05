@@ -143,6 +143,15 @@ class SchedulerRuntime:
                 self._categorization_tick, "interval", seconds=self._dispatch_interval,
                 id="categorization", max_instances=1, coalesce=True,
             )
+        # Placeholder photos for imageless events: refill the pool from
+        # Unsplash when it is small. Only with an Access Key configured; checks
+        # hourly, and a full pool is left alone.
+        if settings.unsplash_access_key:
+            self._scheduler.add_job(
+                self._category_photos_tick, "interval", hours=1,
+                id="category_photos", max_instances=1, coalesce=True,
+                next_run_time=datetime.now(UTC),
+            )
         self._scheduler.start()
 
     async def _heartbeat_tick(self) -> None:
@@ -276,6 +285,32 @@ class SchedulerRuntime:
             )
         except Exception as exc:  # noqa: BLE001 - a tick must never kill the loop
             logger.warning("categorization tick failed: %s", exc)
+
+    async def _category_photos_tick(self) -> None:
+        if not self._is_leader:
+            return
+        from app.config import get_settings
+        from app.services.category_photos import fetch_and_store, pool_needs_refill
+
+        def refill() -> int:
+            db = self._session_factory()
+            try:
+                if not pool_needs_refill(db):
+                    return 0
+                settings = get_settings()
+                stored = fetch_and_store(
+                    db, settings.unsplash_access_key, app_name=settings.app_name
+                )
+                return sum(stored.values())
+            finally:
+                db.close()
+
+        try:
+            stored = await asyncio.to_thread(refill)
+            if stored:
+                logger.info("refilled category photo pool with %d photo(s)", stored)
+        except Exception as exc:  # noqa: BLE001 - a tick must never kill the loop
+            logger.warning("category photo refill failed: %s", exc)
 
     async def _run_one(self, website_id: int) -> None:
         async with self._semaphore:
