@@ -71,6 +71,20 @@ def test_structured_data_is_valid_json_even_with_awkward_text(
     assert data["name"] == 'An "Evening" of <jazz> & more'
 
 
+def test_a_scraped_title_cannot_break_out_of_the_json_ld_block(
+    client, published_event, db_session
+):
+    """The block is rendered raw, so a title carrying "</script>" must not end
+    it early and inject markup into the page."""
+    published_event.title = "Evil </script><img src=x id=pwned> Show"
+    db_session.commit()
+    html = client.get(f"/events/{published_event.id}").text
+
+    assert "<img src=x id=pwned>" not in html
+    block = re.search(r'<script type="application/ld\+json">(.*?)</script>', html, re.S)
+    assert json.loads(block.group(1))["name"] == "Evil </script><img src=x id=pwned> Show"
+
+
 def test_an_end_is_only_declared_when_one_is_known(db_session, make_city, make_event):
     """Falling back to the start date emitted a date-only endDate for a timed
     event, which reads as "ends at midnight" rather than "end unknown"."""
