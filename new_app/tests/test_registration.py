@@ -1,4 +1,5 @@
 import json
+import re
 
 import pytest
 from pydantic import ValidationError
@@ -188,3 +189,23 @@ def test_normalized_email_can_be_used_for_shared_login(register, client):
     )
     assert response.status_code == 303
     assert response.headers["location"] == "/account"
+
+
+def test_new_account_gets_registered_user_role_with_nothing_checked(
+    register, db_session, client, make_super_admin, login
+):
+    """A fresh sign-up holds only Registered User, and that role's edit page in
+    the admin shows every permission box unchecked."""
+    register(email="fresh@example.com")
+    user = db_session.query(User).filter(User.email == "fresh@example.com").one()
+    assert [a.role.name for a in user.user_roles] == [REGISTERED_USER]
+    role = user.user_roles[0].role
+    assert role.role_permissions == []
+
+    make_super_admin()
+    login("root@example.com", "correct-horse-battery")
+    page = client.get(f"/admin/roles/{role.id}")
+    assert page.status_code == 200
+    assert 'name="permission_codes"' in page.text
+    boxes = re.findall(r'<input type="checkbox" name="permission_codes"[^>]*>', page.text)
+    assert boxes and not [b for b in boxes if "checked" in b]
