@@ -3,6 +3,7 @@ from urllib.parse import urlencode
 
 from fastapi import APIRouter, Request
 from fastapi.responses import HTMLResponse
+from starlette.datastructures import QueryParams
 
 from app.config import get_settings
 from app.core.exceptions import NotFoundError
@@ -33,6 +34,12 @@ def _parse_int(value: str | None) -> int | None:
         return None
 
 
+def _parse_ids(values: list[str]) -> tuple[int, ...]:
+    """Distinct, valid ids from a repeated query parameter, in a stable order
+    so the generated URLs do not churn."""
+    return tuple(sorted({v for v in (_parse_int(x) for x in values) if v is not None}))
+
+
 def _parse_date(value: str | None) -> date | None:
     if not value:
         return None
@@ -47,10 +54,15 @@ class _Filters:
     to. Kept in one place so the list route, the city route, and the map
     endpoint all interpret the query string identically."""
 
-    def __init__(self, params: dict[str, str | None], *, today: date):
-        self.city_id = _parse_int(params.get("city_id"))
+    def __init__(self, params: QueryParams, *, today: date, city_id: int | None = None):
+        # city_id, when given, pins the town (the city page) over any query value.
+        self.city_id = city_id if city_id is not None else _parse_int(params.get("city_id"))
         self.category_id = _parse_int(params.get("category_id"))
         self.source_id = _parse_int(params.get("source_id"))
+        # Exclusions are the inverse of the two filters above: "everything
+        # except these", repeatable so several can be hidden at once.
+        self.exclude_category_ids = _parse_ids(params.getlist("exclude_category"))
+        self.exclude_source_ids = _parse_ids(params.getlist("exclude_source"))
         self.search = (params.get("q") or "").strip() or None
         recurrence = params.get("recurrence")
         self.recurrence = recurrence if recurrence in ("single", "recurring") else None
@@ -78,6 +90,8 @@ class _Filters:
             "upcoming_only": self.upcoming_only,
             "date_from": self.date_from,
             "date_to": self.date_to,
+            "exclude_category_ids": self.exclude_category_ids,
+            "exclude_source_ids": self.exclude_source_ids,
         }
 
     def query_string(self) -> str:
@@ -92,6 +106,8 @@ class _Filters:
             pairs.append(("category_id", str(self.category_id)))
         if self.source_id:
             pairs.append(("source_id", str(self.source_id)))
+        pairs.extend(("exclude_category", str(i)) for i in self.exclude_category_ids)
+        pairs.extend(("exclude_source", str(i)) for i in self.exclude_source_ids)
         if self.search:
             pairs.append(("q", self.search))
         if self.recurrence:
@@ -119,6 +135,8 @@ class _Filters:
             "date_to": self.date_to.isoformat() if self.date_to else "",
             "preset": self.preset or "",
             "view": self.view,
+            "exclude_category_ids": self.exclude_category_ids,
+            "exclude_source_ids": self.exclude_source_ids,
         }
 
 
@@ -215,9 +233,8 @@ def city_page(slug: str, request: Request, current_user: OptionalCurrentUser, db
     city = get_city_by_slug(db, slug)
     if city is None or not city.is_active:
         raise NotFoundError("City not found")
-    params = dict(request.query_params)
-    params["city_id"] = str(city.id)  # the city page pins the city filter
-    filters = _Filters(params, today=current_public_date())
+    # The city page pins the city filter.
+    filters = _Filters(request.query_params, today=current_public_date(), city_id=city.id)
     return _render_events(
         request, db, current_user, filters, selected_city=city, base_path=f"/city/{slug}"
     )
