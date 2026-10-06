@@ -36,6 +36,8 @@
            autocomplete="new-password" />
     {% if errors.password_confirm %}<span class="field-error">{{ errors.password_confirm }}</span>{% endif %}
 
+    <p class="auth-aside">By creating an account you agree to the <a href="/terms">terms of use</a>
+    and <a href="/privacy">privacy policy</a>.</p>
     <button type="submit">Create Account</button>
   </form>
 

@@ -29,6 +29,9 @@ class Settings(BaseSettings):
     # A short public description, used as the default meta description and as
     # the Open Graph site name's companion text.
     public_tagline: str = "Local events, gathered in one place."
+    # Where people reach the site's operator, shown on the privacy policy and
+    # terms (account questions, data requests, a source asking to be removed).
+    contact_email: str | None = None
     database_url: str = f"sqlite:///{(BASE_DIR / 'app.db').as_posix()}"
     log_level: str = "INFO"
 
