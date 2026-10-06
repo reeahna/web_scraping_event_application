@@ -1,12 +1,19 @@
 from fastapi import APIRouter, Form, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
 
+from app.config import get_settings
 from app.core.csrf import verify_csrf
+from app.core.exceptions import AppError
 from app.core.flash import set_flash
+from app.core.security import verify_password
 from app.core.templating import render
 from app.dependencies import ClientIp, CorrelationId, CurrentUser, DbSession
 from app.services import engagement
+from app.services.account_deletion import delete_account
+from app.services.account_email import send_verification_email
 from app.services.audit import record_audit
+from app.services.email import email_delivery_available
+from app.services.rate_limit import get_rate_limit_backend
 from app.services.rbac import can_access_admin, get_effective_permissions
 
 router = APIRouter(tags=["account"])
@@ -45,6 +52,8 @@ def _render_account(
             "display_name": current_user.full_name if display_name is None else display_name,
             "errors": errors or {},
             "edit_mode": edit_mode,
+            "delete_confirmation_word": DELETE_CONFIRMATION_WORD,
+            "email_available": email_delivery_available(),
         },
         status_code=status_code,
     )
@@ -128,4 +137,85 @@ async def update_account(
 
     response = RedirectResponse(url="/account", status_code=303)
     set_flash(response, "Display name updated successfully.")
+    return response
+
+
+# Typed by an account that has no password (signed up with Google etc.), as
+# its confirmation in place of one.
+DELETE_CONFIRMATION_WORD = "DELETE"
+
+
+@router.post("/account/delete", response_class=HTMLResponse)
+def delete_own_account(
+    request: Request,
+    current_user: CurrentUser,
+    db: DbSession,
+    correlation_id: CorrelationId,
+    ip_address: ClientIp,
+    csrf_token: str = Form(...),
+    password: str = Form(""),
+    confirmation: str = Form(""),
+):
+    verify_csrf(request, csrf_token)
+
+    if current_user.hashed_password:
+        confirmed = bool(password) and verify_password(password, current_user.hashed_password)
+        error = "That password is not correct."
+    else:
+        confirmed = confirmation.strip() == DELETE_CONFIRMATION_WORD
+        error = f"Type {DELETE_CONFIRMATION_WORD} to confirm."
+    if not confirmed:
+        return _render_account(
+            request, current_user, db, errors={"delete": error}, status_code=422
+        )
+
+    try:
+        delete_account(db, current_user, correlation_id=correlation_id, ip_address=ip_address)
+    except AppError:
+        return _render_account(
+            request,
+            current_user,
+            db,
+            errors={
+                "delete": (
+                    "You are the only Super Administrator, so this account cannot be "
+                    "deleted. Make someone else a Super Administrator first."
+                )
+            },
+            status_code=403,
+        )
+
+    response = RedirectResponse(url="/", status_code=303)
+    response.delete_cookie(get_settings().session_cookie_name, path="/")
+    set_flash(response, "Your account and its data have been deleted.")
+    return response
+
+
+_VERIFICATION_RESENDS_PER_HOUR = 3
+
+
+@router.post("/account/verify-email")
+def resend_verification(
+    request: Request,
+    current_user: CurrentUser,
+    db: DbSession,
+    csrf_token: str = Form(...),
+):
+    verify_csrf(request, csrf_token)
+    response = RedirectResponse(url="/account", status_code=303)
+    if current_user.email_verified_at is not None:
+        set_flash(response, "Your email address is already confirmed.")
+        return response
+    if not email_delivery_available():
+        set_flash(response, "Email isn't set up on this site yet, so no link can be sent.")
+        return response
+    if not get_rate_limit_backend().allow(
+        f"verify-resend:{current_user.id}",
+        limit=_VERIFICATION_RESENDS_PER_HOUR,
+        window_seconds=3600,
+    ):
+        set_flash(response, "A link was sent recently. Please check your inbox and spam folder.")
+        return response
+    send_verification_email(db, current_user)
+    set_flash(response, f"We've sent a confirmation link to {current_user.email}.")
     return response

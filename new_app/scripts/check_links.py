@@ -41,7 +41,7 @@ from bs4 import BeautifulSoup
 # session; such targets are still verified to resolve, just not rendered.
 DANGER = re.compile(
     r"(logout|/delete|/remove|/deactivate|/activate|/archive|/approve|/reject"
-    r"|/purge|/reset|/run\b|/import\b|/retry|/cancel|/duplicate|/merge)",
+    r"|/purge|/reset|/verify|/run\b|/import\b|/retry|/cancel|/duplicate|/merge)",
     re.IGNORECASE,
 )
 PER_TEMPLATE_CAP = 3

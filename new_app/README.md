@@ -44,9 +44,16 @@ their own image get a category-matched Unsplash photo.
 
 **Accounts.** Anyone can sign up at `/register`. A new account gets only the
 **Registered User** role, which has no admin permissions. Signed-in users can
-save events (`/account/saved`), follow towns, and set alert preferences
-(`/account/alerts`). Google, Microsoft and Facebook sign-in switch on when their
-client IDs are set.
+save events (`/account/saved`), follow towns, set alert preferences
+(`/account/alerts`), and delete their account from `/account`. Google, Microsoft
+and Facebook sign-in switch on when their client IDs are set. Failed logins are
+limited (10 per account and 30 per address in 15 minutes).
+
+Password reset (`/auth/forgot-password`) and email confirmation switch on by
+themselves once email sending is configured; until then the links to them are
+hidden and nothing is blocked on an unconfirmed address.
+
+The privacy policy and terms are at `/privacy` and `/terms`.
 
 **Admin** (`/admin`). Roles are Super Administrator, Administrator, Editor and
 Registered User, and every admin action is permission-checked and audited.
@@ -104,7 +111,8 @@ without any of it.
 | `UNSPLASH_ACCESS_KEY` | unset | Placeholder photos for imageless events |
 | `GEMINI_API_KEY` | unset | AI categorization of new events |
 | `GEOCODING_ENABLED`, `GEOCODING_PROVIDER` | off | Fill in map coordinates from addresses |
-| `EMAIL_ENABLED`, `EMAIL_BACKEND` | off | Alert emails |
+| `EMAIL_ENABLED`, `EMAIL_BACKEND` | off | Alerts, password reset and email confirmation |
+| `CONTACT_EMAIL` | unset | Shown on the privacy policy and terms |
 | `GOOGLE_/MICROSOFT_/FACEBOOK_CLIENT_ID` and `_SECRET` | unset | Social sign-in |
 | `COOKIE_SECURE`, `BEHIND_HTTPS`, `TRUSTED_HOSTS` | off | Set in production (already in `render.yaml`) |
 | `RATE_LIMIT_BACKEND`, `REDIS_URL` | `memory` | Use `redis` to share rate limits across processes |

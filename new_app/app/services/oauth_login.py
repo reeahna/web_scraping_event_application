@@ -135,6 +135,18 @@ def _apply_identity_fields(identity: ExternalIdentity, info: ExternalIdentityInf
     identity.last_login_at = now
 
 
+def _note_verified_email(user: User, info: ExternalIdentityInfo, now: datetime) -> None:
+    """A provider that has verified this very address vouches for it, so the
+    account needs no separate confirmation email."""
+    if (
+        info.email_verified
+        and info.email
+        and normalize_email(info.email) == user.email
+        and user.email_verified_at is None
+    ):
+        user.email_verified_at = now
+
+
 def _resolve_user(db: Session, info: ExternalIdentityInfo, now: datetime) -> User:
     identity = db.scalar(
         select(ExternalIdentity).where(
@@ -147,6 +159,7 @@ def _resolve_user(db: Session, info: ExternalIdentityInfo, now: datetime) -> Use
         if user is None or not user.is_active:
             raise OAuthError("account_disabled", "This account is disabled.")
         _apply_identity_fields(identity, info, now)
+        _note_verified_email(user, info, now)
         db.commit()
         return user
 
@@ -186,6 +199,7 @@ def _link_identity(
         user_id=user.id, provider=info.provider, subject=info.subject,
     )
     _apply_identity_fields(identity, info, now)
+    _note_verified_email(user, info, now)
     db.add(identity)
     if commit:
         db.commit()
