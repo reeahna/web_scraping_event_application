@@ -2428,3 +2428,82 @@ a.wf-danger, button.wf-danger {
 .wf-blockers ul, .wf-warn ul { margin: 0.3rem 0 0; padding-left: 1.1rem; }
 .wf-blockers strong { color: var(--warning); }
 .wf-danger-zone { border: 1px solid var(--danger); border-radius: var(--radius-md); padding: 0.5rem 1rem; margin-top: 1.5rem; }
+
+/* Error pages (404, 500, ...) */
+.error-page {
+  margin-top: var(--space-6);
+}
+
+.error-page-code {
+  font-size: 3rem;
+  font-weight: 800;
+  line-height: 1;
+  color: var(--border-strong);
+  margin: 0;
+}
+
+.error-page h1 {
+  color: var(--text);
+  margin: 0;
+}
+
+.error-page-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+}
+
+.error-page-actions .button-link {
+  background: var(--accent);
+  color: #fff;
+  font-weight: 600;
+}
+
+/* Footer links to the privacy policy and terms */
+.site-footer-links {
+  display: flex;
+  justify-content: center;
+  gap: var(--space-4);
+  margin-bottom: var(--space-2);
+}
+
+.site-footer-links a {
+  color: var(--muted);
+}
+
+/* Privacy policy and terms pages */
+.legal-page {
+  max-width: 720px;
+  padding-top: var(--space-6);
+  padding-bottom: var(--space-6);
+  line-height: 1.6;
+}
+
+.legal-page h2 {
+  margin-top: var(--space-6);
+}
+
+.legal-page li {
+  margin-bottom: var(--space-2);
+}
+
+/* Small print under an auth form ("Forgot your password?", agreement line) */
+.auth-aside {
+  font-size: var(--font-sm);
+  color: var(--muted);
+  margin-top: var(--space-3);
+}
+
+/* "Delete account" on My Account */
+.danger-zone {
+  margin-top: var(--space-7);
+  padding-top: var(--space-5);
+  border-top: 1px solid var(--border);
+}
+
+.danger-zone-details summary {
+  cursor: pointer;
+  color: var(--danger, #b42318);
+  font-weight: 600;
+  margin: var(--space-3) 0;
+}

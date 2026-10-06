@@ -9,39 +9,12 @@ _EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
 _BCRYPT_MAX_BYTES = 72
 
 
-class RegistrationCreate(BaseModel):
-    """The four legitimate public self-registration fields — nothing else.
+class NewPassword(BaseModel):
+    """A new password and its confirmation, under the site's password rules.
+    Shared by sign-up and password reset so the two can never disagree."""
 
-    `extra="forbid"` rejects any additional submitted field (role_id,
-    is_admin, permission_id, ...) outright. This is defense-in-depth: the
-    route only ever reads these four named Form(...) parameters in the first
-    place, so nothing else could reach the model anyway, but a dedicated
-    schema with a closed field set makes that invariant explicit and keeps it
-    true even if the route is refactored later.
-    """
-
-    model_config = ConfigDict(extra="forbid")
-
-    display_name: str
-    email: str
     password: str
     password_confirm: str
-
-    @field_validator("display_name")
-    @classmethod
-    def validate_display_name(cls, v: str) -> str:
-        v = v.strip()
-        if not v:
-            raise ValueError("Display name is required")
-        return v
-
-    @field_validator("email")
-    @classmethod
-    def validate_email(cls, v: str) -> str:
-        v = normalize_email(v)
-        if not _EMAIL_RE.fullmatch(v):
-            raise ValueError("Enter a valid email address")
-        return v
 
     @field_validator("password")
     @classmethod
@@ -64,4 +37,37 @@ class RegistrationCreate(BaseModel):
         password = info.data.get("password")
         if password is not None and v != password:
             raise ValueError("Passwords do not match")
+        return v
+
+
+class RegistrationCreate(NewPassword):
+    """The four legitimate public self-registration fields — nothing else.
+
+    `extra="forbid"` rejects any additional submitted field (role_id,
+    is_admin, permission_id, ...) outright. This is defense-in-depth: the
+    route only ever reads these four named Form(...) parameters in the first
+    place, so nothing else could reach the model anyway, but a dedicated
+    schema with a closed field set makes that invariant explicit and keeps it
+    true even if the route is refactored later.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    display_name: str
+    email: str
+
+    @field_validator("display_name")
+    @classmethod
+    def validate_display_name(cls, v: str) -> str:
+        v = v.strip()
+        if not v:
+            raise ValueError("Display name is required")
+        return v
+
+    @field_validator("email")
+    @classmethod
+    def validate_email(cls, v: str) -> str:
+        v = normalize_email(v)
+        if not _EMAIL_RE.fullmatch(v):
+            raise ValueError("Enter a valid email address")
         return v

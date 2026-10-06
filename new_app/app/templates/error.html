@@ -1,0 +1,18 @@
+{% extends "base.html" %}
+
+{% block title %}{{ title }} — {{ site_name }}{% endblock %}
+{% block robots %}noindex{% endblock %}
+
+{% block content %}
+<div class="page-container">
+  <div class="empty-state error-page">
+    <p class="error-page-code" aria-hidden="true">{{ status_code }}</p>
+    <h1>{{ title }}</h1>
+    {% if explanation %}<p>{{ explanation }}</p>{% endif %}
+    <p class="error-page-actions">
+      <a href="/" class="button-link">Find a town</a>
+      {% if status_code == 403 or status_code == 429 %}<a href="/account" class="filter-clear-link">My account</a>{% endif %}
+    </p>
+  </div>
+</div>
+{% endblock %}

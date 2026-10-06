@@ -1,0 +1,12 @@
+{% extends "base.html" %}
+
+{% block title %}Confirmation link expired — {{ site_name }}{% endblock %}
+{% block robots %}noindex{% endblock %}
+
+{% block content %}
+<div class="auth-card">
+  <h1>That link didn't work</h1>
+  <p>This confirmation link has expired or has already been used.</p>
+  <p>You can send yourself a new one from <a href="/account">My Account</a>.</p>
+</div>
+{% endblock %}

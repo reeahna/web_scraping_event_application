@@ -150,3 +150,25 @@ def test_provider_enable_disable():
     assert oauth_login.enabled_providers(enabled) == ["google"]
     # Unknown provider is never enabled.
     assert oauth_login.is_enabled(enabled, "bogus") is False
+
+
+@pytest.mark.parametrize("verified", [True, False])
+def test_a_provider_verified_address_counts_as_confirmed(db_session, verified):
+    info = _info(email_verified=verified)
+    provider, state, _ = _start(db_session, info)
+    user, _ = oauth_login.complete_login(
+        db_session, SETTINGS, "google", code="c", state=state, provider=provider, now=NOW
+    )
+    assert (user.email_verified_at is not None) is verified
+
+
+def test_linking_a_verified_provider_confirms_an_existing_account(db_session, make_user):
+    existing = make_user(email="me@example.com", password="password12345")
+    assert existing.email_verified_at is None
+    info = _info(email="me@example.com", subject="g-2")
+    provider, state, _ = _start(db_session, info)
+    oauth_login.complete_login(
+        db_session, SETTINGS, "google", code="c", state=state, provider=provider, now=NOW
+    )
+    db_session.refresh(existing)
+    assert existing.email_verified_at is not None

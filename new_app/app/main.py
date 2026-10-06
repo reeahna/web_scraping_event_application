@@ -3,12 +3,14 @@ from pathlib import Path
 
 from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
+from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from app.config import get_settings
 from app.core.exceptions import (
     AppError,
     NotAuthenticatedError,
     app_error_handler,
+    http_exception_handler,
     not_authenticated_handler,
     unhandled_exception_handler,
 )
@@ -34,6 +36,7 @@ from app.routers import (
     notifications,
     oauth,
     onboarding,
+    pages,
     public_events,
     registration,
     reporting,
@@ -97,10 +100,12 @@ app.add_middleware(CorrelationIdMiddleware)
 
 app.add_exception_handler(AppError, app_error_handler)
 app.add_exception_handler(NotAuthenticatedError, not_authenticated_handler)
+app.add_exception_handler(StarletteHTTPException, http_exception_handler)
 app.add_exception_handler(Exception, unhandled_exception_handler)
 
 app.include_router(home.router)
 app.include_router(seo.router)
+app.include_router(pages.router)
 app.include_router(public_events.router)
 app.include_router(health.router)
 app.include_router(auth.router)

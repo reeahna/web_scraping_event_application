@@ -7,14 +7,18 @@ from pydantic import ValidationError
 from app.config import get_settings
 from app.core.csrf import verify_csrf
 from app.core.exceptions import AppError
+from app.core.logging import get_logger
 from app.core.templating import render
 from app.dependencies import ClientIp, CorrelationId, DbSession
 from app.schemas.registration import RegistrationCreate
+from app.services.account_email import send_verification_email
 from app.services.audit import record_audit
 from app.services.auth import create_session
+from app.services.email import email_delivery_available
 from app.services.rate_limit import check_registration_rate_limit
 from app.services.registration import EmailAlreadyRegisteredError, register_user
 
+logger = get_logger("registration")
 router = APIRouter(tags=["registration"])
 
 
@@ -128,6 +132,13 @@ async def register_submit(
     raw_token = create_session(db, user, request)
     user.last_login_at = datetime.now(UTC)
     db.commit()
+    if email_delivery_available():
+        # Never lets a mail problem undo a successful sign-up; the account page
+        # offers to send it again.
+        try:
+            send_verification_email(db, user)
+        except Exception:  # noqa: BLE001
+            logger.warning("could not send the verification email for user %s", user.id)
     record_audit(
         db,
         actor_id=user.id,

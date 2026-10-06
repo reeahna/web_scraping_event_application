@@ -1,0 +1,64 @@
+{% extends "base.html" %}
+
+{% block title %}Privacy policy — {{ site_name }}{% endblock %}
+{% block meta_description %}What {{ site_name }} collects, why, who else is involved, and how to have your data deleted.{% endblock %}
+
+{% block content %}
+<article class="page-container legal-page">
+  <h1>Privacy policy</h1>
+  <p class="audit-meta">Last updated {{ updated }}</p>
+
+  <p>{{ site_name }} lists local events in college towns. You can browse it without an
+  account. This page explains what we collect if you do make one, and what happens when
+  you simply visit.</p>
+
+  <h2>If you just browse</h2>
+  <p>We don't use advertising, analytics or tracking cookies. The site sets two cookies
+  that it needs to work: one that keeps you signed in (only once you sign in) and one
+  that protects forms against cross-site forgery. Our hosting provider keeps standard
+  server logs, which include your IP address.</p>
+
+  <h2>If you create an account</h2>
+  <ul>
+    <li><strong>Your email address and display name</strong>, to sign you in and to send
+    you the emails you ask for (alerts, password resets, address verification).</li>
+    <li><strong>Your password</strong>, stored only as a one-way hash. Nobody, including
+    us, can read it.</li>
+    <li><strong>What you choose to save</strong>: saved events, towns you follow, and
+    your alert preferences.</li>
+    <li><strong>Sign-in records</strong>: the time, IP address and browser of each
+    session, and a log of account activity (sign-ins, failed attempts, changes), kept to
+    protect accounts and investigate abuse.</li>
+    <li>If you sign in with Google, Microsoft or Facebook, we receive your name, email
+    address and whether that provider has verified it. Nothing else.</li>
+  </ul>
+  <p>We don't sell your information or share it for marketing, and we only use it to
+  run this site.</p>
+
+  <h2>Other services your browser talks to</h2>
+  <ul>
+    <li><strong>Unsplash</strong> serves the stock photos shown on events that have none
+    of their own.</li>
+    <li><strong>OpenStreetMap</strong> serves the map tiles, and <strong>unpkg</strong>
+    serves the map software, when you open the map view.</li>
+    <li>Event images and links come from the events' original websites, which load when
+    you view them or follow a link.</li>
+  </ul>
+  <p>Each of these sees your IP address when your browser fetches from it, and each has
+  its own privacy policy. The site is hosted on <strong>Render</strong>, and emails are
+  sent through an email delivery provider.</p>
+
+  <h2>Deleting your data</h2>
+  <p>You can delete your account at any time from <a href="/account">My Account</a>. That
+  permanently removes your email address, name, password, saved events, follows, alert
+  preferences and sessions, and removes your email address from the activity log. The
+  log keeps only a record that an anonymous account existed and was deleted.</p>
+
+  <h2>Contact</h2>
+  {% if contact_email %}
+  <p>Questions or requests about your data: <a href="mailto:{{ contact_email }}">{{ contact_email }}</a>.</p>
+  {% else %}
+  <p>Questions or requests about your data can be sent to the site's administrator.</p>
+  {% endif %}
+</article>
+{% endblock %}

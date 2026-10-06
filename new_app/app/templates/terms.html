@@ -1,0 +1,46 @@
+{% extends "base.html" %}
+
+{% block title %}Terms of use — {{ site_name }}{% endblock %}
+{% block meta_description %}The terms for using {{ site_name }}, including where its event listings come from.{% endblock %}
+
+{% block content %}
+<article class="page-container legal-page">
+  <h1>Terms of use</h1>
+  <p class="audit-meta">Last updated {{ updated }}</p>
+
+  <h2>Where the listings come from</h2>
+  <p>{{ site_name }} gathers events from public listings published by venues,
+  universities, tourism boards and other organizers, and links every event back to its
+  source. We don't run or sell tickets for any event. Dates, times, prices and details
+  can change, and listings can contain mistakes, so <strong>always check with the
+  organizer before you go</strong>. We aren't responsible for the events themselves or
+  for other websites we link to.</p>
+  <p>Event names, descriptions and images belong to their owners. If you run a source we
+  list and want a listing corrected or removed, contact us below and we'll take care of
+  it.</p>
+
+  <h2>Your account</h2>
+  <ul>
+    <li>Use your own email address, and keep your password to yourself. You're responsible
+    for what happens under your account.</li>
+    <li>Don't try to break, overload, scrape or get around the security of the site, or
+    use it to harass anyone.</li>
+    <li>We may suspend accounts that break these terms. You can delete yours at any time
+    from <a href="/account">My Account</a>.</li>
+  </ul>
+
+  <h2>The service</h2>
+  <p>The site is provided as is, without guarantees that it will always be available or
+  error-free. We may change or discontinue features, and update these terms. When we do,
+  the date above changes.</p>
+  <p>How we handle your information is covered in the <a href="/privacy">privacy
+  policy</a>.</p>
+
+  <h2>Contact</h2>
+  {% if contact_email %}
+  <p><a href="mailto:{{ contact_email }}">{{ contact_email }}</a></p>
+  {% else %}
+  <p>Contact the site's administrator.</p>
+  {% endif %}
+</article>
+{% endblock %}

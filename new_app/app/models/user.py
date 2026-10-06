@@ -21,6 +21,12 @@ class User(Base, TimestampMixin):
     hashed_password: Mapped[str | None] = mapped_column(String(255), default=None)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
     last_login_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), default=None)
+    # Set when the person follows the link emailed to the address (or signs in
+    # with a provider that vouches for it). Unverified accounts work normally;
+    # this only records that the address is really theirs.
+    email_verified_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), default=None
+    )
 
     user_roles: Mapped[list["UserRole"]] = relationship(
         back_populates="user", cascade="all, delete-orphan"

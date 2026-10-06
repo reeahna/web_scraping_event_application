@@ -42,7 +42,7 @@ def test_saved_events_are_counted(client, account_user, make_website, make_event
     condensed = " ".join(html.split())
     assert "<strong>1</strong> saved event" in condensed
     # Singular for one, so the count is clearly being read rather than guessed.
-    assert "saved events" not in html
+    assert "<strong>1</strong> saved events" not in condensed
 
 
 def test_followed_cities_are_listed_with_a_way_to_unfollow(

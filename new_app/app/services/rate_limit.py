@@ -34,6 +34,14 @@ class RateLimitBackend(Protocol):
         for the window, False if the limit is exceeded."""
         ...
 
+    def count(self, key: str, *, window_seconds: int) -> int:
+        """How many attempts `key` has in the window, without recording one."""
+        ...
+
+    def reset(self, key: str) -> None:
+        """Forget every attempt recorded for `key`."""
+        ...
+
 
 class InMemoryRateLimitBackend:
     """Sliding-window counter in a process-local dict. Not shared across
@@ -49,6 +57,14 @@ class InMemoryRateLimitBackend:
             return False
         attempts.append(now)
         return True
+
+    def count(self, key: str, *, window_seconds: int) -> int:
+        now = time.monotonic()
+        attempts = _attempts_by_ip.get(key, [])
+        return sum(1 for t in attempts if now - t < window_seconds)
+
+    def reset(self, key: str) -> None:
+        _attempts_by_ip.pop(key, None)
 
 
 class RedisRateLimitBackend:
@@ -68,6 +84,12 @@ class RedisRateLimitBackend:
         if count == 1:
             self._client.expire(redis_key, window_seconds)
         return count <= limit
+
+    def count(self, key: str, *, window_seconds: int) -> int:
+        return int(self._client.get(f"{self._namespace}:{key}") or 0)
+
+    def reset(self, key: str) -> None:
+        self._client.delete(f"{self._namespace}:{key}")
 
 
 _backend: RateLimitBackend | None = None
@@ -102,3 +124,40 @@ def check_registration_rate_limit(ip_address: str | None) -> None:
             "Too many registration attempts from this address. Please try again later.",
             status_code=429,
         )
+
+
+# Failed logins. Two counters, so neither a single address guessing at many
+# accounts nor many addresses guessing at one account gets unlimited tries.
+LOGIN_WINDOW_SECONDS = 15 * 60
+LOGIN_FAILURES_PER_ACCOUNT = 10
+LOGIN_FAILURES_PER_IP = 30
+
+
+def _login_keys(email: str, ip_address: str | None) -> list[tuple[str, int]]:
+    keys = [(f"login-account:{email}", LOGIN_FAILURES_PER_ACCOUNT)]
+    if ip_address:
+        keys.append((f"login-ip:{ip_address}", LOGIN_FAILURES_PER_IP))
+    return keys
+
+
+def login_is_locked(email: str, ip_address: str | None) -> bool:
+    """True when this account or this address has used up its failed attempts
+    for the window. Checked before the password, so a locked account cannot be
+    probed further, even with the right password."""
+    backend = get_rate_limit_backend()
+    return any(
+        backend.count(key, window_seconds=LOGIN_WINDOW_SECONDS) >= limit
+        for key, limit in _login_keys(email, ip_address)
+    )
+
+
+def record_login_failure(email: str, ip_address: str | None) -> None:
+    backend = get_rate_limit_backend()
+    for key, limit in _login_keys(email, ip_address):
+        backend.allow(key, limit=limit, window_seconds=LOGIN_WINDOW_SECONDS)
+
+
+def clear_login_failures(email: str) -> None:
+    """A successful login clears the account's count (not the address's, which
+    would let one good login reset a guessing run against other accounts)."""
+    get_rate_limit_backend().reset(f"login-account:{email}")

@@ -72,3 +72,12 @@ def get_email_sender(settings) -> EmailSender:
     if settings.email_backend == "console":
         return ConsoleEmailSender()
     return NoopEmailSender()
+
+
+def email_delivery_available(settings=None) -> bool:
+    """Whether the app can actually send email. Features that only work by
+    email (password reset, address verification) are offered only when this is
+    true, so nobody is told a link is on its way that will never arrive."""
+    from app.config import get_settings
+
+    return get_email_sender(settings or get_settings()).name != "noop"

@@ -6,7 +6,7 @@
 <div class="auth-card">
   {% if not local_login_enabled %}
   <p class="banner banner-warning">Local password login is disabled on this deployment.</p>
-  {% else %}
+  {% elif is_development %}
   <p class="banner banner-dev">Local development login — not for production use.</p>
   {% endif %}
 
@@ -27,6 +27,9 @@
 
     <button type="submit">Log in</button>
   </form>
+  {% if password_reset_available %}
+  <p class="auth-aside"><a href="/auth/forgot-password">Forgot your password?</a></p>
+  {% endif %}
 
   {% if oauth_providers %}
   <div class="oauth-options" aria-label="Sign in with an external account">

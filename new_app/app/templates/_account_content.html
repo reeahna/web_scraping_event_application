@@ -40,7 +40,23 @@
 
   <table>
     <tbody>
-      <tr><th>Email</th><td>{{ current_user.email }}</td></tr>
+      <tr>
+        <th>Email</th>
+        <td>
+          {{ current_user.email }}
+          {% if current_user.email_verified_at %}
+          <span class="badge badge-active">Confirmed</span>
+          {% else %}
+          <span class="badge badge-muted">Not confirmed</span>
+          {% if email_available %}
+          <form method="post" action="/account/verify-email" class="inline-form">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token }}" />
+            <button type="submit" class="btn-secondary">Send confirmation link</button>
+          </form>
+          {% endif %}
+          {% endif %}
+        </td>
+      </tr>
       <tr>
         <th>Role</th>
         <td>
@@ -101,5 +117,34 @@
     You are not following any cities yet. Follow one from any event to hear about new events there.
   </p>
   {% endif %}
+
+  <section class="danger-zone" aria-labelledby="delete-account-heading">
+    <h2 id="delete-account-heading">Delete account</h2>
+    <p>This permanently deletes your account, saved events, follows and alert settings.
+    It can't be undone. <a href="/privacy">What gets deleted</a></p>
+    <details class="danger-zone-details"{% if errors.delete %} open{% endif %}>
+      <summary>Delete my account</summary>
+      <form method="post" action="/account/delete" class="admin-form account-form">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}" />
+        {% if current_user.hashed_password %}
+        <label for="delete_password">Enter your password to confirm</label>
+        <input type="password" id="delete_password" name="password" required
+               autocomplete="current-password"{% if errors.delete %} aria-invalid="true"
+               aria-describedby="delete_error"{% endif %} />
+        {% else %}
+        <label for="delete_confirmation">Type {{ delete_confirmation_word }} to confirm</label>
+        <input type="text" id="delete_confirmation" name="confirmation" required
+               autocomplete="off"{% if errors.delete %} aria-invalid="true"
+               aria-describedby="delete_error"{% endif %} />
+        {% endif %}
+        {% if errors.delete %}
+        <span class="field-error" id="delete_error">{{ errors.delete }}</span>
+        {% endif %}
+        <div class="form-actions">
+          <button type="submit" class="btn-danger">Permanently delete my account</button>
+        </div>
+      </form>
+    </details>
+  </section>
 </div>
 

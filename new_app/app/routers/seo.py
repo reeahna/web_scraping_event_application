@@ -36,7 +36,7 @@ def robots_txt() -> Response:
 @router.get("/sitemap.xml", include_in_schema=False)
 def sitemap_xml(db: DbSession) -> Response:
     today = current_public_date()
-    urls = [absolute_url("/")]
+    urls = [absolute_url("/"), absolute_url("/privacy"), absolute_url("/terms")]
 
     urls += [
         absolute_url(f"/city/{slug}")
