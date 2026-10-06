@@ -29,14 +29,31 @@ def _combine(day: date | None, clock: time | None) -> str | None:
     return f"{day.isoformat()}T{clock.isoformat()}" if clock else day.isoformat()
 
 
+def script_safe_json(data: dict) -> str:
+    """JSON for a raw <script type="application/ld+json"> block. Escapes the
+    characters that could close that element or open another: a scraped title
+    containing "</script><img ...>" would otherwise end the block and inject
+    markup. \u003c etc. are the same characters to any JSON reader."""
+    return (
+        json.dumps(data, ensure_ascii=True)
+        .replace("<", "\\u003c")
+        .replace(">", "\\u003e")
+        .replace("&", "\\u0026")
+    )
+
+
 def event_structured_data(event: Event) -> str:
-    """A schema.org/Event JSON-LD document for one public event.
+    """A schema.org/Event JSON-LD document for one public event."""
+    return script_safe_json({"@context": "https://schema.org", **event_schema(event)})
+
+
+def event_schema(event: Event) -> dict:
+    """The schema.org/Event object for one public event.
 
     Only fields the public page already shows are included: this describes the
     page, it does not publish anything the visitor could not otherwise read.
     """
     data: dict = {
-        "@context": "https://schema.org",
         "@type": "Event",
         "name": event.title,
         "url": absolute_url(f"/events/{event.id}"),
@@ -87,16 +104,7 @@ def event_structured_data(event: Event) -> str:
     if event.canonical_url:
         data["sameAs"] = event.canonical_url
 
-    # Rendered raw inside <script type="application/ld+json">, so escape the
-    # characters that could close that element or open another. A scraped title
-    # containing "</script><img ...>" would otherwise end the block and inject
-    # markup. \u003c etc. are the same characters to any JSON reader.
-    return (
-        json.dumps(data, ensure_ascii=True)
-        .replace("<", "\\u003c")
-        .replace(">", "\\u003e")
-        .replace("&", "\\u0026")
-    )
+    return data
 
 
 def event_meta_description(event: Event) -> str:
@@ -117,3 +125,55 @@ def event_meta_description(event: Event) -> str:
         summary = f"{summary}. {event.description}"
     summary = " ".join(summary.split())
     return summary[:157].rstrip() + "…" if len(summary) > 158 else summary
+
+
+def city_listing_structured_data(city, events: list[Event], *, page_url: str) -> str:
+    """A town page as a schema.org ItemList of the events it shows, so a crawler
+    (a search engine or an AI tool) gets every event's details from the one
+    listing page without opening each event."""
+    schools = [u.name for u in city.universities]
+    return script_safe_json(
+        {
+            "@context": "https://schema.org",
+            "@type": "ItemList",
+            "name": f"Events in {city.name}",
+            "url": page_url,
+            "about": {
+                "@type": "City",
+                "name": city.name,
+                **(
+                    {"containedInPlace": {"@type": "State", "name": city.state_or_region}}
+                    if city.state_or_region
+                    else {}
+                ),
+            },
+            **({"keywords": schools} if schools else {}),
+            "numberOfItems": len(events),
+            "itemListElement": [
+                {"@type": "ListItem", "position": i, "item": event_schema(e)}
+                for i, e in enumerate(events, start=1)
+            ],
+        }
+    )
+
+
+def site_structured_data() -> str:
+    """The site itself, with its town search, for the home page."""
+    settings = get_settings()
+    return script_safe_json(
+        {
+            "@context": "https://schema.org",
+            "@type": "WebSite",
+            "name": settings.app_name,
+            "description": settings.public_tagline,
+            "url": absolute_url("/"),
+            "potentialAction": {
+                "@type": "SearchAction",
+                "target": {
+                    "@type": "EntryPoint",
+                    "urlTemplate": absolute_url("/") + "?q={search_term_string}",
+                },
+                "query-input": "required name=search_term_string",
+            },
+        }
+    )

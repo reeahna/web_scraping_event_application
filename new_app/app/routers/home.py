@@ -179,6 +179,18 @@ def _render_events(
             "query_string": filters.query_string(),
             "base_path": base_path,
             "canonical_url": seo.absolute_url(base_path),
+            "listing_structured_data": (
+                seo.city_listing_structured_data(
+                    selected_city, events, page_url=seo.absolute_url(base_path)
+                )
+                if selected_city
+                else None
+            ),
+            "calendar_url": (
+                seo.absolute_url(f"/city/{selected_city.slug}/events.ics")
+                if selected_city
+                else None
+            ),
             "fallback_image_url": settings.public_fallback_image_url,
             "map_tile_url": settings.public_map_tile_url,
             "map_attribution": settings.public_map_attribution,
@@ -224,6 +236,7 @@ def home(request: Request, current_user: OptionalCurrentUser, db: DbSession):
             "query": query,
             "event_counts": counts,
             "city_index": city_index,
+            "site_structured_data": seo.site_structured_data(),
         },
     )
 
