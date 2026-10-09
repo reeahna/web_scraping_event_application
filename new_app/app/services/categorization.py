@@ -158,7 +158,9 @@ def assign_category(db: Session, event: Event) -> CategorizationResult | None:
     return result
 
 
-def set_ai_category(event: Event, category: EventCategory) -> None:
+def set_ai_category(
+    event: Event, category: EventCategory, prompt_version: str | None = None
+) -> None:
     """Apply a category chosen by the Gemini categorizer. Writes the automatic
     category only and marks its source "ai"; an administrator's manual override
     (category_override_id) is a separate field and is never touched here. Does
@@ -166,6 +168,7 @@ def set_ai_category(event: Event, category: EventCategory) -> None:
     event.category_id = category.id
     event.categorization_rule_id = None
     event.category_source = "ai"
+    event.ai_prompt_version = prompt_version
 
 
 def apply_categorization(db: Session, event: Event) -> CategorizationResult:

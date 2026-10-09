@@ -134,7 +134,10 @@ class Settings(BaseSettings):
     # a full-catalog pass inside the free rate limits.
     gemini_api_key: str | None = None
     gemini_model: str = "gemini-3.6-flash"
-    gemini_batch_size: int = 20
+    # Events per request. The free tier caps requests (20 a day, 5 a minute for
+    # Flash at the time of writing), not events, so a big batch stretches the
+    # daily quota furthest; 100 events is still far inside the token limit.
+    gemini_batch_size: int = 100
     # When a key is set, the scheduler process also labels newly imported events
     # in the background (one batch per dispatch tick), so events added by the
     # daily scrape get an AI category without a manual run. Turn off to keep the
@@ -144,7 +147,8 @@ class Settings(BaseSettings):
     # real-estate seminars, trade shows, professional conferences). Hiding only
     # clears is_active, so an administrator can bring an event back.
     gemini_hide_unwanted: bool = True
-    gemini_min_interval_seconds: float = 4.0
+    # 13s keeps the manual script under the free tier's 5 requests a minute.
+    gemini_min_interval_seconds: float = 13.0
     gemini_timeout_seconds: float = 60.0
     gemini_max_retries: int = 4
 

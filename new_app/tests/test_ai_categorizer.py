@@ -175,6 +175,15 @@ def test_http_429_raises_quota_exceeded():
         categorizer.classify_batch(CATEGORIES, [EventToClassify(id=1, title="x")])
 
 
+def test_http_429_reports_which_quota_from_the_error_json():
+    categorizer = GeminiCategorizer("test-key", "m", min_interval_seconds=0.0, max_retries=0)
+    detail = "Quota exceeded for metric: generate_content_free_tier_requests, limit: 20"
+    body = {"error": {"code": 429, "message": "x" * 300 + " " + detail}}
+    categorizer._client = _FakeClient(_FakeResponse(429, text="{...}", body=body))
+    with pytest.raises(GeminiQuotaExceeded, match="limit: 20"):
+        categorizer.classify_batch(CATEGORIES, [EventToClassify(id=1, title="x")])
+
+
 def test_quota_exceeded_is_a_gemini_error():
     # The script and the scheduler both rely on this subclass relationship.
     assert issubclass(GeminiQuotaExceeded, GeminiError)

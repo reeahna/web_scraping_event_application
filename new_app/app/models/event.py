@@ -82,6 +82,10 @@ class Event(Base, TimestampMixin):
     review_status: Mapped[str] = mapped_column(String(32), default="reviewed", index=True)
     duplicate_status: Mapped[str] = mapped_column(String(32), default="not_reviewed", index=True)
     category_source: Mapped[str] = mapped_column(String(32), default="uncategorized")
+    # The ai_categorizer PROMPT_VERSION that produced an "ai" category. An
+    # older version means the label predates the current prompt and is queued
+    # for a re-check (see app.services.ai_categorization.pending_events).
+    ai_prompt_version: Mapped[str | None] = mapped_column(String(16), default=None)
     categorization_rule_id: Mapped[int | None] = mapped_column(
         ForeignKey("categorization_rules.id", ondelete="SET NULL"), default=None
     )
