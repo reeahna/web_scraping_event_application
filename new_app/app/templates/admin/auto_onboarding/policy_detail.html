@@ -107,7 +107,7 @@
 
 <form method="post" action="/admin/settings/onboarding-policies/{{ policy.id }}/cities" class="inline-form">
   <input type="hidden" name="csrf_token" value="{{ csrf_token }}" />
-  <select name="city_id" required>
+  <select name="city_id" aria-label="City to add" required>
     {% for city in cities if city.id not in assigned_city_ids %}
     <option value="{{ city.id }}">{{ city.name }}</option>
     {% endfor %}
