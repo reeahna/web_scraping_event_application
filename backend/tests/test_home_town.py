@@ -34,7 +34,11 @@ def _home_town_filter_on(monkeypatch):
         ("Waldron Arts Center 122 S. Walnut Street, Bloomington, IN", ("Bloomington", "IN")),
         ("Zoellner Arts Center, Bethlehem, PA, USA", ("Bethlehem", "PA")),
         ("Bloomington", None),
-        ("205 Locust Lane, Nashville", None),
+        ("205 Locust Lane, Nashville", ("Nashville", None)),
+        ("Lawrence County Courthouse Square 1005 15th St, Bedford", ("Bedford", None)),
+        ("Monroe County Publc Library, 303 E. Kirkwood Ave., Bloomington", ("Bloomington", None)),
+        ("Waldron Arts Center, Rose Firebay", None),  # no street before it
+        ("12 Main St, Kirkwood Ave", None),  # a street, not a town
         ("Assembly Hall", None),
         (None, None),
     ],
@@ -52,6 +56,8 @@ def test_address_town(address, expected):
         ("10 W Market St, Indianapolis, IN, 46204", True),
         ("701 Wabash Ave, Terre Haute, IN, 47807", True),
         ("100 N Center St, Bloomington, IL 61701", True),  # same name, other state
+        ("Lawrence County Courthouse Square 1005 15th St, Bedford", True),
+        ("303 E. Kirkwood Ave., Bloomington", False),
         ("Assembly Hall", False),  # no town named: kept
         (None, False),
     ],
@@ -80,6 +86,23 @@ def test_is_outside_home_town(address, outside):
 )
 def test_other_campus_calendar(url, other):
     assert from_other_campus_calendar(url) is other
+
+
+@pytest.mark.parametrize(
+    "title,other",
+    [
+        ("IU Indy Garden Volunteer Hours", True),
+        ("9/4 Indiana University Southeast Men’s Golf", False),  # caught by its calendar
+        ("IU Southeast Open House", True),
+        ("IUS Grenadier Welcome", True),
+        ("IU Auditorium: Wicked", False),
+        ("Indiana Daily Student Open House", False),
+    ],
+)
+def test_other_campus_title_on_a_shared_calendar(title, other):
+    url = "https://events.iu.edu/live/event/1-x"
+    assert from_other_campus_calendar(url, title) is other
+    assert from_other_campus_calendar("https://example.com/live/event/1-x", title) is False
 
 
 # --- the import -------------------------------------------------------------

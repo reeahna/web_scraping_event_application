@@ -2,8 +2,10 @@ import hashlib
 import html
 import re
 import unicodedata
+from datetime import time
 from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 
+from sqlalchemy import or_
 from sqlalchemy.orm import Session
 
 from app.models.event import Event
@@ -62,6 +64,34 @@ def event_fingerprint(event: Event) -> str:
     return hashlib.sha256(identity.encode("utf-8")).hexdigest()
 
 
+def _time_unknown(column):
+    # Several sources give midnight when they have no time at all.
+    return or_(column.is_(None), column == time(0, 0))
+
+
+def same_listing_events(db: Session, event: Event) -> list[Event]:
+    """Other events with the same title (by title_key) on the same day in the
+    same city, at the same time or with no time on either side: usually the
+    same event listed by another source under its own URL, so its fingerprint
+    differs. The public site shows one of them (see
+    app.repositories.public_events._without_repeat_listings); this is what
+    flags them for an admin."""
+    if not event.normalized_title or event.start_date is None or event.city_id is None:
+        return []
+    query = db.query(Event).filter(
+        Event.id != event.id,
+        Event.normalized_title == event.normalized_title,
+        Event.start_date == event.start_date,
+        Event.city_id == event.city_id,
+        Event.is_recurrence_parent.is_(False),
+    )
+    if event.start_time is not None and event.start_time != time(0, 0):
+        query = query.filter(
+            or_(_time_unknown(Event.start_time), Event.start_time == event.start_time)
+        )
+    return query.order_by(Event.id).all()
+
+
 def update_fingerprint_and_duplicates(db: Session, event: Event) -> list[Event]:
     event.normalized_title = title_key(event.title)
     event.fingerprint = event_fingerprint(event)
@@ -72,6 +102,9 @@ def update_fingerprint_and_duplicates(db: Session, event: Event) -> list[Event]:
         .order_by(Event.id)
         .all()
     )
+    seen = {m.id for m in matches}
+    matches += [m for m in same_listing_events(db, event) if m.id not in seen]
+    matches.sort(key=lambda m: m.id)
     if matches:
         # Only flip a "not_reviewed" event into "possible_duplicate" — never
         # downgrade an already-resolved "confirmed_duplicate"/"not_duplicate"
