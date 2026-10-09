@@ -96,9 +96,24 @@ actually go to: online-only sessions, conferences, certification courses,
 internal staff/faculty business ("faculty meeting", "employees only", "by
 invitation"), and calendar entries that are deadlines or reminders ("Last day
 to drop", "Registration closes", "Fall Break"). The rules are in
-`app/services/attendability.py`. Each import run records how many it left out
+`app/services/attendability.py`. The site is for college students, so imports
+also leave out what is aimed at someone else (business networking, real-estate
+masterclasses, research seminars, toddler story times, class reunions), room
+bookings and class sections a campus calendar publishes, and listings marked
+cancelled. Each import run records how many it left out
 (`not_attendable_excluded:N`), and an event imported before the filter existed
 is taken down the next time its source lists it.
+
+**Only the source's own town.** An event whose address names another town
+(an Eventbrite Bloomington page lists Indianapolis events too) is left out and
+counted as `outside_home_town_excluded:N`. Events with no town in their address
+are kept. A source with its own geographic filter is left to that filter. See
+`app/services/home_town.py`.
+
+**Listed once.** When several sources list the same title on the same day in
+the same town, the public listings, counts, map and sitemap show it once. The
+other copies keep their own page and still show under their own source's
+filter.
 
 ## Configuration
 
@@ -132,7 +147,7 @@ Run from `new_app/` with the venv active.
 | Script | Use |
 |---|---|
 | `scripts/create_superadmin.py` | Create the first admin login |
-| `scripts/hide_unattendable_events.py` | List (or with `--apply`, deactivate) existing events the import filter would now leave out |
+| `scripts/hide_unattendable_events.py` | List (or with `--apply`, deactivate) existing events the import filters would now leave out, including out-of-town ones |
 | `scripts/categorize_events.py` | Seed the starter category rules and re-run them over every event |
 | `scripts/categorize_events_ai.py` | Label events with Gemini (`--only-other`, `--force`, `--limit N`) |
 | `scripts/fetch_category_photos.py` | Refill the placeholder photo pool now (the scheduler also does this when it is small) |

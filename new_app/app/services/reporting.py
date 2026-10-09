@@ -106,7 +106,7 @@ def build_operational_report(
         for warning in run.warnings or []:
             if "recurrence_truncated" in warning or "recurrence_run_budget" in warning:
                 recurrence_truncations += 1
-            if warning.startswith("geographic_filter_excluded"):
+            if warning.startswith(("geographic_filter_excluded", "outside_home_town_excluded")):
                 geography_exclusions += 1
             if warning.startswith("not_attendable_excluded"):
                 not_attendable_exclusions += 1

@@ -168,6 +168,11 @@ class Settings(BaseSettings):
     # or faculty business, and deadline/reminder entries (see
     # app/services/attendability.py). On by default.
     attendability_filter_enabled: bool = True
+    # Leave out events whose own address names a town other than the source's
+    # city (an Eventbrite Bloomington page lists Indianapolis events too). A
+    # source with its own geographic filter is left to it. See
+    # app/services/home_town.py. On by default.
+    home_town_filter_enabled: bool = True
 
     # Public UI (Phase 12). A configurable fallback image shown on event cards
     # and detail pages that have no image; None uses the built-in inline icon.

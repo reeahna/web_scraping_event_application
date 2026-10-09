@@ -1,7 +1,9 @@
-"""Take down events already imported that are not something a person can go to.
+"""Take down events already imported that the site should not show.
 
-New imports leave these out on their own (app/services/attendability.py), and
-an event that a source still lists is taken down the next time it is scraped.
+That is anything that is not something a college student would go to
+(app/services/attendability.py) and anything outside the source's own town
+(app/services/home_town.py). New imports leave these out on their own, and an
+event that a source still lists is taken down the next time it is scraped.
 This clears the rest in one pass. It lists what it would hide and changes
 nothing unless --apply is given.
 
@@ -20,6 +22,9 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from app.database import SessionLocal
 from app.services.attendability import hide_unattendable_events
+from app.services.home_town import hide_out_of_town_events
+
+OUT_OF_TOWN = "out_of_town"
 
 
 def main() -> None:
@@ -30,8 +35,15 @@ def main() -> None:
     db = SessionLocal()
     try:
         found = hide_unattendable_events(db, apply=args.apply)
+        hidden = {event.id for event, _ in found}
+        found += [
+            (event, OUT_OF_TOWN)
+            for event in hide_out_of_town_events(db, apply=args.apply)
+            if event.id not in hidden
+        ]
         for event, reason in found:
-            print(f"  [{reason}] #{event.id} {event.title}")
+            where = f" ({event.public_address})" if reason == OUT_OF_TOWN else ""
+            print(f"  [{reason}] #{event.id} {event.title}{where}")
     finally:
         db.close()
 

@@ -89,6 +89,7 @@ from app.services.geographic_filter import (
     geo_needs_review,
     geo_should_drop,
 )
+from app.services.home_town import candidate_outside_home_town
 from app.services.notifications import (
     SEVERITY_ERROR,
     SEVERITY_INFO,
@@ -1043,6 +1044,26 @@ async def run_extraction(
         blocked=blocked, events_found=len(outcome.outcomes), events_valid=len(valid)
     )
     events_valid = len(valid)
+
+    # Outside the source's own town (Eventbrite's city pages reach well past
+    # it). Only where no admin-set geographic filter already says what the
+    # source covers. Copies imported before this check are taken down too.
+    out_of_town = []
+    if (
+        get_settings().home_town_filter_enabled
+        and not (config.geographic_filters and config.geographic_filters.has_any_rule())
+    ):
+        out_of_town = [c for c in valid if candidate_outside_home_town(c, website.city)]
+    if out_of_town:
+        warnings.append(f"outside_home_town_excluded:{len(out_of_town)}")
+        dropped = {id(c) for c in out_of_town}
+        valid = [c for c in valid if id(c) not in dropped]
+        for candidate in out_of_town:
+            existing = find_existing_event_for_candidate(
+                db, candidate, website_id=website.id, city_id=website.city_id
+            )
+            if existing is not None and existing.is_active:
+                existing.is_active = False
 
     # Not something a person can go to (online-only, a conference, a course, a
     # deadline, internal business): left out of the site. Decided after the
