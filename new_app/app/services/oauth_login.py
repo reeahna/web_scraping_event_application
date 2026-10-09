@@ -11,6 +11,7 @@ inherent: the caller issues a brand-new session token on success.
 
 from __future__ import annotations
 
+import logging
 import secrets
 from datetime import UTC, datetime
 
@@ -27,12 +28,15 @@ from app.repositories.user import create_user, get_user_by_email
 from app.services.oauth import (
     ExternalIdentityInfo,
     OAuthProvider,
+    ProviderError,
     build_provider,
     enabled_provider_names,
     is_provider_enabled,
 )
 
 STATE_TTL_SECONDS = 600
+
+logger = logging.getLogger("app.oauth")
 
 
 def is_enabled(settings, provider_name: str) -> bool:
@@ -119,10 +123,14 @@ def complete_login(
     now = now or datetime.now(UTC)
     snapshot = _consume_state(db, provider_name, state, now)
     provider = provider or build_provider(settings, provider_name)
-    info = provider.fetch_identity(
-        code=code, state=state, nonce=snapshot.nonce,
-        redirect_uri=_redirect_uri(settings, provider_name),
-    )
+    try:
+        info = provider.fetch_identity(
+            code=code, state=state, nonce=snapshot.nonce,
+            redirect_uri=_redirect_uri(settings, provider_name),
+        )
+    except ProviderError as exc:
+        logger.warning("OAuth sign-in via %s failed: %s", provider_name, exc)
+        raise OAuthError("provider_error", str(exc)) from exc
     user = _resolve_user(db, info, now)
     return user, safe_next(snapshot.next_url)
 

@@ -126,6 +126,10 @@ class AuthlibProvider:
             self._client_secret,
             scope=self._spec.scopes,
             redirect_uri=redirect_uri,
+            # Send the secret once, in the form body. Facebook only accepts it
+            # there, and Google rejects a request that carries it in both the
+            # body and a Basic header.
+            token_endpoint_auth_method="client_secret_post",
         )
 
     def authorization_url(self, *, state: str, nonce: str | None, redirect_uri: str) -> str:
@@ -141,10 +145,7 @@ class AuthlibProvider:
     ) -> ExternalIdentityInfo:
         session = self._session(redirect_uri)
         try:
-            session.fetch_token(
-                self._spec.token_url, code=code, state=state,
-                client_secret=self._client_secret,
-            )
+            session.fetch_token(self._spec.token_url, code=code, state=state)
             resp = session.get(self._spec.userinfo_url)
             data = resp.json()
         except Exception as exc:  # noqa: BLE001 - surface as a provider error
