@@ -35,6 +35,11 @@ def geocoding_overview(db: Session) -> dict:
         .where(Event.geocode_status == "skipped")
         .group_by(Event.geocode_last_error)
     ).all()
+    upcoming_skipped = db.execute(
+        select(Event.geocode_last_error, func.count())
+        .where(upcoming, Event.geocode_status == "skipped")
+        .group_by(Event.geocode_last_error)
+    ).all()
     upcoming_rows = db.execute(
         select(Event.geocode_status, func.count())
         .where(upcoming)
@@ -64,6 +69,10 @@ def geocoding_overview(db: Session) -> dict:
         "skipped_reasons": {
             SKIP_REASONS.get(reason or "", reason or "unknown"): count
             for reason, count in skipped
+        },
+        "upcoming_skipped_reasons": {
+            SKIP_REASONS.get(reason or "", reason or "unknown"): count
+            for reason, count in upcoming_skipped
         },
         "upcoming": {status_value: count for status_value, count in upcoming_rows},
         "upcoming_by_city": by_city,

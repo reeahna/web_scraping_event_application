@@ -38,9 +38,12 @@ def test_status_explains_skips_and_lists_unmatched_venues(admin_client, make_cit
                    geocode_status="needs_review", geocode_last_error="no_match")
     make_event(city, canonical_url="u4", start_date=date(2020, 1, 1), venue="Old Hall",
                geocode_status="needs_review", geocode_last_error="no_match")
+    make_event(city, canonical_url="u5", start_date=date(2020, 1, 1),
+               geocode_status="skipped", geocode_last_error="no_address")
 
     data = admin_client.get("/admin/geocoding/status").json()
-    assert data["skipped_reasons"] == {"already_had_coordinates": 1, "no_location": 1}
+    assert data["skipped_reasons"] == {"already_had_coordinates": 1, "no_location": 2}
+    assert data["upcoming_skipped_reasons"] == {"already_had_coordinates": 1, "no_location": 1}
     assert data["upcoming"]["needs_review"] == 2
     assert data["upcoming_by_city"]["Bloomington"]["needs_review"] == 2
     assert data["unmatched_upcoming"] == [
