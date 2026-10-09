@@ -663,7 +663,7 @@ button:hover {
 
 .admin-nav-sections > li > a:hover,
 .admin-nav-trigger:hover,
-.admin-nav-group:hover > .admin-nav-trigger,
+.admin-nav:not(.has-script) .admin-nav-group:hover > .admin-nav-trigger,
 .admin-nav-group.is-open > .admin-nav-trigger {
   background: var(--accent-soft);
   color: var(--accent);
@@ -696,10 +696,12 @@ button:hover {
   box-shadow: var(--shadow-md);
 }
 
-/* :hover drives the pointer, :focus-within the keyboard, so the menus work
-   with no JavaScript at all. .is-open is what the script adds on top. */
-.admin-nav-group:hover > .admin-nav-menu,
-.admin-nav-group:focus-within > .admin-nav-menu,
+/* Without JavaScript, :hover drives the pointer and :focus-within the
+   keyboard, so the menus still work. Once admin-nav.js runs it marks the nav
+   .has-script and .is-open becomes the only switch: mixing the two let a
+   clicked (focused) menu and a hovered one show at the same time. */
+.admin-nav:not(.has-script) .admin-nav-group:hover > .admin-nav-menu,
+.admin-nav:not(.has-script) .admin-nav-group:focus-within > .admin-nav-menu,
 .admin-nav-group.is-open > .admin-nav-menu {
   display: block;
 }

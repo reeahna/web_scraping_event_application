@@ -12,10 +12,11 @@
   nowhere, so it must not behave like a destination, and a button is focusable
   and announced correctly without extra ARIA.
 
-  Opening is CSS-driven (:hover for the pointer, :focus-within for the
-  keyboard), so the menus still work with JavaScript disabled. The script at the
-  bottom only refines that: keeping aria-expanded truthful, Escape to close,
-  tap-to-open where there is no hover, and the small-screen toggle.
+  Without JavaScript, opening is CSS-driven (:hover for the pointer,
+  :focus-within for the keyboard), so the menus still work. When the script at
+  the bottom runs it takes over: only one menu is open at a time, aria-expanded
+  stays truthful, Escape closes, touch gets tap-to-open, and the small-screen
+  toggle works.
 #}
 {% set nav_path = request.url.path %}
 
