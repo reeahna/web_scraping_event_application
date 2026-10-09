@@ -10,6 +10,7 @@ import pytest
 
 from app.services.ai_categorizer import (
     CategoryOption,
+    EventLabel,
     EventToClassify,
     GeminiCategorizer,
     GeminiError,
@@ -52,17 +53,48 @@ def test_prompt_lists_slugs_and_events():
 
 
 def test_parse_labels_plain_array():
-    assert _parse_labels('[{"id": 1, "category": "music"}]') == {1: "music"}
+    assert _parse_labels('[{"id": 1, "category": "music"}]') == {1: EventLabel("music")}
 
 
 def test_parse_labels_tolerates_code_fence():
     text = '```json\n[{"id": 2, "category": "education"}]\n```'
-    assert _parse_labels(text) == {2: "education"}
+    assert _parse_labels(text) == {2: EventLabel("education")}
 
 
 def test_parse_labels_drops_malformed_entries():
     text = '[{"id": 1, "category": "music"}, {"no_id": true}, {"id": "x"}]'
-    assert _parse_labels(text) == {1: "music"}
+    assert _parse_labels(text) == {1: EventLabel("music")}
+
+
+def test_parse_labels_reads_keep_and_defaults_to_true():
+    text = (
+        '[{"id": 1, "category": "business", "keep": false},'
+        ' {"id": 2, "category": "arts-and-culture", "keep": true},'
+        ' {"id": 3, "category": "music"},'
+        ' {"id": 4, "category": "music", "keep": "no"}]'
+    )
+    assert _parse_labels(text) == {
+        1: EventLabel("business", keep=False),
+        2: EventLabel("arts-and-culture"),
+        3: EventLabel("music"),
+        # Only an explicit false drops an event.
+        4: EventLabel("music"),
+    }
+
+
+def test_prompt_explains_keep_with_the_pottery_and_finance_examples():
+    prompt = build_prompt(CATEGORIES, [EventToClassify(id=1, title="x")]).lower()
+    assert "pottery" in prompt
+    assert "financial" in prompt
+    assert '"keep"' in prompt
+
+
+def test_prompt_falls_back_to_built_in_category_descriptions():
+    prompt = build_prompt(
+        [CategoryOption("arts-and-culture", "Arts and Culture")],
+        [EventToClassify(id=1, title="x")],
+    )
+    assert "arts-and-culture: Arts and Culture — Theater" in prompt
 
 
 def test_classify_batch_applies_valid_slugs(monkeypatch):
@@ -79,8 +111,8 @@ def test_classify_batch_applies_valid_slugs(monkeypatch):
         ),
     )
     assert categorizer.classify_batch(CATEGORIES, events) == {
-        1: "music",
-        2: "food-and-drink",
+        1: EventLabel("music"),
+        2: EventLabel("food-and-drink"),
     }
 
 

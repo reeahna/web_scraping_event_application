@@ -31,12 +31,14 @@ from dataclasses import dataclass
 
 import httpx
 
+from app.core.categories import CATEGORY_DESCRIPTIONS
+
 # Bump when the prompt or category framing changes so cached labels from an
 # older framing are recomputed rather than trusted.
-PROMPT_VERSION = "cat-v1"
+PROMPT_VERSION = "cat-v2"
 
 _ENDPOINT = "https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent"
-_MAX_DESCRIPTION_CHARS = 400
+_MAX_DESCRIPTION_CHARS = 600
 # Statuses worth a retry with backoff: rate limiting and transient server / 5xx.
 _RETRYABLE_STATUSES = frozenset({429, 500, 502, 503, 504})
 
@@ -65,6 +67,16 @@ class CategoryOption:
 
 
 @dataclass(frozen=True)
+class EventLabel:
+    """The model's verdict on one event: its category, and whether it is
+    something a college student would want to go to (keep=False for
+    professional, finance, or industry events and the like)."""
+
+    category: str
+    keep: bool = True
+
+
+@dataclass(frozen=True)
 class EventToClassify:
     id: int
     title: str
@@ -83,7 +95,11 @@ def _clean(value: str | None, *, limit: int | None = None) -> str:
 def _category_lines(categories: list[CategoryOption]) -> str:
     lines = []
     for option in categories:
-        description = _clean(option.description, limit=200)
+        # Fall back to the built-in wording so a deployment seeded before
+        # descriptions existed still gets a useful prompt.
+        description = _clean(
+            option.description or CATEGORY_DESCRIPTIONS.get(option.slug), limit=200
+        )
         suffix = f" — {description}" if description else ""
         lines.append(f"- {option.slug}: {option.name}{suffix}")
     return "\n".join(lines)
@@ -108,20 +124,36 @@ def _event_payload(events: list[EventToClassify]) -> list[dict[str, str | int]]:
 
 def build_prompt(categories: list[CategoryOption], events: list[EventToClassify]) -> str:
     return (
-        "You are categorizing local community events. Assign each event to "
-        "exactly one category from the list below, choosing the slug that best "
-        "matches what an attendee will actually do or experience.\n\n"
+        "You are labeling events for an app that shows college students things to "
+        "do, both on campus and anywhere in their college town. For each event, "
+        "pick exactly one category from the list below, choosing the slug that "
+        "best matches what an attendee will actually do or experience, and decide "
+        "whether to keep it.\n\n"
         "Categories:\n"
         f"{_category_lines(categories)}\n\n"
-        "Guidance:\n"
+        "Choosing a category:\n"
         "- Judge by the true subject, not by a single word. A cooking class, "
         "empanada workshop, wine tasting, or brewery tour is food-and-drink, "
-        "not education, even though it may be called a class.\n"
+        "not education, even though it may be called a class. A pottery, "
+        "painting, or dance class is arts-and-culture.\n"
         "- A concert or live band is music even if held at a bar or festival.\n"
-        "- Use 'other' only when no category reasonably fits.\n"
-        "- Every event id below must appear exactly once in your answer.\n\n"
-        "Return ONLY a JSON array, no prose, where each element is "
-        '{"id": <the event id>, "category": "<a slug from the list>"}.\n\n'
+        "- Use 'other' only when no category reasonably fits.\n\n"
+        "Deciding keep:\n"
+        "- keep is true for anything a college student might choose to go to for "
+        "fun, to socialize, to try something new, or out of interest: concerts, "
+        "games, parties, festivals, markets, hands-on classes (pottery, cooking, "
+        "dance, yoga), public talks, club meetings, volunteering, and student "
+        "career fairs. Town events count as much as campus ones.\n"
+        "- keep is false for events aimed at working professionals or "
+        "businesses: financial, investing, retirement, real-estate, insurance, "
+        "or tax seminars; professional conferences, trade shows, and industry "
+        "networking; certification, licensing, or continuing-education courses; "
+        "and internal staff, faculty, or committee meetings.\n"
+        "- When unsure, keep is true.\n\n"
+        "Every event id below must appear exactly once in your answer. Return "
+        "ONLY a JSON array, no prose, where each element is "
+        '{"id": <the event id>, "category": "<a slug from the list>", '
+        '"keep": true or false}.\n\n'
         "Events:\n"
         f"{json.dumps(_event_payload(events), ensure_ascii=False)}"
     )
@@ -140,7 +172,7 @@ def _extract_text(body: dict) -> str:
     return text
 
 
-def _parse_labels(text: str) -> dict[int, str]:
+def _parse_labels(text: str) -> dict[int, EventLabel]:
     # responseMimeType=application/json makes the body a bare JSON array, but be
     # tolerant of a stray fence or surrounding prose just in case.
     snippet = text.strip()
@@ -155,7 +187,7 @@ def _parse_labels(text: str) -> dict[int, str]:
         data = json.loads(match.group(0))
     if not isinstance(data, list):
         raise GeminiError("response JSON was not a list")
-    labels: dict[int, str] = {}
+    labels: dict[int, EventLabel] = {}
     for item in data:
         if not isinstance(item, dict):
             continue
@@ -165,7 +197,8 @@ def _parse_labels(text: str) -> dict[int, str]:
             continue
         slug = str(item.get("category", "")).strip().lower()
         if slug:
-            labels[event_id] = slug
+            # Only an explicit false drops an event; a missing or odd value keeps it.
+            labels[event_id] = EventLabel(category=slug, keep=item.get("keep") is not False)
     return labels
 
 
@@ -246,8 +279,8 @@ class GeminiCategorizer:
 
     def classify_batch(
         self, categories: list[CategoryOption], events: list[EventToClassify]
-    ) -> dict[int, str]:
-        """Return {event_id: category_slug} for the given events. Only slugs
+    ) -> dict[int, EventLabel]:
+        """Return {event_id: EventLabel} for the given events. Only slugs
         that exist in `categories` are returned; anything the model invents is
         dropped so the caller can fall back to its own default. Events the model
         omits are simply absent from the result."""
@@ -259,7 +292,7 @@ class GeminiCategorizer:
         labels = _parse_labels(_extract_text(body))
         requested = {event.id for event in events}
         return {
-            event_id: slug
-            for event_id, slug in labels.items()
-            if event_id in requested and slug in valid
+            event_id: label
+            for event_id, label in labels.items()
+            if event_id in requested and label.category in valid
         }

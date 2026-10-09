@@ -28,8 +28,13 @@ def test_api_style_request_to_protected_page_still_gets_401(client):
     assert resp.json()["detail"]
 
 
-def test_login_after_redirect_lands_on_originally_requested_page(client, make_super_admin, login):
-    make_super_admin(email="grace@example.com", password="pw-grace12345")
+def test_login_after_redirect_lands_on_originally_requested_page(
+    client, make_super_admin, login, monkeypatch
+):
+    import app.routers.auth as auth_router
+
+    monkeypatch.setattr(auth_router, "enabled_providers", lambda settings: ["google"])
+    make_super_admin(email="grace@example.com")
 
     redirect_resp = client.get(
         "/admin/users", headers={"accept": "text/html"}, follow_redirects=False
@@ -38,41 +43,19 @@ def test_login_after_redirect_lands_on_originally_requested_page(client, make_su
     login_url = redirect_resp.headers["location"]
     assert login_url.startswith("/auth/login?next=")
 
-    # Simulate following that redirect, then logging in from that page.
-    client.get(login_url)
-    csrf = client.cookies.get("csrf_token")
-    login_resp = client.post(
-        "/auth/login",
-        data={
-            "email": "grace@example.com",
-            "password": "pw-grace12345",
-            "csrf_token": csrf,
-            "next": "/admin/users",
-        },
-        follow_redirects=False,
-    )
+    # The sign-in page carries the destination into each provider's link...
+    page = client.get(login_url).text
+    assert 'href="/auth/oauth/google?next=/admin/users"' in page
+
+    # ...and the provider round-trip returns there.
+    login_resp = login("grace@example.com", next="/admin/users")
     assert login_resp.status_code == 303
     assert login_resp.headers["location"] == "/admin/users"
 
 
-def test_next_param_rejects_absolute_or_protocol_relative_urls(client, make_user):
-    make_user(
-        email="henry@example.com",
-        password="pw-henry12345",
-        role_name=REGISTERED_USER,
-    )
+def test_next_param_rejects_absolute_or_protocol_relative_urls(make_user, login):
+    make_user(email="henry@example.com", role_name=REGISTERED_USER)
 
-    client.get("/auth/login")
-    csrf = client.cookies.get("csrf_token")
-    resp = client.post(
-        "/auth/login",
-        data={
-            "email": "henry@example.com",
-            "password": "pw-henry12345",
-            "csrf_token": csrf,
-            "next": "//evil.example.com/phish",
-        },
-        follow_redirects=False,
-    )
+    resp = login("henry@example.com", next="//evil.example.com/phish")
     assert resp.status_code == 303
     assert resp.headers["location"] == "/account"

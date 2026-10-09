@@ -7,8 +7,8 @@
 <h1>Websites</h1>
 
 <form method="get" action="/admin/websites" class="filter-bar">
-  <input type="search" name="q" placeholder="Search by name or URL…" value="{{ q }}" />
-  <select name="city_id">
+  <input type="search" name="q" aria-label="Search websites" placeholder="Search by name or URL…" value="{{ q }}" />
+  <select name="city_id" aria-label="City">
     <option value="">All cities</option>
     {% for city in cities %}
     <option value="{{ city.id }}" {% if city_id == city.id %}selected{% endif %}>{{ city.name }}</option>
@@ -17,7 +17,7 @@
   {# Grouped rather than a flat list of ten near-identical words, and labelled
      in English rather than the stored identifier. The count makes an empty
      state visible without having to run the search. #}
-  <select name="onboarding_status">
+  <select name="onboarding_status" aria-label="Onboarding status">
     <option value="">All statuses</option>
     {% for group in status_groups %}
     <optgroup label="{{ group.label }}">

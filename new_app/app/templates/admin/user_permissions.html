@@ -28,7 +28,7 @@
 <form method="post" action="/admin/users/{{ target.id }}/roles" class="inline-form">
   <input type="hidden" name="csrf_token" value="{{ csrf_token }}" />
   <input type="hidden" name="action" value="assign" />
-  <select name="role_id">
+  <select name="role_id" aria-label="Role">
     {% for role in all_roles %}
     <option value="{{ role.id }}">{{ role.name }}</option>
     {% endfor %}

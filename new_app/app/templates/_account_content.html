@@ -40,22 +40,10 @@
 
   <table>
     <tbody>
+      <tr><th>Email</th><td>{{ current_user.email }}</td></tr>
       <tr>
-        <th>Email</th>
-        <td>
-          {{ current_user.email }}
-          {% if current_user.email_verified_at %}
-          <span class="badge badge-active">Confirmed</span>
-          {% else %}
-          <span class="badge badge-muted">Not confirmed</span>
-          {% if email_available %}
-          <form method="post" action="/account/verify-email" class="inline-form">
-            <input type="hidden" name="csrf_token" value="{{ csrf_token }}" />
-            <button type="submit" class="btn-secondary">Send confirmation link</button>
-          </form>
-          {% endif %}
-          {% endif %}
-        </td>
+        <th>Signs in with</th>
+        <td>{{ sign_in_providers | join(", ") if sign_in_providers else "—" }}</td>
       </tr>
       <tr>
         <th>Role</th>
@@ -126,17 +114,10 @@
       <summary>Delete my account</summary>
       <form method="post" action="/account/delete" class="admin-form account-form">
         <input type="hidden" name="csrf_token" value="{{ csrf_token }}" />
-        {% if current_user.hashed_password %}
-        <label for="delete_password">Enter your password to confirm</label>
-        <input type="password" id="delete_password" name="password" required
-               autocomplete="current-password"{% if errors.delete %} aria-invalid="true"
-               aria-describedby="delete_error"{% endif %} />
-        {% else %}
         <label for="delete_confirmation">Type {{ delete_confirmation_word }} to confirm</label>
         <input type="text" id="delete_confirmation" name="confirmation" required
                autocomplete="off"{% if errors.delete %} aria-invalid="true"
                aria-describedby="delete_error"{% endif %} />
-        {% endif %}
         {% if errors.delete %}
         <span class="field-error" id="delete_error">{{ errors.delete }}</span>
         {% endif %}

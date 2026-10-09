@@ -15,21 +15,25 @@ from fastapi import APIRouter, Request
 from fastapi.responses import RedirectResponse
 
 from app.config import get_settings
-from app.core.exceptions import NotFoundError
+from app.core.exceptions import AppError, NotFoundError
 from app.core.flash import set_flash
 from app.dependencies import ClientIp, CorrelationId, DbSession
 from app.services import oauth_login
 from app.services.audit import record_audit
 from app.services.auth import create_session
+from app.services.rate_limit import sign_in_start_allowed
+from app.services.rbac import can_access_admin
 
 router = APIRouter(prefix="/auth/oauth", tags=["oauth"])
 
 
 @router.get("/{provider}")
-def start(provider: str, request: Request, db: DbSession, next: str = ""):
+def start(provider: str, request: Request, db: DbSession, ip_address: ClientIp, next: str = ""):
     settings = get_settings()
     if not oauth_login.is_enabled(settings, provider):
         raise NotFoundError("That sign-in provider is not available.")
+    if not sign_in_start_allowed(ip_address):
+        raise AppError("Too many sign-in attempts. Please wait a few minutes.", status_code=429)
     authorize_url = oauth_login.start_login(db, settings, provider, next_url=next)
     return RedirectResponse(authorize_url, status_code=303)
 
@@ -72,6 +76,10 @@ def callback(
         correlation_id=correlation_id,
         ip_address=ip_address,
     )
+    if next_url == "/":
+        # No page to return to: admins land in the admin, everyone else on
+        # their account page.
+        next_url = "/admin" if can_access_admin(db, user) else "/account"
     response = RedirectResponse(url=next_url, status_code=303)
     response.set_cookie(
         settings.session_cookie_name,
@@ -80,8 +88,21 @@ def callback(
         samesite="lax",
         secure=settings.cookie_secure,
         path="/",
+        max_age=settings.session_ttl_seconds,
     )
     return response
+
+
+# What a person is told when sign-in is refused for a known reason.
+_FAILURE_MESSAGES = {
+    "account_disabled": "This account has been disabled.",
+    "registration_closed": "New accounts aren't being accepted right now.",
+    "email_required": "That account didn't share an email address, which is needed to sign in.",
+    "email_unverified_conflict": (
+        "That email already has an account here. Sign in with a provider that has "
+        "verified the address, such as Google."
+    ),
+}
 
 
 def _fail(db, provider: str, correlation_id, ip_address, *, reason: str) -> RedirectResponse:
@@ -94,6 +115,7 @@ def _fail(db, provider: str, correlation_id, ip_address, *, reason: str) -> Redi
         correlation_id=correlation_id,
         ip_address=ip_address,
     )
+    message = _FAILURE_MESSAGES.get(reason, "Sign-in did not complete. Please try again.")
     response = RedirectResponse(url="/auth/login", status_code=303)
-    set_flash(response, "Sign-in did not complete. Please try again.", category="error")
+    set_flash(response, message, category="error")
     return response

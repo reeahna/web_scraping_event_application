@@ -1,13 +1,14 @@
 from app.core.permissions import REGISTERED_USER
 
 
-def test_home_shows_shared_login_and_registration_links_when_unauthenticated(client):
+def test_home_shows_a_sign_in_link_when_unauthenticated(client):
     resp = client.get("/")
     assert resp.status_code == 200
     assert 'href="/auth/login"' in resp.text
-    assert "Log In" in resp.text
+    assert "Sign in" in resp.text
     assert "Admin Login" not in resp.text
-    assert 'href="/register"' in resp.text
+    # There is no separate sign-up form: a first social sign-in creates the account.
+    assert 'href="/register"' not in resp.text
     assert 'href="/admin"' not in resp.text
 
 

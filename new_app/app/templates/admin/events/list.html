@@ -7,35 +7,35 @@
 <h1>Events</h1>
 
 <form method="get" action="/admin/events" class="filter-bar event-filter-bar">
-  <input type="search" name="q" value="{{ filters.q }}" placeholder="Search title, venue, or source" />
-  <select name="city_id">
+  <input type="search" name="q" aria-label="Search events" value="{{ filters.q }}" placeholder="Search title, venue, or source" />
+  <select name="city_id" aria-label="City">
     <option value="">All cities</option>
     {% for city in cities %}<option value="{{ city.id }}"{% if filters.city_id == city.id %} selected{% endif %}>{{ city.name }}</option>{% endfor %}
   </select>
-  <select name="website_id">
+  <select name="website_id" aria-label="Website">
     <option value="">All websites</option>
     {% for website in websites %}<option value="{{ website.id }}"{% if filters.website_id == website.id %} selected{% endif %}>{{ website.name }}</option>{% endfor %}
   </select>
-  <select name="category_id">
+  <select name="category_id" aria-label="Category">
     <option value="">All categories</option>
     {% for category in categories %}<option value="{{ category.id }}"{% if filters.category_id == category.id %} selected{% endif %}>{{ category.name }}</option>{% endfor %}
   </select>
-  <select name="active">
+  <select name="active" aria-label="Active status">
     <option value="all"{% if filters.active == 'all' %} selected{% endif %}>Any active status</option>
     <option value="yes"{% if filters.active == 'yes' %} selected{% endif %}>Active</option>
     <option value="no"{% if filters.active == 'no' %} selected{% endif %}>Inactive</option>
   </select>
-  <select name="archived">
+  <select name="archived" aria-label="Archive status">
     <option value="all"{% if filters.archived == 'all' %} selected{% endif %}>Any archive status</option>
     <option value="no"{% if filters.archived == 'no' %} selected{% endif %}>Not archived</option>
     <option value="yes"{% if filters.archived == 'yes' %} selected{% endif %}>Archived</option>
   </select>
-  <select name="review_status">
+  <select name="review_status" aria-label="Review status">
     <option value="all">Any review status</option>
     <option value="needs_review"{% if filters.review_status == 'needs_review' %} selected{% endif %}>Needs review</option>
     <option value="reviewed"{% if filters.review_status == 'reviewed' %} selected{% endif %}>Reviewed</option>
   </select>
-  <select name="duplicate_status">
+  <select name="duplicate_status" aria-label="Duplicate status">
     <option value="all">Any duplicate status</option>
     {% for value in ['not_reviewed', 'possible_duplicate', 'confirmed_duplicate', 'not_duplicate'] %}
     <option value="{{ value }}"{% if filters.duplicate_status == value %} selected{% endif %}>{{ value | replace('_', ' ') | title }}</option>

@@ -17,13 +17,10 @@ class User(Base, TimestampMixin):
     id: Mapped[int] = mapped_column(primary_key=True)
     email: Mapped[str] = mapped_column(String(255), unique=True, index=True)
     full_name: Mapped[str | None] = mapped_column(String(255), default=None)
-    # Local dev/fallback login only — nullable so future OAuth-only users need none.
-    hashed_password: Mapped[str | None] = mapped_column(String(255), default=None)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
     last_login_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), default=None)
-    # Set when the person follows the link emailed to the address (or signs in
-    # with a provider that vouches for it). Unverified accounts work normally;
-    # this only records that the address is really theirs.
+    # Set when a sign-in provider has vouched that the address is theirs
+    # (Google does; Facebook never does). Unverified accounts work normally.
     email_verified_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), default=None
     )

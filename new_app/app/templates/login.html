@@ -1,49 +1,45 @@
 {% extends "base.html" %}
 
-{% block title %}Log in — {{ site_name }}{% endblock %}
+{% block title %}Sign in — {{ site_name }}{% endblock %}
+{% block meta_description %}Sign in to {{ site_name }} with Google, Microsoft or Facebook to save events, follow towns and get alerts.{% endblock %}
 
 {% block content %}
-<div class="auth-card">
-  {% if not local_login_enabled %}
-  <p class="banner banner-warning">Local password login is disabled on this deployment.</p>
-  {% elif is_development %}
-  <p class="banner banner-dev">Local development login — not for production use.</p>
-  {% endif %}
+<section class="signin">
+  <div class="signin-card">
+    <h1>Welcome to {{ site_name }}</h1>
+    <p class="signin-lede">Sign in to save events, follow towns and get alerts.</p>
 
-  <h1>Log in</h1>
+    {% if oauth_providers %}
+    <div class="signin-options" role="group" aria-label="Sign in with an existing account">
+      {% for provider in oauth_providers %}
+      <a class="signin-button" href="/auth/oauth/{{ provider }}{% if next %}?next={{ next|urlencode }}{% endif %}">
+        <span class="signin-logo" aria-hidden="true">
+        {% if provider == "google" %}
+          <svg viewBox="0 0 48 48" width="20" height="20"><path fill="#EA4335" d="M24 9.5c3.54 0 6.71 1.22 9.21 3.6l6.85-6.85C35.9 2.38 30.47 0 24 0 14.62 0 6.51 5.38 2.56 13.22l7.98 6.19C12.43 13.72 17.74 9.5 24 9.5z"/><path fill="#4285F4" d="M46.98 24.55c0-1.57-.15-3.09-.38-4.55H24v9.02h12.94c-.58 2.96-2.26 5.48-4.78 7.18l7.73 6c4.51-4.18 7.09-10.36 7.09-17.65z"/><path fill="#FBBC05" d="M10.53 28.59c-.48-1.45-.76-2.99-.76-4.59s.27-3.14.76-4.59l-7.98-6.19C.92 16.46 0 20.12 0 24c0 3.88.92 7.54 2.56 10.78l7.97-6.19z"/><path fill="#34A853" d="M24 48c6.48 0 11.93-2.13 15.89-5.81l-7.73-6c-2.15 1.45-4.92 2.3-8.16 2.3-6.26 0-11.57-4.22-13.47-9.91l-7.98 6.19C6.51 42.62 14.62 48 24 48z"/></svg>
+        {% elif provider == "microsoft" %}
+          <svg viewBox="0 0 21 21" width="20" height="20"><path fill="#F25022" d="M1 1h9v9H1z"/><path fill="#7FBA00" d="M11 1h9v9h-9z"/><path fill="#00A4EF" d="M1 11h9v9H1z"/><path fill="#FFB900" d="M11 11h9v9h-9z"/></svg>
+        {% elif provider == "facebook" %}
+          <svg viewBox="0 0 24 24" width="20" height="20"><path fill="#1877F2" d="M24 12a12 12 0 1 0-13.88 11.85v-8.38H7.08V12h3.04V9.36c0-3 1.8-4.67 4.54-4.67 1.31 0 2.69.24 2.69.24v2.95h-1.52c-1.49 0-1.96.93-1.96 1.88V12h3.33l-.53 3.47h-2.8v8.38A12 12 0 0 0 24 12z"/></svg>
+        {% endif %}
+        </span>
+        <span>Continue with {{ provider|capitalize }}</span>
+      </a>
+      {% endfor %}
+    </div>
+    {% if not registration_enabled %}
+    <p class="auth-aside">New accounts aren't being accepted right now; existing accounts can still sign in.</p>
+    {% endif %}
+    {% else %}
+    <p class="banner banner-warning">Sign-in isn't set up on this site yet.</p>
+    {% endif %}
 
-  {% if error %}
-  <p class="form-error">{{ error }}</p>
-  {% endif %}
-
-  <form method="post" action="/auth/login">
-    <input type="hidden" name="csrf_token" value="{{ csrf_token }}" />
-    <input type="hidden" name="next" value="{{ next }}" />
-    <label for="email">Email</label>
-    <input type="email" id="email" name="email" required autocomplete="username" />
-
-    <label for="password">Password</label>
-    <input type="password" id="password" name="password" required autocomplete="current-password" />
-
-    <button type="submit">Log in</button>
-  </form>
-  {% if password_reset_available %}
-  <p class="auth-aside"><a href="/auth/forgot-password">Forgot your password?</a></p>
-  {% endif %}
-
-  {% if oauth_providers %}
-  <div class="oauth-options" aria-label="Sign in with an external account">
-    <p class="oauth-divider"><span>or continue with</span></p>
-    {% for provider in oauth_providers %}
-    <a class="oauth-button oauth-button-{{ provider }}" href="/auth/oauth/{{ provider }}{% if next %}?next={{ next|urlencode }}{% endif %}">
-      Continue with {{ provider|capitalize }}
-    </a>
-    {% endfor %}
+    <p class="signin-note">
+      <svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true"><path fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" d="M7 11V8a5 5 0 0 1 10 0v3M5 11h14v10H5z"/></svg>
+      No new password to remember. {{ site_name }} never sees or stores one.
+    </p>
   </div>
-  {% endif %}
 
-  {% if registration_enabled %}
-  <p><a href="/register">Create Account</a></p>
-  {% endif %}
-</div>
+  <p class="signin-legal">By continuing you agree to the <a href="/terms">terms of use</a>
+  and <a href="/privacy">privacy policy</a>.</p>
+</section>
 {% endblock %}

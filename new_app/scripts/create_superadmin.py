@@ -1,11 +1,19 @@
-"""Development command to create (or promote) the first Super Administrator.
+"""Make an email address a Super Administrator.
 
-Usage (from new_app/, with its venv active):
+Sign-in is only through Google, Microsoft or Facebook, so this creates no
+password. It creates the account (or finds it) and gives it the Super
+Administrator role; the person then signs in with a provider that has verified
+that address (Google does) and lands in this account.
 
-    python scripts/create_superadmin.py --email reeahna9@gmail.com --password "12345678"
+The SUPERADMIN_EMAIL setting does the same thing automatically on sign-in; this
+script is for adding another administrator, or for a site run without that
+setting.
 
-Idempotent: if the user already exists, it updates their password and ensures
-they hold the Super Administrator role rather than creating a duplicate.
+Usage (from new_app/, with its venv active, or in Render's Shell):
+
+    python scripts/create_superadmin.py --email you@example.com
+
+Idempotent: running it again for the same address changes nothing.
 """
 
 import argparse
@@ -16,7 +24,6 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from app.core.email import normalize_email
 from app.core.permissions import SUPER_ADMINISTRATOR
-from app.core.security import hash_password
 from app.core.seed import seed_defaults
 from app.database import SessionLocal
 from app.models.role import Role
@@ -27,50 +34,39 @@ from app.models.user_role import UserRole
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--email", required=True)
-    parser.add_argument("--password", required=True)
     parser.add_argument("--full-name", default=None)
     args = parser.parse_args()
-
-    if len(args.password) < 8:
-        print("Password must be at least 8 characters.", file=sys.stderr)
-        raise SystemExit(1)
 
     db = SessionLocal()
     try:
         seed_defaults(db)
-
         super_admin_role = db.query(Role).filter(Role.name == SUPER_ADMINISTRATOR).one()
 
         email = normalize_email(args.email)
         user = db.query(User).filter(User.email == email).first()
         if user is None:
-            user = User(
-                email=email,
-                full_name=args.full_name,
-                hashed_password=hash_password(args.password),
-                is_active=True,
-            )
+            user = User(email=email, full_name=args.full_name, is_active=True)
             db.add(user)
             db.commit()
             db.refresh(user)
-            print(f"Created user {user.email} (id={user.id}).")
-        else:
-            user.hashed_password = hash_password(args.password)
+            print(f"Created account {user.email} (id={user.id}).")
+        elif not user.is_active:
             user.is_active = True
             db.commit()
-            print(f"Updated existing user {user.email} (id={user.id}).")
+            print(f"Re-activated {user.email} (id={user.id}).")
 
-        already_assigned = (
+        assigned = (
             db.query(UserRole)
             .filter(UserRole.user_id == user.id, UserRole.role_id == super_admin_role.id)
             .first()
         )
-        if already_assigned is None:
+        if assigned is None:
             db.add(UserRole(user_id=user.id, role_id=super_admin_role.id))
             db.commit()
-            print(f"Assigned '{SUPER_ADMINISTRATOR}' role to {user.email}.")
+            print(f"{user.email} is now a {SUPER_ADMINISTRATOR}.")
         else:
-            print(f"{user.email} already holds '{SUPER_ADMINISTRATOR}'.")
+            print(f"{user.email} is already a {SUPER_ADMINISTRATOR}.")
+        print("Sign in with Google (or another provider that verifies the address) to use it.")
     finally:
         db.close()
 

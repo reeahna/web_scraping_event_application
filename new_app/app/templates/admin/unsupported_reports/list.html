@@ -7,13 +7,13 @@
 <h1>Unsupported-site reports</h1>
 
 <form method="get" action="/admin/unsupported-reports" class="filter-bar">
-  <select name="status">
+  <select name="status" aria-label="Status">
     <option value="">All statuses</option>
     {% for st in all_statuses %}
     <option value="{{ st }}" {% if status == st %}selected{% endif %}>{{ st | report_status_label }}</option>
     {% endfor %}
   </select>
-  <select name="city_id">
+  <select name="city_id" aria-label="City">
     <option value="">All cities</option>
     {% for city in cities %}
     <option value="{{ city.id }}" {% if city_id == city.id %}selected{% endif %}>{{ city.name }}</option>

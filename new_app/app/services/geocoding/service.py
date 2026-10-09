@@ -10,7 +10,7 @@ from __future__ import annotations
 
 from datetime import UTC, datetime
 
-from sqlalchemy import select
+from sqlalchemy import and_, case, or_, select
 from sqlalchemy.orm import Session
 
 from app.models.event import Event
@@ -23,6 +23,16 @@ COMPLETED = "completed"
 FAILED = "failed"
 SKIPPED = "skipped"
 NEEDS_REVIEW = "needs_review"
+
+
+def event_locality(event: Event) -> str | None:
+    """The event's town as a geocoder-friendly string, e.g.
+    "State College, PA, USA", or None when the event has no city."""
+    city = event.city
+    if city is None:
+        return None
+    parts = [p for p in (city.name, city.state_or_region, city.country) if p and p.strip()]
+    return ", ".join(p.strip() for p in parts) or None
 
 
 def skip_reason_for(event: Event) -> str | None:
@@ -92,7 +102,7 @@ async def geocode_event(
         db.commit()
         return SKIPPED
 
-    normalized = normalize_address(event.address, event.venue)
+    normalized = normalize_address(event.address, event.venue, event_locality(event))
     assert normalized is not None  # guaranteed by skip_reason_for
     key = address_hash(normalized)
 
@@ -154,9 +164,25 @@ async def drain_geocoding_queue(
     processed."""
     if not provider.is_healthy():
         return 0
+    # Upcoming events first, soonest first: they are the only ones the public
+    # map can show, and a backlog of past events (all pending from before
+    # geocoding was switched on) would otherwise keep the map empty for hours.
+    today = (now or datetime.now(UTC)).date()
+    upcoming = or_(
+        and_(Event.end_date.isnot(None), Event.end_date >= today),
+        and_(Event.end_date.is_(None), Event.start_date.isnot(None), Event.start_date >= today),
+    )
     events = list(
         db.scalars(
-            select(Event).where(Event.geocode_status == PENDING).order_by(Event.id).limit(limit)
+            select(Event)
+            .where(Event.geocode_status == PENDING)
+            .order_by(
+                case((upcoming, 0), else_=1),
+                Event.start_date.is_(None),
+                Event.start_date,
+                Event.id,
+            )
+            .limit(limit)
         )
     )
     processed = 0

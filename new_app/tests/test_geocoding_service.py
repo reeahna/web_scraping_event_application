@@ -114,3 +114,23 @@ def test_drain_processes_pending_and_respects_disabled(make_city, make_event, db
     provider = StaticGeocoder(default=_HIT)
     processed = asyncio.run(drain_geocoding_queue(db_session, provider, limit=10, now=NOW))
     assert processed == 2
+
+
+def test_lookup_names_the_events_town(make_city, make_event, db_session):
+    city = make_city(name="State College", slug="state-college", state_or_region="PA")
+    event = make_event(city, venue="Eisenhower Auditorium")
+    provider = StaticGeocoder(default=_HIT)
+    assert _geocode(db_session, event, provider) == "completed"
+    assert provider.calls == ["Eisenhower Auditorium, State College, PA"]
+
+
+def test_drain_does_upcoming_events_first(make_city, make_event, db_session):
+    from datetime import date
+
+    city = make_city()
+    make_event(city, address="1 Old St", canonical_url="u1", start_date=date(2025, 6, 1))
+    make_event(city, address="2 Late St", canonical_url="u2", start_date=date(2026, 3, 1))
+    make_event(city, address="3 Soon St", canonical_url="u3", start_date=date(2026, 1, 5))
+    provider = StaticGeocoder(default=_HIT)
+    asyncio.run(drain_geocoding_queue(db_session, provider, limit=2, now=NOW))
+    assert [c.split(",")[0] for c in provider.calls] == ["3 Soon St", "2 Late St"]

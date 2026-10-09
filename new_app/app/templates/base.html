@@ -44,8 +44,7 @@
             <button type="submit" class="nav-button">Log Out</button>
           </form>
         {% else %}
-          <a href="/auth/login">Log In</a>
-          {% if registration_enabled %}<a href="/register" class="nav-button-link">Create Account</a>{% endif %}
+          <a href="/auth/login" class="nav-button-link">Sign in</a>
         {% endif %}
         {% endblock %}
       </nav>

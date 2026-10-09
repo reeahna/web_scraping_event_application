@@ -74,11 +74,20 @@ def production_blockers(settings) -> list[ReadinessIssue]:
             "production (redis/database).",
             "blocker",
         ))
-    if settings.local_login_enabled and settings.registration_enabled:
+    from app.services.oauth import enabled_provider_names
+
+    if not enabled_provider_names(settings):
         issues.append(ReadinessIssue(
-            "open_local_registration",
-            "Local login and public registration are both on; review before "
-            "production exposure.",
+            "no_sign_in_provider",
+            "No sign-in provider (Google, Microsoft or Facebook) has a client id and "
+            "secret, so nobody can sign in.",
+            "warning",
+        ))
+    if not settings.superadmin_email:
+        issues.append(ReadinessIssue(
+            "no_superadmin_email",
+            "SUPERADMIN_EMAIL is not set; with sign-in by Google/Microsoft/Facebook "
+            "only, nobody can be made a Super Administrator without it.",
             "warning",
         ))
     return issues

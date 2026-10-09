@@ -12,10 +12,21 @@
   --accent-hover: #4338ca;
   --accent-soft: rgba(79, 70, 229, 0.08);
   --text: #14141f;
-  --muted: #6b6b80;
+  /* #62627a keeps muted text at 4.5:1 or better on every tinted badge and
+     panel background, not just on white (WCAG 1.4.3). */
+  --muted: #62627a;
   --success: #16a34a;
   --danger: #dc2626;
   --warning: #d97706;
+  /* Darker shades for small text on the pale tints of the colours above:
+     the base shades are fine for borders and icons but under 4.5:1 as text. */
+  --success-text: #166534;
+  --warning-text: #b45309;
+  --danger-text: #b91c1c;
+  /* Form control outlines. Light borders read as decoration, but the edge of
+     a text box or select is how a reader finds it, so it needs 3:1 against
+     the page (WCAG 1.4.11). */
+  --border-input: #85859a;
 
   /* Spacing scale */
   --space-1: 4px;
@@ -257,7 +268,7 @@ button, input, select, textarea { font: inherit; color: inherit; }
   flex: 1;
   min-width: 0;
   padding: var(--space-3) var(--space-4);
-  border: 1px solid var(--border-strong);
+  border: 1px solid var(--border-input);
   border-radius: var(--radius-sm);
   font-size: 1rem;
 }
@@ -873,7 +884,7 @@ button:hover {
 
 .badge-active {
   background: rgba(22, 163, 74, 0.1);
-  color: var(--success);
+  color: var(--success-text);
 }
 
 .badge-inactive {
@@ -883,12 +894,12 @@ button:hover {
 
 .badge-archived {
   background: rgba(217, 119, 6, 0.1);
-  color: var(--warning);
+  color: var(--warning-text);
 }
 
 .badge-danger {
   background: rgba(220, 38, 38, 0.1);
-  color: var(--danger);
+  color: var(--danger-text);
 }
 
 .badge-pending {
@@ -923,7 +934,7 @@ button:hover {
 .admin-form select,
 .admin-form textarea {
   padding: var(--space-2) var(--space-3);
-  border: 1px solid var(--border);
+  border: 1px solid var(--border-input);
   border-radius: var(--radius-sm);
   font-size: 0.9rem;
   font-family: inherit;
@@ -962,7 +973,7 @@ button:hover {
 .filter-bar input,
 .filter-bar select {
   padding: 7px 10px;
-  border: 1px solid var(--border);
+  border: 1px solid var(--border-input);
   border-radius: var(--radius-sm);
   font-size: 0.88rem;
 }
@@ -1097,7 +1108,7 @@ button:hover {
 .category-editing input {
   width: 100%;
   padding: 6px 8px;
-  border: 1px solid var(--border-strong);
+  border: 1px solid var(--border-input);
   border-radius: var(--radius-sm);
   font-size: 0.9rem;
 }
@@ -1121,7 +1132,7 @@ button:hover {
 }
 
 .metric-card.is-zero .metric-label {
-  color: var(--border-strong);
+  color: var(--muted);
 }
 
 /* The verdict on a decision page. This is the answer the reader came for, so
@@ -1367,7 +1378,7 @@ button:hover {
 .field input,
 .field select {
   padding: 7px 10px;
-  border: 1px solid var(--border);
+  border: 1px solid var(--border-input);
   border-radius: var(--radius-sm);
   font-size: 0.9rem;
   width: 100%;
@@ -1526,7 +1537,7 @@ button:hover {
 .filter-field select,
 .filter-field input[type="date"] {
   padding: var(--space-2) var(--space-3);
-  border: 1px solid var(--border);
+  border: 1px solid var(--border-input);
   border-radius: var(--radius-sm);
   font-size: 0.9rem;
   min-height: 40px;
@@ -1982,11 +1993,12 @@ button:hover {
   position: absolute;
   bottom: 0;
   right: 0;
-  font-size: 0.62rem;
+  font-size: 0.7rem;
   line-height: 1.5;
   padding: 1px 6px;
-  background: rgba(0, 0, 0, 0.45);
-  color: rgba(255, 255, 255, 0.85);
+  /* Dark enough that white text stays above 4.5:1 even over a white photo. */
+  background: rgba(0, 0, 0, 0.7);
+  color: #fff;
   border-top-left-radius: 6px;
 }
 
@@ -2426,7 +2438,7 @@ a.wf-danger, button.wf-danger {
 .wf-warn { border: 1px solid var(--warning); background: rgba(217, 119, 6, 0.08); }
 .wf-blockers { border: 1px solid var(--border-strong); background: var(--bg); }
 .wf-blockers ul, .wf-warn ul { margin: 0.3rem 0 0; padding-left: 1.1rem; }
-.wf-blockers strong { color: var(--warning); }
+.wf-blockers strong { color: var(--warning-text); }
 .wf-danger-zone { border: 1px solid var(--danger); border-radius: var(--radius-md); padding: 0.5rem 1rem; margin-top: 1.5rem; }
 
 /* Error pages (404, 500, ...) */
@@ -2438,7 +2450,7 @@ a.wf-danger, button.wf-danger {
   font-size: 3rem;
   font-weight: 800;
   line-height: 1;
-  color: var(--border-strong);
+  color: var(--muted);
   margin: 0;
 }
 
@@ -2506,4 +2518,91 @@ a.wf-danger, button.wf-danger {
   color: var(--danger, #b42318);
   font-weight: 600;
   margin: var(--space-3) 0;
+}
+
+/* --- Sign-in page --- */
+.signin {
+  min-height: calc(100vh - 260px);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: var(--space-7) var(--space-4);
+  background: radial-gradient(ellipse 60% 50% at 50% 35%, var(--accent-soft), transparent 70%);
+}
+.signin-card {
+  width: 100%;
+  max-width: 420px;
+  padding: var(--space-6) var(--space-5);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-md);
+  text-align: center;
+}
+.signin-card h1 {
+  font-size: var(--font-lg);
+  letter-spacing: -0.02em;
+  margin: 0 0 var(--space-2);
+}
+.signin-lede {
+  text-wrap: balance;
+  color: var(--muted);
+  margin: 0 0 var(--space-5);
+}
+.signin-options {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+.signin-button {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-3);
+  min-height: 48px;
+  padding: var(--space-2) var(--space-4);
+  /* The button's edge needs 3:1 against the card (WCAG 1.4.11); #85859a
+     gives 3.6:1 on white. */
+  border: 1px solid var(--border-input, #85859a);
+  border-radius: var(--radius-md);
+  background: var(--surface);
+  color: var(--text);
+  font-weight: 600;
+  text-decoration: none;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease, background-color 0.15s ease;
+}
+.signin-button:hover {
+  background: var(--bg);
+  border-color: var(--accent);
+  box-shadow: var(--shadow-sm);
+}
+.signin-button:focus-visible {
+  outline: 3px solid var(--accent);
+  outline-offset: 2px;
+}
+.signin-logo {
+  display: inline-flex;
+}
+.signin-note {
+  text-wrap: balance;
+  margin: var(--space-5) 0 0;
+  padding-top: var(--space-4);
+  border-top: 1px solid var(--border);
+  color: var(--muted);
+  font-size: var(--font-sm);
+}
+.signin-note svg {
+  vertical-align: -3px;
+  margin-right: var(--space-1);
+}
+.signin-legal {
+  max-width: 420px;
+  margin: var(--space-4) 0 0;
+  color: var(--muted);
+  font-size: var(--font-xs);
+  text-align: center;
+}
+.signin-legal a {
+  color: inherit;
 }

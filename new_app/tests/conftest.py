@@ -16,7 +16,8 @@ os.environ["TMP"] = str(TEST_TMP_PATH)
 # off by default here; tests/test_home_town.py turns it on.
 os.environ["HOME_TOWN_FILTER_ENABLED"] = "false"
 
-import bcrypt  # noqa: E402
+from urllib.parse import parse_qs, quote, urlparse  # noqa: E402
+
 import pytest  # noqa: E402
 from starlette.testclient import TestClient  # noqa: E402
 
@@ -24,7 +25,6 @@ import app.models  # noqa: E402, F401  (registers all models on Base.metadata)
 from app.config import get_settings  # noqa: E402
 from app.core.email import normalize_email  # noqa: E402
 from app.core.permissions import SUPER_ADMINISTRATOR  # noqa: E402
-from app.core.security import hash_password  # noqa: E402
 from app.core.seed import seed_defaults  # noqa: E402
 from app.database import Base, SessionLocal, engine  # noqa: E402
 from app.main import app as fastapi_app  # noqa: E402
@@ -35,18 +35,11 @@ from app.models.role import Role  # noqa: E402
 from app.models.user import User  # noqa: E402
 from app.models.user_role import UserRole  # noqa: E402
 from app.models.website import Website  # noqa: E402
+from app.services import oauth_login  # noqa: E402
+from app.services.oauth import ExternalIdentityInfo, MockProvider  # noqa: E402
 from app.services.rate_limit import _attempts_by_ip  # noqa: E402
 
 settings = get_settings()
-
-# bcrypt's production cost (12 rounds, ~0.25s a hash) is the single biggest
-# cost in this suite: nearly every test creates a user or logs in, often
-# several times. Tests check that hashing and verification work, not how slow
-# they are, so they run at bcrypt's minimum cost. checkpw reads the cost from
-# the stored hash, so verification speeds up with it.
-_real_gensalt = bcrypt.gensalt
-bcrypt.gensalt = lambda rounds=4, prefix=b"2b": _real_gensalt(rounds=4, prefix=prefix)
-
 
 def _empty_all_tables() -> None:
     """Delete every row, children before parents. Much cheaper than dropping
@@ -102,19 +95,18 @@ def _assign_role(db_session, user: User, role_name: str) -> None:
 
 @pytest.fixture
 def make_user(db_session):
-    """Factory fixture: make_user(email, password, role_name=None, is_active=True)."""
+    """Factory fixture: make_user(email, role_name=None, is_active=True).
+
+    There are no passwords; `password` is still accepted, and ignored, so the
+    many tests written as make_user(email, password, ...) need no change."""
 
     def _make_user(
         email: str = "user@example.com",
-        password: str = "correct-horse-battery",
+        password: str | None = None,
         role_name: str | None = None,
         is_active: bool = True,
     ) -> User:
-        user = User(
-            email=normalize_email(email),
-            hashed_password=hash_password(password),
-            is_active=is_active,
-        )
+        user = User(email=normalize_email(email), is_active=is_active)
         db_session.add(user)
         db_session.commit()
         db_session.refresh(user)
@@ -127,8 +119,8 @@ def make_user(db_session):
 
 @pytest.fixture
 def make_super_admin(make_user):
-    def _make(email: str = "root@example.com", password: str = "correct-horse-battery") -> User:
-        return make_user(email=email, password=password, role_name=SUPER_ADMINISTRATOR)
+    def _make(email: str = "root@example.com", password: str | None = None) -> User:
+        return make_user(email=email, role_name=SUPER_ADMINISTRATOR)
 
     return _make
 
@@ -253,37 +245,38 @@ def make_website(db_session):
 
 
 @pytest.fixture
-def login(client):
-    """Factory fixture: login(email, password) -> Response from POST /auth/login.
-    Leaves the TestClient's cookie jar populated with the session cookie on
-    success, exactly like a real browser."""
+def login(client, monkeypatch):
+    """Factory fixture: login(email) -> the sign-in callback's response.
 
-    def _login(email: str, password: str):
+    Signs in the way a real person does, through the social sign-in flow, with
+    a fake Google that vouches for `email`. The account is found by that
+    verified address (or created, as a first sign-in would). Leaves the
+    TestClient's cookie jar holding the session cookie, like a browser.
+    `password` is accepted and ignored, for the tests written before
+    passwords were removed."""
+
+    def _login(email: str, password: str | None = None, *, provider: str = "google",
+               email_verified: bool = True, next: str | None = None):
+        info = ExternalIdentityInfo(
+            provider=provider,
+            subject=f"test:{normalize_email(email)}",
+            email=email,
+            email_verified=email_verified,
+            display_name=None,
+            avatar_url=None,
+        )
+        monkeypatch.setattr(oauth_login, "is_enabled", lambda settings, name: True)
+        monkeypatch.setattr(
+            oauth_login, "build_provider", lambda settings, name: MockProvider(info)
+        )
+        # A person reaches the provider buttons from the sign-in page, which
+        # also gives the browser its CSRF cookie that later forms need.
         client.get("/auth/login")
-        csrf = client.cookies.get(settings.csrf_cookie_name)
-        return client.post(
-            "/auth/login",
-            data={"email": email, "password": password, "csrf_token": csrf},
-            follow_redirects=False,
+        query = f"?next={quote(next, safe='')}" if next is not None else ""
+        start = client.get(f"/auth/oauth/{provider}{query}", follow_redirects=False)
+        state = parse_qs(urlparse(start.headers["location"]).query)["state"][0]
+        return client.get(
+            f"/auth/oauth/{provider}/callback?code=test&state={state}", follow_redirects=False
         )
 
     return _login
-
-
-@pytest.fixture
-def register(client):
-    """Submit the public registration form with a valid CSRF token."""
-
-    def _register(**overrides):
-        client.get("/register")
-        data = {
-            "display_name": "New User",
-            "email": "new-user@example.com",
-            "password": "registration-pass-123",
-            "password_confirm": "registration-pass-123",
-            "csrf_token": client.cookies.get(settings.csrf_cookie_name),
-        }
-        data.update(overrides)
-        return client.post("/register", data=data, follow_redirects=False)
-
-    return _register

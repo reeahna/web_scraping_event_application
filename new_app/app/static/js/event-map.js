@@ -18,9 +18,19 @@
   var tileUrl = el.getAttribute("data-tile-url");
   var attribution = el.getAttribute("data-attribution") || "";
 
+  var note = document.getElementById("event-map-note");
+  var centerLat = parseFloat(el.getAttribute("data-center-lat"));
+  var centerLng = parseFloat(el.getAttribute("data-center-lng"));
+  var hasCenter = isFinite(centerLat) && isFinite(centerLng);
+
   var map = L.map(el, { scrollWheelZoom: false });
-  // A sensible default view until markers arrive (fitBounds overrides it).
-  map.setView([39.5, -98.35], 4);
+  // Start on the town when it has a known centre, otherwise the whole US;
+  // fitBounds overrides either once markers arrive.
+  if (hasCenter) {
+    map.setView([centerLat, centerLng], 13);
+  } else {
+    map.setView([39.5, -98.35], 4);
+  }
   L.tileLayer(tileUrl, { attribution: attribution, maxZoom: 19 }).addTo(map);
 
   function popupHtml(point) {
@@ -54,6 +64,12 @@
     .then(function (data) {
       var points = (data && data.points) || [];
       if (!points.length) {
+        // Say so rather than leave an empty map that looks broken.
+        if (note) {
+          note.textContent =
+            "None of these events has a location yet, so there is nothing to " +
+            "pin on the map. The list below has every matching event.";
+        }
         return;
       }
       var cluster =

@@ -35,9 +35,8 @@ class Settings(BaseSettings):
     database_url: str = f"sqlite:///{(BASE_DIR / 'app.db').as_posix()}"
     log_level: str = "INFO"
 
-    # Auth / sessions. Local password login is a development/fallback mechanism —
-    # flip `local_login_enabled` off once an external identity provider is wired up.
-    local_login_enabled: bool = True
+    # Auth / sessions. Sign-in is only through Google, Microsoft or Facebook
+    # (app.services.oauth); the app stores no passwords.
     session_cookie_name: str = "session_token"
     session_ttl_seconds: int = 43200  # 12 hours
     csrf_cookie_name: str = "csrf_token"
@@ -63,16 +62,17 @@ class Settings(BaseSettings):
     rate_limit_backend: str = "memory"
     redis_url: str | None = None
 
-    # Public self-registration. Enabled by default in development; disable via
-    # env var once real deployment/anti-abuse controls are in place.
+    # Whether a first sign-in creates a new account. Off = only people who
+    # already have an account (and SUPERADMIN_EMAIL) can sign in.
     registration_enabled: bool = True
-    # Minimum password length for local accounts (registration and, in the
-    # future, any local password change). Not a complex composition policy —
-    # just a sane floor, per project convention (see scripts/create_superadmin.py).
-    minimum_password_length: int = 8
-    # Best-effort, dev-safe guard only — see app/services/rate_limit.py for
-    # why this is not a production-grade rate limiter.
-    registration_rate_limit_per_hour: int = 20
+    # The address that is always made a Super Administrator when it signs in,
+    # so the site can never be left without one. Only honoured when the sign-in
+    # provider has verified the address (in practice: Google).
+    superadmin_email: str | None = None
+    # Sign-in attempts started per IP address in 15 minutes. Each start stores a
+    # one-time state record, so this keeps an anonymous visitor from filling
+    # that table.
+    sign_in_starts_per_15_minutes: int = 30
 
     # Single application-wide timezone used to compute "today" for public
     # event visibility (see app/repositories/public_events.py). Deliberately
@@ -140,6 +140,10 @@ class Settings(BaseSettings):
     # daily scrape get an AI category without a manual run. Turn off to keep the
     # key for the manual script only.
     gemini_scheduled_enabled: bool = True
+    # Hide events the model says a college student would not go to (finance or
+    # real-estate seminars, trade shows, professional conferences). Hiding only
+    # clears is_active, so an administrator can bring an event back.
+    gemini_hide_unwanted: bool = True
     gemini_min_interval_seconds: float = 4.0
     gemini_timeout_seconds: float = 60.0
     gemini_max_retries: int = 4
@@ -160,8 +164,9 @@ class Settings(BaseSettings):
     geocoding_min_interval_seconds: float = 1.0
     geocoding_failure_threshold: int = 5
     geocoding_cooldown_seconds: int = 300
-    # How many events one background drain processes per tick.
-    geocoding_batch_size: int = 10
+    # How many events one background drain processes per tick (one tick a
+    # minute). At the one-request-per-second limit, 30 fits well inside a tick.
+    geocoding_batch_size: int = 30
 
     # Leave out of the import anything that is not an event a person can go to:
     # online-only sessions, conferences, certification courses, internal staff
@@ -199,7 +204,10 @@ class Settings(BaseSettings):
     # secret — so the app starts fine with any or all disabled, and no provider
     # is ever offered without credentials. No real OAuth app is required for
     # development or tests (those use a mocked provider).
-    oauth_redirect_base_url: str = "http://localhost:8000"
+    # Where providers send people back to (…/auth/oauth/<provider>/callback).
+    # Unset = the site's own address (PUBLIC_BASE_URL, which on Render is filled
+    # in automatically). Each provider's app must list that callback URL.
+    oauth_redirect_base_url: str | None = None
     google_client_id: str | None = None
     google_client_secret: str | None = None
     microsoft_client_id: str | None = None

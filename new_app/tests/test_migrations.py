@@ -41,6 +41,12 @@ EXPECTED_TABLES = {
 }
 
 
+# The Viewer -> Registered User rename. The role tests stop here rather than at
+# head: a later revision (b8d1e4f2a6c9) deletes every account with no linked
+# sign-in provider, which would remove the very users these tests check.
+ROLE_RENAME_REVISION = "c8abf388f25c"
+
+
 def _run_alembic(database_url: str, *args: str) -> subprocess.CompletedProcess[str]:
     env = {**os.environ, "DATABASE_URL": database_url}
     return subprocess.run(
@@ -113,7 +119,7 @@ def test_viewer_rename_upgrade_downgrade_and_reupgrade_preserve_assignment():
             {"uid": user_id, "rid": viewer_id, "now": now},
         )
 
-    upgrade = _run_alembic(database_url, "upgrade", "head")
+    upgrade = _run_alembic(database_url, "upgrade", ROLE_RENAME_REVISION)
     assert upgrade.returncode == 0, upgrade.stderr
     with engine.connect() as connection:
         role_rows = connection.execute(
@@ -150,7 +156,7 @@ def test_viewer_rename_upgrade_downgrade_and_reupgrade_preserve_assignment():
             == viewer_id
         )
 
-    reupgrade = _run_alembic(database_url, "upgrade", "head")
+    reupgrade = _run_alembic(database_url, "upgrade", ROLE_RENAME_REVISION)
     assert reupgrade.returncode == 0, reupgrade.stderr
     with engine.connect() as connection:
         assert (
@@ -205,7 +211,7 @@ def test_role_rename_merges_unexpected_duplicate_without_duplicate_assignments()
                 {"uid": user_id, "rid": role_id, "now": now},
             )
 
-    upgrade = _run_alembic(database_url, "upgrade", "head")
+    upgrade = _run_alembic(database_url, "upgrade", ROLE_RENAME_REVISION)
     assert upgrade.returncode == 0, upgrade.stderr
     with engine.connect() as connection:
         assert (

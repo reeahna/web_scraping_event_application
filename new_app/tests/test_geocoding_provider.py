@@ -28,6 +28,17 @@ def test_normalize_address_combines_and_is_deterministic():
     assert normalize_address("   ", "") is None
 
 
+def test_normalize_address_adds_the_town_unless_already_named():
+    # A venue alone would geocode to any same-named place in the world.
+    assert normalize_address(None, "HUB", "State College, PA") == "HUB, State College, PA"
+    assert (
+        normalize_address("100 College Ave, State College", None, "State College, PA")
+        == "100 College Ave, State College"
+    )
+    # The town alone is not a location.
+    assert normalize_address(None, None, "State College, PA") is None
+
+
 def test_address_hash_is_case_insensitive():
     assert address_hash("100 Main St") == address_hash("100 MAIN st")
 

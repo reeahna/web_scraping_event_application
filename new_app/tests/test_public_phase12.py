@@ -144,6 +144,14 @@ def test_map_view_renders_container(client, make_city, make_website, make_event)
     assert "leaflet" in resp.text.lower()
 
 
+def test_map_starts_on_the_town(client, make_city, make_website, make_event):
+    city = make_city(default_latitude=40.79, default_longitude=-77.86)
+    city, website = _visible_website(make_city, make_website, city=city)
+    resp = client.get(f"{_listing(city)}?view=map")
+    assert 'data-center-lat="40.79"' in resp.text
+    assert 'data-center-lng="-77.86"' in resp.text
+
+
 def test_map_never_returns_every_city_at_once(client, make_city, make_website, make_event):
     """There is no all-cities view, and the map endpoint is no way around that:
     without a town it returns nothing, and with one it returns only that town."""
