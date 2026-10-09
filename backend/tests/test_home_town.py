@@ -14,6 +14,7 @@ from app.services.home_town import (
     address_town,
     from_other_campus_calendar,
     hide_out_of_town_events,
+    is_away_game,
     is_outside_home_town,
 )
 from app.services.website_configuration import approve_configuration
@@ -103,6 +104,25 @@ def test_other_campus_title_on_a_shared_calendar(title, other):
     url = "https://events.iu.edu/live/event/1-x"
     assert from_other_campus_calendar(url, title) is other
     assert from_other_campus_calendar("https://example.com/live/event/1-x", title) is False
+
+
+@pytest.mark.parametrize(
+    "title,away",
+    [
+        ("10/9 Indiana University Women’s Rowing at Iowa (Scrimmage)", True),
+        ("9/6 1:00 PM Indiana University Women's Soccer at Ohio", True),
+        ("Lehigh University Football at Georgetown", True),
+        ("Lehigh University Women's Golf at Charge At Quail Valley", True),
+        ("9/6 3:00 PM Indiana University Women's Volleyball vs #22 Tennessee", False),
+        ("IU Football Watch Party: IU at Purdue", False),
+        ("International Night at IU Men's Soccer", False),
+        ("Paul Page Memorial Golf Outing 2026 at Hickory Stick", False),
+        ("Lions Club 2026 Golf Tournament at Arrowhead Golf Course", False),
+        (None, False),
+    ],
+)
+def test_is_away_game(title, away):
+    assert is_away_game(title) is away
 
 
 # --- the import -------------------------------------------------------------

@@ -95,6 +95,22 @@ def from_other_campus_calendar(url: str | None, title: str | None = None) -> boo
     return bool(title and title_pattern and title_pattern.search(title))
 
 
+# A school team "at" an opponent is an away game ("Indiana University Women's
+# Rowing at Iowa"); "vs" is a home one. A watch party for an away game is in
+# town, so it is kept.
+_AWAY_GAME = re.compile(
+    r"\b(university|college|IU|state)\b.*?\b(football|basketball|soccer|volleyball|baseball|"
+    r"softball|field hockey|ice hockey|hockey|rowing|golf|tennis|swimming|diving|wrestling|"
+    r"track|track and field|cross country|lacrosse|gymnastics|water polo)\s+(at|@)\s",
+    re.IGNORECASE,
+)
+_WATCH_PARTY = re.compile(r"\b(watch|viewing|screening)\b", re.IGNORECASE)
+
+
+def is_away_game(title: str | None) -> bool:
+    return bool(title) and bool(_AWAY_GAME.search(title)) and not _WATCH_PARTY.search(title)
+
+
 def _state_code(value: str | None) -> str | None:
     if not value:
         return None
@@ -199,6 +215,8 @@ def is_outside_home_town(
 
 
 def candidate_outside_home_town(candidate, city) -> bool:
+    if is_away_game(candidate.title):
+        return True
     if from_other_campus_calendar(candidate.canonical_url, candidate.title):
         return True
     if city is None:
@@ -212,6 +230,8 @@ def candidate_outside_home_town(candidate, city) -> bool:
 
 
 def event_outside_home_town(event) -> bool:
+    if is_away_game(event.title):
+        return True
     if from_other_campus_calendar(event.canonical_url, event.title):
         return True
     city = event.city

@@ -114,11 +114,43 @@ _AUDIENCE_TITLE = _rx(
     r"for kids|kids'? (club|camp|class)|homeschool(ers|ing)?|"
     r"high school|middle school|elementary school|class of '?\d{2,4}|"
     r"(\d+(st|nd|rd|th)|class|family|club|alumni|high school) reunion|"
+    # One residence-hall floor's own program: "Movie Night for Cravens Floor 1",
+    # "Smith 2 & Ed 3: Lucky Charms" (two floors' joint social).
+    r"floors? \d+|"
+    r"senior u|seniors?['’] (academy|university)|intro to (email|computers|the internet)|"
+    r"computer basics|"
     r"senior (expo|citizens?|center)|seniors (55|60|62|65)|older adults|retirees|"
     r"(55|60|62|65)\s*(\+|and (up|over|older))|"
     r"ages? (2[5-9]|[3-9]\d)\s*(-|–|to|\+|and)|"
     r"(alumni|iuaa)\b.*\b(game watch|chapter|reception|happy hour|weekend|reunion)|"
     r"\balumni (association|chapter|club|reception|game watch))\b"
+)
+
+# A joint social for two residence-hall floors: "Smith 2 & Ed 3: Lucky Charms".
+_FLOOR_PAIR_TITLE = _rx(r"^\s*[a-z]+ \d\s*(&|and)\s*[a-z]+ \d\s*:")
+
+# A campus service's open hours or a study space listed as if it were an event:
+# "Drop-In Career Coaching", "Learning Lab", "Study".
+_SERVICE_TITLE = _rx(
+    r"\bdrop[- ]in (career|advising|tutoring|coaching|hours|help|consultations?|writing)\b|"
+    r"\b(career coaching|study tables?|tutoring hours|writing (center|tutor)|advising hours)\b|"
+    r"^\s*(study|study hall|learning lab|open lab|lab hours|tutoring|advising|"
+    r"quiet study|group study)\s*$|"
+    # How to apply to a program: "Learn How to Apply for the 2027 Rural
+    # Placemaking Studio", "MBA Information Session".
+    r"\b(learn )?how to apply\b|\binfo(rmation(al)?)? sessions?\b|"
+    r"\b(volunteer|new member|mentor|tutor|employee) (orientation|training)\b|"
+    r"\borientation session\b"
+)
+
+# A theme week or month is a banner over other events, not one itself:
+# "Wellness Week", "Pride Month".
+_THEME_PERIOD_TITLE = _rx(r"^\s*([\w'&-]+\s+){1,3}(week|month)\s*$")
+
+# The description says outright that it is a symposium or conference.
+_CONFERENCE_DESCRIPTION = _rx(
+    r"\bthis (symposium|conference|colloquium|research seminar)\b|"
+    r"\b(alumni|trainees|colleagues|researchers),? (and )?(trainees|colleagues|researchers)\b"
 )
 
 # Words that mark a night out or a student group, which beat a conference or
@@ -193,7 +225,9 @@ _INTERNAL_CODES = re.compile(
     r"^\s*[A-Z]{2,5}(-[A-Z]?\s?\d{3}|\s[A-Z]\d{3})[A-Z]?\b|\bRms?\.? [A-Z]{0,3}\s?\d{2,4}\b|"
     # A room booking signed with the booker's lowercase initials:
     # "IUH-Years of Service Awards/Lori Kern/ce", "IUH-MillionMeals/SGirgis/dmg".
-    r"/\s*[a-z]{2,4}\s*$|^\s*IUH\s*-"
+    r"/\s*[a-z]{2,4}\s*$|^\s*IUH\s*-|"
+    # A course listed by its number: "FOLK 100: Foundations of our Fields".
+    r"^\s*[A-Z]{2,5} [A-Z]?\d{3}[A-Z]?\s*:"
 )
 
 # --- the source's own category label -----------------------------------------
@@ -250,10 +284,14 @@ def not_attendable_reason(
         return INTERNAL
     if _CERTIFICATION_TITLE.search(title):
         return CERTIFICATION
-    if _AUDIENCE_TITLE.search(title):
+    if _SERVICE_TITLE.search(title):
+        return INTERNAL
+    if _THEME_PERIOD_TITLE.search(title):
+        return DEADLINE
+    if _AUDIENCE_TITLE.search(title) or _FLOOR_PAIR_TITLE.search(title):
         return AUDIENCE
     if not _STUDENT_DRAW.search(title):
-        if _CONFERENCE_TITLE.search(title):
+        if _CONFERENCE_TITLE.search(title) or _CONFERENCE_DESCRIPTION.search(description):
             return CONFERENCE
         if _PROFESSIONAL_TITLE.search(title):
             return PROFESSIONAL
