@@ -35,7 +35,6 @@ from app.models.user_engagement import (
 )
 from app.models.user_role import UserRole
 from app.models.user_session import UserSession
-from app.models.user_token import UserToken
 from app.models.website import Website
 
 __all__ = [
@@ -71,7 +70,6 @@ __all__ = [
     "User",
     "UserRole",
     "UserSession",
-    "UserToken",
     "Website",
     "SavedEvent",
     "UserFollow",

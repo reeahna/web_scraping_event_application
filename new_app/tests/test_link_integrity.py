@@ -19,12 +19,11 @@ import check_links  # noqa: E402
 from app.main import app as fastapi_app  # noqa: E402
 
 LINK_ADMIN_EMAIL = "link-integrity-admin@example.com"
-LINK_ADMIN_PASSWORD = "correct-horse-battery"
 
 
 def test_no_broken_links_or_dead_targets(client, make_super_admin):
-    make_super_admin(email=LINK_ADMIN_EMAIL, password=LINK_ADMIN_PASSWORD)
-    check_links.login(client, LINK_ADMIN_EMAIL, LINK_ADMIN_PASSWORD)
+    make_super_admin(email=LINK_ADMIN_EMAIL)
+    check_links.login(client, LINK_ADMIN_EMAIL)
 
     routes = check_links.build_routes(fastapi_app.router.routes)
     seeds = check_links.seed_paths(routes, exclude=check_links._DOCS)

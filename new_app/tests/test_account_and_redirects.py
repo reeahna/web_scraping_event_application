@@ -74,20 +74,10 @@ def test_normal_login_redirect_uses_effective_admin_access(make_user, login, rol
 
 
 @pytest.mark.parametrize("next_path", ["/account", "/admin/users", "/account?tab=alerts"])
-def test_safe_next_path_takes_priority(client, make_super_admin, next_path):
-    make_super_admin(email="safe-next@example.com", password="redirect-pass-123")
-    client.get("/auth/login")
-
-    response = client.post(
-        "/auth/login",
-        data={
-            "email": "safe-next@example.com",
-            "password": "redirect-pass-123",
-            "csrf_token": client.cookies.get("csrf_token"),
-            "next": next_path,
-        },
-        follow_redirects=False,
-    )
+def test_safe_next_path_takes_priority(make_super_admin, login, next_path):
+    make_super_admin(email="safe-next@example.com")
+    response = login("safe-next@example.com", next=next_path)
+    assert response.status_code == 303
     assert response.headers["location"] == next_path
 
 
@@ -103,22 +93,7 @@ def test_safe_next_path_takes_priority(client, make_super_admin, next_path):
         "admin/users",
     ],
 )
-def test_unsafe_or_malformed_next_falls_back_by_permissions(client, make_user, unsafe_next):
-    make_user(
-        email="unsafe-next@example.com",
-        password="redirect-pass-123",
-        role_name=REGISTERED_USER,
-    )
-    client.get("/auth/login")
-
-    response = client.post(
-        "/auth/login",
-        data={
-            "email": "unsafe-next@example.com",
-            "password": "redirect-pass-123",
-            "csrf_token": client.cookies.get("csrf_token"),
-            "next": unsafe_next,
-        },
-        follow_redirects=False,
-    )
+def test_unsafe_or_malformed_next_falls_back_by_permissions(make_user, login, unsafe_next):
+    make_user(email="unsafe-next@example.com", role_name=REGISTERED_USER)
+    response = login("unsafe-next@example.com", next=unsafe_next)
     assert response.headers["location"] == "/account"

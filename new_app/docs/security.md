@@ -13,11 +13,14 @@
 ## Sessions & auth
 
 - Session tokens are random; only their hash is stored (`UserSession`). A new
-  token is minted on every login (local and OAuth) — session-fixation safe.
+  token is minted on every login — session-fixation safe.
 - Cookies: `HttpOnly`, `SameSite=Lax`, `Secure` in production (`COOKIE_SECURE`).
 - CSRF: double-submit token on every state-changing form/POST (`app/core/csrf`).
-- Password floor via `MINIMUM_PASSWORD_LENGTH`; local login can be disabled
-  entirely (`LOCAL_LOGIN_ENABLED=false`) once OAuth is the sole path.
+- Sign-in is social only (Google, Microsoft, Facebook). There is no password
+  login, so no password, reset token or verification token is ever stored.
+- `SUPERADMIN_EMAIL` grants Super Administrator, but only on a sign-in whose
+  provider has verified that address (Google). Microsoft and Facebook sign-ins
+  can't claim it.
 - Registered users hold **zero** administrative permissions by default.
 
 ## OAuth (Phase 14)
@@ -25,7 +28,8 @@
 Authlib-based; providers are credential-gated (disabled without id+secret).
 State is one-time and expiring; OIDC nonce is carried through; account linking
 happens only on a provider-**verified** email; an unverified email never
-hijacks an existing account; disabled users are rejected; redirects are
+hijacks an existing account, and when a verified sign-in joins an account any
+unverified sign-in already on it is unlinked; disabled users are rejected; redirects are
 allowlisted to local paths. No third-party password or provider token is stored.
 
 ## SSRF & outbound safety

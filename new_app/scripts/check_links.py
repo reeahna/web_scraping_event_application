@@ -240,13 +240,11 @@ def print_report(report: Report, routes) -> None:
 
 
 TEMP_EMAIL = "link-check-bot@internal.test"
-TEMP_PASSWORD = "link-check-bot-pw-9137"
 _DOCS = {"/openapi.json", "/redoc", "/docs", "/docs/oauth2-redirect"}
 
 
 def _create_temp_admin() -> int:
     from app.core.permissions import SUPER_ADMINISTRATOR
-    from app.core.security import hash_password
     from app.database import SessionLocal
     from app.models.role import Role
     from app.models.user import User
@@ -259,7 +257,7 @@ def _create_temp_admin() -> int:
             db.query(UserRole).filter(UserRole.user_id == existing.id).delete()
             db.delete(existing)
             db.commit()
-        user = User(email=TEMP_EMAIL, hashed_password=hash_password(TEMP_PASSWORD), is_active=True)
+        user = User(email=TEMP_EMAIL, is_active=True)
         db.add(user)
         db.commit()
         db.refresh(user)
@@ -287,19 +285,21 @@ def _delete_temp_admin(user_id: int) -> None:
         db.close()
 
 
-def login(client, email: str, password: str) -> None:
+def login(client, email: str) -> None:
+    """Sign the crawler in as `email` by issuing it a session directly. There
+    is no password form to submit: real sign-in goes through Google etc."""
     from app.config import get_settings
+    from app.database import SessionLocal
+    from app.models.user import User
+    from app.services.auth import create_session
 
-    settings = get_settings()
-    client.get("/auth/login")
-    csrf = client.cookies.get(settings.csrf_cookie_name)
-    resp = client.post(
-        "/auth/login",
-        data={"email": email, "password": password, "csrf_token": csrf},
-        follow_redirects=False,
-    )
-    if resp.status_code not in (302, 303) or not client.cookies.get(settings.session_cookie_name):
-        raise SystemExit(f"login failed (status {resp.status_code})")
+    db = SessionLocal()
+    try:
+        user = db.query(User).filter(User.email == email).one()
+        token = create_session(db, user)
+    finally:
+        db.close()
+    client.cookies.set(get_settings().session_cookie_name, token)
 
 
 def main() -> None:
@@ -319,7 +319,7 @@ def main() -> None:
     user_id = _create_temp_admin()
     try:
         with TestClient(fastapi_app, base_url="http://testserver") as client:
-            login(client, TEMP_EMAIL, TEMP_PASSWORD)
+            login(client, TEMP_EMAIL)
             report = crawl(client, routes, seeds=seeds, public_only=args.public_only)
     finally:
         _delete_temp_admin(user_id)

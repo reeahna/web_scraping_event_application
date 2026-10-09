@@ -9,13 +9,12 @@ from app.models.user_engagement import SavedEvent, UserFollow
 from app.models.user_session import UserSession
 from app.services import engagement
 
-PASSWORD = "password12345"
 TOMORROW = datetime.now(UTC).date() + timedelta(days=1)
 
 
 def _signed_in(client, make_user, login, email="leaver@example.com", role=REGISTERED_USER):
-    user = make_user(email=email, password=PASSWORD, role_name=role)
-    login(email, PASSWORD)
+    user = make_user(email=email, role_name=role)
+    login(email)
     return user
 
 
@@ -38,7 +37,7 @@ def test_deleting_removes_the_account_and_everything_tied_to_it(
     engagement.follow(db_session, user_id=user.id, follow_type="city", target_id=city.id)
     user_id = user.id
 
-    resp = _delete(client, password=PASSWORD)
+    resp = _delete(client, confirmation="DELETE")
     assert resp.status_code == 303 and resp.headers["location"] == "/"
 
     db_session.expire_all()
@@ -50,12 +49,16 @@ def test_deleting_removes_the_account_and_everything_tied_to_it(
 
 
 def test_the_email_address_is_scrubbed_from_the_audit_log(client, make_user, login, db_session):
+    from app.services.audit import record_audit
+
     user = _signed_in(client, make_user, login)
-    login("leaver@example.com", "wrong")  # writes the address into a failed-login entry
-    login("leaver@example.com", PASSWORD)
+    # Admin actions can name a person by address in the log's text.
+    record_audit(db_session, actor_id=None, action="role_assigned", entity_type="user",
+                 entity_id=user.id, detail="Editor given to leaver@example.com",
+                 after={"email": "leaver@example.com"})
     user_id = user.id
 
-    _delete(client, password=PASSWORD)
+    _delete(client, confirmation="DELETE")
 
     db_session.expire_all()
     for entry in db_session.query(AuditLog):
@@ -65,38 +68,20 @@ def test_the_email_address_is_scrubbed_from_the_audit_log(client, make_user, log
     assert deleted.entity_id == user_id and deleted.user_id is None
 
 
-def test_a_wrong_password_deletes_nothing(client, make_user, login, db_session):
+def test_deleting_needs_delete_typed(client, make_user, login, db_session):
     user = _signed_in(client, make_user, login)
-    resp = _delete(client, password="not-it")
+    resp = _delete(client, confirmation="yes")
     assert resp.status_code == 422
-    assert "That password is not correct." in resp.text
+    assert "Type DELETE to confirm." in resp.text
     db_session.expire_all()
     assert db_session.get(User, user.id) is not None
-
-
-def test_an_account_without_a_password_confirms_by_typing_delete(
-    client, make_user, login, db_session
-):
-    from app.services.auth import create_session
-
-    user = make_user(email="oauth@example.com", password=PASSWORD, role_name=REGISTERED_USER)
-    user.hashed_password = None
-    db_session.commit()
-    client.get("/auth/login")
-    client.cookies.set("session_token", create_session(db_session, user))
-    user_id = user.id
-
-    assert _delete(client, confirmation="yes").status_code == 422
-    assert _delete(client, confirmation="DELETE").status_code == 303
-    db_session.expire_all()
-    assert db_session.get(User, user_id) is None
 
 
 def test_the_last_super_administrator_cannot_delete_themselves(
     client, make_user, login, db_session
 ):
     user = _signed_in(client, make_user, login, email="root@example.com", role=SUPER_ADMINISTRATOR)
-    resp = _delete(client, password=PASSWORD)
+    resp = _delete(client, confirmation="DELETE")
     assert resp.status_code == 403
     assert "only Super Administrator" in resp.text
     db_session.expire_all()
@@ -105,7 +90,7 @@ def test_the_last_super_administrator_cannot_delete_themselves(
 
 def test_deleting_needs_a_csrf_token(client, make_user, login, db_session):
     user = _signed_in(client, make_user, login)
-    resp = client.post("/account/delete", data={"csrf_token": "forged", "password": PASSWORD})
+    resp = client.post("/account/delete", data={"csrf_token": "forged", "confirmation": "DELETE"})
     assert resp.status_code in (400, 403)
     db_session.expire_all()
     assert db_session.get(User, user.id) is not None

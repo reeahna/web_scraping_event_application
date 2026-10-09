@@ -4,9 +4,8 @@ from fastapi import Request
 from sqlalchemy.orm import Session
 
 from app.config import get_settings
-from app.core.email import normalize_email
 from app.core.exceptions import NotAuthenticatedError
-from app.core.security import generate_session_token, hash_session_token, verify_password
+from app.core.security import generate_session_token, hash_session_token
 from app.models.base import as_aware_utc
 from app.models.user import User
 from app.models.user_session import UserSession
@@ -48,18 +47,6 @@ def delete_session(db: Session, raw_token: str) -> None:
     if session is not None:
         db.delete(session)
         db.commit()
-
-
-def authenticate_local_user(db: Session, email: str, password: str) -> User | None:
-    """Verify email/password only. Deliberately does not check is_active — callers
-    check that separately so failure reasons (bad credentials vs. disabled
-    account) can be audited distinctly."""
-    user = db.query(User).filter(User.email == normalize_email(email)).first()
-    if user is None or not user.hashed_password:
-        return None
-    if not verify_password(password, user.hashed_password):
-        return None
-    return user
 
 
 def resolve_current_user(request: Request, db: Session, cookie_name: str) -> User:

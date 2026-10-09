@@ -7,8 +7,8 @@ a shared fixed-window counter that works across every web worker and instance
 (and is why `/health/ready` flags the in-process limiter as a blocker).
 
 Both backends implement the same `RateLimitBackend.allow(...)` interface, and
-`check_registration_rate_limit` is unchanged from the caller's perspective —
-`app.routers.registration` still calls it the same way.
+`sign_in_start_allowed` is what callers use; it limits how often one address
+can start a social sign-in.
 """
 
 import time
@@ -16,9 +16,6 @@ from collections import defaultdict
 from typing import Protocol, runtime_checkable
 
 from app.config import get_settings
-from app.core.exceptions import AppError
-
-_WINDOW_SECONDS = 3600
 
 # Module-level so the in-memory backend's state is process-global and the test
 # suite can reset it between tests (see tests/conftest.py).
@@ -109,55 +106,18 @@ def get_rate_limit_backend(settings=None) -> RateLimitBackend:
     return _backend
 
 
-def check_registration_rate_limit(ip_address: str | None) -> None:
-    """Raise AppError(429) if this IP has attempted registration too many times
-    in the last hour, via the configured backend."""
+SIGN_IN_WINDOW_SECONDS = 15 * 60
+
+
+def sign_in_start_allowed(ip_address: str | None) -> bool:
+    """Record a sign-in start from this address and say whether it is within
+    the limit. Each start stores a one-time state record, so this keeps one
+    address from filling that table."""
     if not ip_address:
-        return
+        return True
     settings = get_settings()
-    backend = get_rate_limit_backend(settings)
-    if not backend.allow(
-        ip_address, limit=settings.registration_rate_limit_per_hour,
-        window_seconds=_WINDOW_SECONDS,
-    ):
-        raise AppError(
-            "Too many registration attempts from this address. Please try again later.",
-            status_code=429,
-        )
-
-
-# Failed logins. Two counters, so neither a single address guessing at many
-# accounts nor many addresses guessing at one account gets unlimited tries.
-LOGIN_WINDOW_SECONDS = 15 * 60
-LOGIN_FAILURES_PER_ACCOUNT = 10
-LOGIN_FAILURES_PER_IP = 30
-
-
-def _login_keys(email: str, ip_address: str | None) -> list[tuple[str, int]]:
-    keys = [(f"login-account:{email}", LOGIN_FAILURES_PER_ACCOUNT)]
-    if ip_address:
-        keys.append((f"login-ip:{ip_address}", LOGIN_FAILURES_PER_IP))
-    return keys
-
-
-def login_is_locked(email: str, ip_address: str | None) -> bool:
-    """True when this account or this address has used up its failed attempts
-    for the window. Checked before the password, so a locked account cannot be
-    probed further, even with the right password."""
-    backend = get_rate_limit_backend()
-    return any(
-        backend.count(key, window_seconds=LOGIN_WINDOW_SECONDS) >= limit
-        for key, limit in _login_keys(email, ip_address)
+    return get_rate_limit_backend(settings).allow(
+        f"sign-in-start:{ip_address}",
+        limit=settings.sign_in_starts_per_15_minutes,
+        window_seconds=SIGN_IN_WINDOW_SECONDS,
     )
-
-
-def record_login_failure(email: str, ip_address: str | None) -> None:
-    backend = get_rate_limit_backend()
-    for key, limit in _login_keys(email, ip_address):
-        backend.allow(key, limit=limit, window_seconds=LOGIN_WINDOW_SECONDS)
-
-
-def clear_login_failures(email: str) -> None:
-    """A successful login clears the account's count (not the address's, which
-    would let one good login reset a guessing run against other accounts)."""
-    get_rate_limit_backend().reset(f"login-account:{email}")

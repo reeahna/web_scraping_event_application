@@ -11,19 +11,22 @@ inherent: the caller issues a brand-new session token on success.
 
 from __future__ import annotations
 
+import re
 import secrets
 from datetime import UTC, datetime
+from urllib.parse import unquote, urlsplit
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.core.email import normalize_email
-from app.core.permissions import REGISTERED_USER
+from app.core.permissions import REGISTERED_USER, SUPER_ADMINISTRATOR
 from app.models.external_identity import ExternalIdentity, OAuthLoginState
 from app.models.role import Role
 from app.models.user import User
 from app.models.user_role import UserRole
 from app.repositories.user import create_user, get_user_by_email
+from app.services.audit import record_audit
 from app.services.oauth import (
     ExternalIdentityInfo,
     OAuthProvider,
@@ -50,14 +53,40 @@ class OAuthError(Exception):
 
 
 def safe_next(next_url: str | None) -> str:
-    """Redirect allowlist: only local paths, never an absolute/off-site URL."""
-    if next_url and next_url.startswith("/") and not next_url.startswith("//"):
-        return next_url
-    return "/"
+    """Where to send someone after sign-in: `next_url` when it is a path on
+    this site, otherwise "/". Never an absolute URL, another scheme, or a
+    protocol-relative `//host`, including the disguised forms browsers still
+    treat as one (`/\\host`, `/%2f%2fhost`), so a crafted link cannot bounce a
+    freshly signed-in person to another site."""
+    return next_url if _is_safe_next(next_url) else "/"
+
+
+def _is_safe_next(next_url: str | None) -> bool:
+    if not next_url or any(ord(char) < 32 or ord(char) == 127 for char in next_url):
+        return False
+    if not next_url.startswith("/") or next_url.startswith("//"):
+        return False
+    if "\\" in next_url or re.search(r"%(?![0-9A-Fa-f]{2})", next_url):
+        return False
+    try:
+        parsed = urlsplit(next_url)
+        decoded_path = unquote(parsed.path)
+    except (UnicodeError, ValueError):
+        return False
+    return (
+        not parsed.scheme
+        and not parsed.netloc
+        and not parsed.fragment
+        and decoded_path.startswith("/")
+        and not decoded_path.startswith("//")
+        and "\\" not in decoded_path
+    )
 
 
 def _redirect_uri(settings, provider_name: str) -> str:
-    base = settings.oauth_redirect_base_url.rstrip("/")
+    base = (
+        getattr(settings, "oauth_redirect_base_url", None) or settings.public_base_url
+    ).rstrip("/")
     return f"{base}/auth/oauth/{provider_name}/callback"
 
 
@@ -123,8 +152,47 @@ def complete_login(
         code=code, state=state, nonce=snapshot.nonce,
         redirect_uri=_redirect_uri(settings, provider_name),
     )
-    user = _resolve_user(db, info, now)
+    user = _resolve_user(db, info, now, settings)
+    _grant_superadmin_if_named(db, user, info, settings)
     return user, safe_next(snapshot.next_url)
+
+
+def _is_named_superadmin(info: ExternalIdentityInfo, settings) -> bool:
+    """The sign-in is for SUPERADMIN_EMAIL AND the provider vouches the person
+    owns that address. Without the second half, anyone could open a Facebook
+    account under the address (Facebook asserts no verification) and become
+    an administrator."""
+    configured = getattr(settings, "superadmin_email", None)
+    return bool(
+        configured
+        and info.email
+        and info.email_verified
+        and normalize_email(info.email) == normalize_email(configured)
+    )
+
+
+def _grant_superadmin_if_named(
+    db: Session, user: User, info: ExternalIdentityInfo, settings
+) -> None:
+    if not _is_named_superadmin(info, settings):
+        return
+    role = db.scalar(select(Role).where(Role.name == SUPER_ADMINISTRATOR))
+    if role is None:
+        return
+    already = db.scalar(
+        select(UserRole).where(UserRole.user_id == user.id, UserRole.role_id == role.id)
+    )
+    if already is None:
+        db.add(UserRole(user_id=user.id, role_id=role.id))
+        record_audit(
+            db,
+            actor_id=None,
+            action="superadmin_granted_by_configuration",
+            entity_type="user",
+            entity_id=user.id,
+            detail="Signed in with the verified SUPERADMIN_EMAIL address.",
+        )
+        db.commit()
 
 
 def _apply_identity_fields(identity: ExternalIdentity, info: ExternalIdentityInfo, now) -> None:
@@ -147,7 +215,9 @@ def _note_verified_email(user: User, info: ExternalIdentityInfo, now: datetime) 
         user.email_verified_at = now
 
 
-def _resolve_user(db: Session, info: ExternalIdentityInfo, now: datetime) -> User:
+def _resolve_user(
+    db: Session, info: ExternalIdentityInfo, now: datetime, settings=None
+) -> User:
     identity = db.scalar(
         select(ExternalIdentity).where(
             ExternalIdentity.provider == info.provider,
@@ -181,8 +251,15 @@ def _resolve_user(db: Session, info: ExternalIdentityInfo, now: datetime) -> Use
             raise OAuthError("account_disabled", "This account is disabled.")
         return _link_identity(db, existing, info, now)
 
-    # New account for a brand-new external identity.
-    user = create_user(db, email=email_norm, hashed_password=None, full_name=info.display_name)
+    # New account for a brand-new external identity, unless new accounts are
+    # switched off (the configured superadmin can always get in).
+    if (
+        settings is not None
+        and not getattr(settings, "registration_enabled", True)
+        and not _is_named_superadmin(info, settings)
+    ):
+        raise OAuthError("registration_closed", "New accounts are not being accepted.")
+    user = create_user(db, email=email_norm, full_name=info.display_name)
     role = db.scalar(select(Role).where(Role.name == REGISTERED_USER, Role.is_active.is_(True)))
     if role is not None:
         db.add(UserRole(user_id=user.id, role_id=role.id))
@@ -190,6 +267,30 @@ def _resolve_user(db: Session, info: ExternalIdentityInfo, now: datetime) -> Use
     db.commit()
     db.refresh(user)
     return user
+
+
+def _evict_unverified_identities(db: Session, user: User) -> None:
+    """When a provider that has verified the address joins an account, unlink
+    any sign-in on it that never proved the address. Otherwise someone could
+    open, say, a Facebook account under another person's email, sign in here
+    first, and keep a way into the account once its real owner (and, for
+    SUPERADMIN_EMAIL, its admin role) arrives."""
+    stale = db.scalars(
+        select(ExternalIdentity).where(
+            ExternalIdentity.user_id == user.id,
+            ExternalIdentity.email_verified.is_(False),
+        )
+    ).all()
+    for identity in stale:
+        record_audit(
+            db,
+            actor_id=None,
+            action="unverified_sign_in_unlinked",
+            entity_type="user",
+            entity_id=user.id,
+            detail=f"{identity.provider} sign-in removed: its email was never verified",
+        )
+        db.delete(identity)
 
 
 def _link_identity(
@@ -200,6 +301,8 @@ def _link_identity(
     )
     _apply_identity_fields(identity, info, now)
     _note_verified_email(user, info, now)
+    if info.email_verified:
+        _evict_unverified_identities(db, user)
     db.add(identity)
     if commit:
         db.commit()

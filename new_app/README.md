@@ -17,11 +17,13 @@ venv\Scripts\activate            # Windows; on macOS/Linux: source venv/bin/acti
 pip install -e ".[dev]"
 python -m playwright install chromium
 python -m alembic upgrade head
-python scripts/create_superadmin.py --email you@example.com --password "..."
 uvicorn app.main:app --reload --port 8100
 ```
 
-The site is then at http://localhost:8100 and the admin at `/admin`.
+The site is then at http://localhost:8100 and the admin at `/admin`. To sign in
+locally, set `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET` and `SUPERADMIN_EMAIL` in
+`.env`, with `http://localhost:8100/auth/oauth/google/callback` as an authorized
+redirect URI on the Google OAuth client.
 
 Scraping runs in a separate process, never inside the web server. To have
 imports run on their schedule locally, start it in a second terminal:
@@ -50,16 +52,15 @@ they get the public pages and the same private-area rules. `/llms.txt` is a
 plain-text guide to the site, and each town has an iCalendar feed at
 `/city/{slug}/events.ics` that calendar apps can subscribe to.
 
-**Accounts.** Anyone can sign up at `/register`. A new account gets only the
-**Registered User** role, which has no admin permissions. Signed-in users can
-save events (`/account/saved`), follow towns, set alert preferences
-(`/account/alerts`), and delete their account from `/account`. Google, Microsoft
-and Facebook sign-in switch on when their client IDs are set. Failed logins are
-limited (10 per account and 30 per address in 15 minutes).
-
-Password reset (`/auth/forgot-password`) and email confirmation switch on by
-themselves once email sending is configured; until then the links to them are
-hidden and nothing is blocked on an unconfirmed address.
+**Accounts.** There are no passwords. People sign in at `/auth/login` with
+Google, Microsoft or Facebook (each switches on when its client ID and secret are
+set), and the first sign-in creates the account. A new account gets only the
+**Registered User** role, which has no admin permissions. The address in
+`SUPERADMIN_EMAIL` becomes Super Administrator when it signs in through a provider
+that has verified it (Google). Signed-in users can save events
+(`/account/saved`), follow towns, set alert preferences (`/account/alerts`), and
+delete their account from `/account`. Starting a sign-in is limited to 30 per
+address in 15 minutes.
 
 The privacy policy and terms are at `/privacy` and `/terms`.
 
@@ -113,15 +114,17 @@ without any of it.
 | `APP_NAME` | `Bulletin` | Site name shown everywhere |
 | `PUBLIC_BASE_URL` | `http://localhost:8100` | Used for canonical links and the sitemap. On Render it is picked up automatically |
 | `APP_TIMEZONE` | `UTC` | Decides what "today" means for the listings |
-| `REGISTRATION_ENABLED` | `true` | Public sign-up |
+| `REGISTRATION_ENABLED` | `true` | Whether a first sign-in creates a new account |
+| `SUPERADMIN_EMAIL` | unset | Google address that becomes Super Administrator on sign-in |
 | `BROWSER_EXTRACTION_ENABLED` | `false` | Headless-browser fallback for sources that need it |
 | `ATTENDABILITY_FILTER_ENABLED` | `true` | Leave out non-events (see above) |
 | `UNSPLASH_ACCESS_KEY` | unset | Placeholder photos for imageless events |
 | `GEMINI_API_KEY` | unset | AI categorization of new events |
 | `GEOCODING_ENABLED`, `GEOCODING_PROVIDER` | off | Fill in map coordinates from addresses |
-| `EMAIL_ENABLED`, `EMAIL_BACKEND` | off | Alerts, password reset and email confirmation |
+| `EMAIL_ENABLED`, `EMAIL_BACKEND` | off | Alert emails |
 | `CONTACT_EMAIL` | unset | Shown on the privacy policy and terms |
-| `GOOGLE_/MICROSOFT_/FACEBOOK_CLIENT_ID` and `_SECRET` | unset | Social sign-in |
+| `GOOGLE_/MICROSOFT_/FACEBOOK_CLIENT_ID` and `_SECRET` | unset | Sign-in providers; set at least one (Google for the admin) |
+| `OAUTH_REDIRECT_BASE_URL` | `PUBLIC_BASE_URL` | Base of the provider callback URLs, if different from the site's address |
 | `COOKIE_SECURE`, `BEHIND_HTTPS`, `TRUSTED_HOSTS` | off | Set in production (already in `render.yaml`) |
 | `RATE_LIMIT_BACKEND`, `REDIS_URL` | `memory` | Use `redis` to share rate limits across processes |
 
@@ -131,7 +134,7 @@ Run from `new_app/` with the venv active.
 
 | Script | Use |
 |---|---|
-| `scripts/create_superadmin.py` | Create the first admin login |
+| `scripts/create_superadmin.py` | Make an email a Super Administrator ahead of its first sign-in (`SUPERADMIN_EMAIL` does this too) |
 | `scripts/hide_unattendable_events.py` | List (or with `--apply`, deactivate) existing events the import filter would now leave out |
 | `scripts/categorize_events.py` | Seed the starter category rules and re-run them over every event |
 | `scripts/categorize_events_ai.py` | Label events with Gemini (`--only-other`, `--force`, `--limit N`) |
