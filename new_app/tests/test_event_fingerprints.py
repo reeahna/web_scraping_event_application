@@ -112,3 +112,50 @@ def test_likely_duplicates_are_flagged_but_not_merged(db_session, make_city):
     assert first.duplicate_status == "possible_duplicate"
     assert second.duplicate_status == "possible_duplicate"
     assert db_session.query(Event).count() == 2
+
+
+def _listing(db_session, city, title, url, **values):
+    from datetime import date
+
+    event = Event(
+        title=title, canonical_url=url, source="Source", city_id=city.id,
+        start_date=values.pop("start_date", date(2030, 6, 1)), **values,
+    )
+    db_session.add(event)
+    db_session.commit()
+    update_fingerprint_and_duplicates(db_session, event)
+    return event
+
+
+def test_same_event_from_another_source_is_flagged(db_session, make_city):
+    city = make_city()
+    first = _listing(db_session, city, "Heist", "https://theatre.example/heist")
+    second = _listing(db_session, city, "HEIST!", "https://bureau.example/heist/58934")
+    db_session.refresh(first)
+    db_session.refresh(second)
+    assert first.duplicate_status == "possible_duplicate"
+    assert second.duplicate_status == "possible_duplicate"
+
+
+def test_different_showtimes_or_days_are_not_flagged(db_session, make_city):
+    from datetime import date, time
+
+    city = make_city()
+    events = [
+        _listing(db_session, city, "Annie", "https://x/1", start_time=time(14)),
+        _listing(db_session, city, "Annie", "https://x/2", start_time=time(19)),
+        _listing(db_session, city, "Annie", "https://x/3", start_date=date(2030, 6, 2)),
+    ]
+    for event in events:
+        db_session.refresh(event)
+    assert {e.duplicate_status for e in events} == {"not_reviewed"}
+
+
+def test_admin_resolution_survives_a_later_repeat_listing(db_session, make_city):
+    city = make_city()
+    first = _listing(db_session, city, "Heist", "https://theatre.example/heist")
+    first.duplicate_status = "not_duplicate"
+    db_session.commit()
+    _listing(db_session, city, "Heist", "https://bureau.example/heist")
+    db_session.refresh(first)
+    assert first.duplicate_status == "not_duplicate"
