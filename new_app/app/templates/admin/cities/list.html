@@ -7,8 +7,8 @@
 <h1>Cities</h1>
 
 <form method="get" action="/admin/cities" class="filter-bar">
-  <input type="search" name="q" placeholder="Search by name or slug…" value="{{ q }}" />
-  <select name="status">
+  <input type="search" name="q" aria-label="Search cities" placeholder="Search by name or slug…" value="{{ q }}" />
+  <select name="status" aria-label="Status">
     <option value="all" {% if status == "all" %}selected{% endif %}>All</option>
     <option value="active" {% if status == "active" %}selected{% endif %}>Active</option>
     <option value="inactive" {% if status == "inactive" %}selected{% endif %}>Inactive</option>

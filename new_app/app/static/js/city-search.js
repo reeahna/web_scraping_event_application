@@ -14,6 +14,7 @@
   const input = document.getElementById("city-search");
   const list = document.getElementById("city-suggestions");
   const source = document.getElementById("city-index");
+  const status = document.getElementById("city-suggestions-status");
   if (!input || !list || !source) return;
 
   let towns = [];
@@ -27,6 +28,12 @@
   const MAX_SUGGESTIONS = 8;
   let matches = [];
   let active = -1;
+
+  // The listbox appearing is silent to a screen reader, so say how many towns
+  // match; the arrow keys then walk them.
+  const announce = (message) => {
+    if (status) status.textContent = message;
+  };
 
   // Fold accents and case so "Malmo" finds "Malmö" and "ind" finds "Indiana".
   const fold = (value) =>
@@ -121,8 +128,15 @@
 
   input.addEventListener("input", () => {
     matches = search(input.value);
-    if (matches.length) render();
-    else close();
+    if (matches.length) {
+      render();
+      announce(
+        `${matches.length} town${matches.length === 1 ? "" : "s"} found. Use the up and down arrows to choose.`
+      );
+    } else {
+      close();
+      announce(input.value.trim() ? "No towns found. Press Enter to search." : "");
+    }
   });
 
   input.addEventListener("keydown", (event) => {

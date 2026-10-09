@@ -110,7 +110,7 @@
         <a href="{{ base_path }}" class="filter-clear-link">Clear filters</a>
       </div>
     </form>
-    <div class="filter-presets" aria-label="Quick date filters">
+    <div class="filter-presets" role="group" aria-label="Quick date filters">
       <a class="filter-preset{% if filters.preset == 'today' %} filter-preset-active{% endif %}" href="{{ base_path }}?preset=today{% if filters.view == 'map' %}&view=map{% endif %}">Today</a>
       <a class="filter-preset{% if filters.preset == 'weekend' %} filter-preset-active{% endif %}" href="{{ base_path }}?preset=weekend{% if filters.view == 'map' %}&view=map{% endif %}">This weekend</a>
     </div>
@@ -136,7 +136,7 @@
     <a class="event-card" href="/events/{{ event.id }}">
       {% if event.image_url %}
       <div class="event-card-image">
-        <img src="{{ event.image_url }}" alt="{{ event.title }}" loading="lazy" />
+        <img src="{{ event.image_url }}" alt="" loading="lazy" />
       </div>
       {% else %}
       {% set ph = category_photo(event) %}

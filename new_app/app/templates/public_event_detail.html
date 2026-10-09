@@ -20,12 +20,18 @@
 
 {% block content %}
 <div class="page-container event-detail">
-  <p class="breadcrumb"><a href="/">&laquo; Back to events</a></p>
+  {# Back to the town this event belongs to: the site root is the town chooser,
+     so "Back to events" pointing there sent readers somewhere else. #}
+  {% if event.city %}
+  <p class="breadcrumb"><a href="/city/{{ event.city.slug }}"><span aria-hidden="true">&laquo;</span> Back to {{ event.city.name }} events</a></p>
+  {% else %}
+  <p class="breadcrumb"><a href="/"><span aria-hidden="true">&laquo;</span> Find a town</a></p>
+  {% endif %}
 
   <article>
     {% if event.image_url %}
     <div class="event-detail-image">
-      <img src="{{ event.image_url }}" alt="{{ event.title }}" loading="lazy" />
+      <img src="{{ event.image_url }}" alt="" loading="lazy" />
     </div>
     {% else %}
     {% set ph = category_photo(event) %}
@@ -60,13 +66,13 @@
         <form method="post" action="/account/unsave/{{ event.id }}" class="inline-form">
           <input type="hidden" name="csrf_token" value="{{ csrf_token }}" />
           <input type="hidden" name="next" value="/events/{{ event.id }}" />
-          <button type="submit" class="nav-button">★ Saved — remove</button>
+          <button type="submit" class="nav-button"><span aria-hidden="true">★</span> Saved, remove</button>
         </form>
         {% else %}
         <form method="post" action="/account/save/{{ event.id }}" class="inline-form">
           <input type="hidden" name="csrf_token" value="{{ csrf_token }}" />
           <input type="hidden" name="next" value="/events/{{ event.id }}" />
-          <button type="submit" class="nav-button">☆ Save event</button>
+          <button type="submit" class="nav-button"><span aria-hidden="true">☆</span> Save event</button>
         </form>
         {% endif %}
         {% if event.city %}
@@ -103,8 +109,8 @@
         </p>
       </div>
 
-      <aside class="event-detail-side">
-        <h2>Details</h2>
+      <section class="event-detail-side" aria-labelledby="details-heading">
+        <h2 id="details-heading">Details</h2>
         <dl class="event-detail-facts">
           <div>
             <dt>Venue</dt>
@@ -125,11 +131,11 @@
             <dd>{{ event.source }}</dd>
           </div>
         </dl>
-      </aside>
+      </section>
     </div>
 
     {% if can_access_admin %}
-    <aside class="admin-diagnostic" aria-label="Admin diagnostics">
+    <section class="admin-diagnostic" aria-label="Admin diagnostics">
       <h2>Admin</h2>
       <p><a href="/admin/events/{{ event.id }}">Open in admin</a></p>
       {% if latest_run %}
@@ -141,7 +147,7 @@
       {% else %}
       <p class="audit-meta">No successful extraction run recorded for this event's source.</p>
       {% endif %}
-    </aside>
+    </section>
     {% endif %}
   </article>
 </div>

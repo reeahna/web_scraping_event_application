@@ -100,7 +100,7 @@ class TestImageFallback:
             image_url="https://example.com/poster.jpg",
         )
         resp = client.get(_listing(city))
-        assert f'<img src="{event.image_url}" alt="Image Event"' in resp.text
+        assert f'<img src="{event.image_url}" alt=""' in resp.text
         assert "event-card-image-fallback" not in resp.text.split("Image Event")[0][-600:]
 
     def test_event_without_image_renders_fallback(
