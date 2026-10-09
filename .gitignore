@@ -1,8 +1,8 @@
-new_app/events.db
-new_app/events.csv
+backend/events.db
+backend/events.csv
 __pycache__/
 *.pyc
 .env
 venv/
-new_app/venv/
-new_app/backups/
+backend/venv/
+backend/backups/

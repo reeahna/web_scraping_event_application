@@ -1,0 +1,13 @@
+venv/
+__pycache__/
+*.pyc
+.env
+app.db
+app.db-*
+app.db.backup-*
+tests/test_app.db
+tests/.tmp/
+.pytest_cache/
+.ruff_cache/
+*.egg-info/
+build/

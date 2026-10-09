@@ -1,14 +1,13 @@
-# Web Scraping Event Application
+# Bulletin
 
-A city-events aggregator: a FastAPI application that discovers, extracts, and
-schedules imports of public event listings, with a public site and an admin UI.
+A college-town events site: it imports event listings from local sources on a
+schedule and shows them town by town, with an admin UI for towns, sources and
+events.
 
-- [`new_app/`](new_app/) is the application — extraction patterns, the
-  onboarding/inference pipeline, the restricted headless-browser fallback, the
-  durable scheduler, authentication/RBAC, and the public + admin interfaces.
+| Folder | What's in it |
+|---|---|
+| [`backend/`](backend/) | The Python app (FastAPI): routes, database, scraping engine, scheduler, tests. Setup and configuration are in [`backend/README.md`](backend/README.md). |
+| [`frontend/`](frontend/) | HTML templates, CSS and JavaScript, served by the backend. |
+| [`docs/`](docs/) | Architecture and operations notes, and [deploying to Render](docs/deploy-render.md). |
 
-See [`new_app/README.md`](new_app/README.md) for local setup and verification,
-and [`DEPLOY_RENDER.md`](DEPLOY_RENDER.md) for deploying to Render.
-
-> The original standalone scraper (`legacy_app/`) has been removed now that
-> `new_app/` fully replaces it; it remains in the git history if ever needed.
+Working with an AI coding tool? Start it at [`CLAUDE.md`](CLAUDE.md).

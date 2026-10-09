@@ -1,0 +1,125 @@
+import json
+from datetime import UTC, datetime
+from typing import Any
+
+from fastapi import Request
+from fastapi.responses import HTMLResponse
+from fastapi.templating import Jinja2Templates
+
+from app.config import get_settings
+from app.core.csrf import get_or_create_csrf_token, set_csrf_cookie
+from app.core.formatting import human_date, human_date_long, human_time
+from app.core.onboarding import onboarding_label
+from app.core.report_status import report_status_label
+from app.paths import TEMPLATES_DIR
+from app.services.quality_presentation import format_percent, quality_view
+from app.services.schedule_admin import format_admin_datetime
+from app.services.seo import absolute_url
+
+templates = Jinja2Templates(directory=str(TEMPLATES_DIR))
+
+templates.env.filters["human_date"] = human_date
+templates.env.filters["human_date_long"] = human_date_long
+templates.env.filters["human_time"] = human_time
+# `pct` renders a 0..1 rate null-safely ('—' when absent, '0%' when a real
+# zero); `quality_view` normalizes a persisted/partial quality snapshot so
+# templates can distinguish absent metrics from evaluated zeros (Phase 8G
+# metrics are missing from older snapshots).
+templates.env.filters["pct"] = format_percent
+templates.env.globals["quality_view"] = quality_view
+
+FLASH_COOKIE = "flash"
+
+
+def _unread_notification_count(user_id: int) -> int:
+    """Registered as a Jinja global (below) so admin_base.html can show a
+    live unread-notification count without every admin route needing to
+    thread it through context. Opens its own short-lived session on the
+    same engine every request/service call already uses — a single bounded
+    COUNT query, not a payload scan."""
+    from app.database import SessionLocal
+    from app.repositories.notification import count_unread_for_user
+
+    db = SessionLocal()
+    try:
+        return count_unread_for_user(db, user_id)
+    finally:
+        db.close()
+
+
+templates.env.globals["unread_notification_count"] = _unread_notification_count
+templates.env.globals["current_year"] = lambda: datetime.now(UTC).year
+templates.env.filters["onboarding_label"] = onboarding_label
+# Registered globally so no template has to render a naive UTC string with
+# microseconds; several were doing exactly that.
+def _admin_datetime(value: Any) -> str:
+    """Template-safe wrapper around format_admin_datetime.
+
+    Several places hold a timestamp that came back out of a JSON column, where
+    it is a string rather than a datetime. Passing one of those to the formatter
+    raised AttributeError and took the whole page down with a 500, so anything
+    that is not a datetime is passed through as-is.
+    """
+    if value is None:
+        return "—"
+    if isinstance(value, str):
+        # Values that came back out of a JSON column, or through a service that
+        # already called .isoformat(), arrive as strings. Parse what we can and
+        # pass anything else through rather than raising and 500-ing the page.
+        try:
+            value = datetime.fromisoformat(value)
+        except ValueError:
+            return value
+    if not isinstance(value, datetime):
+        return str(value)
+    return format_admin_datetime(value)
+
+
+templates.env.filters["admin_datetime"] = _admin_datetime
+templates.env.filters["report_status_label"] = report_status_label
+templates.env.globals["absolute_url"] = absolute_url
+templates.env.globals["site_name"] = get_settings().app_name
+
+
+def _category_photo(event: Any):
+    """A category-relevant placeholder photo for an event with no image of its
+    own, or None (the template then shows the gradient). Reads from the cached
+    category-photo pool, so it is a dict lookup, not a per-event query."""
+    from app.services.category_photos import photo_for
+
+    category = event.effective_category
+    return photo_for(category.slug if category else None, event.id)
+
+
+templates.env.globals["category_photo"] = _category_photo
+
+
+def render(
+    request: Request,
+    template_name: str,
+    context: dict[str, Any] | None = None,
+    status_code: int = 200,
+) -> HTMLResponse:
+    """Render a template with a CSRF token always available in context (and its
+    cookie set if this is the first time we've seen this client), plus any
+    one-time flash message left by a prior redirect (see app.core.flash.set_flash)."""
+    token, is_new = get_or_create_csrf_token(request)
+
+    flash = None
+    raw_flash = request.cookies.get(FLASH_COOKIE)
+    if raw_flash:
+        try:
+            flash = json.loads(raw_flash)
+        except ValueError:
+            flash = None
+
+    full_context = {**(context or {}), "csrf_token": token, "flash": flash}
+    response = templates.TemplateResponse(
+        request, template_name, full_context, status_code=status_code
+    )
+    if is_new:
+        set_csrf_cookie(response, token)
+    if raw_flash:
+        response.delete_cookie(FLASH_COOKIE, path="/")
+
+    return response
