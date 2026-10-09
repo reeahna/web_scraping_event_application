@@ -66,7 +66,7 @@
         <form method="post" action="/account/unsave/{{ event.id }}" class="inline-form">
           <input type="hidden" name="csrf_token" value="{{ csrf_token }}" />
           <input type="hidden" name="next" value="/events/{{ event.id }}" />
-          <button type="submit" class="nav-button"><span aria-hidden="true">★</span> Saved, remove</button>
+          <button type="submit" class="nav-button toggle-on" aria-label="Saved. Unsave this event"><span class="toggle-label-on"><span aria-hidden="true">★</span> Saved</span><span class="toggle-label-off" aria-hidden="true">Unsave</span></button>
         </form>
         {% else %}
         <form method="post" action="/account/save/{{ event.id }}" class="inline-form">
@@ -82,7 +82,11 @@
           <input type="hidden" name="target_id" value="{{ event.city.id }}" />
           <input type="hidden" name="action" value="{{ 'unfollow' if is_following_city else 'follow' }}" />
           <input type="hidden" name="next" value="/events/{{ event.id }}" />
-          <button type="submit" class="nav-button">{% if is_following_city %}Following {{ event.city.name }}{% else %}Follow {{ event.city.name }}{% endif %}</button>
+          {% if is_following_city %}
+          <button type="submit" class="nav-button toggle-on" aria-label="Following {{ event.city.name }}. Unfollow"><span class="toggle-label-on"><span aria-hidden="true">✓</span> Following {{ event.city.name }}</span><span class="toggle-label-off" aria-hidden="true">Unfollow {{ event.city.name }}</span></button>
+          {% else %}
+          <button type="submit" class="nav-button">Follow {{ event.city.name }}</button>
+          {% endif %}
         </form>
         {% endif %}
       </div>
