@@ -34,7 +34,11 @@ def _home_town_filter_on(monkeypatch):
         ("Waldron Arts Center 122 S. Walnut Street, Bloomington, IN", ("Bloomington", "IN")),
         ("Zoellner Arts Center, Bethlehem, PA, USA", ("Bethlehem", "PA")),
         ("Bloomington", None),
-        ("205 Locust Lane, Nashville", None),
+        ("205 Locust Lane, Nashville", ("Nashville", None)),
+        ("Lawrence County Courthouse Square 1005 15th St, Bedford", ("Bedford", None)),
+        ("Monroe County Publc Library, 303 E. Kirkwood Ave., Bloomington", ("Bloomington", None)),
+        ("Waldron Arts Center, Rose Firebay", None),  # no street before it
+        ("12 Main St, Kirkwood Ave", None),  # a street, not a town
         ("Assembly Hall", None),
         (None, None),
     ],
@@ -52,6 +56,8 @@ def test_address_town(address, expected):
         ("10 W Market St, Indianapolis, IN, 46204", True),
         ("701 Wabash Ave, Terre Haute, IN, 47807", True),
         ("100 N Center St, Bloomington, IL 61701", True),  # same name, other state
+        ("Lawrence County Courthouse Square 1005 15th St, Bedford", True),
+        ("303 E. Kirkwood Ave., Bloomington", False),
         ("Assembly Hall", False),  # no town named: kept
         (None, False),
     ],

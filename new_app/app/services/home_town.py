@@ -116,8 +116,31 @@ def _within_one_edit(a: str, b: str) -> bool:
     return edits + (len(b) - j) <= 1
 
 
-def address_town(address: str | None) -> tuple[str, str] | None:
+# Words that end a street, room or building name rather than a town.
+_NOT_A_TOWN = re.compile(
+    r"\b(st|street|ave|avenue|rd|road|dr|drive|blvd|boulevard|ln|lane|way|pl|place|ct|court|"
+    r"pkwy|parkway|hwy|highway|pike|trail|circle|sq|square|room|rm|suite|ste|floor|fl|hall|"
+    r"building|bldg|center|centre|auditorium|theater|theatre|campus|park|lobby|gallery)\.?$",
+    re.IGNORECASE,
+)
+
+
+def _trailing_town(address: str) -> str | None:
+    """'Lawrence County Courthouse Square 1005 15th St, Bedford': a street
+    with a number, then a part that is only a name. Local listings often
+    stop at the town and leave the state off."""
+    parts = [p.strip() for p in address.split(",") if p.strip()]
+    if len(parts) < 2 or not re.search(r"\d", parts[-2]):
+        return None
+    last = parts[-1]
+    if not re.fullmatch(r"[A-Za-z][A-Za-z .'\-]*", last) or _NOT_A_TOWN.search(last):
+        return None
+    return last
+
+
+def address_town(address: str | None) -> tuple[str, str | None] | None:
     """The (town, state code) an address names, or None when it names none.
+    The state is None when the address gives a town but no state.
 
     The last "Town, ST" pair wins, since a venue name in front can itself
     contain a comma."""
@@ -125,7 +148,8 @@ def address_town(address: str | None) -> tuple[str, str] | None:
         return None
     matches = list(_TOWN_STATE.finditer(address.replace("\n", ", ")))
     if not matches:
-        return None
+        town = _trailing_town(address.replace("\n", ", "))
+        return (town, None) if town else None
     town, state = matches[-1].group(1), matches[-1].group(2)
     # "123 Main St Bloomington" without a comma before the town: take the
     # trailing words that are not a street.
@@ -148,7 +172,7 @@ def is_outside_home_town(
         return False
     found_town, found_state = found
     home_state = _state_code(state)
-    if home_state and found_state != home_state:
+    if home_state and found_state and found_state != home_state:
         return True
     a, b = _simplify(found_town), _simplify(town)
     # "1 Main St Bethlehem, PA" has no comma between street and town, so the

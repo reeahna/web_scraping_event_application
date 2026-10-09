@@ -165,8 +165,8 @@
         <h3>{{ event.title }}</h3>
         <div class="event-card-meta">
           <span class="event-card-date">{{ event.start_date | human_date }}{% if event.start_time %} · {{ event.start_time | human_time }}{% endif %}{% if event.end_date and event.end_date != event.start_date %} – {{ event.end_date | human_date }}{% endif %}{% if event.recurrence_parent_id %} <span class="badge badge-muted event-card-recurring">recurring</span>{% endif %}</span>
+          {# The page is already one town's listing, so the card names only the venue. #}
           <span>{{ event.public_venue or 'Venue TBD' }}</span>
-          <span>{{ event.city.name if event.city else '—' }}</span>
         </div>
         <div class="event-card-footer">
           <span class="event-card-source">{{ event.source }}</span>
