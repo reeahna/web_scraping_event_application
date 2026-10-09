@@ -140,6 +140,10 @@ class Settings(BaseSettings):
     # daily scrape get an AI category without a manual run. Turn off to keep the
     # key for the manual script only.
     gemini_scheduled_enabled: bool = True
+    # Hide events the model says a college student would not go to (finance or
+    # real-estate seminars, trade shows, professional conferences). Hiding only
+    # clears is_active, so an administrator can bring an event back.
+    gemini_hide_unwanted: bool = True
     gemini_min_interval_seconds: float = 4.0
     gemini_timeout_seconds: float = 60.0
     gemini_max_retries: int = 4

@@ -21,6 +21,7 @@ from app.models.event import Event
 from app.models.event_category import EventCategory
 from app.services.ai_categorizer import (
     CategoryOption,
+    EventLabel,
     EventToClassify,
     GeminiCategorizer,
 )
@@ -38,6 +39,35 @@ def _category_options(db: Session) -> tuple[list[CategoryOption], dict[str, Even
         CategoryOption(slug=c.slug, name=c.name, description=c.description) for c in categories
     ]
     return options, {c.slug: c for c in categories}
+
+
+def apply_labels(
+    events: list[Event], labels: dict[int, EventLabel], by_slug: dict[str, EventCategory]
+) -> tuple[int, int]:
+    """Write the model's labels onto the events, without committing. An event
+    the model says a student would not go to (a finance seminar, a trade show)
+    is also hidden when gemini_hide_unwanted is on, unless an administrator has
+    already overridden its category, which means a person has looked at it.
+    Hiding only clears is_active, so an administrator can bring one back.
+    Returns (labeled, hidden)."""
+    hide_unwanted = get_settings().gemini_hide_unwanted
+    labeled = hidden = 0
+    for event in events:
+        label = labels.get(event.id)
+        category = by_slug.get(label.category) if label else None
+        if category is None:
+            continue
+        set_ai_category(event, category)
+        labeled += 1
+        if (
+            hide_unwanted
+            and not label.keep
+            and event.is_active
+            and event.category_override_id is None
+        ):
+            event.is_active = False
+            hidden += 1
+    return labeled, hidden
 
 
 def drain_categorization_queue(
@@ -89,14 +119,7 @@ def drain_categorization_queue(
         ) as categorizer:
             labels = categorizer.classify_batch(options, to_classify)
 
-        labeled = 0
-        for event in events:
-            slug = labels.get(event.id)
-            category = by_slug.get(slug) if slug else None
-            if category is None:
-                continue
-            set_ai_category(event, category)
-            labeled += 1
+        labeled, _hidden = apply_labels(events, labels, by_slug)
         db.commit()
         return labeled
     finally:

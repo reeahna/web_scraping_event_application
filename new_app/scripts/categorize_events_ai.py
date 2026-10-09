@@ -13,6 +13,10 @@ Usage (from new_app/, with its venv active and GEMINI_API_KEY set in .env):
     python scripts/categorize_events_ai.py --force        # re-label everything
     python scripts/categorize_events_ai.py --limit 50     # small trial run
 
+Each event also gets a keep/drop verdict: an event a college student would not
+go to (a finance seminar, a trade show) is hidden unless GEMINI_HIDE_UNWANTED is
+false. Events labeled before that check existed need --force to get it.
+
 By default events already labeled by a previous AI run are skipped, so the pass
 is idempotent and cheap to resume: re-running only spends API calls on events it
 has not labeled yet. Get a free key at https://aistudio.google.com/apikey and
@@ -30,6 +34,7 @@ from app.config import get_settings
 from app.database import SessionLocal
 from app.models.event import Event
 from app.models.event_category import EventCategory
+from app.services.ai_categorization import apply_labels
 from app.services.ai_categorizer import (
     CategoryOption,
     EventToClassify,
@@ -37,7 +42,6 @@ from app.services.ai_categorizer import (
     GeminiError,
     GeminiQuotaExceeded,
 )
-from app.services.categorization import set_ai_category
 
 
 def _parse_args() -> argparse.Namespace:
@@ -115,6 +119,7 @@ def main() -> None:
         batch_size = max(1, settings.gemini_batch_size)
         counts: Counter[str] = Counter()
         labeled = 0
+        hidden = 0
         failed_batches = 0
         quota_reached = False
 
@@ -150,14 +155,13 @@ def main() -> None:
                     print(f"  batch {start}-{start + len(chunk)} failed: {exc}")
                     continue
 
+                batch_labeled, batch_hidden = apply_labels(chunk, labels, by_slug)
+                labeled += batch_labeled
+                hidden += batch_hidden
                 for event in chunk:
-                    slug = labels.get(event.id)
-                    category = by_slug.get(slug) if slug else None
-                    if category is None:
-                        continue
-                    set_ai_category(event, category)
-                    counts[slug] += 1
-                    labeled += 1
+                    label = labels.get(event.id)
+                    if label and label.category in by_slug:
+                        counts[label.category] += 1
                 db.commit()
                 print(f"  ...{min(start + batch_size, total)}/{total} ({labeled} labeled)")
 
@@ -171,6 +175,8 @@ def main() -> None:
         print(f"\nLabeled {labeled} of {total} events by AI ({failed_batches} batches failed):")
         for slug, count in counts.most_common():
             print(f"  {slug}: {count}")
+        if hidden:
+            print(f"Hid {hidden} event(s) a student would not go to (professional, finance, etc.).")
     finally:
         db.close()
 
