@@ -52,10 +52,18 @@ class TestHumanReadableDateTime:
         )
         resp = client.get(_listing(city))
         assert resp.status_code == 200
-        assert "Readable Date Event" in resp.text
-        assert event.start_date.isoformat() not in resp.text
-        assert "18:00:00" not in resp.text
-        assert "6:00 PM" in resp.text
+        # The page also carries schema.org JSON-LD (an ItemList of its events),
+        # where ISO 8601 dates are required; this is about what a person reads,
+        # so exclude that block, as the detail-page test below does.
+        import re as _re
+
+        visible = _re.sub(
+            r'<script type="application/ld\+json">.*?</script>', "", resp.text, flags=_re.S
+        )
+        assert "Readable Date Event" in visible
+        assert event.start_date.isoformat() not in visible
+        assert "18:00:00" not in visible
+        assert "6:00 PM" in visible
 
     def test_detail_page_shows_human_readable_date_and_time_not_raw_values(
         self, client, make_city, make_website, make_event

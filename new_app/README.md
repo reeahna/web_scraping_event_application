@@ -42,6 +42,14 @@ town's upcoming events with search, category/source/date filters, "Today" and
 panel for leaving things out. `/events/{id}` is the event page. Events without
 their own image get a category-matched Unsplash photo.
 
+**For search engines and AI tools.** Pages are server-rendered, event and town
+pages carry schema.org JSON-LD (an `Event` per event, an `ItemList` per town),
+and `/sitemap.xml` lists every public page. `/robots.txt` names the main AI
+crawlers (GPTBot, ClaudeBot, Google-Extended, ...) in the same group as `*`, so
+they get the public pages and the same private-area rules. `/llms.txt` is a
+plain-text guide to the site, and each town has an iCalendar feed at
+`/city/{slug}/events.ics` that calendar apps can subscribe to.
+
 **Accounts.** Anyone can sign up at `/register`. A new account gets only the
 **Registered User** role, which has no admin permissions. Signed-in users can
 save events (`/account/saved`), follow towns, set alert preferences

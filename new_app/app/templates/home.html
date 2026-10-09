@@ -6,6 +6,8 @@
 {% block meta_description %}What is on in {{ selected_city.name }}{% if selected_city.state_or_region %}, {{ selected_city.state_or_region }}{% endif %}: concerts, theater, festivals and {% if school_names %}{{ school_names }} {% endif %}campus events, gathered from every local source.{% endblock %}
 
 {% block head_extra %}
+<script type="application/ld+json">{{ listing_structured_data | safe }}</script>
+<link rel="alternate" type="text/calendar" title="{{ selected_city.name }} events" href="{{ calendar_url }}" />
 {% if filters.view == "map" %}
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
 <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.css" />
@@ -22,7 +24,10 @@
       {% if school_names %}{{ school_names }} · {% endif %}
       Everything on in town and on campus.
     </p>
-    <p class="hero-switch"><a href="/">Choose a different town</a></p>
+    <p class="hero-switch">
+      <a href="/">Choose a different town</a>
+      · <a href="{{ calendar_url }}" title="Add this town's events to Google Calendar, Apple Calendar or Outlook">Subscribe in your calendar</a>
+    </p>
   </div>
 </section>
 

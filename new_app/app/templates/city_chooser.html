@@ -4,6 +4,7 @@
 {% block meta_description %}Find out what is on in your college town: concerts, theater, festivals and campus events, gathered from every local source.{% endblock %}
 
 {% block head_extra %}
+<script type="application/ld+json">{{ site_structured_data | safe }}</script>
 <script type="application/json" id="city-index">{{ city_index | tojson }}</script>
 <script src="/static/js/city-search.js" defer></script>
 {% endblock %}
