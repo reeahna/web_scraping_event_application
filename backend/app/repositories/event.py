@@ -35,6 +35,17 @@ def list_events(
     return query.order_by(Event.start_date).all()
 
 
+def described_event_urls(db: Session, website_id: int) -> frozenset[str]:
+    """Canonical URLs of this website's events that already have a
+    description, so extraction doesn't re-fetch their pages to find one."""
+    rows = db.query(Event.canonical_url).filter(
+        Event.website_id == website_id,
+        Event.description.is_not(None),
+        Event.description != "",
+    )
+    return frozenset(url for (url,) in rows)
+
+
 def find_existing_event_for_candidate(
     db: Session, candidate: EventCandidate, *, website_id: int, city_id: int | None
 ) -> Event | None:

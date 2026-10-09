@@ -32,6 +32,15 @@ def _clean_whitespace(value: object) -> str | None:
     return text or None
 
 
+# Raw fields that can supply an event's description, best first. A source's
+# own short summary/excerpt stands in when it has no full description.
+DESCRIPTION_FIELDS = ("description", "summary", "excerpt")
+
+
+def _has_text(value: object) -> bool:
+    return value.strip() != "" if isinstance(value, str) else value is not None
+
+
 def _plain_text(value: object) -> str | None:
     """Whitespace-cleaned text with HTML entities decoded. Feeds hand titles
     over as "Rock &amp; Roll" (some twice: "&amp;amp;"), and the template
@@ -102,7 +111,10 @@ def normalize_candidate(
 
     title = _plain_text(apply("title", raw.get("title")))
 
-    description_raw = apply("description", raw.get("description"))
+    description_raw = apply(
+        "description",
+        next((raw[f] for f in DESCRIPTION_FIELDS if _has_text(raw.get(f))), None),
+    )
     # Templates never render descriptions with a `|safe` filter (confirmed:
     # no such usage exists anywhere in this codebase), so a tag-preserving
     # sanitized value would just display as literal escaped markup. Plain
