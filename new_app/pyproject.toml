@@ -34,6 +34,8 @@ dependencies = [
     # protocol — never hand-rolled. Providers are credential-gated and off by
     # default; tests use a mocked provider.
     "Authlib>=1.3",
+    # Authlib's OAuth client runs on requests, which it does not install itself.
+    "requests>=2.32",
     # Shared production rate-limit backend. Imported lazily; only used when
     # RATE_LIMIT_BACKEND=redis. Dev/tests need no Redis server.
     "redis>=5",
