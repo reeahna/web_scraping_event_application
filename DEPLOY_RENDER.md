@@ -32,16 +32,21 @@ Render deploys from GitHub, so anything not pushed won't be deployed.
 When it finishes you get a URL like `https://city-events.onrender.com`
 with HTTPS already set up.
 
-### 3. Create your admin login
-The database starts empty. Open the service in Render → **Shell** tab → run:
+### 3. Set up sign-in and your admin account
+There are no passwords: people sign in with Google, Microsoft or Facebook.
 
-```bash
-python scripts/create_superadmin.py --email you@example.com --password "a-strong-password"
-```
+1. In the Google Cloud console (**APIs & Services → Credentials**), create an
+   **OAuth client ID** of type *Web application*. Add the authorized redirect URI
+   `https://<your-service>.onrender.com/auth/oauth/google/callback`.
+2. In Render → the service → **Environment**, add `GOOGLE_CLIENT_ID`,
+   `GOOGLE_CLIENT_SECRET`, and `SUPERADMIN_EMAIL` (your Google address).
+3. Visit your URL, click **Sign in → Google** with that address, and you land in
+   the admin as Super Administrator.
 
-(That script is idempotent — re-running it just resets the password.)
-
-Then visit your URL and log in.
+Microsoft (`MICROSOFT_CLIENT_ID`/`_SECRET`) and Facebook
+(`FACEBOOK_CLIENT_ID`/`_SECRET`) work the same way with their own callback paths
+(`/auth/oauth/microsoft/callback`, `/auth/oauth/facebook/callback`), but only a
+Google sign-in can claim `SUPERADMIN_EMAIL`, because Google confirms the address.
 
 ### 4. (Optional) AI event categorization
 The keyword rules categorize events for free, but Gemini labels them much more

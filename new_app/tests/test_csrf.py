@@ -1,30 +1,20 @@
-def test_login_without_csrf_token_is_rejected(client, make_user):
-    make_user(email="csrftest@example.com", password="pw-csrf123456")
-    client.get("/auth/login")  # sets the csrf cookie, but the form sends a bogus value
+def test_logout_without_csrf_token_is_rejected(client, make_user, login):
+    make_user(email="csrftest@example.com")
+    login("csrftest@example.com")
 
     resp = client.post(
-        "/auth/login",
-        data={
-            "email": "csrftest@example.com",
-            "password": "pw-csrf123456",
-            "csrf_token": "missing-or-blank",
-        },
-        follow_redirects=False,
+        "/auth/logout", data={"csrf_token": "missing-or-blank"}, follow_redirects=False
     )
     assert resp.status_code == 403
 
 
-def test_login_with_mismatched_csrf_token_is_rejected(client, make_user):
-    make_user(email="csrftest2@example.com", password="pw-csrf123456")
-    client.get("/auth/login")
+def test_account_deletion_with_mismatched_csrf_token_is_rejected(client, make_user, login):
+    make_user(email="csrftest2@example.com")
+    login("csrftest2@example.com")
 
     resp = client.post(
-        "/auth/login",
-        data={
-            "email": "csrftest2@example.com",
-            "password": "pw-csrf123456",
-            "csrf_token": "not-the-real-token",
-        },
+        "/account/delete",
+        data={"csrf_token": "not-the-real-token", "confirmation": "DELETE"},
         follow_redirects=False,
     )
     assert resp.status_code == 403

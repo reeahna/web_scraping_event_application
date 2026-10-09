@@ -1,15 +1,10 @@
-def test_login_rejected_for_disabled_user(client, make_user):
-    make_user(email="dave@example.com", password="pw-dave12345", is_active=False)
+def test_login_rejected_for_disabled_user(client, make_user, login):
+    make_user(email="dave@example.com", is_active=False)
 
-    client.get("/auth/login")
-    csrf = client.cookies.get("csrf_token")
-    resp = client.post(
-        "/auth/login",
-        data={"email": "dave@example.com", "password": "pw-dave12345", "csrf_token": csrf},
-        follow_redirects=False,
-    )
+    resp = login("dave@example.com")
 
-    assert resp.status_code == 403
+    assert resp.status_code == 303
+    assert resp.headers["location"] == "/auth/login"
     assert "session_token" not in resp.cookies
 
 

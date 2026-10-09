@@ -47,7 +47,6 @@ def test_new_user_is_created_for_a_verified_identity(db_session):
         db_session, SETTINGS, "google", code="c", state=state, provider=provider, now=NOW
     )
     assert user.email == "new@example.com"
-    assert user.hashed_password is None  # no third-party password stored
     assert next_url == "/account"
     roles = {ur.role.name for ur in user.user_roles}
     assert REGISTERED_USER in roles

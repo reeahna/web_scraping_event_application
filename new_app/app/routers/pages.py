@@ -11,7 +11,7 @@ from app.services.rbac import can_access_admin
 router = APIRouter(tags=["pages"])
 
 # Shown on both pages. Change it whenever either page's substance changes.
-POLICIES_UPDATED = "October 6, 2026"
+POLICIES_UPDATED = "October 9, 2026"
 
 
 def _render_page(request: Request, template: str, current_user, db) -> HTMLResponse:

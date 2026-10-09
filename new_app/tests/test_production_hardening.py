@@ -11,7 +11,7 @@ def _settings(**over):
     base = dict(
         database_url="sqlite:///app.db", cookie_secure=False, behind_https=False,
         trusted_hosts=[], rate_limit_backend="memory",
-        local_login_enabled=True, registration_enabled=True,
+        registration_enabled=True, superadmin_email=None,
         # The real development default, so this stands in for an unconfigured
         # deployment rather than an impossible one.
         public_base_url="http://localhost:8100",

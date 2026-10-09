@@ -14,17 +14,10 @@ def get_user_by_email(db: Session, email: str) -> User | None:
     return db.query(User).filter(User.email == normalize_email(email)).first()
 
 
-def create_user(
-    db: Session, *, email: str, hashed_password: str, full_name: str | None = None
-) -> User:
+def create_user(db: Session, *, email: str, full_name: str | None = None) -> User:
     """Always creates the user active — callers decide role assignment
-    separately (see app.services.registration)."""
-    user = User(
-        email=normalize_email(email),
-        full_name=full_name,
-        hashed_password=hashed_password,
-        is_active=True,
-    )
+    separately (see app.services.oauth_login)."""
+    user = User(email=normalize_email(email), full_name=full_name, is_active=True)
     db.add(user)
     # The caller owns the transaction so account creation and its initial role
     # assignment can succeed or fail as one unit.
