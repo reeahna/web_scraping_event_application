@@ -8,6 +8,7 @@ events in ``pending`` status; the scheduler process drains it in batches.
 
 from __future__ import annotations
 
+import re
 from datetime import UTC, datetime
 
 from sqlalchemy import and_, case, or_, select
@@ -23,6 +24,8 @@ COMPLETED = "completed"
 FAILED = "failed"
 SKIPPED = "skipped"
 NEEDS_REVIEW = "needs_review"
+
+MAX_AUTOMATIC_ATTEMPTS = 3
 
 
 def event_locality(event: Event) -> str | None:
@@ -43,7 +46,7 @@ def skip_reason_for(event: Event) -> str | None:
         return "source_coordinates"
     if event.corrected_latitude is not None or event.corrected_longitude is not None:
         return "protected_override"
-    if normalize_address(event.address, event.venue) is None:
+    if normalize_address(event.public_address, event.public_venue) is None:
         return "no_address"
     return None
 
@@ -84,6 +87,70 @@ def _apply_result(event: Event, lat: float, lng: float, now: datetime) -> None:
     event.geocode_last_error = None
 
 
+# How far around the town centre a venue-name search may look, in degrees
+# (about 15 km north-south). Wide enough for a campus and its town, narrow
+# enough that "Recital Hall" cannot match one in another state.
+_TOWN_BOX_DEGREES = 0.15
+
+# A leading or trailing room/floor part ("Room 101, Linderman Library",
+# "Packard Lab 466") that map data never has, so it only stops a match.
+_ROOM_PART = re.compile(r"^(room|rm\.?|suite|ste\.?|floor|fl\.?|#)\s*\S+$|\d", re.IGNORECASE)
+_TRAILING_ROOM = re.compile(r"\s+(room\s+|rm\.?\s*|#)?\d+[a-z]?$", re.IGNORECASE)
+
+
+def _without_room(venue: str) -> str:
+    parts = [p.strip() for p in venue.split(",") if p.strip()]
+    while len(parts) > 1 and _ROOM_PART.search(parts[0]):
+        parts = parts[1:]
+    return _TRAILING_ROOM.sub("", ", ".join(parts)).strip(" ,") or venue
+
+
+async def _lookup(
+    db: Session,
+    provider: GeocodingProvider,
+    query: str,
+    now: datetime,
+    *,
+    viewbox: tuple[float, float, float, float] | None = None,
+) -> tuple[GeocodeResult | None, bool]:
+    """One cached lookup. Returns (result, asked_provider). Raises
+    ProviderUnavailable when the provider fails."""
+    cache_text = query if viewbox is None else f"{query} @{viewbox[0]:.3f},{viewbox[1]:.3f}"
+    key = address_hash(cache_text)
+    cached = _cache_get(db, key)
+    if cached is not None:
+        if cached.found and cached.latitude is not None and cached.longitude is not None:
+            return GeocodeResult(cached.latitude, cached.longitude, cached.provider), False
+        return None, False
+    if viewbox is None:
+        result = await provider.geocode(query)
+    else:
+        result = await provider.geocode(query, viewbox=viewbox)
+    _cache_put(db, key, cache_text, result, provider.name, now)
+    return result, True
+
+
+async def _town_box(
+    db: Session, event: Event, provider: GeocodingProvider, now: datetime
+) -> tuple[float, float, float, float] | None:
+    """(south, west, north, east) around the event's town: from the city's own
+    centre when an admin set one, otherwise by looking the town up (cached)."""
+    city = event.city
+    if city is None:
+        return None
+    lat, lng = city.default_latitude, city.default_longitude
+    if lat is None or lng is None:
+        locality = event_locality(event)
+        if locality is None:
+            return None
+        found, _ = await _lookup(db, provider, locality, now)
+        if found is None:
+            return None
+        lat, lng = found.latitude, found.longitude
+    d = _TOWN_BOX_DEGREES
+    return (lat - d, lng - d * 1.3, lat + d, lng + d * 1.3)
+
+
 async def geocode_event(
     db: Session,
     event: Event,
@@ -92,7 +159,13 @@ async def geocode_event(
     now: datetime | None = None,
 ) -> str:
     """Geocode one event, honouring every skip rule and the cache. Returns the
-    resulting status. Never overwrites a correction or source coordinates."""
+    resulting status. Never overwrites a correction or source coordinates.
+
+    Scraped locations are rarely a clean postal address, so a few queries are
+    tried in turn until one matches: the street address with the town, then
+    the venue name searched only within the town, then the venue without a
+    room number. Each query's answer, hit or miss, is cached on its own.
+    """
     now = now or datetime.now(UTC)
 
     reason = skip_reason_for(event)
@@ -102,23 +175,28 @@ async def geocode_event(
         db.commit()
         return SKIPPED
 
-    normalized = normalize_address(event.address, event.venue, event_locality(event))
-    assert normalized is not None  # guaranteed by skip_reason_for
-    key = address_hash(normalized)
-
-    cached = _cache_get(db, key)
-    if cached is not None:
-        if cached.found and cached.latitude is not None and cached.longitude is not None:
-            _apply_result(event, cached.latitude, cached.longitude, now)
-            db.commit()
-            return COMPLETED
-        event.geocode_status = NEEDS_REVIEW
-        event.geocode_last_error = "no_match_cached"
-        db.commit()
-        return NEEDS_REVIEW
-
+    locality = event_locality(event)
+    address = (event.public_address or "").strip() or None
+    venue = (event.public_venue or "").strip() or None
+    asked = False
     try:
-        result = await provider.geocode(normalized)
+        result = None
+        if address:
+            query = normalize_address(address, None, locality)
+            result, asked_now = await _lookup(db, provider, query, now)
+            asked = asked or asked_now
+        if result is None and venue:
+            box = await _town_box(db, event, provider, now)
+            if box is not None:
+                for name in dict.fromkeys([venue, _without_room(venue)]):
+                    result, asked_now = await _lookup(db, provider, name, now, viewbox=box)
+                    asked = asked or asked_now
+                    if result is not None:
+                        break
+            else:
+                query = normalize_address(None, venue, locality)
+                result, asked_now = await _lookup(db, provider, query, now)
+                asked = asked or asked_now
     except ProviderUnavailable as exc:
         # The provider itself failed — retryable, so leave it recoverable.
         event.geocode_status = FAILED
@@ -127,15 +205,14 @@ async def geocode_event(
         db.commit()
         return FAILED
 
-    event.geocode_attempts += 1
+    if asked:
+        event.geocode_attempts += 1
     if result is None:
-        _cache_put(db, key, normalized, None, provider.name, now)
         event.geocode_status = NEEDS_REVIEW
-        event.geocode_last_error = "no_match"
+        event.geocode_last_error = "no_match" if asked else "no_match_cached"
         db.commit()
         return NEEDS_REVIEW
 
-    _cache_put(db, key, normalized, result, provider.name, now)
     _apply_result(event, result.latitude, result.longitude, now)
     db.commit()
     return COMPLETED
@@ -175,9 +252,19 @@ async def drain_geocoding_queue(
     events = list(
         db.scalars(
             select(Event)
-            .where(Event.geocode_status == PENDING)
+            .where(
+                or_(
+                    Event.geocode_status == PENDING,
+                    # A provider outage is retried a few times on its own.
+                    and_(
+                        Event.geocode_status == FAILED,
+                        Event.geocode_attempts < MAX_AUTOMATIC_ATTEMPTS,
+                    ),
+                )
+            )
             .order_by(
                 case((upcoming, 0), else_=1),
+                case((Event.geocode_status == PENDING, 0), else_=1),
                 Event.start_date.is_(None),
                 Event.start_date,
                 Event.id,

@@ -37,7 +37,12 @@ class GeocodingProvider(Protocol):
 
     def is_healthy(self) -> bool: ...
 
-    async def geocode(self, address: str) -> GeocodeResult | None: ...
+    async def geocode(
+        self, address: str, *, viewbox: tuple[float, float, float, float] | None = None
+    ) -> GeocodeResult | None:
+        """`viewbox` is (south, west, north, east): when given, only places
+        inside it may match."""
+        ...
 
 
 class _CircuitBreaker:
@@ -72,7 +77,7 @@ class DisabledGeocoder:
     def is_healthy(self) -> bool:
         return False
 
-    async def geocode(self, address: str) -> GeocodeResult | None:
+    async def geocode(self, address: str, *, viewbox=None) -> GeocodeResult | None:
         raise ProviderUnavailable("geocoding is disabled")
 
 
@@ -94,12 +99,14 @@ class StaticGeocoder:
         self._default = default
         self._healthy = healthy
         self.calls: list[str] = []
+        self.viewboxes: list[tuple[float, float, float, float] | None] = []
 
     def is_healthy(self) -> bool:
         return self._healthy
 
-    async def geocode(self, address: str) -> GeocodeResult | None:
+    async def geocode(self, address: str, *, viewbox=None) -> GeocodeResult | None:
         self.calls.append(address)
+        self.viewboxes.append(viewbox)
         if not self._healthy:
             raise ProviderUnavailable("static provider marked unhealthy")
         return self._results.get(address, self._default)
@@ -142,11 +149,19 @@ class NominatimGeocoder:
             await asyncio.sleep(wait)
         self._last_request_at = self._clock()
 
-    async def geocode(self, address: str) -> GeocodeResult | None:
+    async def geocode(
+        self, address: str, *, viewbox: tuple[float, float, float, float] | None = None
+    ) -> GeocodeResult | None:
         if not self._breaker.is_closed():
             raise ProviderUnavailable("nominatim circuit is open")
 
         import httpx
+
+        params: dict[str, str | int] = {"q": address, "format": "json", "limit": 1}
+        if viewbox is not None:
+            south, west, north, east = viewbox
+            params["viewbox"] = f"{west},{north},{east},{south}"
+            params["bounded"] = 1
 
         last_exc: Exception | None = None
         for _attempt in range(self._max_retries + 1):
@@ -155,7 +170,7 @@ class NominatimGeocoder:
                 async with httpx.AsyncClient(timeout=self._timeout) as client:
                     response = await client.get(
                         self._ENDPOINT,
-                        params={"q": address, "format": "json", "limit": 1},
+                        params=params,
                         headers={"User-Agent": self._user_agent},
                     )
                 if response.status_code == 200:
