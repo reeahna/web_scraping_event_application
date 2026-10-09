@@ -41,6 +41,14 @@ output).
   bounding-box/aliases with any/all mode. No fuzzy matching, no geocoding;
   inclusion is decided from the event's own geography, never its assigned city.
   Missing-geography policy: reject / keep_with_warning / needs_review.
+- **Descriptions** (`app/extraction/description_fallback.py`): a source's own
+  `summary`/`excerpt` stands in for a missing `description`. On approved runs
+  (not previews), an event still without one gets it from its own page: the
+  JSON-LD Event `description`, else `og:`/`twitter:`/`<meta>` description. At
+  most 15 pages per run, skipping events already stored with a description;
+  meta text repeated across pages or matching the listing's own is treated as
+  site boilerplate and dropped. `scripts/description_coverage.py` reports which
+  sources still lack descriptions.
 
 ## Fetch strategies
 
