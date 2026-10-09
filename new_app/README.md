@@ -107,7 +107,10 @@ is taken down the next time its source lists it.
 **Only the source's own town.** An event whose address names another town
 (an Eventbrite Bloomington page lists Indianapolis events too) is left out and
 counted as `outside_home_town_excluded:N`. Events with no town in their address
-are kept. A source with its own geographic filter is left to that filter. See
+are kept. IU's calendar has no addresses, so events filed under another
+campus's calendar (`events.iu.edu/indianapolis/...`, `/southbend/...`) are left
+out by their link. A source with its own geographic filter is left to that
+filter. See
 `app/services/home_town.py`.
 
 **Listed once.** When several sources list the same title on the same day in

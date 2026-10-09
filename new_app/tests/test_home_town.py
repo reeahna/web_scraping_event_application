@@ -10,7 +10,12 @@ from app.models.event import Event
 from app.models.extraction_run import ExtractionRun
 from app.schemas.extraction import SiteConfiguration
 from app.services.extraction_runs import preview_extraction, run_extraction
-from app.services.home_town import address_town, hide_out_of_town_events, is_outside_home_town
+from app.services.home_town import (
+    address_town,
+    from_other_campus_calendar,
+    hide_out_of_town_events,
+    is_outside_home_town,
+)
 from app.services.website_configuration import approve_configuration
 from tests.extraction_helpers import html_handler, patched_http_fetch
 
@@ -56,6 +61,25 @@ def test_is_outside_home_town(address, outside):
         is_outside_home_town(address=address, venue=None, town="Bloomington", state="Indiana")
         is outside
     )
+
+
+@pytest.mark.parametrize(
+    "url,other",
+    [
+        ("https://events.iu.edu/indianapolis/event/1-llsa-gb", True),
+        ("https://events.iu.edu/studentaffairs-indianapolis/event/2-mat-pilates", True),
+        ("https://events.iu.edu/southbend/event/3-cpr", True),
+        ("https://events.iu.edu/iunstuactivities/event/4-redhawk-welcome", True),
+        ("https://events.iu.edu/east/event/5-follow-the-pack", True),
+        ("https://events.iu.edu/campus-center/event/6-imu-recruitment", False),
+        ("https://events.iu.edu/academicdatesiub/event/7-refund", False),
+        ("https://events.iu.edu/live/event/8-back-to-school-bash", False),
+        ("https://example.com/indianapolis/event/9", False),  # only campus calendars
+        (None, False),
+    ],
+)
+def test_other_campus_calendar(url, other):
+    assert from_other_campus_calendar(url) is other
 
 
 # --- the import -------------------------------------------------------------
@@ -179,10 +203,12 @@ def test_cleanup_dry_run_changes_nothing_then_apply_deactivates(
     make_event(city, title="Indy Brewfest", canonical_url="https://x/2",
                address="1 Main St, Indianapolis, IN 46204")
     make_event(city, title="Campus Talk", canonical_url="https://x/3", venue="Assembly Hall")
+    make_event(city, title="IU Indy Volleyball",
+               canonical_url="https://events.iu.edu/athletics-indianapolis/event/1-vb")
 
     found = hide_out_of_town_events(db_session, apply=False)
-    assert [e.title for e in found] == ["Indy Brewfest"]
-    assert db_session.query(Event).filter_by(is_active=True).count() == 3
+    assert [e.title for e in found] == ["Indy Brewfest", "IU Indy Volleyball"]
+    assert db_session.query(Event).filter_by(is_active=True).count() == 4
 
     hide_out_of_town_events(db_session, apply=True)
     db_session.expire_all()

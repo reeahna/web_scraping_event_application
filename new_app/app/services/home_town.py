@@ -11,6 +11,11 @@ one that never names a town and state (a university calendar listing only
 "Assembly Hall"), is kept. A one-letter slip in the town's name
 ("Bloominton") still counts as the town.
 
+A campus calendar that serves several campuses gives no address at all, but
+its links name the calendar each event came from; events.iu.edu files IU
+Indianapolis, South Bend, Southeast and the other campuses under their own
+calendars, so those are left out of an IU Bloomington source by link.
+
 An admin who sets a geographic filter on a source has said exactly what that
 source covers, so a source with one is left to it.
 """
@@ -19,6 +24,7 @@ from __future__ import annotations
 
 import re
 from typing import Any
+from urllib.parse import urlsplit
 
 from sqlalchemy.orm import Session
 
@@ -48,6 +54,29 @@ _TOWN_STATE = re.compile(
     rf"(?:^|,)\s*([^,]*?)\s*,\s*({_STATE_ALTERNATIVES})\.?"
     r"(?=\s*(?:,|\d{5}|$|\s*USA?\b|\s*United States\b))",
 )
+
+
+# Host -> the calendars (first path segment of an event link) that belong to a
+# different campus town than the one the source was added for.
+_OTHER_CAMPUS_CALENDARS = {
+    "events.iu.edu": re.compile(
+        r"indianapolis|iupui|herron|southeast|southbend|kokomo|northwest|fortwayne|"
+        r"columbus|^east$|^ius$|^iusb|^iuk|^iue|^iun",
+        re.IGNORECASE,
+    ),
+}
+
+
+def from_other_campus_calendar(url: str | None) -> bool:
+    """True when an event link sits under another campus's calendar."""
+    if not url:
+        return False
+    parts = urlsplit(url)
+    pattern = _OTHER_CAMPUS_CALENDARS.get((parts.hostname or "").casefold())
+    if pattern is None:
+        return False
+    first = parts.path.strip("/").split("/", 1)[0]
+    return bool(first) and pattern.search(first) is not None
 
 
 def _state_code(value: str | None) -> str | None:
@@ -130,6 +159,8 @@ def is_outside_home_town(
 
 
 def candidate_outside_home_town(candidate, city) -> bool:
+    if from_other_campus_calendar(candidate.canonical_url):
+        return True
     if city is None:
         return False
     return is_outside_home_town(
@@ -141,6 +172,8 @@ def candidate_outside_home_town(candidate, city) -> bool:
 
 
 def event_outside_home_town(event) -> bool:
+    if from_other_campus_calendar(event.canonical_url):
+        return True
     city = event.city
     if city is None:
         return False
