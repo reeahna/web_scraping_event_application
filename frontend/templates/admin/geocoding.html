@@ -1,0 +1,93 @@
+{% extends "admin_base.html" %}
+
+{% block title %}Map locations{% endblock %}
+
+{% set labels = {
+  "completed": "On the map",
+  "pending": "Waiting for lookup",
+  "needs_review": "No match found",
+  "failed": "Lookup failed (will retry)",
+  "skipped": "Skipped",
+} %}
+{% set skip_labels = {
+  "already_had_coordinates": "Source already gave a location",
+  "admin_set_coordinates": "Location set by an admin",
+  "no_location": "No venue or address",
+} %}
+{% set order = ["completed", "pending", "needs_review", "failed", "skipped"] %}
+
+{% macro status_cell(counts, key) %}{{ "{:,}".format(counts.get(key, 0)) }}{% endmacro %}
+
+{% block admin_content %}
+<h1>Map locations</h1>
+<p class="audit-meta">Events get a pin on the public map once their venue or address is matched to a
+  location. Lookups run in the background, upcoming events first, about 30 a minute.
+  <a href="/admin/geocoding/status">Raw data</a></p>
+
+<section class="wf-card">
+  <h2>Upcoming events by town</h2>
+  <p class="audit-meta">Only upcoming events appear on the map.</p>
+  <table>
+    <thead>
+      <tr><th>Town</th>{% for key in order %}<th>{{ labels[key] }}</th>{% endfor %}</tr>
+    </thead>
+    <tbody>
+      {% for town, counts in overview.upcoming_by_city.items() %}
+      <tr><td>{{ town }}</td>{% for key in order %}<td>{{ status_cell(counts, key) }}</td>{% endfor %}</tr>
+      {% else %}
+      <tr><td colspan="{{ order|length + 1 }}">No upcoming events.</td></tr>
+      {% endfor %}
+      {% if overview.upcoming_by_city|length > 1 %}
+      <tr><th>All towns</th>{% for key in order %}<th>{{ status_cell(overview.upcoming, key) }}</th>{% endfor %}</tr>
+      {% endif %}
+    </tbody>
+  </table>
+</section>
+
+<section class="wf-card">
+  <h2>Why events were skipped</h2>
+  <table>
+    <tbody>
+      {% for reason, count in overview.skipped_reasons.items() %}
+      <tr><th>{{ skip_labels.get(reason, reason) }}</th><td>{{ "{:,}".format(count) }}</td></tr>
+      {% else %}
+      <tr><td>None skipped.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  <p class="audit-meta">Events with no venue or address can't be placed; that information has to come
+    from the source.</p>
+</section>
+
+<section class="wf-card">
+  <h2>Most common venues with no match</h2>
+  <p class="audit-meta">Upcoming events only. Fixing the venue or address on one of these events, or
+    setting its location by hand, puts it on the map.</p>
+  <table>
+    <thead><tr><th>Town</th><th>Venue</th><th>Address</th><th>Events</th></tr></thead>
+    <tbody>
+      {% for row in overview.unmatched_upcoming %}
+      <tr>
+        <td>{{ row.city or "—" }}</td>
+        <td>{% if row.venue %}<a href="/admin/events?q={{ row.venue|urlencode }}">{{ row.venue }}</a>{% else %}—{% endif %}</td>
+        <td>{{ row.address or "—" }}</td>
+        <td>{{ row.events }}</td>
+      </tr>
+      {% else %}
+      <tr><td colspan="4">Every looked-up upcoming event found a match.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</section>
+
+<section class="wf-card">
+  <h2>All events</h2>
+  <table>
+    <tbody>
+      {% for key in order %}
+      <tr><th>{{ labels[key] }}</th><td>{{ status_cell(overview.counts, key) }}</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</section>
+{% endblock %}

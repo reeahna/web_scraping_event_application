@@ -4,8 +4,10 @@ That is anything that is not something a college student would go to
 (app/services/attendability.py) and anything outside the source's own town
 (app/services/home_town.py). New imports leave these out on their own, and an
 event that a source still lists is taken down the next time it is scraped.
-This clears the rest in one pass. It lists what it would hide and changes
-nothing unless --apply is given.
+This clears the rest in one pass. It also decodes HTML entities left in
+titles, venues and addresses imported before they were decoded ("Rock &amp;
+Roll"). It lists what it would change and changes nothing unless --apply is
+given.
 
 Usage (from backend/, with its venv active):
 
@@ -21,11 +23,11 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from app.database import SessionLocal
+from app.repositories.event import decode_stored_html_entities
 from app.services.attendability import hide_unattendable_events
 from app.services.home_town import hide_out_of_town_events
 
 OUT_OF_TOWN = "out_of_town"
-
 
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
@@ -34,6 +36,7 @@ def main() -> None:
 
     db = SessionLocal()
     try:
+        decoded = decode_stored_html_entities(db, apply=args.apply)
         found = hide_unattendable_events(db, apply=args.apply)
         hidden = {event.id for event, _ in found}
         found += [
@@ -47,6 +50,8 @@ def main() -> None:
     finally:
         db.close()
 
+    verb = "Decoded" if args.apply else "Would decode"
+    print(f"{verb} HTML entities in {len(decoded)} event(s).")
     by_reason = Counter(reason for _, reason in found)
     summary = ", ".join(f"{n} {reason}" for reason, n in sorted(by_reason.items())) or "none"
     verb = "Deactivated" if args.apply else "Would deactivate"

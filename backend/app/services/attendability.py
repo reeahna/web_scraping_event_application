@@ -103,7 +103,10 @@ _PROFESSIONAL_TITLE = _rx(
     # a finance class is not.
     r"(your|personal) finances?|financial (wellness|planning|literacy|freedom|independence)|"
     r"investing for|(residual|passive) income|medicare|social security benefits|"
-    r"(retirement|estate|exit|tax|wealth) planning|social selling|"
+    r"(retirement|estate|exit|tax|wealth) (income )?planning|road to retirement|social selling|"
+    # Project ECHO: case-based tele-mentoring for clinicians ("Autism Echo").
+    r"(autism|disabilit(y|ies)|health|clinical|pain|opioid|dementia|psychiatry) echo|"
+    r"project echo|"
     r"(grow|strengthen|start|scale|build) (a |your )?(small )?(\w+ ){0,2}business|"
     r"business owners?|small business working session|money is expensive)\b"
 )
@@ -134,13 +137,15 @@ _FLOOR_PAIR_TITLE = _rx(r"^\s*[a-z]+ \d\s*(&|and)\s*[a-z]+ \d\s*:")
 _SERVICE_TITLE = _rx(
     r"\bdrop[- ]in (career|advising|tutoring|coaching|hours|help|consultations?|writing)\b|"
     r"\b(career coaching|study tables?|tutoring hours|writing (center|tutor)|advising hours)\b|"
-    r"^\s*(study|study hall|learning lab|open lab|lab hours|tutoring|advising|"
+    r"^\s*(study|studying|study hall|learning lab|open lab|lab hours|tutoring|advising|"
     r"quiet study|group study)\s*$|"
     # How to apply to a program: "Learn How to Apply for the 2027 Rural
     # Placemaking Studio", "MBA Information Session".
     r"\b(learn )?how to apply\b|\binfo(rmation(al)?)? sessions?\b|"
     r"\b(volunteer|new member|mentor|tutor|employee) (orientation|training)\b|"
-    r"\borientation session\b"
+    r"\borientation session\b|"
+    # Appointments with a clinic or service: "Corvalan Collab_Individual Clients".
+    r"(\b|_)individual (clients|sessions|appointments)\b"
 )
 
 # A theme week or month is a banner over other events, not one itself:
@@ -213,7 +218,11 @@ _INTERNAL_TITLE = _rx(
     r" interviews?|private meetings?|"
     # Staff recognition and medical-training sessions.
     r"years of service|service awards?|employee (recognition|appreciation)|"
-    r"retirement (party|reception|celebration) for|oite|usmle|in-training exam|board review)\b|"
+    r"retirement (party|reception|celebration) for|oite|usmle|in-training exam|board review|"
+    # A lab's own meeting ("Elston Group Meeting - First Years") and teaching
+    # for medical residents ("Internal Medicine Residency Didactics").
+    r"(residency|fellowship|resident) (didactics|conference|lectures?)|didactics)\b|"
+    r"^\s*\w+ group meetings?\b|^\s*\w+['’]s meetings?\s*$|\breading group\b|"
     # A campus office or service listed as if it were an event:
     # "Embedded Accessible Educational Services (AES)".
     r"\bservices\s*(\([A-Z]{2,6}\))?\s*$|"
@@ -227,7 +236,9 @@ _INTERNAL_CODES = re.compile(
     # "IUH-Years of Service Awards/Lori Kern/ce", "IUH-MillionMeals/SGirgis/dmg".
     r"/\s*[a-z]{2,4}\s*$|^\s*IUH\s*-|"
     # A course listed by its number: "FOLK 100: Foundations of our Fields".
-    r"^\s*[A-Z]{2,5} [A-Z]?\d{3}[A-Z]?\s*:"
+    r"^\s*[A-Z]{2,5} [A-Z]?\d{3}[A-Z]?\s*:|"
+    # A department's research talk series: "CCBB Seminar Guest Speaker: Dr. ...".
+    r"^\s*[A-Z]{2,6} (Seminar|Colloquium)\b"
 )
 
 # --- the source's own category label -----------------------------------------

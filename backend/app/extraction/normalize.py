@@ -41,7 +41,7 @@ def _has_text(value: object) -> bool:
     return value.strip() != "" if isinstance(value, str) else value is not None
 
 
-def _plain_text(value: object) -> str | None:
+def plain_text(value: object) -> str | None:
     """Whitespace-cleaned text with HTML entities decoded. Feeds hand titles
     over as "Rock &amp; Roll" (some twice: "&amp;amp;"), and the template
     escapes again, so the page showed the entity instead of "&"."""
@@ -109,7 +109,7 @@ def normalize_candidate(
         history.extend(applied)
         return result
 
-    title = _plain_text(apply("title", raw.get("title")))
+    title = plain_text(apply("title", raw.get("title")))
 
     description_raw = apply(
         "description",
@@ -121,9 +121,9 @@ def normalize_candidate(
     # text is what the current rendering path actually needs.
     description = strip_to_text(description_raw) if description_raw is not None else None
 
-    venue = _plain_text(apply("venue", raw.get("venue")))
-    address = _plain_text(apply("address", raw.get("address")))
-    source_category = _plain_text(apply("source_category", raw.get("source_category")))
+    venue = plain_text(apply("venue", raw.get("venue")))
+    address = plain_text(apply("address", raw.get("address")))
+    source_category = plain_text(apply("source_category", raw.get("source_category")))
 
     external_source_id = apply("external_source_id", raw.get("external_source_id"))
     if external_source_id is not None:

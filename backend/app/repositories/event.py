@@ -1,8 +1,10 @@
 from datetime import UTC, datetime
 
+from sqlalchemy import or_
 from sqlalchemy.orm import Session
 
 from app.extraction.dedup import candidate_fingerprint
+from app.extraction.normalize import plain_text
 from app.extraction.types import EventCandidate
 from app.models.event import Event
 from app.schemas.event import EventCreate
@@ -166,3 +168,31 @@ def update_event(db: Session, event: Event, candidate: EventCandidate) -> Event:
     update_fingerprint_and_duplicates(db, event)
     db.refresh(event)
     return event
+
+
+_DECODED_FIELDS = ("title", "venue", "address")
+
+
+def decode_stored_html_entities(db: Session, *, apply: bool) -> list[Event]:
+    """Active events whose title, venue or address still holds an HTML entity
+    ("Rock &amp; Roll"), saved before extraction decoded them. When `apply` is
+    set they are decoded in place and their duplicate keys recomputed."""
+    query = db.query(Event).filter(
+        Event.is_active.is_(True),
+        or_(*(getattr(Event, field).contains("&") for field in _DECODED_FIELDS)),
+    )
+    fixed = []
+    for event in query.order_by(Event.id).all():
+        changes = {}
+        for field in _DECODED_FIELDS:
+            value = getattr(event, field)
+            if value and plain_text(value) != value:
+                changes[field] = plain_text(value)
+        if not changes:
+            continue
+        fixed.append(event)
+        if apply:
+            for field, value in changes.items():
+                setattr(event, field, value)
+            update_fingerprint_and_duplicates(db, event)
+    return fixed

@@ -10,17 +10,16 @@ from __future__ import annotations
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, Request
-from fastapi.responses import JSONResponse
-from sqlalchemy import and_, func, or_, select
+from fastapi.responses import HTMLResponse, JSONResponse
 from sqlalchemy.orm import Session
 
 from app.core.csrf import verify_csrf
 from app.core.exceptions import NotFoundError
+from app.core.templating import render
 from app.database import get_db
-from app.models.city import City
 from app.models.event import Event
 from app.models.user import User
-from app.repositories.public_events import current_public_date
+from app.repositories.geocoding import geocoding_overview
 from app.services.geocoding import retry_event_geocoding
 from app.services.rbac import require_permission
 
@@ -38,72 +37,20 @@ def _verify_csrf(request: Request) -> None:
 CsrfChecked = Annotated[None, Depends(_verify_csrf)]
 
 
-# What a skip reason means, in words an admin reading the status page can use.
-_SKIP_REASONS = {
-    "source_coordinates": "already_had_coordinates",
-    "protected_override": "admin_set_coordinates",
-    "no_address": "no_location",
-}
+@router.get("", response_class=HTMLResponse)
+def overview_page(request: Request, current_user: ViewSites, db: DbSession):
+    """The status below as a readable page."""
+    return render(
+        request,
+        "admin/geocoding.html",
+        {"current_user": current_user, "overview": geocoding_overview(db)},
+    )
 
 
 @router.get("/status")
 def status(db: DbSession, _: ViewSites) -> JSONResponse:
-    """Geocoding progress. `counts` covers every event; `upcoming` and
-    `upcoming_by_city` only the upcoming events the public map can show;
-    `unmatched_upcoming` lists the most common locations that found no match,
-    which an admin can fix by correcting the event's venue or address."""
-    today = current_public_date()
-    upcoming = or_(
-        and_(Event.end_date.isnot(None), Event.end_date >= today),
-        and_(Event.end_date.is_(None), Event.start_date.isnot(None), Event.start_date >= today),
-    )
-    rows = db.execute(
-        select(Event.geocode_status, func.count()).group_by(Event.geocode_status)
-    ).all()
-    skipped = db.execute(
-        select(Event.geocode_last_error, func.count())
-        .where(Event.geocode_status == "skipped")
-        .group_by(Event.geocode_last_error)
-    ).all()
-    upcoming_rows = db.execute(
-        select(Event.geocode_status, func.count())
-        .where(upcoming)
-        .group_by(Event.geocode_status)
-    ).all()
-    city_rows = db.execute(
-        select(City.name, Event.geocode_status, func.count())
-        .join(City, Event.city_id == City.id)
-        .where(upcoming)
-        .group_by(City.name, Event.geocode_status)
-        .order_by(City.name)
-    ).all()
-    unmatched = db.execute(
-        select(City.name, Event.venue, Event.address, func.count().label("n"))
-        .join(City, Event.city_id == City.id, isouter=True)
-        .where(upcoming, Event.geocode_status == "needs_review")
-        .group_by(City.name, Event.venue, Event.address)
-        .order_by(func.count().desc())
-        .limit(50)
-    ).all()
-
-    by_city: dict[str, dict[str, int]] = {}
-    for city_name, status_value, count in city_rows:
-        by_city.setdefault(city_name, {})[status_value] = count
-    return JSONResponse(
-        {
-            "counts": {status_value: count for status_value, count in rows},
-            "skipped_reasons": {
-                _SKIP_REASONS.get(reason or "", reason or "unknown"): count
-                for reason, count in skipped
-            },
-            "upcoming": {status_value: count for status_value, count in upcoming_rows},
-            "upcoming_by_city": by_city,
-            "unmatched_upcoming": [
-                {"city": city_name, "venue": venue, "address": address, "events": n}
-                for city_name, venue, address, n in unmatched
-            ],
-        }
-    )
+    """Geocoding progress as JSON (see `geocoding_overview`)."""
+    return JSONResponse(geocoding_overview(db))
 
 
 @router.post("/events/{event_id}/retry")
