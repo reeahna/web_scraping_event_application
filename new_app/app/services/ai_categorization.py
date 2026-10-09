@@ -13,6 +13,7 @@ Disabled unless a key is configured and gemini_scheduled_enabled is on.
 from __future__ import annotations
 
 from collections.abc import Callable
+from datetime import date
 
 from sqlalchemy import and_, or_
 from sqlalchemy.orm import Query, Session
@@ -43,19 +44,40 @@ def _category_options(db: Session) -> tuple[list[CategoryOption], dict[str, Even
     return options, {c.slug: c for c in categories}
 
 
-def pending_events(db: Session) -> Query:
-    """Events waiting for the AI categorizer, oldest first: every event without
-    an AI label, plus visible events whose AI label came from an older prompt
-    (so a prompt change re-checks them a batch at a time, resuming wherever the
-    last run or the daily quota stopped). Hidden or archived events are not
-    re-checked, which keeps them from spending quota."""
-    outdated = and_(
-        Event.category_source == "ai",
-        or_(Event.ai_prompt_version.is_(None), Event.ai_prompt_version != PROMPT_VERSION),
-        Event.is_active.is_(True),
-        Event.archived_at.is_(None),
+def categorizable_events(db: Session, *, today: date | None = None) -> Query:
+    """The events worth spending AI quota on: visible ones that are upcoming or
+    still running, soonest first, so a quota-limited run labels what students
+    will see next before anything further out. Past, hidden, archived,
+    confirmed-duplicate and undated events are left alone."""
+    today = today or date.today()
+    upcoming_or_ongoing = or_(
+        and_(Event.end_date.isnot(None), Event.end_date >= today),
+        and_(Event.end_date.is_(None), Event.start_date.isnot(None), Event.start_date >= today),
     )
-    return db.query(Event).filter(or_(Event.category_source != "ai", outdated)).order_by(Event.id)
+    return (
+        db.query(Event)
+        .filter(
+            Event.is_active.is_(True),
+            Event.archived_at.is_(None),
+            Event.is_recurrence_parent.is_(False),
+            Event.duplicate_status != "confirmed_duplicate",
+            upcoming_or_ongoing,
+        )
+        .order_by(Event.start_date.asc(), Event.id.asc())
+    )
+
+
+def pending_events(db: Session, *, today: date | None = None) -> Query:
+    """Categorizable events (see above) still waiting for the AI: never
+    AI-labeled, or labeled by an older prompt. A prompt change therefore
+    re-checks them a batch at a time, resuming wherever the last run or the
+    daily quota stopped."""
+    outdated = or_(
+        Event.category_source != "ai",
+        Event.ai_prompt_version.is_(None),
+        Event.ai_prompt_version != PROMPT_VERSION,
+    )
+    return categorizable_events(db, today=today).filter(outdated)
 
 
 def apply_labels(

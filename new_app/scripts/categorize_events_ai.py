@@ -8,15 +8,17 @@ administrator's manual override.
 
 Usage (from new_app/, with its venv active and GEMINI_API_KEY set in .env):
 
-    python scripts/categorize_events_ai.py            # label every non-AI event
+    python scripts/categorize_events_ai.py            # label what still needs it
     python scripts/categorize_events_ai.py --only-other   # only the "Other" pile
-    python scripts/categorize_events_ai.py --force        # re-label everything
+    python scripts/categorize_events_ai.py --force        # re-label all, even current
     python scripts/categorize_events_ai.py --limit 50     # small trial run
 
 Each event also gets a keep/drop verdict: an event a college student would not
 go to (a finance seminar, a trade show) is hidden unless GEMINI_HIDE_UNWANTED is
-false. Visible events labeled by an older prompt are re-checked automatically
-(no --force needed), and a run stopped by the quota resumes where it left off.
+false. Only visible, upcoming or ongoing events are labeled, soonest first;
+past and hidden events are skipped. Events labeled by an older prompt are
+re-checked automatically (no --force needed), and a run stopped by the quota
+resumes where it left off.
 
 By default events already labeled by a previous AI run are skipped, so the pass
 is idempotent and cheap to resume: re-running only spends API calls on events it
@@ -35,7 +37,11 @@ from app.config import get_settings
 from app.database import SessionLocal
 from app.models.event import Event
 from app.models.event_category import EventCategory
-from app.services.ai_categorization import apply_labels, pending_events
+from app.services.ai_categorization import (
+    apply_labels,
+    categorizable_events,
+    pending_events,
+)
 from app.services.ai_categorizer import (
     CategoryOption,
     EventToClassify,
@@ -67,7 +73,7 @@ def _parse_args() -> argparse.Namespace:
 
 
 def _select_events(db, *, force: bool, only_other: bool, limit: int | None) -> list[Event]:
-    query = db.query(Event) if force else pending_events(db)
+    query = categorizable_events(db) if force else pending_events(db)
     if only_other:
         other = (
             db.query(EventCategory.id).filter(EventCategory.slug == "other").scalar_subquery()
@@ -75,7 +81,6 @@ def _select_events(db, *, force: bool, only_other: bool, limit: int | None) -> l
         query = query.filter(
             (Event.category_id.is_(None)) | (Event.category_id == other)
         )
-    query = query.order_by(Event.id)
     if limit is not None:
         query = query.limit(limit)
     return query.all()
