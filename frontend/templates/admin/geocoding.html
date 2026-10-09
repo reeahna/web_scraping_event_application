@@ -45,10 +45,11 @@
 </section>
 
 <section class="wf-card">
-  <h2>Why events were skipped</h2>
+  <h2>Why upcoming events were skipped</h2>
+  <p class="audit-meta">These add up to the Skipped column above.</p>
   <table>
     <tbody>
-      {% for reason, count in overview.skipped_reasons.items() %}
+      {% for reason, count in overview.upcoming_skipped_reasons.items() %}
       <tr><th>{{ skip_labels.get(reason, reason) }}</th><td>{{ "{:,}".format(count) }}</td></tr>
       {% else %}
       <tr><td>None skipped.</td></tr>
