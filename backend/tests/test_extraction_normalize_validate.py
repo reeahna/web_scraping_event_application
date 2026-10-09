@@ -169,3 +169,12 @@ def test_parse_date_value_strips_ordinal_suffixes():
     )
     assert parse_date_value("June 1st, 2025", ["%B %d, %Y"]) == date(2025, 6, 1)
     assert parse_date_value("22nd December 2025", ["%d %B %Y"]) == date(2025, 12, 22)
+
+
+def test_html_entities_in_text_fields_are_decoded():
+    candidate = normalize_candidate(
+        _raw_candidate(title="Smith 2 &amp;amp; Ed 3: Rock &amp; Roll", venue="Bear&#8217;s Place"),
+        CONFIG,
+    )
+    assert candidate.title == "Smith 2 & Ed 3: Rock & Roll"
+    assert candidate.venue == "Bear’s Place"

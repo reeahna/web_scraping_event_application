@@ -69,6 +69,8 @@ from tests.extraction_helpers import html_handler, patched_http_fetch
         ("How to Start a Small Mobile Food Business", PROFESSIONAL),
         ("Grow Your Residual Income!", PROFESSIONAL),
         ("Toddler Storytime", AUDIENCE),
+        ("Smith 2 & Ed 3: Lucky Charms", AUDIENCE),
+        ("Movie Night for Cravens Floor 1", AUDIENCE),
         ("NC Class of 2016 Reunion", AUDIENCE),
         ("Lehigh County Senior Expo", AUDIENCE),
         ("Indianapolis Speed Dating for Singles Age 38-54", AUDIENCE),
@@ -91,6 +93,14 @@ from tests.extraction_helpers import html_handler, patched_http_fetch
         ("Years of Service Awards", INTERNAL),
         ("SPINE: OITE Review", INTERNAL),
         ("Embedded Accessible Educational Services (AES)", INTERNAL),
+        ("Drop-In Career Coaching", INTERNAL),
+        ("Learning Lab", INTERNAL),
+        ("Study", INTERNAL),
+        ("FOLK 100: Foundations of our Fields", INTERNAL),
+        ("Wellness Week", DEADLINE),
+        ("Learn How to Apply for the 2027 Rural Placemaking Studio", INTERNAL),
+        ("Senior U: Intro to Email and Internet", AUDIENCE),
+        ("VITAL Volunteer Orientation Session - Teaching English as a New Language", INTERNAL),
     ],
 )
 def test_not_attendable_titles(title, reason):
@@ -124,6 +134,13 @@ def test_not_attendable_titles(title, reason):
         "Foraged, Found and Reimagined: Selected Works by Trish Korte",
         "Home Away from Home: Student Life on Campus",
         "Rock/Pop Night",
+        "Club 3 and Me",
+        "Waltz 101 (Q-Project)",
+        "Corporeality: Living in Our Bodies | Kinsey Institute",
+        "Study Abroad Fair",
+        "Wellness Week Yoga in the Park",
+        "Shark Week Watch Party",
+        "Top 40 Night at the Bluebird",
         # A class or workshop that is a fun thing to do in town stays.
         "Basics of Watercolor Workshop",
         "Pottery Class for Beginners",
@@ -135,6 +152,15 @@ def test_not_attendable_titles(title, reason):
 )
 def test_attendable_titles_are_kept(title):
     assert not_attendable_reason(title=title) is None
+
+
+def test_description_naming_a_symposium():
+    reason = not_attendable_reason(
+        title="Beyond the Bench: Honoring Dr. Gary Landreth’s Contributions to Science",
+        description="This symposium will bring together alumni, trainees, colleagues and "
+        "researchers who will share stories.",
+    )
+    assert reason == CONFERENCE
 
 
 def test_platform_as_venue_is_virtual():
