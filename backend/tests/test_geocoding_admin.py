@@ -24,6 +24,30 @@ def test_status_reports_counts(admin_client, make_city, make_event):
     assert "counts" in resp.json()
 
 
+def test_status_explains_skips_and_lists_unmatched_venues(admin_client, make_city, make_event):
+    from datetime import date, timedelta
+
+    soon = date.today() + timedelta(days=3)
+    city = make_city(name="Bloomington", slug="bloomington")
+    make_event(city, canonical_url="u1", start_date=soon,
+               geocode_status="skipped", geocode_last_error="source_coordinates")
+    make_event(city, canonical_url="u2", start_date=soon,
+               geocode_status="skipped", geocode_last_error="no_address")
+    for i in range(2):
+        make_event(city, canonical_url=f"u3{i}", start_date=soon, venue="Buskirk",
+                   geocode_status="needs_review", geocode_last_error="no_match")
+    make_event(city, canonical_url="u4", start_date=date(2020, 1, 1), venue="Old Hall",
+               geocode_status="needs_review", geocode_last_error="no_match")
+
+    data = admin_client.get("/admin/geocoding/status").json()
+    assert data["skipped_reasons"] == {"already_had_coordinates": 1, "no_location": 1}
+    assert data["upcoming"]["needs_review"] == 2
+    assert data["upcoming_by_city"]["Bloomington"]["needs_review"] == 2
+    assert data["unmatched_upcoming"] == [
+        {"city": "Bloomington", "venue": "Buskirk", "address": None, "events": 2}
+    ]
+
+
 def test_retry_requeues_a_failed_event(admin_client, make_city, make_event, db_session):
     city = make_city()
     event = make_event(city, address="A", geocode_status="failed", geocode_last_error="boom")
