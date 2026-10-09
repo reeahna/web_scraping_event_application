@@ -11,6 +11,10 @@ TEST_TMP_PATH.mkdir(exist_ok=True)
 os.environ["DATABASE_URL"] = f"sqlite:///{TEST_DB_PATH.as_posix()}"
 os.environ["TEMP"] = str(TEST_TMP_PATH)
 os.environ["TMP"] = str(TEST_TMP_PATH)
+# The extraction fixtures' events sit in whatever town each fixture names
+# (Springfield, IL ...), not in the test city, so the own-town import filter is
+# off by default here; tests/test_home_town.py turns it on.
+os.environ["HOME_TOWN_FILTER_ENABLED"] = "false"
 
 from urllib.parse import parse_qs, quote, urlparse  # noqa: E402
 

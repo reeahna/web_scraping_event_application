@@ -14,13 +14,20 @@ it's viewed.
 Occurrence-aware (Phase 12): a recurrence parent is never shown publicly — only
 its concrete expanded occurrences (or a plain single event) appear — so a
 series never renders as a parent card duplicating its occurrence cards.
+
+Listed once: the same event is often listed by several sources (a theatre's
+own site, the visitors' bureau and the local radio station), each under its
+own URL, so their fingerprints never match. Listings, counts, the map and the
+sitemap show one copy of a title on a date in a city (see
+_without_repeat_listings). The other copies stay reachable at their own
+detail URL and under their own source's filter.
 """
 
-from datetime import date, datetime, timedelta
+from datetime import date, datetime, time, timedelta
 from zoneinfo import ZoneInfo
 
-from sqlalchemy import and_, func, not_, or_
-from sqlalchemy.orm import Session
+from sqlalchemy import and_, exists, func, not_, or_, select
+from sqlalchemy.orm import Session, aliased
 
 from app.config import get_settings
 from app.models.city import City
@@ -51,35 +58,73 @@ def this_weekend(today: date) -> tuple[date, date]:
     return saturday, saturday + timedelta(days=1)
 
 
-def _base_public_query(db: Session, *, today: date):
+def _visible(event, website, *, today: date) -> list:
+    """The conditions for an event row (and its source row) to be public."""
     upcoming_or_ongoing = or_(
-        and_(Event.end_date.isnot(None), Event.end_date >= today),
-        and_(Event.end_date.is_(None), Event.start_date.isnot(None), Event.start_date >= today),
+        and_(event.end_date.isnot(None), event.end_date >= today),
+        and_(event.end_date.is_(None), event.start_date.isnot(None), event.start_date >= today),
     )
+    return [
+        event.is_active.is_(True),
+        event.archived_at.is_(None),
+        event.duplicate_status != "confirmed_duplicate",
+        # Occurrence-aware: a recurrence parent is internal; the public sees
+        # only concrete occurrences and single events.
+        event.is_recurrence_parent.is_(False),
+        website.is_active.is_(True),
+        # `approved_pattern` is a JSON column: SQLAlchemy/SQLite store a
+        # Python None there as the JSON literal 'null', not SQL NULL, so
+        # `.isnot(None)` would never actually exclude an unapproved row.
+        # `active_configuration_version` is a plain Integer set only at
+        # approval time (see app.services.website_configuration.approve_configuration)
+        # and stays NULL until then, so it's the SQL-safe proxy for "has
+        # an approved configuration".
+        website.active_configuration_version.isnot(None),
+        upcoming_or_ongoing,
+    ]
+
+
+def _base_public_query(db: Session, *, today: date):
     return (
         db.query(Event)
         .join(Website, Event.website_id == Website.id)
         .join(City, Event.city_id == City.id)
-        .filter(
-            Event.is_active.is_(True),
-            Event.archived_at.is_(None),
-            Event.duplicate_status != "confirmed_duplicate",
-            # Occurrence-aware: a recurrence parent is internal; the public sees
-            # only concrete occurrences and single events.
-            Event.is_recurrence_parent.is_(False),
-            Website.is_active.is_(True),
-            # `approved_pattern` is a JSON column: SQLAlchemy/SQLite store a
-            # Python None there as the JSON literal 'null', not SQL NULL, so
-            # `.isnot(None)` would never actually exclude an unapproved row.
-            # `active_configuration_version` is a plain Integer set only at
-            # approval time (see app.services.website_configuration.approve_configuration)
-            # and stays NULL until then, so it's the SQL-safe proxy for "has
-            # an approved configuration".
-            Website.active_configuration_version.isnot(None),
-            City.is_active.is_(True),
-            upcoming_or_ongoing,
+        .filter(*_visible(Event, Website, today=today), City.is_active.is_(True))
+    )
+
+
+def _time_unknown(column):
+    # Several sources give midnight when they have no time at all.
+    return or_(column.is_(None), column == time(0, 0))
+
+
+def _without_repeat_listings(query, *, today: date):
+    """Leave out an event when an earlier-added public event has the same title
+    (by Event.normalized_title, which ignores case and punctuation) on the same
+    day in the same city, at the same time or with no time given on either.
+
+    Two showings of a play on one day at different times both stay; the same
+    showing on two sources becomes one card."""
+    other = aliased(Event)
+    other_website = aliased(Website)
+    earlier_copy = (
+        select(other.id)
+        .join(other_website, other.website_id == other_website.id)
+        .where(
+            other.id < Event.id,
+            other.normalized_title == Event.normalized_title,
+            other.normalized_title != "",
+            other.start_date == Event.start_date,
+            other.city_id == Event.city_id,
+            or_(
+                _time_unknown(other.start_time),
+                _time_unknown(Event.start_time),
+                other.start_time == Event.start_time,
+            ),
+            *_visible(other, other_website, today=today),
         )
     )
+    return query.filter(~exists(earlier_copy))
 
 
 def upcoming_counts_by_city(db: Session, *, today: date) -> dict[int, int]:
@@ -89,7 +134,7 @@ def upcoming_counts_by_city(db: Session, *, today: date) -> dict[int, int]:
     events the city page would not then show.
     """
     rows = (
-        _base_public_query(db, today=today)
+        _without_repeat_listings(_base_public_query(db, today=today), today=today)
         .with_entities(Event.city_id, func.count(Event.id))
         .group_by(Event.city_id)
         .all()
@@ -105,11 +150,19 @@ def public_event_ids(db: Session, *, today: date, limit: int) -> list[int]:
     """
     return [
         row.id
-        for row in _base_public_query(db, today=today)
+        for row in _without_repeat_listings(_base_public_query(db, today=today), today=today)
         .order_by(Event.start_date.asc(), Event.id.asc())
         .limit(limit)
         .all()
     ]
+
+
+def _listing_query(db: Session, *, today: date, source_id: int | None):
+    query = _base_public_query(db, today=today)
+    # Filtered to one source, that source's own copy is the one to show.
+    if source_id is None:
+        query = _without_repeat_listings(query, today=today)
+    return query
 
 
 def _apply_filters(
@@ -191,7 +244,7 @@ def list_public_events(
     per_page: int = PUBLIC_EVENTS_PER_PAGE,
 ) -> tuple[list[Event], int, bool]:
     query = _apply_filters(
-        _base_public_query(db, today=today),
+        _listing_query(db, today=today, source_id=source_id),
         today=today, city_id=city_id, category_id=category_id, source_id=source_id,
         search=search, recurrence=recurrence, upcoming_only=upcoming_only,
         date_from=date_from, date_to=date_to,
@@ -228,7 +281,7 @@ def list_public_map_points(
     public coordinate (correction > source > geocoded) is computed in Python via
     the model property, and nothing sensitive is included in the payload."""
     query = _apply_filters(
-        _base_public_query(db, today=today),
+        _listing_query(db, today=today, source_id=source_id),
         today=today, city_id=city_id, category_id=category_id, source_id=source_id,
         search=search, recurrence=recurrence, upcoming_only=upcoming_only,
         date_from=date_from, date_to=date_to,

@@ -1,5 +1,7 @@
 import hashlib
+import html
 import re
+import unicodedata
 from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 
 from sqlalchemy.orm import Session
@@ -11,6 +13,18 @@ _WHITESPACE_RE = re.compile(r"\s+")
 
 def normalize_text(value: str | None) -> str:
     return _WHITESPACE_RE.sub(" ", (value or "").strip()).casefold()
+
+
+_NON_WORD_RE = re.compile(r"[^a-z0-9]+")
+
+
+def title_key(value: str | None) -> str:
+    """A title reduced to its words, for spotting the same event listed by two
+    sources: "Heist!" and "HEIST", or "Rock &amp; Roll Night" and "Rock and
+    Roll Night", come out the same. Stored as Event.normalized_title."""
+    value = html.unescape(value or "").replace("&", " and ")
+    value = unicodedata.normalize("NFKD", value).encode("ascii", "ignore").decode()
+    return " ".join(_NON_WORD_RE.sub(" ", value.casefold()).split())
 
 
 def normalize_url(value: str | None) -> str:
@@ -49,7 +63,7 @@ def event_fingerprint(event: Event) -> str:
 
 
 def update_fingerprint_and_duplicates(db: Session, event: Event) -> list[Event]:
-    event.normalized_title = normalize_text(event.title)
+    event.normalized_title = title_key(event.title)
     event.fingerprint = event_fingerprint(event)
     db.flush()
     matches = (

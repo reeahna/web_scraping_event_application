@@ -4,8 +4,11 @@ Sources, Eventbrite and university calendars in particular, list a lot that is
 not an event in the sense this site means: online-only sessions, professional
 conferences, certification courses, internal staff and faculty business, and
 calendar entries that are really deadlines or reminders ("Last day to drop",
-"Registration closes"). This decides, from an event's own text, whether it is
-one of those, so the import can leave it out.
+"Registration closes"). The site is for college students, so it also leaves
+out what is aimed at someone else (business networking, real-estate
+masterclasses, toddler story times, class reunions) and listings the source
+itself marks as cancelled. This decides, from an event's own text, whether it
+is one of those, so the import can leave it out.
 
 Deliberately keyword-based and conservative. A rule only fires on wording that
 names the thing outright, and the free-text description is only consulted for
@@ -27,10 +30,18 @@ CONFERENCE = "conference"
 CERTIFICATION = "certification"
 DEADLINE = "deadline"
 INTERNAL = "internal"
+PROFESSIONAL = "professional"
+AUDIENCE = "audience"
+CANCELLED = "cancelled"
 
 
 def _rx(pattern: str) -> re.Pattern[str]:
     return re.compile(pattern, re.IGNORECASE)
+
+
+# --- cancelled ----------------------------------------------------------------
+# University calendars keep a cancelled listing up with the word in front.
+_CANCELLED_TITLE = _rx(r"^\W*(cancell?ed|postponed)\b")
 
 
 # --- virtual / online only ---------------------------------------------------
@@ -55,13 +66,68 @@ _VIRTUAL_DESCRIPTION = _rx(
 
 # --- conferences --------------------------------------------------------------
 # "Summit" is also a place name ("Sunset at the Summit"), hence the lookbehinds.
-_CONFERENCE_TITLE = _rx(r"\b(conference|symposium|colloquium|(?<!the )(?<!at )summit)\b")
+_CONFERENCE_TITLE = _rx(
+    r"\b(conferences?|conferencia|symposium|colloquium|convention|(?<!the )(?<!at )summit|"
+    r"trade show|seminar series|grand rounds|journal club|"
+    r"(attendee|exhibitor|vendor|sponsor) registration)\b|"
+    # A research talk: "Materials Seminar", "CCBB Seminar Speaker", "Seminar: ..."
+    r"\bseminar\b(\s+speaker|\s*[:\-–|])|\w\s+seminar\s*$|^\s*seminar\b"
+)
 
 # --- certifications and professional courses ---------------------------------
 _CERTIFICATION_TITLE = _rx(
     r"\b(certification|certificate (program|course|training)|accreditation|"
     r"credential(ing)?|exam prep|test prep|ceus?|continuing education|cpe credits?|licensure|"
-    r"pmp|capm|itil|six sigma|scrum master|safe agilist|prince2|cissp|comptia)\b"
+    r"pmp|capm|itil|six sigma|scrum master|safe agilist|prince2|cissp|comptia|cert prep)\b"
+)
+
+# --- aimed at working professionals, or at money rather than fun --------------
+_PROFESSIONAL_TITLE = _rx(
+    r"\b((business|professionals?|executive|industry|chamber|b2b|realtors?|real estate|"
+    r"healthcare|finance|engineering|hospitality|fashion|blockchain|tech|women in business)"
+    r"(\s+and\s+business)?\s+networking|"
+    r"networking (breakfast|luncheon|lunch|happy hour|mixer) for|"
+    r"masterminds?|real estate|realtors?|mortgage|landlords?|property management|"
+    r"investors? (meetup|summit|forum)|"
+    r"(for|with) (small )?business owners|entrepreneurs, hr|for (hr|human resources) professionals|"
+    r"(fair housing|osha|food handler|forklift|cpr/aed for (employers|businesses)) (basics |"
+    r"compliance )?training|"
+    r"(business|marketing|content|sales|leadership|real estate|investing) master\s?class|"
+    r"master\s?class (in|for) (business|marketing|sales|leadership|real estate)|"
+    r"(physician|nurse|nursing|clinical|clinician|attorney|legal|accounting|cpa|teacher|"
+    r"educator|parish|church|ministry) (leaders|recruiters|managers|professionals)|"
+    r"(recruiters|leaders|educators) (association|society|forum)|"
+    r"in clinical practice|for clinicians|for therapists|for counselors|for educators|"
+    r"for (\w+ )?faculty|employment consultant|"
+    # Money and running a business: a pottery or cooking class is a night out,
+    # a finance class is not.
+    r"(your|personal) finances?|financial (wellness|planning|literacy|freedom|independence)|"
+    r"investing for|(residual|passive) income|medicare|social security benefits|"
+    r"(retirement|estate|exit|tax|wealth) planning|social selling|"
+    r"(grow|strengthen|start|scale|build) (a |your )?(small )?(\w+ ){0,2}business|"
+    r"business owners?|small business working session|money is expensive)\b"
+)
+
+# --- aimed at someone other than college students ------------------------------
+_AUDIENCE_TITLE = _rx(
+    r"\b(toddlers?|preschool(ers)?|babies|baby (and|&) me|story ?time|storytime|"
+    r"for kids|kids'? (club|camp|class)|homeschool(ers|ing)?|"
+    r"high school|middle school|elementary school|class of '?\d{2,4}|"
+    r"(\d+(st|nd|rd|th)|class|family|club|alumni|high school) reunion|"
+    r"senior (expo|citizens?|center)|seniors (55|60|62|65)|older adults|retirees|"
+    r"(55|60|62|65)\s*(\+|and (up|over|older))|"
+    r"ages? (2[5-9]|[3-9]\d)\s*(-|–|to|\+|and)|"
+    r"(alumni|iuaa)\b.*\b(game watch|chapter|reception|happy hour|weekend|reunion)|"
+    r"\balumni (association|chapter|club|reception|game watch))\b"
+)
+
+# Words that mark a night out or a student group, which beat a conference or
+# professional word in the same title ("Grassroots Music Seminar and Concert
+# Series", "IU Real Estate Club Callout Meeting").
+_STUDENT_DRAW = _rx(
+    r"\b(concerts?|festival|fest|party|parties|show|performance|comedy|screening|"
+    r"tailgate|trivia|karaoke|open mic|dance|gala|ball|"
+    r"club|call[- ]?out|students?|undergrad(uate)?s?)\b"
 )
 
 # --- deadlines, academic-calendar dates and reminders --------------------------
@@ -76,7 +142,11 @@ _DEADLINE_TITLE = _rx(
     r"due (date|by)|"
     r"(classes|class|semester|term|session|instruction) (begins?|starts?|ends?|resumes?)|"
     r"no classes|classes cancell?ed|"
-    r"(university|campus|offices?|libraries|library) (is\s+|are\s+)?closed)\b"
+    r"(university|campus|school|schools|offices?|libraries|library) (is\s+|are\s+)?closed|"
+    r"last day of (open |late )?registration|refund (period|deadline)|"
+    r"grade of w|e-?drop|e-?add|schedule adjustment)\b|"
+    # Registrar entries come labelled with the term: "Spring 2027: ..."
+    r"^\s*(fall|spring|summer|winter)\s+(20\d\d|session)\s*:"
 )
 # Bare academic-calendar entries: the whole title is the break or exam period,
 # so "Spring Break Bash" or "Finals Week Pancake Breakfast" still get through.
@@ -103,7 +173,18 @@ _INTERNAL_TITLE = _rx(
     r"(dissertation|thesis|doctoral|qualifying|prospectus)\s+(defen[cs]e|exam|proposal)|"
     r"office hours|professional development|staff (training|development)|"
     r"employee (training|orientation)|new employee|compliance training|"
-    r"(hr|human resources|benefits) (training|session|workshop|webinar|orientation))\b"
+    r"(hr|human resources|benefits) (training|session|workshop|webinar|orientation)|"
+    # Room bookings and logistics a calendar system publishes alongside events.
+    r"(room|lane|court|space|field|table) (reservation|booking|hold)s?|reservations?$|"
+    r"maintenance|proctor(ing|ed)?|package (overflow|pickup)|mtg|"
+    r"(final round|first round|second round|group|recruitment|candidate|admissions|job|mock)"
+    r" interviews?|private meetings?)\b|"
+    r"^\s*(meetings?|closed|hold|reserved|tbd|tba)\s*$"
+)
+# Case-sensitive: a course section ("SWK-S 502 0001", "NURS-B 444", "ANAT-D502")
+# or a room code ("Rm IB 317") at the front of a title is a class or a booking.
+_INTERNAL_CODES = re.compile(
+    r"^\s*[A-Z]{2,5}(-[A-Z]?\s?\d{3}|\s[A-Z]\d{3})[A-Z]?\b|\bRms?\.? [A-Z]{0,3}\s?\d{2,4}\b"
 )
 
 # --- the source's own category label -----------------------------------------
@@ -113,6 +194,7 @@ _SOURCE_CATEGORY = {
     CERTIFICATION: _rx(r"\b(certifications?|continuing education)\b"),
     DEADLINE: _rx(r"\b(deadlines?|academic calendar|important dates|reminders?)\b"),
     INTERNAL: _rx(r"\b(human resources|faculty and staff|staff only|internal)\b"),
+    PROFESSIONAL: _rx(r"\b(business|networking|professional development)\b"),
 }
 
 # schema.org: an online-only event declares this attendance mode; a hybrid one
@@ -131,10 +213,14 @@ def not_attendable_reason(
 ) -> str | None:
     """Why this is not an event someone can turn up to, or None when it is.
 
-    The reason is one of VIRTUAL, CONFERENCE, CERTIFICATION, DEADLINE or
-    INTERNAL, recorded so an excluded event can be explained."""
+    The reason is one of CANCELLED, VIRTUAL, CONFERENCE, CERTIFICATION,
+    DEADLINE, INTERNAL, PROFESSIONAL or AUDIENCE, recorded so an excluded event
+    can be explained."""
     title = title or ""
     description = description or ""
+
+    if _CANCELLED_TITLE.search(title):
+        return CANCELLED
 
     if raw is not None:
         raw_text = json.dumps(raw, default=str)
@@ -147,12 +233,21 @@ def not_attendable_reason(
 
     if _DEADLINE_TITLE.search(title) or _ACADEMIC_PERIOD_TITLE.search(title):
         return DEADLINE
-    if _INTERNAL_TITLE.search(title) or _INTERNAL_ANYWHERE.search(f"{title}\n{description}"):
+    if (
+        _INTERNAL_TITLE.search(title)
+        or _INTERNAL_CODES.search(title)
+        or _INTERNAL_ANYWHERE.search(f"{title}\n{description}")
+    ):
         return INTERNAL
     if _CERTIFICATION_TITLE.search(title):
         return CERTIFICATION
-    if _CONFERENCE_TITLE.search(title):
-        return CONFERENCE
+    if _AUDIENCE_TITLE.search(title):
+        return AUDIENCE
+    if not _STUDENT_DRAW.search(title):
+        if _CONFERENCE_TITLE.search(title):
+            return CONFERENCE
+        if _PROFESSIONAL_TITLE.search(title):
+            return PROFESSIONAL
 
     if source_category:
         for reason, pattern in _SOURCE_CATEGORY.items():
