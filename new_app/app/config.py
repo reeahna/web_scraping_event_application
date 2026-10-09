@@ -160,8 +160,9 @@ class Settings(BaseSettings):
     geocoding_min_interval_seconds: float = 1.0
     geocoding_failure_threshold: int = 5
     geocoding_cooldown_seconds: int = 300
-    # How many events one background drain processes per tick.
-    geocoding_batch_size: int = 10
+    # How many events one background drain processes per tick (one tick a
+    # minute). At the one-request-per-second limit, 30 fits well inside a tick.
+    geocoding_batch_size: int = 30
 
     # Leave out of the import anything that is not an event a person can go to:
     # online-only sessions, conferences, certification courses, internal staff

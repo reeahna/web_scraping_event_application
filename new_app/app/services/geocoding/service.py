@@ -10,7 +10,7 @@ from __future__ import annotations
 
 from datetime import UTC, datetime
 
-from sqlalchemy import select
+from sqlalchemy import and_, case, or_, select
 from sqlalchemy.orm import Session
 
 from app.models.event import Event
@@ -164,9 +164,25 @@ async def drain_geocoding_queue(
     processed."""
     if not provider.is_healthy():
         return 0
+    # Upcoming events first, soonest first: they are the only ones the public
+    # map can show, and a backlog of past events (all pending from before
+    # geocoding was switched on) would otherwise keep the map empty for hours.
+    today = (now or datetime.now(UTC)).date()
+    upcoming = or_(
+        and_(Event.end_date.isnot(None), Event.end_date >= today),
+        and_(Event.end_date.is_(None), Event.start_date.isnot(None), Event.start_date >= today),
+    )
     events = list(
         db.scalars(
-            select(Event).where(Event.geocode_status == PENDING).order_by(Event.id).limit(limit)
+            select(Event)
+            .where(Event.geocode_status == PENDING)
+            .order_by(
+                case((upcoming, 0), else_=1),
+                Event.start_date.is_(None),
+                Event.start_date,
+                Event.id,
+            )
+            .limit(limit)
         )
     )
     processed = 0
