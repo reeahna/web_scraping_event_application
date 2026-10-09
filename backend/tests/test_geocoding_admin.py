@@ -48,6 +48,20 @@ def test_status_explains_skips_and_lists_unmatched_venues(admin_client, make_cit
     ]
 
 
+def test_overview_page_is_readable(admin_client, make_city, make_event):
+    from datetime import date, timedelta
+
+    city = make_city(name="Bethlehem", slug="bethlehem")
+    make_event(city, canonical_url="u1", start_date=date.today() + timedelta(days=2),
+               venue="Williams Brew Stage", geocode_status="needs_review")
+    resp = admin_client.get("/admin/geocoding")
+    assert resp.status_code == 200
+    assert "Map locations" in resp.text
+    assert "No match found" in resp.text
+    assert "Williams Brew Stage" in resp.text
+    assert "/admin/events?q=Williams%20Brew%20Stage" in resp.text
+
+
 def test_retry_requeues_a_failed_event(admin_client, make_city, make_event, db_session):
     city = make_city()
     event = make_event(city, address="A", geocode_status="failed", geocode_last_error="boom")
