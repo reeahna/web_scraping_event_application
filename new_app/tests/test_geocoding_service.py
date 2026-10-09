@@ -116,12 +116,61 @@ def test_drain_processes_pending_and_respects_disabled(make_city, make_event, db
     assert processed == 2
 
 
-def test_lookup_names_the_events_town(make_city, make_event, db_session):
+def test_address_lookup_names_the_events_town(make_city, make_event, db_session):
     city = make_city(name="State College", slug="state-college", state_or_region="PA")
-    event = make_event(city, venue="Eisenhower Auditorium")
+    event = make_event(city, address="100 College Ave", venue="Eisenhower Auditorium")
     provider = StaticGeocoder(default=_HIT)
     assert _geocode(db_session, event, provider) == "completed"
-    assert provider.calls == ["Eisenhower Auditorium, State College, PA"]
+    assert provider.calls == ["100 College Ave, State College, PA"]
+
+
+def test_venue_is_searched_only_around_the_town(make_city, make_event, db_session):
+    city = make_city(name="Bloomington", slug="bloomington", state_or_region="IN")
+    event = make_event(city, venue="Recital Hall")
+    town = GeocodeResult(39.17, -86.53, "static")
+    provider = StaticGeocoder({"Bloomington, IN": town, "Recital Hall": _HIT})
+    assert _geocode(db_session, event, provider) == "completed"
+    assert provider.calls == ["Bloomington, IN", "Recital Hall"]
+    south, west, north, east = provider.viewboxes[1]
+    assert south < 39.17 < north and west < -86.53 < east
+
+
+def test_town_centre_set_by_an_admin_saves_a_lookup(make_city, make_event, db_session):
+    city = make_city(default_latitude=40.6, default_longitude=-75.4)
+    event = make_event(city, venue="Zoellner Arts Center")
+    provider = StaticGeocoder(default=_HIT)
+    assert _geocode(db_session, event, provider) == "completed"
+    assert provider.calls == ["Zoellner Arts Center"]
+
+
+def test_unmatched_address_falls_back_to_the_venue_without_its_room(
+    make_city, make_event, db_session
+):
+    city = make_city(default_latitude=40.6, default_longitude=-75.4)
+    event = make_event(city, address="Lehigh Campus", venue="Room 101, Linderman Library")
+    provider = StaticGeocoder({"Linderman Library": _HIT})
+    assert _geocode(db_session, event, provider) == "completed"
+    assert provider.calls == [
+        "Lehigh Campus, Test City",
+        "Room 101, Linderman Library",
+        "Linderman Library",
+    ]
+
+
+def test_failed_lookups_are_retried_a_few_times(make_city, make_event, db_session):
+    city = make_city()
+    event = make_event(city, address="1 A St")
+    for _ in range(3):
+        asyncio.run(drain_geocoding_queue(db_session, StaticGeocoder(healthy=False), now=NOW))
+    assert event.geocode_attempts == 0  # an unhealthy provider is never even asked
+    flaky = StaticGeocoder(default=_HIT)
+    event.geocode_status, event.geocode_attempts = "failed", 2
+    db_session.commit()
+    assert asyncio.run(drain_geocoding_queue(db_session, flaky, now=NOW)) == 1
+    assert event.geocode_status == "completed"
+    event.geocode_status, event.geocode_attempts = "failed", 3
+    db_session.commit()
+    assert asyncio.run(drain_geocoding_queue(db_session, flaky, now=NOW)) == 0
 
 
 def test_drain_does_upcoming_events_first(make_city, make_event, db_session):
