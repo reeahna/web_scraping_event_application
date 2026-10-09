@@ -191,3 +191,57 @@ def test_the_real_google_client_builds_a_sign_in_link():
     assert query["client_id"] == ["id-123"] and query["state"] == ["s1"]
     assert query["nonce"] == ["n1"]
     assert query["redirect_uri"] == ["https://example.test/auth/oauth/google/callback"]
+
+
+def test_the_real_google_client_sends_its_secret_once(monkeypatch):
+    """Google rejects a token request that carries the client secret in both
+    the form body and a Basic Authorization header."""
+    from urllib.parse import parse_qs
+
+    import requests
+
+    from app.services.oauth import build_provider
+
+    sent = []
+
+    def fake_send(self, request, **kwargs):
+        sent.append(request)
+        response = requests.Response()
+        response.status_code = 200
+        response.headers["Content-Type"] = "application/json"
+        if "token" in request.url:
+            response._content = b'{"access_token": "at", "token_type": "Bearer"}'
+        else:
+            response._content = b'{"sub": "g-1", "email": "me@example.com", "email_verified": true}'
+        return response
+
+    monkeypatch.setattr(requests.Session, "send", fake_send)
+    settings = SimpleNamespace(google_client_id="id-123", google_client_secret="secret")
+    info = build_provider(settings, "google").fetch_identity(
+        code="c", state="s1", nonce=None,
+        redirect_uri="https://example.test/auth/oauth/google/callback",
+    )
+
+    token_request = sent[0]
+    body = parse_qs(token_request.body)
+    assert body["client_id"] == ["id-123"] and body["client_secret"] == ["secret"]
+    assert "Authorization" not in token_request.headers
+    assert info.subject == "g-1"
+
+
+class _FailingProvider(MockProvider):
+    def fetch_identity(self, **kwargs):
+        from app.services.oauth import ProviderError
+
+        raise ProviderError("google token/userinfo exchange failed: invalid_grant")
+
+
+def test_a_provider_failure_is_a_sign_in_error_not_a_crash(db_session):
+    info = _info()
+    _, state, _ = _start(db_session, info)
+    with pytest.raises(oauth_login.OAuthError) as raised:
+        oauth_login.complete_login(
+            db_session, SETTINGS, "google", code="c", state=state,
+            provider=_FailingProvider(info), now=NOW,
+        )
+    assert raised.value.code == "provider_error"
