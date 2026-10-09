@@ -178,13 +178,22 @@ _INTERNAL_TITLE = _rx(
     r"(room|lane|court|space|field|table) (reservation|booking|hold)s?|reservations?$|"
     r"maintenance|proctor(ing|ed)?|package (overflow|pickup)|mtg|"
     r"(final round|first round|second round|group|recruitment|candidate|admissions|job|mock)"
-    r" interviews?|private meetings?)\b|"
+    r" interviews?|private meetings?|"
+    # Staff recognition and medical-training sessions.
+    r"years of service|service awards?|employee (recognition|appreciation)|"
+    r"retirement (party|reception|celebration) for|oite|usmle|in-training exam|board review)\b|"
+    # A campus office or service listed as if it were an event:
+    # "Embedded Accessible Educational Services (AES)".
+    r"\bservices\s*(\([A-Z]{2,6}\))?\s*$|"
     r"^\s*(meetings?|closed|hold|reserved|tbd|tba)\s*$"
 )
 # Case-sensitive: a course section ("SWK-S 502 0001", "NURS-B 444", "ANAT-D502")
 # or a room code ("Rm IB 317") at the front of a title is a class or a booking.
 _INTERNAL_CODES = re.compile(
-    r"^\s*[A-Z]{2,5}(-[A-Z]?\s?\d{3}|\s[A-Z]\d{3})[A-Z]?\b|\bRms?\.? [A-Z]{0,3}\s?\d{2,4}\b"
+    r"^\s*[A-Z]{2,5}(-[A-Z]?\s?\d{3}|\s[A-Z]\d{3})[A-Z]?\b|\bRms?\.? [A-Z]{0,3}\s?\d{2,4}\b|"
+    # A room booking signed with the booker's lowercase initials:
+    # "IUH-Years of Service Awards/Lori Kern/ce", "IUH-MillionMeals/SGirgis/dmg".
+    r"/\s*[a-z]{2,4}\s*$|^\s*IUH\s*-"
 )
 
 # --- the source's own category label -----------------------------------------

@@ -67,16 +67,32 @@ _OTHER_CAMPUS_CALENDARS = {
 }
 
 
-def from_other_campus_calendar(url: str | None) -> bool:
-    """True when an event link sits under another campus's calendar."""
+# Host -> titles that name a different campus. Some shared calendars (the
+# central "live" one, departments) carry other campuses' events too, and then
+# only the title says so: "IU Indy Garden Volunteer Hours".
+_OTHER_CAMPUS_TITLES = {
+    "events.iu.edu": re.compile(
+        r"\b(IU Indy|IU Indianapolis|IUPUI|IUPUC|IU (Southeast|South Bend|Kokomo|Northwest|East|"
+        r"Fort Wayne|Columbus)|IUS|IUSB|IUK|IUE|IUN|IUFW)\b"
+    ),
+}
+
+
+def from_other_campus_calendar(url: str | None, title: str | None = None) -> bool:
+    """True when an event link sits under another campus's calendar, or its
+    title names another campus."""
     if not url:
         return False
     parts = urlsplit(url)
-    pattern = _OTHER_CAMPUS_CALENDARS.get((parts.hostname or "").casefold())
+    host = (parts.hostname or "").casefold()
+    pattern = _OTHER_CAMPUS_CALENDARS.get(host)
     if pattern is None:
         return False
     first = parts.path.strip("/").split("/", 1)[0]
-    return bool(first) and pattern.search(first) is not None
+    if first and pattern.search(first):
+        return True
+    title_pattern = _OTHER_CAMPUS_TITLES.get(host)
+    return bool(title and title_pattern and title_pattern.search(title))
 
 
 def _state_code(value: str | None) -> str | None:
@@ -183,7 +199,7 @@ def is_outside_home_town(
 
 
 def candidate_outside_home_town(candidate, city) -> bool:
-    if from_other_campus_calendar(candidate.canonical_url):
+    if from_other_campus_calendar(candidate.canonical_url, candidate.title):
         return True
     if city is None:
         return False
@@ -196,7 +212,7 @@ def candidate_outside_home_town(candidate, city) -> bool:
 
 
 def event_outside_home_town(event) -> bool:
-    if from_other_campus_calendar(event.canonical_url):
+    if from_other_campus_calendar(event.canonical_url, event.title):
         return True
     city = event.city
     if city is None:

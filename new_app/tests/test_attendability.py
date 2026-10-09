@@ -87,6 +87,10 @@ from tests.extraction_helpers import html_handler, patched_http_fetch
         ("50% Refund Period Ends for first eight weeks session", DEADLINE),
         ("Spring 2027: eDrop/eAdd Schedule Adjustment and Initial Registration", DEADLINE),
         ("School Closed", DEADLINE),
+        ("IUH-Years of Service Awards/Lori Kern/ce", INTERNAL),
+        ("Years of Service Awards", INTERNAL),
+        ("SPINE: OITE Review", INTERNAL),
+        ("Embedded Accessible Educational Services (AES)", INTERNAL),
     ],
 )
 def test_not_attendable_titles(title, reason):
@@ -117,6 +121,9 @@ def test_not_attendable_titles(title, reason):
         "Board Game Engage Friday Meetup",
         "Women in Business - Callout Meeting",
         "Hela's Hollow Paranormal Expo",
+        "Foraged, Found and Reimagined: Selected Works by Trish Korte",
+        "Home Away from Home: Student Life on Campus",
+        "Rock/Pop Night",
         # A class or workshop that is a fun thing to do in town stays.
         "Basics of Watercolor Workshop",
         "Pottery Class for Beginners",

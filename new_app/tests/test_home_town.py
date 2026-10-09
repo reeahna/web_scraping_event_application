@@ -88,6 +88,23 @@ def test_other_campus_calendar(url, other):
     assert from_other_campus_calendar(url) is other
 
 
+@pytest.mark.parametrize(
+    "title,other",
+    [
+        ("IU Indy Garden Volunteer Hours", True),
+        ("9/4 Indiana University Southeast Men’s Golf", False),  # caught by its calendar
+        ("IU Southeast Open House", True),
+        ("IUS Grenadier Welcome", True),
+        ("IU Auditorium: Wicked", False),
+        ("Indiana Daily Student Open House", False),
+    ],
+)
+def test_other_campus_title_on_a_shared_calendar(title, other):
+    url = "https://events.iu.edu/live/event/1-x"
+    assert from_other_campus_calendar(url, title) is other
+    assert from_other_campus_calendar("https://example.com/live/event/1-x", title) is False
+
+
 # --- the import -------------------------------------------------------------
 
 JSONLD_CONFIG = SiteConfiguration(
