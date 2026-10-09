@@ -2024,6 +2024,29 @@ button:hover {
   margin-bottom: var(--space-6);
 }
 
+/* Save/follow buttons that are already "on": show the current state, and
+   swap to the undo action (Unsave / Unfollow) on hover or keyboard focus. */
+button.toggle-on {
+  background: var(--accent-soft);
+  color: var(--accent);
+  box-shadow: inset 0 0 0 1px var(--accent);
+}
+
+button.toggle-on .toggle-label-off { display: none; }
+
+button.toggle-on:hover,
+button.toggle-on:focus-visible {
+  background: rgba(220, 38, 38, 0.08);
+  color: var(--danger-text);
+  box-shadow: inset 0 0 0 1px var(--danger);
+}
+
+button.toggle-on:hover .toggle-label-on,
+button.toggle-on:focus-visible .toggle-label-on { display: none; }
+
+button.toggle-on:hover .toggle-label-off,
+button.toggle-on:focus-visible .toggle-label-off { display: inline; }
+
 .event-detail-grid {
   display: grid;
   grid-template-columns: minmax(0, 1fr);
