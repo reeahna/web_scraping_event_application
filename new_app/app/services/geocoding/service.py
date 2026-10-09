@@ -25,6 +25,16 @@ SKIPPED = "skipped"
 NEEDS_REVIEW = "needs_review"
 
 
+def event_locality(event: Event) -> str | None:
+    """The event's town as a geocoder-friendly string, e.g.
+    "State College, PA, USA", or None when the event has no city."""
+    city = event.city
+    if city is None:
+        return None
+    parts = [p for p in (city.name, city.state_or_region, city.country) if p and p.strip()]
+    return ", ".join(p.strip() for p in parts) or None
+
+
 def skip_reason_for(event: Event) -> str | None:
     """Why this event must not be geocoded, or None if it should be. Order
     matters: a protected override and existing source coordinates both win over
@@ -92,7 +102,7 @@ async def geocode_event(
         db.commit()
         return SKIPPED
 
-    normalized = normalize_address(event.address, event.venue)
+    normalized = normalize_address(event.address, event.venue, event_locality(event))
     assert normalized is not None  # guaranteed by skip_reason_for
     key = address_hash(normalized)
 

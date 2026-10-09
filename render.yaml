@@ -45,3 +45,14 @@ services:
       # Host-header validation. Add the custom domain here too when there is one.
       - key: TRUSTED_HOSTS
         value: city-events-ryjd.onrender.com
+      # Look up map coordinates for events whose source gives only an address
+      # or venue. Without this the public map has nothing to pin for most
+      # events. Nominatim (OpenStreetMap) needs no key, but its usage policy
+      # requires a user agent that identifies the app; requests are rate
+      # limited to one per second in app/services/geocoding/provider.py.
+      - key: GEOCODING_ENABLED
+        value: "true"
+      - key: GEOCODING_PROVIDER
+        value: nominatim
+      - key: GEOCODING_USER_AGENT
+        value: "city-events/1.0 (+https://city-events-ryjd.onrender.com)"

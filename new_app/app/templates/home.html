@@ -124,8 +124,9 @@
   {% if filters.view == "map" %}
   <section class="map-section" aria-label="Map of events">
     <div id="event-map" class="event-map" data-map-url="/events/map?{{ query_string }}"
-         data-tile-url="{{ map_tile_url }}" data-attribution="{{ map_attribution }}"></div>
-    <p class="map-note">Showing events with a known location. The full list below includes every matching event.</p>
+         data-tile-url="{{ map_tile_url }}" data-attribution="{{ map_attribution }}"
+         {% if selected_city and selected_city.default_latitude is not none and selected_city.default_longitude is not none %}data-center-lat="{{ selected_city.default_latitude }}" data-center-lng="{{ selected_city.default_longitude }}"{% endif %}></div>
+    <p class="map-note" id="event-map-note">Showing events with a known location. The full list below includes every matching event.</p>
   </section>
   {% endif %}
 
