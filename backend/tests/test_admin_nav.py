@@ -20,6 +20,7 @@ ADMIN_DESTINATIONS = [
     "/admin/events",
     "/admin/event-categories",
     "/admin/categorization-rules",
+    "/admin/geocoding",
     "/admin/onboarding/batches",
     "/admin/scheduler",
     "/admin/settings/onboarding-policies",

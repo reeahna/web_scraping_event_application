@@ -16,7 +16,7 @@ from app.services.geocoding.provider import (
     _CircuitBreaker,
     get_geocoder,
 )
-from app.services.geocoding.types import address_hash, normalize_address
+from app.services.geocoding.types import address_hash, address_queries, normalize_address
 
 
 def test_normalize_address_combines_and_is_deterministic():
@@ -93,3 +93,23 @@ def test_get_geocoder_builds_nominatim_when_enabled():
     geo = get_geocoder(settings)
     assert isinstance(geo, NominatimGeocoder)
     assert geo.name == "nominatim"
+
+
+def test_address_with_its_own_town_is_searched_as_written():
+    # A nearby town's address must not get the event's town tacked on.
+    assert address_queries("19 s 4th street, Emmaus, PA, 18049", "Bethlehem, PA") == [
+        "19 s 4th street, Emmaus, PA",
+        "19 s 4th street, Emmaus",
+    ]
+
+
+def test_address_drops_floors_and_placeholders():
+    assert address_queries(
+        "One American Square, 36th Floor, Indianapolis, IN, 46282", "Bloomington, IN"
+    )[0] == "One American Square, Indianapolis, IN"
+    assert address_queries("TBA, Bloomington, IN, TBA", "Bloomington, IN") == []
+    assert address_queries("   ", "Bloomington, IN") == []
+
+
+def test_bare_street_gets_the_events_town():
+    assert address_queries("100 Main St", "Bethlehem, PA") == ["100 Main St, Bethlehem, PA"]

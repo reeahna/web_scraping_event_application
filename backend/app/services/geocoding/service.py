@@ -17,7 +17,7 @@ from sqlalchemy.orm import Session
 from app.models.event import Event
 from app.models.geocode_cache import GeocodeCache
 from app.services.geocoding.provider import GeocodeResult, GeocodingProvider, ProviderUnavailable
-from app.services.geocoding.types import address_hash, normalize_address
+from app.services.geocoding.types import address_hash, address_queries, normalize_address
 
 PENDING = "pending"
 COMPLETED = "completed"
@@ -46,7 +46,10 @@ def skip_reason_for(event: Event) -> str | None:
         return "source_coordinates"
     if event.corrected_latitude is not None or event.corrected_longitude is not None:
         return "protected_override"
-    if normalize_address(event.public_address, event.public_venue) is None:
+    if (
+        not address_queries(event.public_address, None)
+        and normalize_address(None, event.public_venue) is None
+    ):
         return "no_address"
     return None
 
@@ -162,9 +165,10 @@ async def geocode_event(
     resulting status. Never overwrites a correction or source coordinates.
 
     Scraped locations are rarely a clean postal address, so a few queries are
-    tried in turn until one matches: the street address with the town, then
-    the venue name searched only within the town, then the venue without a
-    room number. Each query's answer, hit or miss, is cached on its own.
+    tried in turn until one matches: the street address (as written when it
+    names its own town, see ``address_queries``), then the venue name searched
+    only within the town, then the venue without a room number. Each query's
+    answer, hit or miss, is cached on its own.
     """
     now = now or datetime.now(UTC)
 
@@ -181,10 +185,11 @@ async def geocode_event(
     asked = False
     try:
         result = None
-        if address:
-            query = normalize_address(address, None, locality)
+        for query in address_queries(address, locality):
             result, asked_now = await _lookup(db, provider, query, now)
             asked = asked or asked_now
+            if result is not None:
+                break
         if result is None and venue:
             box = await _town_box(db, event, provider, now)
             if box is not None:
