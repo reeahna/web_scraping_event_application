@@ -202,6 +202,17 @@ def _parse_labels(text: str) -> dict[int, EventLabel]:
     return labels
 
 
+def _error_message(response: httpx.Response) -> str:
+    # Google's error JSON carries the useful part (for a 429, which quota and
+    # its limit) in error.message, often past the first few hundred characters
+    # of the raw body.
+    try:
+        message = response.json()["error"]["message"]
+    except (ValueError, KeyError, TypeError):
+        return response.text[:200]
+    return _clean(str(message), limit=500)
+
+
 class GeminiCategorizer:
     """Synchronous Gemini client for batch event categorization. One instance
     per run; call classify_batch() repeatedly. Self-rate-limits so the caller
@@ -271,7 +282,7 @@ class GeminiCategorizer:
                 time.sleep(wait)
                 continue
             if response.status_code != 200:
-                message = f"HTTP {response.status_code}: {response.text[:200]}"
+                message = f"HTTP {response.status_code}: {_error_message(response)}"
                 if response.status_code == 429:
                     raise GeminiQuotaExceeded(message)
                 raise GeminiError(message)

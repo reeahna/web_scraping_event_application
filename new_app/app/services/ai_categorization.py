@@ -13,13 +13,16 @@ Disabled unless a key is configured and gemini_scheduled_enabled is on.
 from __future__ import annotations
 
 from collections.abc import Callable
+from datetime import date
 
-from sqlalchemy.orm import Session
+from sqlalchemy import and_, or_
+from sqlalchemy.orm import Query, Session
 
 from app.config import get_settings
 from app.models.event import Event
 from app.models.event_category import EventCategory
 from app.services.ai_categorizer import (
+    PROMPT_VERSION,
     CategoryOption,
     EventLabel,
     EventToClassify,
@@ -41,6 +44,42 @@ def _category_options(db: Session) -> tuple[list[CategoryOption], dict[str, Even
     return options, {c.slug: c for c in categories}
 
 
+def categorizable_events(db: Session, *, today: date | None = None) -> Query:
+    """The events worth spending AI quota on: visible ones that are upcoming or
+    still running, soonest first, so a quota-limited run labels what students
+    will see next before anything further out. Past, hidden, archived,
+    confirmed-duplicate and undated events are left alone."""
+    today = today or date.today()
+    upcoming_or_ongoing = or_(
+        and_(Event.end_date.isnot(None), Event.end_date >= today),
+        and_(Event.end_date.is_(None), Event.start_date.isnot(None), Event.start_date >= today),
+    )
+    return (
+        db.query(Event)
+        .filter(
+            Event.is_active.is_(True),
+            Event.archived_at.is_(None),
+            Event.is_recurrence_parent.is_(False),
+            Event.duplicate_status != "confirmed_duplicate",
+            upcoming_or_ongoing,
+        )
+        .order_by(Event.start_date.asc(), Event.id.asc())
+    )
+
+
+def pending_events(db: Session, *, today: date | None = None) -> Query:
+    """Categorizable events (see above) still waiting for the AI: never
+    AI-labeled, or labeled by an older prompt. A prompt change therefore
+    re-checks them a batch at a time, resuming wherever the last run or the
+    daily quota stopped."""
+    outdated = or_(
+        Event.category_source != "ai",
+        Event.ai_prompt_version.is_(None),
+        Event.ai_prompt_version != PROMPT_VERSION,
+    )
+    return categorizable_events(db, today=today).filter(outdated)
+
+
 def apply_labels(
     events: list[Event], labels: dict[int, EventLabel], by_slug: dict[str, EventCategory]
 ) -> tuple[int, int]:
@@ -57,7 +96,7 @@ def apply_labels(
         category = by_slug.get(label.category) if label else None
         if category is None:
             continue
-        set_ai_category(event, category)
+        set_ai_category(event, category, PROMPT_VERSION)
         labeled += 1
         if (
             hide_unwanted
@@ -87,13 +126,7 @@ def drain_categorization_queue(
         options, by_slug = _category_options(db)
         if not options:
             return 0
-        events = (
-            db.query(Event)
-            .filter(Event.category_source != "ai")
-            .order_by(Event.id)
-            .limit(batch_size)
-            .all()
-        )
+        events = pending_events(db).limit(batch_size).all()
         if not events:
             return 0
 
