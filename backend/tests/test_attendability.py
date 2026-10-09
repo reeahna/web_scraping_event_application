@@ -8,6 +8,7 @@ import pytest
 from app.config import get_settings
 from app.models.event import Event
 from app.models.extraction_run import ExtractionRun
+from app.repositories.event import decode_stored_html_entities
 from app.schemas.extraction import SiteConfiguration
 from app.services.attendability import (
     AUDIENCE,
@@ -22,6 +23,7 @@ from app.services.attendability import (
     not_attendable_reason,
 )
 from app.services.extraction_runs import preview_extraction, run_extraction
+from app.services.fingerprints import title_key
 from app.services.website_configuration import approve_configuration
 from tests.extraction_helpers import html_handler, patched_http_fetch
 
@@ -101,6 +103,15 @@ from tests.extraction_helpers import html_handler, patched_http_fetch
         ("Learn How to Apply for the 2027 Rural Placemaking Studio", INTERNAL),
         ("Senior U: Intro to Email and Internet", AUDIENCE),
         ("VITAL Volunteer Orientation Session - Teaching English as a New Language", INTERNAL),
+        ("Corvalan Collab_Individual Clients", INTERNAL),
+        ("Elston Group Meeting - First Years", INTERNAL),
+        ("Internal Medicine Residency Didactics", INTERNAL),
+        ("Studying", INTERNAL),
+        ("Mysticism Reading Group", INTERNAL),
+        ("Dame’s meeting", INTERNAL),
+        ("CCBB Seminar Guest Speaker: Dr. Tianyi Mao 10/9/26", INTERNAL),
+        ("Autism Echo & Developmental Disabilites.", PROFESSIONAL),
+        ("Road to Retirement: Fundamentals of Retirement Income Planning", PROFESSIONAL),
     ],
 )
 def test_not_attendable_titles(title, reason):
@@ -136,6 +147,8 @@ def test_not_attendable_titles(title, reason):
         "Rock/Pop Night",
         "Club 3 and Me",
         "Waltz 101 (Q-Project)",
+        "Book Club Social",
+        "Echo & the Bunnymen Tribute Night",
         "Corporeality: Living in Our Bodies | Kinsey Institute",
         "Study Abroad Fair",
         "Wellness Week Yoga in the Park",
@@ -285,3 +298,20 @@ def test_cleanup_dry_run_changes_nothing_then_apply_deactivates(
     hide_unattendable_events(db_session, apply=True)
     db_session.expire_all()
     assert [e.title for e in db_session.query(Event).filter_by(is_active=True)] == ["Jazz Night"]
+
+
+def test_cleanup_decodes_html_entities_left_in_stored_titles(db_session, make_city, make_event):
+    city = make_city()
+    make_event(city, title="Rock &amp;amp; Roll", venue="Bear&#8217;s Place",
+               canonical_url="https://x/1")
+    make_event(city, title="Jazz & Blues", canonical_url="https://x/2")
+
+    assert [e.title for e in decode_stored_html_entities(db_session, apply=False)] == [
+        "Rock &amp;amp; Roll"
+    ]
+    decode_stored_html_entities(db_session, apply=True)
+    db_session.expire_all()
+    event = db_session.query(Event).filter_by(canonical_url="https://x/1").one()
+    assert (event.title, event.venue, event.normalized_title) == (
+        "Rock & Roll", "Bear’s Place", title_key("Rock & Roll")
+    )
