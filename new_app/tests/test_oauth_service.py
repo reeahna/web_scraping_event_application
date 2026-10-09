@@ -171,3 +171,23 @@ def test_linking_a_verified_provider_confirms_an_existing_account(db_session, ma
     )
     db_session.refresh(existing)
     assert existing.email_verified_at is not None
+
+
+def test_the_real_google_client_builds_a_sign_in_link():
+    """The real provider (not the test double) loads and builds Google's
+    authorization URL offline, so a missing library shows up here, not as a
+    500 on the live sign-in button."""
+    from urllib.parse import parse_qs, urlparse
+
+    from app.services.oauth import build_provider
+
+    settings = SimpleNamespace(google_client_id="id-123", google_client_secret="secret")
+    url = build_provider(settings, "google").authorization_url(
+        state="s1", nonce="n1", redirect_uri="https://example.test/auth/oauth/google/callback"
+    )
+    parsed = urlparse(url)
+    query = parse_qs(parsed.query)
+    assert parsed.netloc == "accounts.google.com"
+    assert query["client_id"] == ["id-123"] and query["state"] == ["s1"]
+    assert query["nonce"] == ["n1"]
+    assert query["redirect_uri"] == ["https://example.test/auth/oauth/google/callback"]
