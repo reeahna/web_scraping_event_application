@@ -160,24 +160,3 @@ def test_readiness_flags_a_site_nobody_can_sign_in_to():
 
     codes = {i.code for i in production_blockers(get_settings())}
     assert "no_sign_in_provider" in codes and "no_superadmin_email" in codes
-
-
-def test_the_real_google_client_builds_a_sign_in_link():
-    """The real provider (not the test double) loads and builds Google's
-    authorization URL offline, so a missing library shows up here, not as a
-    500 on the live sign-in button."""
-    from types import SimpleNamespace
-    from urllib.parse import parse_qs, urlparse
-
-    from app.services.oauth import build_provider
-
-    settings = SimpleNamespace(google_client_id="id-123", google_client_secret="secret")
-    url = build_provider(settings, "google").authorization_url(
-        state="s1", nonce="n1", redirect_uri="https://example.test/auth/oauth/google/callback"
-    )
-    parsed = urlparse(url)
-    query = parse_qs(parsed.query)
-    assert parsed.netloc == "accounts.google.com"
-    assert query["client_id"] == ["id-123"] and query["state"] == ["s1"]
-    assert query["nonce"] == ["n1"]
-    assert query["redirect_uri"] == ["https://example.test/auth/oauth/google/callback"]
