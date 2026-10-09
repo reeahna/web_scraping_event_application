@@ -1,7 +1,7 @@
 from sqlalchemy import inspect
 from sqlalchemy.orm import Session
 
-from app.core.categories import INITIAL_EVENT_CATEGORIES
+from app.core.categories import CATEGORY_DESCRIPTIONS, INITIAL_EVENT_CATEGORIES
 from app.core.permissions import DEFAULT_ROLE_PERMISSIONS, PERMISSIONS
 from app.models.event_category import EventCategory
 from app.models.permission import Permission
@@ -85,9 +85,12 @@ def seed_event_categories(db: Session) -> dict[str, EventCategory]:
                 EventCategory(
                     name=name,
                     slug=slug,
+                    description=CATEGORY_DESCRIPTIONS.get(slug),
                     display_order=display_order,
                     is_active=True,
                 )
             )
+        elif not existing[slug].description and slug in CATEGORY_DESCRIPTIONS:
+            existing[slug].description = CATEGORY_DESCRIPTIONS[slug]
     db.commit()
     return {category.slug: category for category in db.query(EventCategory).all()}

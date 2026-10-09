@@ -8,7 +8,7 @@ from app.config import get_settings
 from app.database import SessionLocal
 from app.models.event import Event
 from app.services import ai_categorization
-from app.services.ai_categorizer import GeminiCategorizer
+from app.services.ai_categorizer import EventLabel, GeminiCategorizer
 
 
 def _enable(monkeypatch, **overrides):
@@ -32,7 +32,7 @@ def test_drain_labels_pending_events(db_session, make_city, make_event, monkeypa
     city = make_city()
     jazz = make_event(city, title="Jazz Night", canonical_url="https://x/1")
     empanada = make_event(city, title="Empanada Cooking Class", canonical_url="https://x/2")
-    wanted = {jazz.id: "music", empanada.id: "food-and-drink"}
+    wanted = {jazz.id: EventLabel("music"), empanada.id: EventLabel("food-and-drink")}
 
     def fake_classify(self, options, events):
         return {ev.id: wanted[ev.id] for ev in events if ev.id in wanted}
@@ -66,3 +66,43 @@ def test_drain_skips_already_ai_labeled_events(db_session, make_city, make_event
     # Nothing pending -> no API call is made at all.
     assert ai_categorization.drain_categorization_queue(SessionLocal, limit=10) == 0
     assert calls == []
+
+
+def test_drain_hides_events_the_model_drops(db_session, make_city, make_event, monkeypatch):
+    _enable(monkeypatch)
+    city = make_city()
+    pottery = make_event(city, title="Intro to Pottery Class", canonical_url="https://x/1")
+    finance = make_event(city, title="Retirement Planning Seminar", canonical_url="https://x/2")
+    wanted = {
+        pottery.id: EventLabel("arts-and-culture"),
+        finance.id: EventLabel("business", keep=False),
+    }
+
+    def fake_classify(self, options, events):
+        return {ev.id: wanted[ev.id] for ev in events if ev.id in wanted}
+
+    monkeypatch.setattr(GeminiCategorizer, "classify_batch", fake_classify)
+
+    assert ai_categorization.drain_categorization_queue(SessionLocal, limit=10) == 2
+
+    db_session.expire_all()
+    assert db_session.get(Event, pottery.id).is_active is True
+    finance_row = db_session.get(Event, finance.id)
+    assert finance_row.is_active is False
+    assert finance_row.category.slug == "business"
+
+
+def test_drain_keeps_dropped_events_when_hiding_is_off(
+    db_session, make_city, make_event, monkeypatch
+):
+    _enable(monkeypatch, gemini_hide_unwanted=False)
+    finance = make_event(make_city(), title="Retirement Planning Seminar")
+
+    def fake_classify(self, options, events):
+        return {ev.id: EventLabel("business", keep=False) for ev in events}
+
+    monkeypatch.setattr(GeminiCategorizer, "classify_batch", fake_classify)
+
+    assert ai_categorization.drain_categorization_queue(SessionLocal, limit=10) == 1
+    db_session.expire_all()
+    assert db_session.get(Event, finance.id).is_active is True

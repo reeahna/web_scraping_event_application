@@ -1,6 +1,6 @@
 import pytest
 
-from app.core.categories import INITIAL_EVENT_CATEGORIES
+from app.core.categories import CATEGORY_DESCRIPTIONS, INITIAL_EVENT_CATEGORIES
 from app.core.permissions import ADMINISTRATOR, EDITOR
 from app.core.seed import seed_event_categories
 from app.models.audit_log import AuditLog
@@ -56,6 +56,20 @@ def test_category_seeding_is_idempotent(db_session):
     seed_event_categories(db_session)
     seed_event_categories(db_session)
     assert db_session.query(EventCategory).count() == before
+
+
+def test_category_seeding_fills_missing_descriptions_only(db_session):
+    music = db_session.query(EventCategory).filter_by(slug="music").one()
+    sports = db_session.query(EventCategory).filter_by(slug="sports").one()
+    music.description = None
+    sports.description = "Our own wording"
+    db_session.commit()
+
+    seed_event_categories(db_session)
+    db_session.refresh(music)
+    db_session.refresh(sports)
+    assert music.description == CATEGORY_DESCRIPTIONS["music"]
+    assert sports.description == "Our own wording"
 
 
 def test_category_create_update_activate_and_deactivate(client, make_user, login, db_session):
