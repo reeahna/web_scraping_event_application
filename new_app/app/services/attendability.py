@@ -81,7 +81,7 @@ _CERTIFICATION_TITLE = _rx(
     r"pmp|capm|itil|six sigma|scrum master|safe agilist|prince2|cissp|comptia|cert prep)\b"
 )
 
-# --- aimed at working professionals ------------------------------------------
+# --- aimed at working professionals, or at money rather than fun --------------
 _PROFESSIONAL_TITLE = _rx(
     r"\b((business|professionals?|executive|industry|chamber|b2b|realtors?|real estate|"
     r"healthcare|finance|engineering|hospitality|fashion|blockchain|tech|women in business)"
@@ -97,7 +97,15 @@ _PROFESSIONAL_TITLE = _rx(
     r"(physician|nurse|nursing|clinical|clinician|attorney|legal|accounting|cpa|teacher|"
     r"educator|parish|church|ministry) (leaders|recruiters|managers|professionals)|"
     r"(recruiters|leaders|educators) (association|society|forum)|"
-    r"in clinical practice|for clinicians|for therapists|for counselors|for educators)\b"
+    r"in clinical practice|for clinicians|for therapists|for counselors|for educators|"
+    r"for (\w+ )?faculty|employment consultant|"
+    # Money and running a business: a pottery or cooking class is a night out,
+    # a finance class is not.
+    r"(your|personal) finances?|financial (wellness|planning|literacy|freedom|independence)|"
+    r"investing for|(residual|passive) income|medicare|social security benefits|"
+    r"(retirement|estate|exit|tax|wealth) planning|social selling|"
+    r"(grow|strengthen|start|scale|build) (a |your )?(small )?(\w+ ){0,2}business|"
+    r"business owners?|small business working session|money is expensive)\b"
 )
 
 # --- aimed at someone other than college students ------------------------------

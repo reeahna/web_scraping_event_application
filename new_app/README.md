@@ -97,8 +97,8 @@ internal staff/faculty business ("faculty meeting", "employees only", "by
 invitation"), and calendar entries that are deadlines or reminders ("Last day
 to drop", "Registration closes", "Fall Break"). The rules are in
 `app/services/attendability.py`. The site is for college students, so imports
-also leave out what is aimed at someone else (business networking, real-estate
-masterclasses, research seminars, toddler story times, class reunions), room
+also leave out what is aimed at someone else (business networking, finance and
+real-estate masterclasses, research seminars, toddler story times, class reunions), room
 bookings and class sections a campus calendar publishes, and listings marked
 cancelled. Each import run records how many it left out
 (`not_attendable_excluded:N`), and an event imported before the filter existed

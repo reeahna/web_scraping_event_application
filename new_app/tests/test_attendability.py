@@ -63,6 +63,11 @@ from tests.extraction_helpers import html_handler, patched_http_fetch
         ("How To Deal with Difficult Employees for Business Owners, Entrepreneurs, HR",
          PROFESSIONAL),
         ("Integrating Somatic Awareness and Expressive Arts in Clinical Practice", PROFESSIONAL),
+        ("Bloomington, Indiana: Empower Your Finances", PROFESSIONAL),
+        ("Road to Financial Wellness: Investing for Beginners", PROFESSIONAL),
+        ("Medicare 101 Educational Event", PROFESSIONAL),
+        ("How to Start a Small Mobile Food Business", PROFESSIONAL),
+        ("Grow Your Residual Income!", PROFESSIONAL),
         ("Toddler Storytime", AUDIENCE),
         ("NC Class of 2016 Reunion", AUDIENCE),
         ("Lehigh County Senior Expo", AUDIENCE),
@@ -112,6 +117,13 @@ def test_not_attendable_titles(title, reason):
         "Board Game Engage Friday Meetup",
         "Women in Business - Callout Meeting",
         "Hela's Hollow Paranormal Expo",
+        # A class or workshop that is a fun thing to do in town stays.
+        "Basics of Watercolor Workshop",
+        "Pottery Class for Beginners",
+        "Empanada Making Class",
+        "Halloween Charcuterie Workshop at Soaked Winery",
+        "Crimson Investment Group Call Out Meeting",
+        "Small Business Saturday Pop Up Shop & Fashion Event",
     ],
 )
 def test_attendable_titles_are_kept(title):
