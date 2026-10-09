@@ -6,14 +6,14 @@ several queries, so events it left as needs_review or failed are queued again
 and its cached misses are forgotten (cached hits stay).
 
 Revision ID: c4e7a2b9d1f3
-Revises: b8d1e4f2a6c9
+Revises: c4f7a2e9d1b3
 """
 
 import sqlalchemy as sa
 from alembic import op
 
 revision = "c4e7a2b9d1f3"
-down_revision = "b8d1e4f2a6c9"
+down_revision = "c4f7a2e9d1b3"
 branch_labels = None
 depends_on = None
 
