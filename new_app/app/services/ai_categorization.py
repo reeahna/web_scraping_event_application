@@ -14,12 +14,14 @@ from __future__ import annotations
 
 from collections.abc import Callable
 
-from sqlalchemy.orm import Session
+from sqlalchemy import and_, or_
+from sqlalchemy.orm import Query, Session
 
 from app.config import get_settings
 from app.models.event import Event
 from app.models.event_category import EventCategory
 from app.services.ai_categorizer import (
+    PROMPT_VERSION,
     CategoryOption,
     EventLabel,
     EventToClassify,
@@ -41,6 +43,21 @@ def _category_options(db: Session) -> tuple[list[CategoryOption], dict[str, Even
     return options, {c.slug: c for c in categories}
 
 
+def pending_events(db: Session) -> Query:
+    """Events waiting for the AI categorizer, oldest first: every event without
+    an AI label, plus visible events whose AI label came from an older prompt
+    (so a prompt change re-checks them a batch at a time, resuming wherever the
+    last run or the daily quota stopped). Hidden or archived events are not
+    re-checked, which keeps them from spending quota."""
+    outdated = and_(
+        Event.category_source == "ai",
+        or_(Event.ai_prompt_version.is_(None), Event.ai_prompt_version != PROMPT_VERSION),
+        Event.is_active.is_(True),
+        Event.archived_at.is_(None),
+    )
+    return db.query(Event).filter(or_(Event.category_source != "ai", outdated)).order_by(Event.id)
+
+
 def apply_labels(
     events: list[Event], labels: dict[int, EventLabel], by_slug: dict[str, EventCategory]
 ) -> tuple[int, int]:
@@ -57,7 +74,7 @@ def apply_labels(
         category = by_slug.get(label.category) if label else None
         if category is None:
             continue
-        set_ai_category(event, category)
+        set_ai_category(event, category, PROMPT_VERSION)
         labeled += 1
         if (
             hide_unwanted
@@ -87,13 +104,7 @@ def drain_categorization_queue(
         options, by_slug = _category_options(db)
         if not options:
             return 0
-        events = (
-            db.query(Event)
-            .filter(Event.category_source != "ai")
-            .order_by(Event.id)
-            .limit(batch_size)
-            .all()
-        )
+        events = pending_events(db).limit(batch_size).all()
         if not events:
             return 0
 
