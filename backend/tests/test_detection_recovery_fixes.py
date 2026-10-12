@@ -300,3 +300,26 @@ def test_detectors_share_one_parse_of_the_page(monkeypatch):
     page = "<html><body>" + "<div class='card'><h3>Show</h3><p>Oct 20</p></div>" * 50
     detection_module.run_all_detectors(make_response(page + "</body></html>"))
     assert len(calls) == 1
+
+
+@pytest.mark.asyncio
+async def test_feed_attempts_are_explained():
+    html = '<html><body><a href="/ical/33.ics">iCal</a><a href="/rss/33.xml">RSS</a></body></html>'
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path.endswith(".ics"):
+            return httpx.Response(404, text="gone")
+        return httpx.Response(200, text=ICS_FEED, headers={"content-type": "text/calendar"})
+
+    notes: list[str] = []
+    with patched_http_fetch(handler):
+        followed = await follow_advertised_feed(make_response(html, final_url=LISTING), notes)
+    assert followed is not None
+    assert notes == [
+        "feed https://calendars.example.edu/ical/33.ics: HTTP 404",
+        "feed https://calendars.example.edu/rss/33.xml: used (ics_calendar, 2 entries)",
+    ]
+
+    none: list[str] = []
+    assert await follow_advertised_feed(make_response("<p>hi</p>", final_url=LISTING), none) is None
+    assert none == ["feed: the page links no iCalendar or RSS/Atom feed"]

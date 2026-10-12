@@ -620,3 +620,28 @@ def test_yearless_date_buried_in_prose_is_extracted_and_assumed():
         for t in outcome.transformations
     )
     assert "year_assumed" in outcome.warnings
+
+
+def test_container_inference_on_a_long_listing_never_compares_subtrees(monkeypatch):
+    """Nested-card rejection compares elements by identity. bs4's Tag ==
+    compares whole subtrees, and a pairwise check over a long calendar listing
+    blocked the server for minutes."""
+    from bs4.element import Tag
+
+    cards = "".join(
+        f'<li class="event"><h3><a href="/detail/{i}">Talk {i}</a></h3>'
+        f'<span class="date">Oct {1 + i % 28}, 2026</span></li>'
+        for i in range(400)
+    )
+    soup = BeautifulSoup(f"<html><body><ul>{cards}</ul></body></html>", "html.parser")
+    calls = []
+    real_eq = Tag.__eq__
+
+    def counting_eq(self, other):
+        calls.append(1)
+        return real_eq(self, other)
+
+    monkeypatch.setattr(Tag, "__eq__", counting_eq)
+    container = infer_container(soup, DEFAULT_POLICY)
+    assert container is not None and container.selector == "li.event"
+    assert len(calls) < 1000

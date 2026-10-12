@@ -343,7 +343,9 @@ async def render_and_observe(
     # still a structured source, and beats scraping the rendered markup.
     from app.services.extraction_runs import follow_advertised_feed
 
-    followed = await follow_advertised_feed(rendered)
+    feed_notes: list[str] = []
+    followed = await follow_advertised_feed(rendered, feed_notes)
+    warnings.extend(feed_notes)
     if followed is not None:
         feed_response, feed_detection = followed
         return BrowserObservation(
