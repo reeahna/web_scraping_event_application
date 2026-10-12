@@ -309,10 +309,11 @@ def _http_replay_blocked(preview) -> bool:
 
 
 def _http_replay_empty(preview, chosen_source: str | None) -> bool:
-    """True when the browser found events in the *rendered* page but a plain
-    HTTP fetch of the same page yields none: the listing is drawn by
+    """True when the browser read events from the *rendered* page but a plain
+    HTTP fetch of the same page yields no valid ones: the listing, or a field
+    every event needs (often the date, formatted by script), is drawn by
     JavaScript, so only the browser transport can read it."""
-    return chosen_source == "rendered_html" and preview.result.events_found == 0
+    return chosen_source == "rendered_html" and preview.result.events_valid == 0
 
 
 def _structured_endpoint_config(config) -> bool:

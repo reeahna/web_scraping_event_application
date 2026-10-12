@@ -228,12 +228,15 @@ def test_explain_block_reason_none():
     assert explain_block_reason(None) is None
 
 
-def _preview(found: int):
-    return SimpleNamespace(result=SimpleNamespace(events_found=found))
+def _preview(found: int, valid: int | None = None):
+    valid = found if valid is None else valid
+    return SimpleNamespace(result=SimpleNamespace(events_found=found, events_valid=valid))
 
 
-def test_rendered_listing_with_no_http_events_needs_the_browser():
+def test_rendered_listing_with_no_valid_http_events_needs_the_browser():
     assert _http_replay_empty(_preview(0), "rendered_html")
+    # Cards found over HTTP, but a script-drawn date leaves none valid.
+    assert _http_replay_empty(_preview(52, valid=0), "rendered_html")
     assert not _http_replay_empty(_preview(4), "rendered_html")
     assert not _http_replay_empty(_preview(0), "structured_api")
 
@@ -381,3 +384,87 @@ def test_no_draft_reason_names_what_inference_could_not_find():
         "no repeated event card found"
     )
     assert "needs_review" in no_draft_reason(result())
+
+
+class _NavigatingPage:
+    """A page that redirects itself from script: the first read races the
+    navigation, as Playwright reports it."""
+
+    def __init__(self, failures):
+        self.failures = failures
+        self.waits = 0
+
+    async def content(self):
+        if self.failures:
+            self.failures -= 1
+            raise Exception(
+                "Page.content: Unable to retrieve content because the page is navigating "
+                "and changing the content."
+            )
+        return "<html><body>settled</body></html>"
+
+    async def wait_for_load_state(self, state, timeout=None):
+        self.waits += 1
+
+
+@pytest.mark.asyncio
+async def test_content_read_waits_out_a_self_navigation():
+    from app.extraction.browser import _settled_content
+
+    page, warnings = _NavigatingPage(failures=1), []
+    assert "settled" in await _settled_content(page, warnings)
+    assert page.waits == 1
+    assert warnings == ["page navigated while loading; waited for it to settle"]
+
+
+@pytest.mark.asyncio
+async def test_content_read_gives_up_after_repeated_navigation_and_other_errors():
+    from app.extraction.browser import _settled_content
+
+    with pytest.raises(Exception, match="navigating"):
+        await _settled_content(_NavigatingPage(failures=5), [])
+
+    class _Closed(_NavigatingPage):
+        async def content(self):
+            raise Exception("Target page, context or browser has been closed")
+
+    page = _Closed(failures=0)
+    with pytest.raises(Exception, match="closed"):
+        await _settled_content(page, [])
+    assert page.waits == 0
+
+
+@pytest.fixture
+def _admin(client, make_super_admin, login):
+    make_super_admin(email="shape-root@example.com", password="root-pass-1234")
+    login("shape-root@example.com", "root-pass-1234")
+    return client
+
+
+def test_recovery_card_shows_the_shape_of_an_unreadable_endpoint(
+    _admin, make_city, make_website, db_session
+):
+    from app.core.onboarding import NEEDS_REVIEW
+
+    website = make_website(make_city(), name="Volunteer board")
+    website.onboarding_status = NEEDS_REVIEW
+    website.proposed_pattern = {
+        "browser_recovery": {
+            "status": "structured_pattern_needed",
+            "attempted_at": "2026-10-12T21:22:52+00:00",
+            "selected_endpoint": "https://api.example.org/api/v1/events",
+            "new_pattern_needed": True,
+            "response_shape": {
+                "top_level_type": "object",
+                "top_level_keys": ["results", "meta"],
+                "record_array_path": "results.events",
+                "sample_field_names": ["event_id", "event_title", "event_start"],
+                "sample_record_count": 20,
+            },
+        }
+    }
+    db_session.commit()
+    page = _admin.get(f"/admin/websites/{website.id}").text
+    assert "Response shape" in page
+    assert "results.events" in page
+    assert "event_id, event_title, event_start" in page

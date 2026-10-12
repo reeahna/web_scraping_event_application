@@ -414,6 +414,24 @@ class GenericHtmlCardsProposer:
             if not time_formats:
                 field_selectors.pop("start_time", None)
                 warnings.append("start_time_dropped_unparseable")
+        if not time_formats and start_candidate is not None and start_candidate.selector:
+            # One element carrying date and time ("Thu, Oct. 15, 2026 | 1:30PM"):
+            # read the time from it too, through the time-substring extraction,
+            # rather than importing every event as date-only.
+            raw = _values(cards, start_candidate.selector, start_candidate.attribute)
+            formats, combined_candidates, combined_rules = _infer_time_configuration(
+                raw, field_name="start_time", policy=policy
+            )
+            if formats:
+                time_formats = formats
+                field_selectors["start_time"] = FieldSelectorConfig(
+                    kind="css",
+                    selector=start_candidate.selector,
+                    attribute=start_candidate.attribute,
+                )
+                date_candidates.extend(combined_candidates)
+                transformations.extend(combined_rules)
+                notes.append("start time read from the date element")
 
         # --- image / venue shaping -------------------------------------
         image_candidate = accepted.get("image")

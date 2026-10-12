@@ -111,6 +111,7 @@ TIME_FORMAT_TABLE: tuple[str, ...] = (
     "%I:%M%p",
     "%I:%M:%S %p",
     "%I %p",
+    "%I%p",
     "%H:%M",
     "%H:%M:%S",
 )
@@ -144,7 +145,11 @@ YEARLESS_DATE_SUBSTRING_PATTERNS: tuple[str, ...] = (
     r"(\d{1,2}(st|nd|rd|th)?\s+[A-Z][a-z]{2,8})",
 )
 
-TIME_SUBSTRING_PATTERN = r"(\d{1,2}:\d{2}\s*[APap]\.?[Mm]\.?)"
+# A clock time inside longer text: "1:30PM", "7:30 pm", "8PM". Word
+# boundaries keep the "26" of a year from reading as an hour and "10 Amazing"
+# from reading as a time. (No lookarounds: they are not allowed in safe
+# regexes.)
+TIME_SUBSTRING_PATTERN = r"\b(\d{1,2}:\d{2}\s*[APap]\.?[Mm]\.?|\d{1,2}\s*[APap]\.?[Mm]\b\.?)"
 
 # A range whose two halves are each a complete, independently parseable
 # date. Only such a range is ever split — "Sep 12 - 13, 2026" has no
@@ -159,12 +164,16 @@ def normalize_whitespace(value: str | None) -> str:
 _ORDINAL_RE = re.compile(r"\b(\d{1,2})(?:st|nd|rd|th)\b", re.IGNORECASE)
 
 
+# "Sept" is a common US abbreviation strptime's %b does not know.
+_SEPT_RE = re.compile(r"\bSept\b", re.IGNORECASE)
+
+
 def strip_ordinals(value: str) -> str:
     """Drop English ordinal suffixes from day numbers ("Sep 6th" -> "Sep 6",
-    "the 1st" -> "the 1"), which strptime cannot parse. Shared by date-format
-    inference and the runtime parser so a card that writes "6th" is still
-    read as a date."""
-    return _ORDINAL_RE.sub(r"\1", value)
+    "the 1st" -> "the 1"), which strptime cannot parse, and spell "Sept" as
+    "Sep". Shared by date-format inference and the runtime parser so a card
+    that writes "6th" or "Sept." is still read as a date."""
+    return _SEPT_RE.sub("Sep", _ORDINAL_RE.sub(r"\1", value))
 
 
 def has_year(value: str | None) -> bool:

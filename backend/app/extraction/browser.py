@@ -284,7 +284,7 @@ class BrowserFetchStrategy:
             status = response.status if response is not None else 0
             final_url = page.url
 
-            html = await page.content()
+            html = await _settled_content(page, warnings)
             challenge = _challenge_reason(html, status)
             if challenge is not None:
                 # Never attempt to solve or bypass — report and stop.
@@ -294,7 +294,7 @@ class BrowserFetchStrategy:
                 )
 
             await self._run_plan(page, plan, warnings)
-            html = await page.content()
+            html = await _settled_content(page, warnings)
             return BrowserRenderResult(
                 final_url=page.url,
                 rendered_html=html,
@@ -381,7 +381,7 @@ class BrowserFetchStrategy:
             )
             response = await page.goto(source_page_url, wait_until="domcontentloaded")
             status = response.status if response is not None else 0
-            html = await page.content()
+            html = await _settled_content(page, warnings)
             challenge = _challenge_reason(html, status)
             if challenge is not None:
                 return BrowserPagedResult(
@@ -613,6 +613,28 @@ def _set_at_path(obj: dict, dotted: str, value) -> dict:
 def _records_at(payload, record_path: str) -> list:
     found = _get_at_path(payload, record_path)
     return [r for r in found if isinstance(r, dict)] if isinstance(found, list) else []
+
+
+_CONTENT_RETRIES = 3
+_SETTLE_TIMEOUT_MS = 10_000
+
+
+async def _settled_content(page, warnings: list[str]) -> str:
+    """`page.content()`, waiting out a navigation still in progress. Pages
+    that redirect themselves from script right after loading (a consent or
+    locale hop, a client-side router) make Playwright refuse to read the DOM
+    mid-navigation; waiting for the new document to load and reading again is
+    what a person's browser effectively does."""
+    for attempt in range(_CONTENT_RETRIES):
+        try:
+            return await page.content()
+        except Exception as exc:  # noqa: BLE001 - only a navigation race is retried
+            if "navigating" not in str(exc) or attempt == _CONTENT_RETRIES - 1:
+                raise
+            warnings.append("page navigated while loading; waited for it to settle")
+            with contextlib.suppress(Exception):
+                await page.wait_for_load_state("domcontentloaded", timeout=_SETTLE_TIMEOUT_MS)
+    raise AssertionError("unreachable")
 
 
 _NET_ERROR_RE = re.compile(r"net::ERR_[A-Z0-9_]+")
