@@ -130,6 +130,7 @@ class PaginationConfig(BaseModel):
         "tribe_rest",
         "livewhale_offset",
         "path_page",
+        "page_metadata",
     ] = "none"
     page_param: str | None = None
     page_size_param: str | None = None

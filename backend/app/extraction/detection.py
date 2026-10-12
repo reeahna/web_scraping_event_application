@@ -11,10 +11,19 @@ import json
 import re
 import warnings as _warnings
 from typing import Protocol
-from urllib.parse import urljoin
+from urllib.parse import urljoin, urlsplit, urlunsplit
 
 from bs4 import BeautifulSoup, XMLParsedAsHTMLWarning
 
+from app.extraction.challenge import find_marker
+from app.extraction.patterns.paged_json_events import (
+    PAGE_METADATA_KEYS,
+    infer_field_paths,
+    norm_key,
+    record_root,
+    records_at,
+)
+from app.extraction.selectors import resolve_json_path
 from app.extraction.types import FetchResponse, PatternDetectionResult
 
 # Every detector probes every response, so the HTML detectors necessarily run
@@ -49,6 +58,10 @@ RELIABILITY_ORDER: tuple[str, ...] = (
     "ics_calendar",
     "rss_atom_events",
     "algolia_search",
+    # A first-party paged JSON API (Spring-style `content` + page metadata).
+    # Keyed on that response shape; below the vendor-specific APIs so a
+    # recognised vendor shape always wins.
+    "paged_json_events",
     # Event data embedded as a plain JS variable (window.x = [...]). Parsed,
     # never executed. Last structured resort before HTML-card scraping.
     "inline_json_events",
@@ -103,8 +116,7 @@ class PatternDetector(Protocol):
 def _access_denied_detected(response: FetchResponse) -> bool:
     if response.blocked_reason is not None:
         return True
-    lowered = response.text[:5000].lower()
-    return any(marker in lowered for marker in _CHALLENGE_MARKERS)
+    return find_marker(response.text[:20000], _CHALLENGE_MARKERS) is not None
 
 
 def _browser_required_evidence(soup: BeautifulSoup, response: FetchResponse) -> bool:
@@ -336,6 +348,46 @@ class WordPressRestDetector:
         )
 
 
+# Keys only a The Events Calendar REST event record carries together.
+_TRIBE_RECORD_KEYS = frozenset({"start_date", "end_date", "all_day", "utc_start_date"})
+_TRIBE_PAGE_KEYS = frozenset({"rest_url", "next_rest_url", "total_pages"})
+
+
+def _tribe_rest_response(response: FetchResponse) -> PatternDetectionResult | None:
+    """A source URL that *is* the plugin's REST collection (`.../tribe/events/
+    v1/events`) returns JSON, not a page with plugin assets — recognise that
+    payload by its own shape: an `events` array of records carrying the
+    plugin's date keys, next to its paging keys."""
+    text = response.text.lstrip()
+    if not text.startswith("{"):
+        return None
+    try:
+        payload = json.loads(text)
+    except (json.JSONDecodeError, ValueError):
+        return None
+    if not isinstance(payload, dict) or not isinstance(payload.get("events"), list):
+        return None
+    if not _TRIBE_PAGE_KEYS & set(payload):
+        return None
+    records = [r for r in payload["events"] if isinstance(r, dict)]
+    if records and not all(len(_TRIBE_RECORD_KEYS & set(r)) >= 3 for r in records[:5]):
+        return None
+    # The collection URL without its paging/query state is the endpoint.
+    parts = urlsplit(response.final_url)
+    endpoint = urlunsplit((parts.scheme, parts.netloc, parts.path, "", ""))
+    return PatternDetectionResult(
+        pattern_name="the_events_calendar",
+        confidence=0.9 if records else 0.65,
+        evidence={"tribe_rest_response": True, "record_count": len(records),
+                  "total": payload.get("total")},
+        discovered_endpoints=(endpoint,),
+        browser_required=False,
+        warnings=() if records else ("tribe_rest_no_events",),
+        detector_version=DETECTOR_VERSION,
+        needs_review=False,
+    )
+
+
 class TheEventsCalendarDetector:
     """WordPress-generic evidence (generator meta, wp-json discovery link)
     is never sufficient on its own — every WordPress site would otherwise
@@ -347,6 +399,10 @@ class TheEventsCalendarDetector:
     def detect(self, response: FetchResponse) -> PatternDetectionResult:
         if _access_denied_detected(response):
             return _blocked_result("access denied or challenge page detected")
+
+        direct = _tribe_rest_response(response)
+        if direct is not None:
+            return direct
 
         soup = BeautifulSoup(response.text, "html.parser")
         evidence: dict[str, object] = {}
@@ -900,6 +956,82 @@ class SimpleviewEventsDetector:
         )
 
 
+class PagedJsonEventsDetector:
+    """Matches a paged JSON API response by structure: a top-level record
+    array (`content`, or `items`/`results`/`records`/`data` beside page
+    metadata) whose records carry a title and a start date under any of the
+    common key names. Never matches on a URL or the word "events"."""
+
+    def detect(self, response: FetchResponse) -> PatternDetectionResult:
+        empty = PatternDetectionResult(
+            pattern_name=None, confidence=0.0, evidence={},
+            discovered_endpoints=(), browser_required=False, warnings=(),
+            detector_version=DETECTOR_VERSION, needs_review=False,
+        )
+        if _access_denied_detected(response):
+            return _blocked_result("access denied or challenge page detected")
+        try:
+            payload = json.loads(response.text)
+        except (json.JSONDecodeError, ValueError):
+            return empty
+        root = record_root(payload)
+        if root is None:
+            return empty
+        records = records_at(payload, root)
+        if not records:
+            return PatternDetectionResult(
+                pattern_name=None, confidence=0.0,
+                evidence={"record_path": root, "record_count": 0},
+                discovered_endpoints=(), browser_required=False,
+                warnings=("paged_json_empty",),
+                detector_version=DETECTOR_VERSION, needs_review=True,
+            )
+        sample = records[:10]
+        paths = infer_field_paths(sample)
+        if "title" not in paths or "start_datetime" not in paths:
+            return PatternDetectionResult(
+                pattern_name=None, confidence=0.0,
+                evidence={"record_path": root, "inferred_fields": sorted(paths)},
+                discovered_endpoints=(), browser_required=False, warnings=(),
+                detector_version=DETECTOR_VERSION, needs_review=False,
+            )
+        def _has(record: dict, path: str) -> bool:
+            # Instance paths (`instances.0.start`) resolve against the record.
+            return resolve_json_path(record, path).value not in (None, "", [], {})
+
+        event_like = [
+            r for r in sample if _has(r, paths["title"]) and _has(r, paths["start_datetime"])
+        ]
+        if len(event_like) < (len(sample) + 1) // 2:
+            return PatternDetectionResult(
+                pattern_name=None, confidence=0.0,
+                evidence={"record_path": root, "event_like_sample": len(event_like)},
+                discovered_endpoints=(), browser_required=False, warnings=(),
+                detector_version=DETECTOR_VERSION, needs_review=False,
+            )
+        metadata = sorted(str(k) for k in payload if norm_key(k) in PAGE_METADATA_KEYS)
+        confidence = 0.7 + (0.05 if metadata else 0.0)
+        confidence += 0.05 if "external_source_id" in paths else 0.0
+        confidence += 0.05 if "canonical_url" in paths else 0.0
+        return PatternDetectionResult(
+            pattern_name="paged_json_events",
+            confidence=round(confidence, 4),
+            evidence={
+                "json_shape_match": True,
+                "record_path": root,
+                "record_count": len(records),
+                "sample_event_count": len(event_like),
+                "field_paths": paths,
+                "page_metadata": metadata,
+            },
+            discovered_endpoints=(response.final_url,),
+            browser_required=False,
+            warnings=() if metadata else ("paged_json_pagination_unconfirmed",),
+            detector_version=DETECTOR_VERSION,
+            needs_review=False,
+        )
+
+
 def run_all_detectors(response: FetchResponse) -> dict[str, PatternDetectionResult]:
     """Run every registered detector over `response` and return each raw result
     keyed by pattern name. `run_detection` selects a single winner from these;
@@ -919,6 +1051,7 @@ def run_all_detectors(response: FetchResponse) -> dict[str, PatternDetectionResu
         "ics_calendar": IcsCalendarDetector(),
         "rss_atom_events": RssAtomDetector(),
         "algolia_search": AlgoliaSearchDetector(),
+        "paged_json_events": PagedJsonEventsDetector(),
         "generic_html_cards": StaticHtmlDetector(),
     }
     return {name: detector.detect(response) for name, detector in detectors.items()}

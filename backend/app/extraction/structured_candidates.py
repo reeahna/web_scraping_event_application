@@ -25,6 +25,7 @@ compared against *its own* listing origin.
 from __future__ import annotations
 
 import json
+import re
 from dataclasses import dataclass, field
 from urllib.parse import urlsplit, urlunsplit
 
@@ -143,6 +144,16 @@ def is_telemetry(url: str) -> bool:
 
 _EVENT_PATH_TERMS = ("event", "calendar", "listing", "occurrence", "happening", "whatson")
 _AGGREGATE_PATH_TERMS = ("aggregate", "facet", "count", "summary", "filter", "meta")
+# Path words naming site chrome — shared header/footer/navigation/brand data a
+# page loads on every route. Matched against whole path words, never a
+# substring, so `/events/navigator` is not mistaken for `/nav`.
+_CHROME_PATH_WORDS = frozenset(
+    {
+        "footer", "header", "nav", "navigation", "menu", "menus", "megamenu", "sitemap",
+        "breadcrumb", "breadcrumbs", "brand", "branding", "alert", "alerts", "banner",
+        "i18n", "translations", "locale", "config", "settings", "manifest",
+    }
+)
 
 _TITLE_FIELDS = frozenset({"title", "name", "eventname", "headline", "label", "summary"})
 _DATE_FIELDS = frozenset(
@@ -164,6 +175,9 @@ _IMAGE_FIELDS = frozenset({"image", "imageurl", "photo", "thumbnail", "media", "
 _COUNT_KEYS = frozenset(
     {"total", "totalcount", "count", "numfound", "nbhits", "totalresults", "pagecount", "pages"}
 )
+
+
+_PATH_WORD_RE = re.compile(r"[^a-z0-9]+")
 
 
 def _norm(key: str) -> str:
@@ -346,6 +360,11 @@ def _score(payload, url: str, listing_url: str, first_party: bool):
     if payload in (None, {}, []):
         score -= 0.3
         reasons.append("empty response (penalised)")
+    path_words = {word for word in _PATH_WORD_RE.split(path) if word}
+    chrome = sorted(path_words & _CHROME_PATH_WORDS)
+    if chrome:
+        score -= 0.3
+        reasons.append(f"site chrome endpoint ({', '.join(chrome)}) (penalised)")
 
     return max(0.0, min(1.0, score)), best_path, best_records, best_groups, reasons
 
@@ -415,7 +434,7 @@ def analyze_response(
         analysis.reject_reason = "cross-origin third-party endpoint"
         return analysis
 
-    score, record_path, records, _groups, reasons = _score(payload, url, listing_url, first_party)
+    score, record_path, records, groups, reasons = _score(payload, url, listing_url, first_party)
     analysis.event_likeness_score = score
     analysis.score_reasons = reasons
     analysis.record_array_path = record_path
@@ -423,7 +442,13 @@ def analyze_response(
     if records:
         analysis.sample_field_names = sorted(str(k) for k in records[0])[:_MAX_SAMPLE_FIELDS]
 
-    if score >= EVENT_CANDIDATE_THRESHOLD:
+    if score >= EVENT_CANDIDATE_THRESHOLD and not groups.get("date"):
+        # Event records always carry a date. Links, menus and footers carry a
+        # title, a URL and maybe an id — enough to look record-like, never an
+        # event source.
+        analysis.classification = FIRST_PARTY_OTHER
+        analysis.reject_reason = "records carry no event date field"
+    elif score >= EVENT_CANDIDATE_THRESHOLD:
         analysis.classification = FIRST_PARTY_EVENT_CANDIDATE
     else:
         analysis.classification = FIRST_PARTY_OTHER

@@ -18,6 +18,7 @@ from app.extraction.detection import (
     LiveWhaleDetector,
     NextDataDetector,
     NuxtPayloadDetector,
+    PagedJsonEventsDetector,
     PatternDetector,
     RssAtomDetector,
     SimpleviewEventsDetector,
@@ -37,6 +38,7 @@ from app.extraction.inference.proposers.json_scripts import (
     NextDataProposer,
     NuxtPayloadProposer,
 )
+from app.extraction.inference.proposers.paged_json import PagedJsonEventsProposer
 from app.extraction.inference.proposers.simpleview import simpleview_events_proposer
 from app.extraction.inference.proposers.structured import (
     InlineJsonEventsProposer,
@@ -62,6 +64,8 @@ from app.extraction.patterns.next_data import PATTERN_VERSION as _NEXT_VERSION
 from app.extraction.patterns.next_data import NextDataPattern
 from app.extraction.patterns.nuxt_payload import PATTERN_VERSION as _NUXT_VERSION
 from app.extraction.patterns.nuxt_payload import NuxtPayloadPattern
+from app.extraction.patterns.paged_json_events import PATTERN_VERSION as _PAGED_JSON_VERSION
+from app.extraction.patterns.paged_json_events import PagedJsonEventsPattern
 from app.extraction.patterns.rss_atom_events import PATTERN_VERSION as _RSS_VERSION
 from app.extraction.patterns.rss_atom_events import RssAtomEventsPattern
 from app.extraction.patterns.simpleview_events import PATTERN_VERSION as _SIMPLEVIEW_VERSION
@@ -348,6 +352,21 @@ def build_default_registry() -> PatternRegistry:
             supported_pagination=("none", "query_param"),
             proposer=AlgoliaSearchProposer(),
             display_name="Algolia search API",
+            classification="structured",
+        )
+    )
+    registry.register(
+        PatternRegistration(
+            name="paged_json_events",
+            detector=PagedJsonEventsDetector(),
+            extractor=PagedJsonEventsPattern(),
+            config_schema=SiteConfiguration,
+            priority=RELIABILITY_ORDER.index("paged_json_events"),
+            version=_PAGED_JSON_VERSION,
+            browser_required=False,
+            supported_pagination=("none", "page_metadata", "query_param"),
+            proposer=PagedJsonEventsProposer(),
+            display_name="Paged JSON events API",
             classification="structured",
         )
     )

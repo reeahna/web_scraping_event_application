@@ -46,6 +46,7 @@ from app.extraction.dedup import dedupe_within_run
 from app.extraction.description_fallback import fill_missing_descriptions
 from app.extraction.detail_pages import enrich_with_detail_pages
 from app.extraction.detection import run_detection as detect_patterns
+from app.extraction.feed_links import feed_links
 from app.extraction.fetch import (
     FetchStrategy,
     HttpFetchStrategy,
@@ -181,6 +182,54 @@ def _draft_fetch_config(website: Website) -> FetchConfig:
     return FetchConfig()
 
 
+# Patterns a discovered feed may be detected as. Only real feeds count, so a
+# linked HTML page can never stand in for the listing.
+_FEED_PATTERNS = frozenset({"ics_calendar", "rss_atom_events"})
+_FEED_CONTENT_TYPES = (
+    "text/calendar",
+    "text/plain",
+    "application/rss+xml",
+    "application/atom+xml",
+    "application/xml",
+    "text/xml",
+    "application/octet-stream",
+)
+# A discovered feed must carry at least this many entries, so a one-event
+# "add to calendar" download is never taken for the calendar's feed.
+_MIN_FEED_ENTRIES = 2
+
+
+async def follow_advertised_feed(
+    page: FetchResponse,
+) -> tuple[FetchResponse, PatternDetectionResult] | None:
+    """When a listing page links its own calendar feed (iCalendar or RSS/Atom),
+    fetch that feed through the SSRF-safe HTTP strategy and detect it. Returns
+    the feed's response and detection when a feed pattern recognises it, else
+    None. At most MAX_FEED_CANDIDATES fetches; never follows a page that was
+    itself blocked."""
+    if page.blocked_reason is not None or not page.text:
+        return None
+    fetch_config = FetchConfig(allowed_content_types=_FEED_CONTENT_TYPES)
+    fetch = HttpFetchStrategy()
+    for url in feed_links(page.text, page.final_url):
+        response = await fetch.fetch(FetchRequest(url=url), fetch_config)
+        if response.blocked_reason is not None or response.status_code != 200:
+            continue
+        detection = detect_patterns(response)
+        if detection.pattern_name not in _FEED_PATTERNS:
+            continue
+        lowered = response.text.lower()
+        entries = (
+            lowered.count("begin:vevent")
+            if detection.pattern_name == "ics_calendar"
+            else lowered.count("<item") + lowered.count("<entry")
+        )
+        if entries < _MIN_FEED_ENTRIES:
+            continue
+        return response, detection
+    return None
+
+
 def _fallback_timezone(website: Website) -> str | None:
     if website.timezone_override:
         return website.timezone_override
@@ -249,6 +298,15 @@ async def run_detection_detailed(
     fetch = HttpFetchStrategy()
     response = await fetch.fetch(FetchRequest(url=listing_url), _draft_fetch_config(website))
     detection = detect_patterns(response)
+    if detection.pattern_name in (None, "generic_html_cards") and not response.blocked_reason:
+        # The page is unreadable, or readable only by scraping its markup. If
+        # it links its own calendar feed, the feed *is* the source — dated,
+        # structured and far cheaper to process than a long rendered listing —
+        # and everything below runs against it.
+        followed = await follow_advertised_feed(response)
+        if followed is not None:
+            response, detection = followed
+            listing_url = response.final_url
     completed_at = datetime.now(UTC)
 
     # A "no confident winner" result can still carry a plausible-but-below-
@@ -435,7 +493,8 @@ def _build_proposed_configuration(
 ) -> SiteConfiguration:
     kwargs: dict = {"pattern_name": detection.pattern_name}
     if (
-        detection.pattern_name in ("wordpress_rest", "the_events_calendar", "livewhale_json")
+        detection.pattern_name
+        in ("wordpress_rest", "the_events_calendar", "livewhale_json", "paged_json_events")
         and detection.discovered_endpoints
     ):
         kwargs["api_endpoint"] = detection.discovered_endpoints[0]

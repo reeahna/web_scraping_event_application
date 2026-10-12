@@ -62,7 +62,7 @@
   <h3>Pagination</h3>
   <label for="pagination_strategy">Strategy</label>
   <select id="pagination_strategy" name="pagination_strategy">
-    {% for strategy in ("none", "query_param", "wordpress", "next_link", "tribe_rest", "livewhale_offset") %}
+    {% for strategy in ("none", "query_param", "wordpress", "next_link", "tribe_rest", "livewhale_offset", "page_metadata") %}
     <option value="{{ strategy }}" {% if form.pagination_strategy == strategy %}selected{% endif %}>{{ strategy }}</option>
     {% endfor %}
   </select>

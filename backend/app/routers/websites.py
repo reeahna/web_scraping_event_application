@@ -367,7 +367,7 @@ def website_detail(website_id: int, request: Request, current_user: ViewSites, d
     reports = list_reports_for_website(db, website.id, limit=20)
     latest_browser_recovery = next(
         (r.browser_recovery for r in reports if r.browser_recovery), None
-    )
+    ) or (website.proposed_pattern or {}).get("browser_recovery")
     settings = get_settings()
 
     permissions = {

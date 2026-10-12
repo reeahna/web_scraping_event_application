@@ -11,6 +11,7 @@ from app.core.csrf import get_or_create_csrf_token, set_csrf_cookie
 from app.core.formatting import human_date, human_date_long, human_time
 from app.core.onboarding import onboarding_label
 from app.core.report_status import report_status_label
+from app.extraction.fetch import explain_block_reason
 from app.paths import TEMPLATES_DIR
 from app.services.quality_presentation import format_percent, quality_view
 from app.services.schedule_admin import format_admin_datetime
@@ -26,6 +27,7 @@ templates.env.filters["human_time"] = human_time
 # templates can distinguish absent metrics from evaluated zeros (Phase 8G
 # metrics are missing from older snapshots).
 templates.env.filters["pct"] = format_percent
+templates.env.filters["block_reason"] = explain_block_reason
 templates.env.globals["quality_view"] = quality_view
 
 FLASH_COOKIE = "flash"
