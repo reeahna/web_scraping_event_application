@@ -60,12 +60,27 @@ def test_address_town(address, expected):
         ("Lawrence County Courthouse Square 1005 15th St, Bedford", True),
         ("303 E. Kirkwood Ave., Bloomington", False),
         ("Assembly Hall", False),  # no town named: kept
+        ("1140 IN-135, Greenwood, IN, 46143", True),
         (None, False),
     ],
 )
 def test_is_outside_home_town(address, outside):
     assert (
         is_outside_home_town(address=address, venue=None, town="Bloomington", state="Indiana")
+        is outside
+    )
+
+
+@pytest.mark.parametrize(
+    "address,outside",
+    [
+        ("120 N Dubuque St, Iowa City, IA, 52245", False),
+        ("1100 3rd St SE, Cedar Rapids, IA, 52401", True),
+    ],
+)
+def test_is_outside_home_town_for_any_town(address, outside):
+    assert (
+        is_outside_home_town(address=address, venue=None, town="Iowa City", state="Iowa")
         is outside
     )
 
@@ -118,11 +133,31 @@ def test_other_campus_title_on_a_shared_calendar(title, other):
         ("International Night at IU Men's Soccer", False),
         ("Paul Page Memorial Golf Outing 2026 at Hickory Stick", False),
         ("Lions Club 2026 Golf Tournament at Arrowhead Golf Course", False),
+        # A tournament named for another host is away; the school's own is not.
+        (
+            "10/12 Indiana University Men\u2019s Golf Purdue Fall Invitational"
+            " - Kampen-Cosler Golf Course",
+            True,
+        ),
+        (
+            "10/12 Indiana University Women\u2019s Golf vs Illini Women\u2019s Invitational"
+            " at Medinah - Medinah Country Club",
+            True,
+        ),
+        ("Indiana University Baseball Round Rock Classic", True),
+        ("Indiana University Men's Golf Indiana Invitational", False),
+        ("IU Women's Golf IU Fall Classic", False),
+        ("Indiana University Men's Golf Hoosier Invitational - IU Golf Course", False),
+        ("Indiana University Women's Tennis Bloomington Shootout", False),  # names the town
+        ("Indiana University Football vs Purdue Old Oaken Bucket Classic", False),
+        ("Lions Club Golf Classic", False),
+        ("State Street Golf Classic", False),
+        ("IU Swimming Watch Party: Purdue Invitational", False),
         (None, False),
     ],
 )
 def test_is_away_game(title, away):
-    assert is_away_game(title) is away
+    assert is_away_game(title, "Bloomington") is away
 
 
 # --- the import -------------------------------------------------------------
@@ -248,12 +283,39 @@ def test_cleanup_dry_run_changes_nothing_then_apply_deactivates(
     make_event(city, title="Campus Talk", canonical_url="https://x/3", venue="Assembly Hall")
     make_event(city, title="IU Indy Volleyball",
                canonical_url="https://events.iu.edu/athletics-indianapolis/event/1-vb")
+    make_event(city, title="10/12 Indiana University Men's Golf Purdue Fall Invitational",
+               canonical_url="https://events.iu.edu/live/event/2-golf")
 
     found = hide_out_of_town_events(db_session, apply=False)
-    assert [e.title for e in found] == ["Indy Brewfest", "IU Indy Volleyball"]
-    assert db_session.query(Event).filter_by(is_active=True).count() == 4
+    assert [e.title for e in found] == [
+        "Indy Brewfest",
+        "IU Indy Volleyball",
+        "10/12 Indiana University Men's Golf Purdue Fall Invitational",
+    ]
+    assert db_session.query(Event).filter_by(is_active=True).count() == 5
 
     hide_out_of_town_events(db_session, apply=True)
     db_session.expire_all()
     active = sorted(e.title for e in db_session.query(Event).filter_by(is_active=True))
     assert active == ["Campus Talk", "Jazz Night"]
+
+
+@pytest.mark.asyncio
+async def test_scheduler_sweep_takes_down_out_of_town_events(db_session, make_city, make_event):
+    from app.scheduler.runtime import SchedulerRuntime
+
+    city = make_city(name="Bloomington", slug="bloomington", state_or_region="Indiana")
+    make_event(city, title="Jazz Night", canonical_url="https://x/1",
+               address="1 Main St, Bloomington, IN 47401")
+    make_event(city, title="Paint and Sip", canonical_url="https://x/2",
+               address="1140 IN-135, Greenwood, IN, 46143")
+
+    runtime = SchedulerRuntime(holder="test")
+    await runtime._home_town_sweep_tick()  # not the leader: leaves everything
+    db_session.expire_all()
+    assert db_session.query(Event).filter_by(is_active=True).count() == 2
+
+    runtime._is_leader = True
+    await runtime._home_town_sweep_tick()
+    db_session.expire_all()
+    assert [e.title for e in db_session.query(Event).filter_by(is_active=True)] == ["Jazz Night"]
