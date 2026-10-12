@@ -7,7 +7,7 @@ executable content). The pipeline is: fetch → detect → extract → normalize
 validate → dedup, and it is deterministic (identical input + config → identical
 output).
 
-## Registered patterns (12)
+## Registered patterns (14)
 
 | Pattern | Source shape |
 |---------|--------------|
@@ -23,6 +23,8 @@ output).
 | `next_data` | Next.js `__NEXT_DATA__` |
 | `nuxt_payload` | Nuxt `__NUXT_DATA__` |
 | `algolia_search` | Algolia search response (key via secret reference) |
+| `campus_labs_engage` | Campus Labs Engage discovery API (`value` records; recipe with `endsAfter`/`skip`/`take`) |
+| `paged_json_events` | Paged JSON API (`content` + page metadata, Spring-style); fields inferred |
 
 ## Shared capabilities (Phase 8G)
 
@@ -83,6 +85,27 @@ never treated as an event source. Request replay is single-response by default
 replayed only through the closed `FetchConfig` schema, and an observed query
 token is never persisted. No hostname/domain/institution literal appears in the
 pattern — it is generic across Simpleview deployments.
+
+**`paged_json_events`.** First-party event APIs shaped like a Spring Data
+page: records in a top-level `content` array (or `items`/`results`/`records`/
+`data` beside page metadata such as `totalPages`, `number`, `last`). Record key
+names vary, so each field's path is inferred from a closed list of common names
+(one object level deep, or through the first element of an instance list such
+as `instances[0].start`, in which case each instance becomes its own event) and
+stored in `json_paths` for the admin to override. Epoch, Jackson date-array and
+offset-bearing ISO timestamps become local wall-clock times. Pagination is the
+`page_metadata` strategy, which follows the response's own page number and stops
+on `last`, `totalPages` or an empty page. When records carry an id but no link,
+identity is the id and `canonical_url` is not required.
+
+## Advertised calendar feeds
+
+When a listing page matches no pattern, or only `generic_html_cards`,
+detection looks for a calendar feed the page itself links (`<link
+rel="alternate">` iCalendar/RSS/Atom, `webcal:` and `.ics` anchors; iCalendar
+first; never a single-event "add to calendar" download) and, if a feed pattern
+recognises it with at least two entries, uses the feed as the source. Browser
+recovery does the same before falling back to rendered HTML.
 
 ## Adding a pattern
 

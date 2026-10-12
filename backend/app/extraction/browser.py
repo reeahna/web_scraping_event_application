@@ -40,6 +40,7 @@ from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 
+from app.extraction.challenge import find_marker
 from app.extraction.network_safety import (
     BlockedHostError,
     hostname_and_port,
@@ -162,13 +163,13 @@ async def _host_allowed(url: str) -> bool:
 def _challenge_reason(html: str, status: int) -> str | None:
     if status in (401, 403, 429):
         return f"http_{status}"
-    lowered = html[:6000].lower()
-    for marker in _CHALLENGE_MARKERS:
-        if marker in lowered:
-            return f"challenge_marker:{marker}"
-    for marker in _LOGIN_WALL_MARKERS:
-        if marker in lowered:
-            return f"login_wall:{marker}"
+    sample = html[:30000]
+    marker = find_marker(sample, _CHALLENGE_MARKERS)
+    if marker is not None:
+        return f"challenge_marker:{marker}"
+    marker = find_marker(sample, _LOGIN_WALL_MARKERS)
+    if marker is not None:
+        return f"login_wall:{marker}"
     return None
 
 

@@ -186,6 +186,19 @@ def _persist(db: Session, website: Website, evidence: dict) -> None:
     report = get_latest_report_for_website(db, website.id)
     if report is not None:
         set_browser_recovery(db, report, evidence=evidence)
+    else:
+        _remember_on_website(db, website, evidence)
+
+
+def _remember_on_website(db: Session, website: Website, evidence: dict) -> None:
+    """A source that never had an unsupported-site report (e.g. one whose
+    ordinary detection never ran) still needs its recovery result recorded, or
+    the admin page reports recovery as never attempted. Kept on the website's
+    own `proposed_pattern`, which the detail page reads as a fallback."""
+    proposed = dict(website.proposed_pattern or {})
+    proposed["browser_recovery"] = dict(evidence)
+    website.proposed_pattern = proposed
+    db.commit()
 
 
 def _candidate_fingerprint(analysis) -> str:
@@ -234,6 +247,9 @@ def _handle_structured_pattern_needed(
         else:
             evidence["attempts"] = 1
             set_browser_recovery(db, report, evidence=evidence)
+    else:
+        evidence["attempts"] = 1
+        _remember_on_website(db, website, evidence)
 
     # Keep (or move to) review — a plausible source exists, it just needs a
     # reusable pattern. configuration_version is deliberately never touched.
@@ -275,6 +291,13 @@ def _http_replay_blocked(preview) -> bool:
     return preview.result.status == "blocked" and any(
         str(w).startswith(_HTTP_BLOCK_PREFIXES) for w in preview.result.warnings
     )
+
+
+def _http_replay_empty(preview, chosen_source: str | None) -> bool:
+    """True when the browser found events in the *rendered* page but a plain
+    HTTP fetch of the same page yields none: the listing is drawn by
+    JavaScript, so only the browser transport can read it."""
+    return chosen_source == "rendered_html" and preview.result.events_found == 0
 
 
 def _structured_endpoint_config(config) -> bool:
@@ -502,7 +525,10 @@ async def browser_retry_recovery(
         # and preview it through the browser transport — never leave a fresh
         # source stuck on an HTTP draft that will always 403, and never require
         # a second manual retry.
-        if browser_config is not None and _http_replay_blocked(preview):
+        if browser_config is not None and (
+            _http_replay_blocked(preview)
+            or _http_replay_empty(preview, observation.chosen_source)
+        ):
             save_draft_configuration(db, website, browser_config)
             website.configuration_origin = ORIGIN_DETERMINISTIC_STRUCTURED
             db.commit()

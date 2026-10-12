@@ -11,6 +11,7 @@ from dataclasses import dataclass
 from app.extraction.detection import (
     RELIABILITY_ORDER,
     AlgoliaSearchDetector,
+    CampusLabsEngageDetector,
     EmbeddedJsonDetector,
     IcsCalendarDetector,
     InlineJsonEventsDetector,
@@ -18,6 +19,7 @@ from app.extraction.detection import (
     LiveWhaleDetector,
     NextDataDetector,
     NuxtPayloadDetector,
+    PagedJsonEventsDetector,
     PatternDetector,
     RssAtomDetector,
     SimpleviewEventsDetector,
@@ -26,6 +28,7 @@ from app.extraction.detection import (
     WordPressRestDetector,
 )
 from app.extraction.inference.base import PatternConfigurationProposer
+from app.extraction.inference.proposers.engage import CampusLabsEngageProposer
 from app.extraction.inference.proposers.feeds import (
     AlgoliaSearchProposer,
     IcsCalendarProposer,
@@ -37,6 +40,7 @@ from app.extraction.inference.proposers.json_scripts import (
     NextDataProposer,
     NuxtPayloadProposer,
 )
+from app.extraction.inference.proposers.paged_json import PagedJsonEventsProposer
 from app.extraction.inference.proposers.simpleview import simpleview_events_proposer
 from app.extraction.inference.proposers.structured import (
     InlineJsonEventsProposer,
@@ -48,6 +52,8 @@ from app.extraction.inference.proposers.structured import (
 from app.extraction.patterns.algolia_search import PATTERN_VERSION as _ALGOLIA_VERSION
 from app.extraction.patterns.algolia_search import AlgoliaSearchPattern
 from app.extraction.patterns.base import ExtractionPattern
+from app.extraction.patterns.campus_labs_engage import PATTERN_VERSION as _ENGAGE_VERSION
+from app.extraction.patterns.campus_labs_engage import CampusLabsEngagePattern
 from app.extraction.patterns.embedded_json import PATTERN_VERSION as _EMBEDDED_VERSION
 from app.extraction.patterns.embedded_json import EmbeddedJsonPattern
 from app.extraction.patterns.ics_calendar import PATTERN_VERSION as _ICS_VERSION
@@ -62,6 +68,8 @@ from app.extraction.patterns.next_data import PATTERN_VERSION as _NEXT_VERSION
 from app.extraction.patterns.next_data import NextDataPattern
 from app.extraction.patterns.nuxt_payload import PATTERN_VERSION as _NUXT_VERSION
 from app.extraction.patterns.nuxt_payload import NuxtPayloadPattern
+from app.extraction.patterns.paged_json_events import PATTERN_VERSION as _PAGED_JSON_VERSION
+from app.extraction.patterns.paged_json_events import PagedJsonEventsPattern
 from app.extraction.patterns.rss_atom_events import PATTERN_VERSION as _RSS_VERSION
 from app.extraction.patterns.rss_atom_events import RssAtomEventsPattern
 from app.extraction.patterns.simpleview_events import PATTERN_VERSION as _SIMPLEVIEW_VERSION
@@ -348,6 +356,37 @@ def build_default_registry() -> PatternRegistry:
             supported_pagination=("none", "query_param"),
             proposer=AlgoliaSearchProposer(),
             display_name="Algolia search API",
+            classification="structured",
+        )
+    )
+    registry.register(
+        PatternRegistration(
+            name="paged_json_events",
+            detector=PagedJsonEventsDetector(),
+            extractor=PagedJsonEventsPattern(),
+            config_schema=SiteConfiguration,
+            priority=RELIABILITY_ORDER.index("paged_json_events"),
+            version=_PAGED_JSON_VERSION,
+            browser_required=False,
+            supported_pagination=("none", "page_metadata", "query_param"),
+            proposer=PagedJsonEventsProposer(),
+            display_name="Paged JSON events API",
+            classification="structured",
+        )
+    )
+    registry.register(
+        PatternRegistration(
+            name="campus_labs_engage",
+            detector=CampusLabsEngageDetector(),
+            extractor=CampusLabsEngagePattern(),
+            config_schema=SiteConfiguration,
+            priority=RELIABILITY_ORDER.index("campus_labs_engage"),
+            version=_ENGAGE_VERSION,
+            browser_required=False,
+            # Paged by the request recipe's skip/take cursor.
+            supported_pagination=("none",),
+            proposer=CampusLabsEngageProposer(),
+            display_name="Campus Labs Engage",
             classification="structured",
         )
     )

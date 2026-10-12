@@ -144,6 +144,12 @@ def _render_value(rv: RecipeValue, ctx: _RenderContext, *, as_json_string: bool)
         return ctx.source_page_url or ""
     if rv.kind == "json_template":
         rendered = _substitute(rv.value, ctx)
+        if as_json_string and isinstance(rendered, (str, int, float)) and not isinstance(
+            rendered, bool
+        ):
+            # A template that is one bare placeholder (`{"kind": "page_offset"}`)
+            # renders as that plain value (`?skip=40`), not as a JSON string.
+            return str(rendered)
         return json.dumps(rendered, separators=(",", ":")) if as_json_string else rendered
     # literal
     value = rv.value

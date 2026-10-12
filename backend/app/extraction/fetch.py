@@ -17,6 +17,7 @@ from urllib.parse import urljoin
 
 import httpx
 
+from app.extraction.challenge import find_marker
 from app.extraction.network_safety import (
     BlockedHostError,
     hostname_and_port,
@@ -99,11 +100,8 @@ def _blocked_marker(status_code: int, body_sample: bytes, headers: dict[str, str
         if _is_edge_denied(body_sample, headers):
             return f"edge_protection:http_{status_code}"
         return f"http_{status_code}"
-    lowered = body_sample.lower()
-    for marker in _BLOCK_MARKERS:
-        if marker.encode("utf-8") in lowered:
-            return f"challenge_marker:{marker}"
-    return None
+    marker = find_marker(body_sample.decode("utf-8", errors="replace"), _BLOCK_MARKERS)
+    return f"challenge_marker:{marker}" if marker else None
 
 
 def describe_block_reason(reason: str | None) -> str | None:
@@ -210,7 +208,7 @@ class HttpFetchStrategy:
                 current_url = urljoin(safe_url, response_headers["location"])
                 continue
 
-            blocked_reason = _blocked_marker(status_code, body[:2000], response_headers)
+            blocked_reason = _blocked_marker(status_code, body[:8000], response_headers)
             content_type = response_headers.get("content-type")
             # Content-type mismatch is surfaced via `content_type` for the
             # caller to reject as `failed` — it is not itself a `blocked`
@@ -292,3 +290,37 @@ class HttpFetchStrategy:
                 break
             chunks.append(chunk)
         return b"".join(chunks), truncated
+
+
+def explain_block_reason(reason: str | None) -> str | None:
+    """A plain-language sentence for any machine block reason, for the admin
+    UI. Falls back to the raw code rather than showing nothing."""
+    if not reason:
+        return None
+    described = describe_block_reason(reason)
+    if described:
+        return described
+    kind, _, detail = reason.partition(":")
+    if kind.startswith("http_"):
+        code = kind.removeprefix("http_")
+        if code == "429":
+            return "The site rate-limited the request (HTTP 429). Try again later."
+        return f"The site refused the request (HTTP {code})."
+    if kind == "challenge_marker":
+        return (
+            f"The page showed a bot check or access-denied notice (\"{detail}\"). "
+            "Bulletin never tries to solve or bypass these."
+        )
+    if kind == "login_wall":
+        return f"The page asks visitors to sign in (\"{detail}\"), so it cannot be imported."
+    if kind == "browser_error":
+        return (
+            f"The restricted browser failed to load the page ({detail}). This is a problem "
+            "running the browser on Bulletin's server, not a block by the site."
+        )
+    if kind == "ssrf_blocked":
+        return (
+            f"{detail or 'The address'} resolves to a private or disallowed network address, "
+            "so Bulletin will not fetch it."
+        )
+    return f"Blocked: {reason}."

@@ -10,11 +10,28 @@ from __future__ import annotations
 import json
 import re
 import warnings as _warnings
+from contextvars import ContextVar
 from typing import Protocol
-from urllib.parse import urljoin
+from urllib.parse import urljoin, urlsplit, urlunsplit
 
 from bs4 import BeautifulSoup, XMLParsedAsHTMLWarning
 
+from app.extraction.challenge import find_marker
+from app.extraction.patterns.campus_labs_engage import (
+    PAGE_MARKERS as _ENGAGE_PAGE_MARKERS,
+)
+from app.extraction.patterns.campus_labs_engage import (
+    looks_like_engage_records,
+    search_endpoint,
+)
+from app.extraction.patterns.paged_json_events import (
+    PAGE_METADATA_KEYS,
+    infer_field_paths,
+    norm_key,
+    record_root,
+    records_at,
+)
+from app.extraction.selectors import resolve_json_path
 from app.extraction.types import FetchResponse, PatternDetectionResult
 
 # Every detector probes every response, so the HTML detectors necessarily run
@@ -49,6 +66,13 @@ RELIABILITY_ORDER: tuple[str, ...] = (
     "ics_calendar",
     "rss_atom_events",
     "algolia_search",
+    # A first-party paged JSON API (Spring-style `content` + page metadata).
+    # Keyed on that response shape; below the vendor-specific APIs so a
+    # recognised vendor shape always wins.
+    "paged_json_events",
+    # Campus Labs Engage: keyed on its discovery-API response shape or its own
+    # page markers; sits with the other vendor APIs' JSON/feed family.
+    "campus_labs_engage",
     # Event data embedded as a plain JS variable (window.x = [...]). Parsed,
     # never executed. Last structured resort before HTML-card scraping.
     "inline_json_events",
@@ -100,11 +124,30 @@ class PatternDetector(Protocol):
     def detect(self, response: FetchResponse) -> PatternDetectionResult: ...
 
 
+# Detectors only *read* the parsed page, so one parse is shared by all of them
+# during a run_all_detectors call. A BeautifulSoup tree is full of reference
+# cycles and is freed only by the cyclic collector, so a dozen detectors each
+# parsing a large listing kept a dozen trees alive at once — enough to exhaust
+# a small instance's memory on a long calendar page.
+_shared_soup: ContextVar[dict[str, BeautifulSoup] | None] = ContextVar(
+    "_shared_soup", default=None
+)
+
+
+def _soup(response: FetchResponse) -> BeautifulSoup:
+    cache = _shared_soup.get()
+    if cache is not None and response.body_hash in cache:
+        return cache[response.body_hash]
+    soup = BeautifulSoup(response.text, "html.parser")
+    if cache is not None:
+        cache[response.body_hash] = soup
+    return soup
+
+
 def _access_denied_detected(response: FetchResponse) -> bool:
     if response.blocked_reason is not None:
         return True
-    lowered = response.text[:5000].lower()
-    return any(marker in lowered for marker in _CHALLENGE_MARKERS)
+    return find_marker(response.text[:20000], _CHALLENGE_MARKERS) is not None
 
 
 def _browser_required_evidence(soup: BeautifulSoup, response: FetchResponse) -> bool:
@@ -162,7 +205,7 @@ class JsonLdDetector:
         if _access_denied_detected(response):
             return _blocked_result("access denied or challenge page detected")
 
-        soup = BeautifulSoup(response.text, "html.parser")
+        soup = _soup(response)
         scripts = soup.find_all("script", attrs={"type": "application/ld+json"})
         event_blocks = 0
         malformed = 0
@@ -221,7 +264,7 @@ class StaticHtmlDetector:
         if _access_denied_detected(response):
             return _blocked_result("access denied or challenge page detected")
 
-        soup = BeautifulSoup(response.text, "html.parser")
+        soup = _soup(response)
         groups: dict[tuple[str, tuple[str, ...]], list] = {}
         for tag in soup.find_all(True):
             classes = tag.get("class")
@@ -279,7 +322,7 @@ class WordPressRestDetector:
         if _access_denied_detected(response):
             return _blocked_result("access denied or challenge page detected")
 
-        soup = BeautifulSoup(response.text, "html.parser")
+        soup = _soup(response)
         evidence: dict[str, object] = {}
         discovered: list[str] = []
         score = 0.0
@@ -336,6 +379,46 @@ class WordPressRestDetector:
         )
 
 
+# Keys only a The Events Calendar REST event record carries together.
+_TRIBE_RECORD_KEYS = frozenset({"start_date", "end_date", "all_day", "utc_start_date"})
+_TRIBE_PAGE_KEYS = frozenset({"rest_url", "next_rest_url", "total_pages"})
+
+
+def _tribe_rest_response(response: FetchResponse) -> PatternDetectionResult | None:
+    """A source URL that *is* the plugin's REST collection (`.../tribe/events/
+    v1/events`) returns JSON, not a page with plugin assets — recognise that
+    payload by its own shape: an `events` array of records carrying the
+    plugin's date keys, next to its paging keys."""
+    text = response.text.lstrip()
+    if not text.startswith("{"):
+        return None
+    try:
+        payload = json.loads(text)
+    except (json.JSONDecodeError, ValueError):
+        return None
+    if not isinstance(payload, dict) or not isinstance(payload.get("events"), list):
+        return None
+    if not _TRIBE_PAGE_KEYS & set(payload):
+        return None
+    records = [r for r in payload["events"] if isinstance(r, dict)]
+    if records and not all(len(_TRIBE_RECORD_KEYS & set(r)) >= 3 for r in records[:5]):
+        return None
+    # The collection URL without its paging/query state is the endpoint.
+    parts = urlsplit(response.final_url)
+    endpoint = urlunsplit((parts.scheme, parts.netloc, parts.path, "", ""))
+    return PatternDetectionResult(
+        pattern_name="the_events_calendar",
+        confidence=0.9 if records else 0.65,
+        evidence={"tribe_rest_response": True, "record_count": len(records),
+                  "total": payload.get("total")},
+        discovered_endpoints=(endpoint,),
+        browser_required=False,
+        warnings=() if records else ("tribe_rest_no_events",),
+        detector_version=DETECTOR_VERSION,
+        needs_review=False,
+    )
+
+
 class TheEventsCalendarDetector:
     """WordPress-generic evidence (generator meta, wp-json discovery link)
     is never sufficient on its own — every WordPress site would otherwise
@@ -348,7 +431,11 @@ class TheEventsCalendarDetector:
         if _access_denied_detected(response):
             return _blocked_result("access denied or challenge page detected")
 
-        soup = BeautifulSoup(response.text, "html.parser")
+        direct = _tribe_rest_response(response)
+        if direct is not None:
+            return direct
+
+        soup = _soup(response)
         evidence: dict[str, object] = {}
         discovered: list[str] = []
         score = 0.0
@@ -485,7 +572,7 @@ class LiveWhaleDetector:
                     needs_review=False,
                 )
 
-        soup = BeautifulSoup(response.text, "html.parser")
+        soup = _soup(response)
         evidence: dict[str, object] = {}
         discovered: list[str] = []
         score = 0.0
@@ -612,7 +699,7 @@ class EmbeddedJsonDetector:
             return _blocked_result("access denied or challenge page detected")
         import json as _json
 
-        soup = BeautifulSoup(response.text, "html.parser")
+        soup = _soup(response)
         best_doc = None
         best_len = -1
         for script in soup.find_all("script", attrs={"type": "application/json"}):
@@ -900,6 +987,131 @@ class SimpleviewEventsDetector:
         )
 
 
+class PagedJsonEventsDetector:
+    """Matches a paged JSON API response by structure: a top-level record
+    array (`content`, or `items`/`results`/`records`/`data` beside page
+    metadata) whose records carry a title and a start date under any of the
+    common key names. Never matches on a URL or the word "events"."""
+
+    def detect(self, response: FetchResponse) -> PatternDetectionResult:
+        empty = PatternDetectionResult(
+            pattern_name=None, confidence=0.0, evidence={},
+            discovered_endpoints=(), browser_required=False, warnings=(),
+            detector_version=DETECTOR_VERSION, needs_review=False,
+        )
+        if _access_denied_detected(response):
+            return _blocked_result("access denied or challenge page detected")
+        try:
+            payload = json.loads(response.text)
+        except (json.JSONDecodeError, ValueError):
+            return empty
+        root = record_root(payload)
+        if root is None:
+            return empty
+        records = records_at(payload, root)
+        if not records:
+            return PatternDetectionResult(
+                pattern_name=None, confidence=0.0,
+                evidence={"record_path": root, "record_count": 0},
+                discovered_endpoints=(), browser_required=False,
+                warnings=("paged_json_empty",),
+                detector_version=DETECTOR_VERSION, needs_review=True,
+            )
+        sample = records[:10]
+        paths = infer_field_paths(sample)
+        if "title" not in paths or "start_datetime" not in paths:
+            return PatternDetectionResult(
+                pattern_name=None, confidence=0.0,
+                evidence={"record_path": root, "inferred_fields": sorted(paths)},
+                discovered_endpoints=(), browser_required=False, warnings=(),
+                detector_version=DETECTOR_VERSION, needs_review=False,
+            )
+        def _has(record: dict, path: str) -> bool:
+            # Instance paths (`instances.0.start`) resolve against the record.
+            return resolve_json_path(record, path).value not in (None, "", [], {})
+
+        event_like = [
+            r for r in sample if _has(r, paths["title"]) and _has(r, paths["start_datetime"])
+        ]
+        if len(event_like) < (len(sample) + 1) // 2:
+            return PatternDetectionResult(
+                pattern_name=None, confidence=0.0,
+                evidence={"record_path": root, "event_like_sample": len(event_like)},
+                discovered_endpoints=(), browser_required=False, warnings=(),
+                detector_version=DETECTOR_VERSION, needs_review=False,
+            )
+        metadata = sorted(str(k) for k in payload if norm_key(k) in PAGE_METADATA_KEYS)
+        confidence = 0.7 + (0.05 if metadata else 0.0)
+        confidence += 0.05 if "external_source_id" in paths else 0.0
+        confidence += 0.05 if "canonical_url" in paths else 0.0
+        return PatternDetectionResult(
+            pattern_name="paged_json_events",
+            confidence=round(confidence, 4),
+            evidence={
+                "json_shape_match": True,
+                "record_path": root,
+                "record_count": len(records),
+                "sample_event_count": len(event_like),
+                "field_paths": paths,
+                "page_metadata": metadata,
+            },
+            discovered_endpoints=(response.final_url,),
+            browser_required=False,
+            warnings=() if metadata else ("paged_json_pagination_unconfirmed",),
+            detector_version=DETECTOR_VERSION,
+            needs_review=False,
+        )
+
+
+class CampusLabsEngageDetector:
+    """Campus Labs Engage: matches either the discovery API's own response (a
+    `value` array of records carrying `startsOn`/`endsOn`/`name`/`id` plus the
+    platform's organization/image keys) or an Engage page, recognised by the
+    platform's static-asset host or boot-state global in its markup. The search
+    endpoint follows the platform's route convention from the page's base."""
+
+    def detect(self, response: FetchResponse) -> PatternDetectionResult:
+        if _access_denied_detected(response):
+            return _blocked_result("access denied or challenge page detected")
+        text = response.text
+        stripped = text.lstrip()
+        if stripped.startswith("{"):
+            try:
+                payload = json.loads(stripped)
+            except (json.JSONDecodeError, ValueError):
+                payload = None
+            records = looks_like_engage_records(payload)
+            if records is not None:
+                return PatternDetectionResult(
+                    pattern_name="campus_labs_engage",
+                    confidence=0.9 if records else 0.65,
+                    evidence={"engage_api_response": True, "record_count": len(records)},
+                    discovered_endpoints=(search_endpoint(response.final_url),),
+                    browser_required=False,
+                    warnings=() if records else ("engage_no_events",),
+                    detector_version=DETECTOR_VERSION,
+                    needs_review=False,
+                )
+        lowered = text[:200_000].lower()
+        markers = [m for m in _ENGAGE_PAGE_MARKERS if m in lowered]
+        if not markers:
+            return PatternDetectionResult(
+                pattern_name=None, confidence=0.0, evidence={},
+                discovered_endpoints=(), browser_required=False, warnings=(),
+                detector_version=DETECTOR_VERSION, needs_review=False,
+            )
+        return PatternDetectionResult(
+            pattern_name="campus_labs_engage",
+            confidence=0.8 if len(markers) > 1 else 0.7,
+            evidence={"engage_page_markers": markers},
+            discovered_endpoints=(search_endpoint(response.final_url),),
+            browser_required=False,
+            warnings=(),
+            detector_version=DETECTOR_VERSION,
+            needs_review=False,
+        )
+
+
 def run_all_detectors(response: FetchResponse) -> dict[str, PatternDetectionResult]:
     """Run every registered detector over `response` and return each raw result
     keyed by pattern name. `run_detection` selects a single winner from these;
@@ -919,9 +1131,18 @@ def run_all_detectors(response: FetchResponse) -> dict[str, PatternDetectionResu
         "ics_calendar": IcsCalendarDetector(),
         "rss_atom_events": RssAtomDetector(),
         "algolia_search": AlgoliaSearchDetector(),
+        "paged_json_events": PagedJsonEventsDetector(),
+        "campus_labs_engage": CampusLabsEngageDetector(),
         "generic_html_cards": StaticHtmlDetector(),
     }
-    return {name: detector.detect(response) for name, detector in detectors.items()}
+    cache: dict[str, BeautifulSoup] = {}
+    token = _shared_soup.set(cache)
+    try:
+        return {name: detector.detect(response) for name, detector in detectors.items()}
+    finally:
+        _shared_soup.reset(token)
+        for soup in cache.values():
+            soup.decompose()
 
 
 def run_detection(

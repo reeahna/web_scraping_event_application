@@ -260,6 +260,9 @@
       <tr><th>Latest recovery</th><td>{{ recovery.attempted_at or "—" }} — {{ recovery.status or "—" }}</td></tr>
       <tr><th>Candidate endpoint</th><td>{% if recovery.selected_endpoint %}<code>{{ recovery.selected_endpoint }}</code>{% else %}—{% endif %}</td></tr>
       <tr><th>Selected / proposed pattern</th><td>{{ recovery.proposed_pattern or (recovery.detected_pattern or "—") }}</td></tr>
+      {% if recovery.blocked_reason %}
+      <tr><th>Blocked because</th><td>{{ recovery.blocked_reason | block_reason }} <span class="audit-meta">(<code>{{ recovery.blocked_reason }}</code>)</span></td></tr>
+      {% endif %}
       <tr><th>Reason</th><td class="audit-meta">{{ recovery.selection_reason or "—" }}</td></tr>
       <tr><th>Ignored third-party endpoints</th><td>{{ recovery.ignored_endpoint_count or 0 }}</td></tr>
       <tr><th>Draft created</th><td>{{ "Yes" if recovery.proposed_pattern else "No" }}</td></tr>

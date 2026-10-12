@@ -275,6 +275,87 @@ class PathPagePagination:
         return FetchRequest(url=safe_url)
 
 
+# Page-metadata keys, compared case/punctuation-insensitively. `number` is the
+# Spring Data name and is 0-based; the others are taken as 1-based.
+_ZERO_BASED_PAGE_KEYS = ("number",)
+_ONE_BASED_PAGE_KEYS = ("page", "pagenumber", "currentpage", "pageindex")
+_TOTAL_PAGES_KEYS = ("totalpages", "pagecount", "pages", "lastpage")
+
+
+def _metadata_int(payload: dict, names: tuple[str, ...]) -> int | None:
+    by_norm = {"".join(c for c in str(k).lower() if c.isalnum()): v for k, v in payload.items()}
+    for name in names:
+        value = by_norm.get(name)
+        if isinstance(value, int) and not isinstance(value, bool):
+            return value
+    return None
+
+
+class PageMetadataPagination:
+    """Paged JSON APIs that report their own position — Spring Data's
+    `{"content": [...], "number": 0, "totalPages": 7, "last": false}` and the
+    many APIs shaped like it. The next page number comes from the response's
+    own page number (0-based `number`, or a 1-based `page`/`currentPage`), and
+    the walk stops on `last: true`, on reaching `totalPages`, or on an empty
+    record array — never on a guessed page count. The page parameter defaults to
+    `page`; any other query parameter in the URL (e.g. a page size) is kept."""
+
+    def next_request(
+        self,
+        response: FetchResponse,
+        page_index: int,
+        config: SiteConfiguration,
+        *,
+        visited_urls,
+        seen_body_hashes,
+    ) -> FetchRequest | None:
+        if _stop_conditions_met(response, page_index, config, visited_urls, seen_body_hashes):
+            return None
+        try:
+            payload = json.loads(response.text)
+        except json.JSONDecodeError:
+            return None
+        if not isinstance(payload, dict):
+            return None
+        if payload.get("last") is True or payload.get("hasNext") is False:
+            return None
+
+        root = (config.json_paths or {}).get("events_root") or "content"
+        records = payload.get(root)
+        if isinstance(records, list) and not records:
+            return None
+
+        total_pages = _metadata_int(payload, _TOTAL_PAGES_KEYS)
+        zero_based = _metadata_int(payload, _ZERO_BASED_PAGE_KEYS)
+        one_based = _metadata_int(payload, _ONE_BASED_PAGE_KEYS)
+        if zero_based is not None:
+            next_page = zero_based + 1
+            if total_pages is not None and next_page >= total_pages:
+                return None
+        elif one_based is not None:
+            next_page = one_based + 1
+            if total_pages is not None and next_page > total_pages:
+                return None
+        else:
+            # No position in the body: count from the page parameter in the
+            # URL, treating its absence as the API's first (0-based) page.
+            page_param = config.pagination.page_param or "page"
+            current = parse_qs(urlsplit(response.final_url).query).get(page_param)
+            try:
+                next_page = int(current[0]) + 1 if current else 1
+            except (TypeError, ValueError):
+                return None
+            if total_pages is not None and next_page >= total_pages:
+                return None
+
+        page_param = config.pagination.page_param or "page"
+        next_url = _next_url_with_param(response.final_url, page_param, str(next_page))
+        safe_url = _safe_or_none(next_url)
+        if safe_url is None or safe_url in visited_urls:
+            return None
+        return FetchRequest(url=safe_url)
+
+
 def _next_url_with_param(url: str, param: str, value: str) -> str:
     pattern = re.compile(_QUERY_PARAM_RE_TEMPLATE.format(param=re.escape(param)))
     if pattern.search(url):
@@ -299,4 +380,6 @@ def build_pagination_strategy(config: SiteConfiguration) -> PaginationStrategy:
         return LiveWhaleOffsetPagination()
     if strategy == "path_page":
         return PathPagePagination(config.pagination.page_path_template)
+    if strategy == "page_metadata":
+        return PageMetadataPagination()
     raise ValueError(f"Unknown pagination strategy: {strategy}")

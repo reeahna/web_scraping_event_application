@@ -49,6 +49,8 @@ _STRUCTURED_API_PATTERNS = frozenset(
         "the_events_calendar",
         "livewhale_json",
         "simpleview_events",
+        "paged_json_events",
+        "campus_labs_engage",
     }
 )
 
@@ -135,6 +137,8 @@ _EXTERNAL_API_PATTERNS = frozenset(
         "livewhale_json",
         "simpleview_events",
         "algolia_search",
+        "paged_json_events",
+        "campus_labs_engage",
     }
 )
 
@@ -335,8 +339,34 @@ async def render_and_observe(
             new_pattern_needed=True,
         )
 
-    # 3. No structured candidate at all — only now may rendered HTML be
-    # considered, and it still goes through the ordinary proposal + preview.
+    # 3. No structured candidate observed. A calendar feed the page links is
+    # still a structured source, and beats scraping the rendered markup.
+    from app.services.extraction_runs import follow_advertised_feed
+
+    followed = await follow_advertised_feed(rendered)
+    if followed is not None:
+        feed_response, feed_detection = followed
+        return BrowserObservation(
+            outcome=OUTCOME_STRUCTURED_SELECTED,
+            rendered_response=rendered,
+            api_responses=api_responses,
+            chosen_response=feed_response,
+            detection=feed_detection,
+            chosen_source="structured_api",
+            warnings=tuple(warnings),
+            candidate_endpoints=candidate_endpoints,
+            ignored_endpoints=ignored_endpoints,
+            other_first_party=other_first_party,
+            selected_endpoint=feed_response.final_url,
+            selection_reason=(
+                f"the page links its own calendar feed, recognised by "
+                f"'{feed_detection.pattern_name}'"
+            ),
+            rejected_candidates=rejected,
+        )
+
+    # 4. Only now may rendered HTML be considered, and it still goes through
+    # the ordinary proposal + preview.
     rendered_detection = _detect_rendered(rendered)
     outcome = (
         OUTCOME_RENDERED_SELECTED if rendered_detection.pattern_name else OUTCOME_NO_SOURCE
