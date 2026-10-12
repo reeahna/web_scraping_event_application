@@ -265,7 +265,7 @@
       {% endif %}
       <tr><th>Reason</th><td class="audit-meta">{{ recovery.selection_reason or "—" }}</td></tr>
       <tr><th>Ignored third-party endpoints</th><td>{{ recovery.ignored_endpoint_count or 0 }}</td></tr>
-      <tr><th>Draft created</th><td>{{ "Yes" if recovery.proposed_pattern else "No" }}</td></tr>
+      <tr><th>Draft created</th><td>{{ "Yes" if recovery.proposed_pattern else "No" }}{% if not recovery.proposed_pattern and recovery.no_draft_reason %} <span class="audit-meta">({{ recovery.no_draft_reason }})</span>{% endif %}</td></tr>
       <tr><th>Preview status</th><td>{{ recovery.preview_status | capitalize if recovery.preview_status else "—" }}</td></tr>
       <tr><th>Warnings</th><td class="audit-meta">{{ recovery.error_summary or "—" }}</td></tr>
     </tbody>

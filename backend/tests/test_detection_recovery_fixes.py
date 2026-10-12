@@ -360,3 +360,24 @@ def test_browser_errors_keep_their_detail(message, reason, fragment):
 
     assert browser_error_reason(Exception(message)) == reason
     assert fragment in explain_block_reason(reason)
+
+
+def test_no_draft_reason_names_what_inference_could_not_find():
+    from app.extraction.inference.types import InferenceResult
+    from app.services.browser_recovery import no_draft_reason
+
+    def result(**kwargs):
+        base = dict(
+            outcome="needs_review", pattern_name="generic_html_cards", detection_confidence=0.6,
+            proposal_confidence=0.0, configuration=None, field_candidates=(),
+            date_format_candidates=(), missing_required_fields=(), warnings=(), notes=(),
+        )
+        return InferenceResult(**{**base, **kwargs})
+
+    assert no_draft_reason(result(missing_required_fields=("start_date",))) == (
+        "could not find start date"
+    )
+    assert no_draft_reason(result(error="no repeated event card found")) == (
+        "no repeated event card found"
+    )
+    assert "needs_review" in no_draft_reason(result())
