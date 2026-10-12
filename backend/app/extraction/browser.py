@@ -34,6 +34,7 @@ import asyncio
 import contextlib
 import hashlib
 import json
+import re
 import sys
 import weakref
 from dataclasses import dataclass, field
@@ -305,7 +306,7 @@ class BrowserFetchStrategy:
         except Exception as exc:  # noqa: BLE001 - a render/launch failure must not crash the app
             return BrowserRenderResult(
                 final_url=url, rendered_html="", status_code=0,
-                blocked_reason=f"browser_error:{type(exc).__name__}",
+                blocked_reason=browser_error_reason(exc),
                 warnings=tuple(warnings),
             )
         finally:
@@ -419,7 +420,7 @@ class BrowserFetchStrategy:
         except Exception as exc:  # noqa: BLE001 - a fetch/launch failure must not crash the app
             return BrowserPagedResult(
                 final_url=source_page_url, status_code=0, pages=pages,
-                blocked_reason=f"browser_error:{type(exc).__name__}",
+                blocked_reason=browser_error_reason(exc),
                 warnings=tuple(warnings),
             )
         finally:
@@ -612,6 +613,23 @@ def _set_at_path(obj: dict, dotted: str, value) -> dict:
 def _records_at(payload, record_path: str) -> list:
     found = _get_at_path(payload, record_path)
     return [r for r in found if isinstance(r, dict)] if isinstance(found, list) else []
+
+
+_NET_ERROR_RE = re.compile(r"net::ERR_[A-Z0-9_]+")
+
+
+def browser_error_reason(exc: BaseException) -> str:
+    """`browser_error:<detail>` for a failed render. A Chromium network error
+    (`net::ERR_...`) is kept as is: it says what happened between the browser
+    and the site. Anything else keeps its type and the first line of its
+    message, since a bare `Error` explains nothing."""
+    text = str(exc).strip()
+    net = _NET_ERROR_RE.search(text)
+    if net:
+        return f"browser_error:{net.group(0)}"
+    first_line = text.splitlines()[0][:160] if text else ""
+    name = type(exc).__name__
+    return f"browser_error:{name}: {first_line}" if first_line else f"browser_error:{name}"
 
 
 # Record-array roots of the structured APIs the registered patterns read, tried

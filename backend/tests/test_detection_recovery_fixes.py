@@ -323,3 +323,40 @@ async def test_feed_attempts_are_explained():
     none: list[str] = []
     assert await follow_advertised_feed(make_response("<p>hi</p>", final_url=LISTING), none) is None
     assert none == ["feed: the page links no iCalendar or RSS/Atom feed"]
+
+
+@pytest.mark.parametrize(
+    "message, reason, fragment",
+    [
+        (
+            "Page.goto: net::ERR_HTTP2_PROTOCOL_ERROR at https://venue.example.org/",
+            "browser_error:net::ERR_HTTP2_PROTOCOL_ERROR",
+            "dropped the browser's connection",
+        ),
+        (
+            "Page.goto: net::ERR_NAME_NOT_RESOLVED at https://x.example.org/",
+            "browser_error:net::ERR_NAME_NOT_RESOLVED",
+            "address could not be found",
+        ),
+        (
+            "Page.goto: net::ERR_CONNECTION_TIMED_OUT at https://x.example.org/",
+            "browser_error:net::ERR_CONNECTION_TIMED_OUT",
+            "did not respond in time",
+        ),
+        (
+            "Page.goto: net::ERR_ABORTED at https://x.example.org/",
+            "browser_error:net::ERR_ABORTED",
+            "Bulletin's browser stopped the request",
+        ),
+        (
+            "Browser closed.\nmore detail",
+            "browser_error:Exception: Browser closed.",
+            "running the browser on Bulletin's server",
+        ),
+    ],
+)
+def test_browser_errors_keep_their_detail(message, reason, fragment):
+    from app.extraction.browser import browser_error_reason
+
+    assert browser_error_reason(Exception(message)) == reason
+    assert fragment in explain_block_reason(reason)
