@@ -83,6 +83,10 @@ changes apply themselves.
 - **Cost:** ~$7/mo for the `starter` web service + ~$0.25/mo for the 1 GB disk.
   Do **not** switch to the free plan — it sleeps when idle, which would stop the
   scheduler from importing events.
+- **Memory:** `starter` has 512 MB for the web server, the scheduler and
+  headless Chromium together. One browser render takes roughly 300 MB, so
+  `BROWSER_MAX_CONCURRENT` (default 1) keeps renders one at a time. If Render
+  still reports the instance running out of memory, move to `standard` (2 GB).
 - **The database** lives at `/data/app.db` on the persistent disk and survives
   deploys and restarts. It is never baked into the image.
 - **Backups:** from the Render **Shell**, `cp /data/app.db /data/app.db.bak`

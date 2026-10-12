@@ -88,6 +88,10 @@ class Settings(BaseSettings):
     # and the recovery service refuses to launch a browser — so installing the
     # feature changes no source's behaviour until it is explicitly enabled.
     browser_extraction_enabled: bool = False
+    # How many headless Chromium instances one process may run at once. Each
+    # takes a few hundred MB; on a 512MB instance shared with the web server and
+    # the scheduler, more than one at a time is what runs it out of memory.
+    browser_max_concurrent: int = 1
 
     # Bulk source onboarding (app.services.bulk_onboarding). Caps exist so a
     # single submission can't queue an unbounded amount of outbound fetching,

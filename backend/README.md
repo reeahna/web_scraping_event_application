@@ -136,6 +136,7 @@ without any of it.
 | `REGISTRATION_ENABLED` | `true` | Whether a first sign-in creates a new account |
 | `SUPERADMIN_EMAIL` | unset | Google address that becomes Super Administrator on sign-in |
 | `BROWSER_EXTRACTION_ENABLED` | `false` | Headless-browser fallback for sources that need it |
+| `BROWSER_MAX_CONCURRENT` | `1` | Headless browsers one process runs at once (a few hundred MB each) |
 | `ATTENDABILITY_FILTER_ENABLED` | `true` | Leave out non-events (see above) |
 | `UNSPLASH_ACCESS_KEY` | unset | Placeholder photos for imageless events |
 | `GEMINI_API_KEY` | unset | AI categorization of new events |
