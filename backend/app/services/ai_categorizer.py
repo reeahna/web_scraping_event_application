@@ -56,7 +56,12 @@ class GeminiUnavailable(GeminiError):
 class GeminiQuotaExceeded(GeminiError):
     """The API returned 429 after retries: the rate or daily-quota limit is
     reached. Callers stop cleanly and resume later — the free-tier daily quota
-    resets on its own, and already-labeled events are skipped on the next run."""
+    resets on its own, and already-labeled events are skipped on the next run.
+    retry_after_seconds is how long Google says to wait, when it says."""
+
+    def __init__(self, message: str, retry_after_seconds: float | None = None) -> None:
+        super().__init__(message)
+        self.retry_after_seconds = retry_after_seconds
 
 
 @dataclass(frozen=True)
@@ -213,6 +218,37 @@ def _error_message(response: httpx.Response) -> str:
     return _clean(str(message), limit=500)
 
 
+_RETRY_IN = re.compile(r"retry in ((?:\d+(?:\.\d+)?[hms])+)", re.IGNORECASE)
+_DURATION_PART = re.compile(r"(\d+(?:\.\d+)?)([hms])")
+
+
+def _retry_after_seconds(response: httpx.Response) -> float | None:
+    """How long a 429 says to wait. Google puts it in a RetryInfo detail
+    ("retryDelay": "26487s") and in the message ("Please retry in 7h21m27s");
+    either is enough. None when neither is present."""
+    try:
+        body = response.json()
+    except ValueError:
+        body = None
+    error = body.get("error") if isinstance(body, dict) else None
+    if isinstance(error, dict):
+        for detail in error.get("details") or []:
+            delay = detail.get("retryDelay") if isinstance(detail, dict) else None
+            if isinstance(delay, str) and delay.endswith("s"):
+                try:
+                    return float(delay[:-1])
+                except ValueError:
+                    pass
+        match = _RETRY_IN.search(str(error.get("message", "")))
+        if match:
+            scale = {"h": 3600, "m": 60, "s": 1}
+            return sum(
+                float(amount) * scale[unit]
+                for amount, unit in _DURATION_PART.findall(match.group(1))
+            )
+    return None
+
+
 class GeminiCategorizer:
     """Synchronous Gemini client for batch event categorization. One instance
     per run; call classify_batch() repeatedly. Self-rate-limits so the caller
@@ -284,7 +320,7 @@ class GeminiCategorizer:
             if response.status_code != 200:
                 message = f"HTTP {response.status_code}: {_error_message(response)}"
                 if response.status_code == 429:
-                    raise GeminiQuotaExceeded(message)
+                    raise GeminiQuotaExceeded(message, _retry_after_seconds(response))
                 raise GeminiError(message)
             return response.json()
 

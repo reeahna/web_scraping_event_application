@@ -73,6 +73,10 @@ class SchedulerRuntime:
         # hit, then resumes on its own; the daily quota resets independently.
         self._categorization_cooldown_until: datetime | None = None
         self._categorization_cooldown = timedelta(hours=1)
+        # Any other failure (Google's 503 "overloaded" in practice) waits this
+        # long instead of retrying on the next one-minute tick, since a failed
+        # request can still count against the 20-a-day free quota.
+        self._categorization_error_cooldown = timedelta(minutes=15)
 
     def start(self) -> None:
         db = self._session_factory()
@@ -277,14 +281,24 @@ class SchedulerRuntime:
             )
             if labeled:
                 logger.info("AI-categorized %d event(s)", labeled)
-        except GeminiQuotaExceeded:
-            self._categorization_cooldown_until = now + self._categorization_cooldown
+        except GeminiQuotaExceeded as exc:
+            # Wait as long as Google says (until the daily reset for the daily
+            # quota) rather than re-asking every hour and spending requests.
+            wait = self._categorization_cooldown
+            if exc.retry_after_seconds:
+                wait = timedelta(seconds=exc.retry_after_seconds + 60)
+            self._categorization_cooldown_until = now + wait
             logger.info(
                 "AI categorization quota reached; pausing until %s",
                 self._categorization_cooldown_until.isoformat(),
             )
         except Exception as exc:  # noqa: BLE001 - a tick must never kill the loop
-            logger.warning("categorization tick failed: %s", exc)
+            self._categorization_cooldown_until = now + self._categorization_error_cooldown
+            logger.warning(
+                "categorization tick failed: %s; pausing until %s",
+                exc,
+                self._categorization_cooldown_until.isoformat(),
+            )
 
     async def _category_photos_tick(self) -> None:
         if not self._is_leader:
