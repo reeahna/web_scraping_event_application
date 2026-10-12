@@ -123,6 +123,7 @@ def _evidence_base() -> dict:
         "preview_status": None,
         "blocked_reason": None,
         "error_summary": None,
+        "no_draft_reason": None,
     }
 
 
@@ -180,6 +181,20 @@ def _observation_evidence(evidence: dict, observation: BrowserObservation) -> No
     evidence["query_param_names"] = meta.get("query_param_names") or []
     if observation.warnings:
         evidence["error_summary"] = ", ".join(observation.warnings[:10])
+
+
+def no_draft_reason(inference: InferenceResult) -> str:
+    """Why a recognised source produced no draft, for the recovery card:
+    the proposer's error, the required fields it could not find, or its
+    warnings, whichever it reported."""
+    parts: list[str] = []
+    if inference.error:
+        parts.append(inference.error)
+    if inference.missing_required_fields:
+        missing = ", ".join(f.replace("_", " ") for f in inference.missing_required_fields)
+        parts.append(f"could not find {missing}")
+    parts.extend(inference.warnings[:3])
+    return "; ".join(parts) or f"configuration inference ended as {inference.outcome}"
 
 
 def _persist(db: Session, website: Website, evidence: dict) -> None:
@@ -294,10 +309,11 @@ def _http_replay_blocked(preview) -> bool:
 
 
 def _http_replay_empty(preview, chosen_source: str | None) -> bool:
-    """True when the browser found events in the *rendered* page but a plain
-    HTTP fetch of the same page yields none: the listing is drawn by
+    """True when the browser read events from the *rendered* page but a plain
+    HTTP fetch of the same page yields no valid ones: the listing, or a field
+    every event needs (often the date, formatted by script), is drawn by
     JavaScript, so only the browser transport can read it."""
-    return chosen_source == "rendered_html" and preview.result.events_found == 0
+    return chosen_source == "rendered_html" and preview.result.events_valid == 0
 
 
 def _structured_endpoint_config(config) -> bool:
@@ -456,6 +472,7 @@ async def browser_retry_recovery(
 
     if isinstance(proposal, InferenceResult):
         evidence["status"] = proposal.outcome
+        evidence["no_draft_reason"] = no_draft_reason(proposal)
         _persist(db, website, evidence)
         result = _finish(db, website, detection_result, proposal, None, None, ())
         return BrowserRecoveryResult(
@@ -466,6 +483,7 @@ async def browser_retry_recovery(
     inference = service.finalize(proposal, detection)
     if inference.configuration is None:
         evidence["status"] = inference.outcome
+        evidence["no_draft_reason"] = no_draft_reason(inference)
         _persist(db, website, evidence)
         result = _finish(db, website, detection_result, inference, None, None, ())
         return BrowserRecoveryResult(

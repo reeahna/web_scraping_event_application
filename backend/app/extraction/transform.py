@@ -18,6 +18,7 @@ from typing import Any
 from urllib.parse import urljoin
 
 from app.core.safe_regex import validate_safe_regex
+from app.extraction.inference.dates import strip_ordinals
 from app.schemas.extraction import TransformationRuleConfig
 
 # Parsing a year-less date resolves to 1900, which Python 3.12+ warns about as
@@ -34,7 +35,6 @@ _TAG_RE = re.compile(r"<[^>]+>")
 _MAX_INPUT_LENGTH = 10_000
 # English ordinal suffixes strptime cannot parse ("Sep 6th" -> "Sep 6"). Dropped
 # before every strptime attempt so a card that writes an ordinal still parses.
-_ORDINAL_RE = re.compile(r"\b(\d{1,2})(?:st|nd|rd|th)\b", re.IGNORECASE)
 
 
 class TransformationError(ValueError):
@@ -92,7 +92,7 @@ def parse_date_value(value: Any, formats: list[str] | None = None) -> date | Non
     text = _as_text(value).strip()
     if not text:
         return None
-    cleaned = _ORDINAL_RE.sub(r"\1", text)
+    cleaned = strip_ordinals(text)
     for fmt in formats or []:
         try:
             return datetime.strptime(cleaned, fmt).date()

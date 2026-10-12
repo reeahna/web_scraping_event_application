@@ -259,13 +259,21 @@
     <tbody>
       <tr><th>Latest recovery</th><td>{{ recovery.attempted_at or "—" }} — {{ recovery.status or "—" }}</td></tr>
       <tr><th>Candidate endpoint</th><td>{% if recovery.selected_endpoint %}<code>{{ recovery.selected_endpoint }}</code>{% else %}—{% endif %}</td></tr>
+      {% if recovery.new_pattern_needed and recovery.response_shape %}
+      {% set shape = recovery.response_shape %}
+      <tr><th>Response shape</th><td class="audit-meta">
+        top level: <code>{{ (shape.top_level_keys or [])[:12] | join(", ") or shape.top_level_type }}</code>;
+        records at <code>{{ shape.record_array_path or "—" }}</code> ({{ shape.sample_record_count or 0 }});
+        record fields: <code>{{ (shape.sample_field_names or [])[:20] | join(", ") or "—" }}</code>
+      </td></tr>
+      {% endif %}
       <tr><th>Selected / proposed pattern</th><td>{{ recovery.proposed_pattern or (recovery.detected_pattern or "—") }}</td></tr>
       {% if recovery.blocked_reason %}
       <tr><th>Blocked because</th><td>{{ recovery.blocked_reason | block_reason }} <span class="audit-meta">(<code>{{ recovery.blocked_reason }}</code>)</span></td></tr>
       {% endif %}
       <tr><th>Reason</th><td class="audit-meta">{{ recovery.selection_reason or "—" }}</td></tr>
       <tr><th>Ignored third-party endpoints</th><td>{{ recovery.ignored_endpoint_count or 0 }}</td></tr>
-      <tr><th>Draft created</th><td>{{ "Yes" if recovery.proposed_pattern else "No" }}</td></tr>
+      <tr><th>Draft created</th><td>{{ "Yes" if recovery.proposed_pattern else "No" }}{% if not recovery.proposed_pattern and recovery.no_draft_reason %} <span class="audit-meta">({{ recovery.no_draft_reason }})</span>{% endif %}</td></tr>
       <tr><th>Preview status</th><td>{{ recovery.preview_status | capitalize if recovery.preview_status else "—" }}</td></tr>
       <tr><th>Warnings</th><td class="audit-meta">{{ recovery.error_summary or "—" }}</td></tr>
     </tbody>
