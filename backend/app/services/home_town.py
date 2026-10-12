@@ -98,17 +98,67 @@ def from_other_campus_calendar(url: str | None, title: str | None = None) -> boo
 # A school team "at" an opponent is an away game ("Indiana University Women's
 # Rowing at Iowa"); "vs" is a home one. A watch party for an away game is in
 # town, so it is kept.
+_SPORTS = (
+    r"football|basketball|soccer|volleyball|baseball|softball|field hockey|ice hockey|hockey|"
+    r"rowing|golf|tennis|swimming|diving|wrestling|track|track and field|cross country|"
+    r"lacrosse|gymnastics|water polo"
+)
 _AWAY_GAME = re.compile(
-    r"\b(university|college|IU|state)\b.*?\b(football|basketball|soccer|volleyball|baseball|"
-    r"softball|field hockey|ice hockey|hockey|rowing|golf|tennis|swimming|diving|wrestling|"
-    r"track|track and field|cross country|lacrosse|gymnastics|water polo)\s+(at|@)\s",
+    rf"\b(university|college|IU|state)\b.*?\b({_SPORTS})\s+(at|@)\s",
     re.IGNORECASE,
 )
 _WATCH_PARTY = re.compile(r"\b(watch|viewing|screening)\b", re.IGNORECASE)
 
+# A team entered in a tournament named for its host: "Indiana University Men's
+# Golf Purdue Fall Invitational", "... Golf vs Illini Women's Invitational at
+# Medinah". The school's own ("IU Fall Classic", "Indiana Invitational") names
+# the school or the town, so one that names neither is away. The team is a
+# "Men's"/"Women's" one, or baseball or softball: "Lions Club Golf Classic"
+# names no school and "State Street Golf Classic" no team, and football has no
+# invitationals ("Football vs Purdue ... Classic" is a home game).
+_SCHOOL_SPORT = re.compile(
+    rf"^(?P<school>.*?\b(university|college|IU|state)\b.*?)"
+    rf"(\b(men|women)['\u2019]?s\s+({_SPORTS})|\b(baseball|softball))\b(?P<rest>.*)$",
+    re.IGNORECASE,
+)
+_HOSTED_TOURNAMENT = re.compile(
+    r"\b(invitational|classic|intercollegiate|shootout)\b", re.IGNORECASE
+)
+_NOT_A_NAME = {
+    "university", "college", "of", "the", "and", "at", "men", "mens", "women", "womens",
+    "s", "am", "pm",
+}
 
-def is_away_game(title: str | None) -> bool:
-    return bool(title) and bool(_AWAY_GAME.search(title)) and not _WATCH_PARTY.search(title)
+
+def _words(text: str) -> set[str]:
+    words = re.findall(r"[a-z]+", text.casefold().replace("\u2019", "").replace("'", ""))
+    return {w for w in words if w not in _NOT_A_NAME}
+
+
+def _home_names(school: str, town: str | None) -> set[str]:
+    """Words that name the home side: the school's own ("indiana"), its
+    initials ("iu") and the town's."""
+    names = _words(school)
+    initials = "".join(w[0] for w in re.findall(r"\b[A-Z][a-z]+\b", school)
+                       if w.casefold() not in {"men", "mens", "women", "womens", "the", "of"})
+    if len(initials) >= 2:
+        names.add(initials.casefold())
+    if town:
+        names |= _words(town)
+    return names
+
+
+def _at_other_schools_tournament(title: str, town: str | None) -> bool:
+    match = _SCHOOL_SPORT.search(title)
+    if match is None or not _HOSTED_TOURNAMENT.search(match.group("rest")):
+        return False
+    return not (_words(match.group("rest")) & _home_names(match.group("school"), town))
+
+
+def is_away_game(title: str | None, town: str | None = None) -> bool:
+    if not title or _WATCH_PARTY.search(title):
+        return False
+    return bool(_AWAY_GAME.search(title)) or _at_other_schools_tournament(title, town)
 
 
 def _state_code(value: str | None) -> str | None:
@@ -215,7 +265,7 @@ def is_outside_home_town(
 
 
 def candidate_outside_home_town(candidate, city) -> bool:
-    if is_away_game(candidate.title):
+    if is_away_game(candidate.title, city.name if city is not None else None):
         return True
     if from_other_campus_calendar(candidate.canonical_url, candidate.title):
         return True
@@ -230,11 +280,11 @@ def candidate_outside_home_town(candidate, city) -> bool:
 
 
 def event_outside_home_town(event) -> bool:
-    if is_away_game(event.title):
+    city = event.city
+    if is_away_game(event.title, city.name if city is not None else None):
         return True
     if from_other_campus_calendar(event.canonical_url, event.title):
         return True
-    city = event.city
     if city is None:
         return False
     return is_outside_home_town(

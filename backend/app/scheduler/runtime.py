@@ -156,6 +156,16 @@ class SchedulerRuntime:
                 id="category_photos", max_instances=1, coalesce=True,
                 next_run_time=datetime.now(UTC),
             )
+        # Events the home-town filter now leaves out (another town, an away
+        # game) but that were imported before it, or before a rule was added:
+        # taken down once on start, so a deploy that tightens the filter clears
+        # them without a manual script run, then daily.
+        if settings.home_town_filter_enabled:
+            self._scheduler.add_job(
+                self._home_town_sweep_tick, "interval", hours=24,
+                id="home_town_sweep", max_instances=1, coalesce=True,
+                next_run_time=datetime.now(UTC),
+            )
         self._scheduler.start()
 
     async def _heartbeat_tick(self) -> None:
@@ -325,6 +335,25 @@ class SchedulerRuntime:
                 logger.info("refilled category photo pool with %d photo(s)", stored)
         except Exception as exc:  # noqa: BLE001 - a tick must never kill the loop
             logger.warning("category photo refill failed: %s", exc)
+
+    async def _home_town_sweep_tick(self) -> None:
+        if not self._is_leader:
+            return
+        from app.services.home_town import hide_out_of_town_events
+
+        def sweep() -> int:
+            db = self._session_factory()
+            try:
+                return len(hide_out_of_town_events(db, apply=True))
+            finally:
+                db.close()
+
+        try:
+            hidden = await asyncio.to_thread(sweep)
+            if hidden:
+                logger.info("took down %d out-of-town event(s)", hidden)
+        except Exception as exc:  # noqa: BLE001 - a tick must never kill the loop
+            logger.warning("home-town sweep failed: %s", exc)
 
     async def _run_one(self, website_id: int) -> None:
         async with self._semaphore:

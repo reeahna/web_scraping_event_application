@@ -111,9 +111,11 @@ is taken down the next time its source lists it.
 counted as `outside_home_town_excluded:N`. Events with no town in their address
 are kept. IU's calendar has no addresses, so events filed under another
 campus's calendar (`events.iu.edu/indianapolis/...`, `/southbend/...`) are left
-out by their link. A source with its own geographic filter is left to that
-filter. See
-`app/services/home_town.py`.
+out by their link. A school team's away game ("Women's Soccer at Ohio") or a
+tournament named for another host ("Men's Golf Purdue Fall Invitational") is
+left out too. A source with its own geographic filter is left to that filter.
+The scheduler takes down anything already imported that these rules now leave
+out when it starts and once a day after. See `app/services/home_town.py`.
 
 **Listed once.** When several sources list the same title on the same day in
 the same town, the public listings, counts, map and sitemap show it once. The
