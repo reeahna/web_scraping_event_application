@@ -281,3 +281,22 @@ def test_other_events_json_is_not_taken_for_tribe():
     body = json.dumps({"events": [{"id": 1, "date_ts": 1, "title": "x"}], "total_pages": 1})
     response = make_response(body, final_url=TRIBE_URL, content_type="application/json")
     assert run_detection(response).pattern_name != "the_events_calendar"
+
+
+# --- one parse per detection run ------------------------------------------------
+
+
+def test_detectors_share_one_parse_of_the_page(monkeypatch):
+    import app.extraction.detection as detection_module
+
+    real = detection_module.BeautifulSoup
+    calls = []
+
+    def counting(*args, **kwargs):
+        calls.append(1)
+        return real(*args, **kwargs)
+
+    monkeypatch.setattr(detection_module, "BeautifulSoup", counting)
+    page = "<html><body>" + "<div class='card'><h3>Show</h3><p>Oct 20</p></div>" * 50
+    detection_module.run_all_detectors(make_response(page + "</body></html>"))
+    assert len(calls) == 1

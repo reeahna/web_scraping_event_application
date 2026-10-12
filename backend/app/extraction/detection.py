@@ -10,6 +10,7 @@ from __future__ import annotations
 import json
 import re
 import warnings as _warnings
+from contextvars import ContextVar
 from typing import Protocol
 from urllib.parse import urljoin, urlsplit, urlunsplit
 
@@ -123,6 +124,26 @@ class PatternDetector(Protocol):
     def detect(self, response: FetchResponse) -> PatternDetectionResult: ...
 
 
+# Detectors only *read* the parsed page, so one parse is shared by all of them
+# during a run_all_detectors call. A BeautifulSoup tree is full of reference
+# cycles and is freed only by the cyclic collector, so a dozen detectors each
+# parsing a large listing kept a dozen trees alive at once — enough to exhaust
+# a small instance's memory on a long calendar page.
+_shared_soup: ContextVar[dict[str, BeautifulSoup] | None] = ContextVar(
+    "_shared_soup", default=None
+)
+
+
+def _soup(response: FetchResponse) -> BeautifulSoup:
+    cache = _shared_soup.get()
+    if cache is not None and response.body_hash in cache:
+        return cache[response.body_hash]
+    soup = BeautifulSoup(response.text, "html.parser")
+    if cache is not None:
+        cache[response.body_hash] = soup
+    return soup
+
+
 def _access_denied_detected(response: FetchResponse) -> bool:
     if response.blocked_reason is not None:
         return True
@@ -184,7 +205,7 @@ class JsonLdDetector:
         if _access_denied_detected(response):
             return _blocked_result("access denied or challenge page detected")
 
-        soup = BeautifulSoup(response.text, "html.parser")
+        soup = _soup(response)
         scripts = soup.find_all("script", attrs={"type": "application/ld+json"})
         event_blocks = 0
         malformed = 0
@@ -243,7 +264,7 @@ class StaticHtmlDetector:
         if _access_denied_detected(response):
             return _blocked_result("access denied or challenge page detected")
 
-        soup = BeautifulSoup(response.text, "html.parser")
+        soup = _soup(response)
         groups: dict[tuple[str, tuple[str, ...]], list] = {}
         for tag in soup.find_all(True):
             classes = tag.get("class")
@@ -301,7 +322,7 @@ class WordPressRestDetector:
         if _access_denied_detected(response):
             return _blocked_result("access denied or challenge page detected")
 
-        soup = BeautifulSoup(response.text, "html.parser")
+        soup = _soup(response)
         evidence: dict[str, object] = {}
         discovered: list[str] = []
         score = 0.0
@@ -414,7 +435,7 @@ class TheEventsCalendarDetector:
         if direct is not None:
             return direct
 
-        soup = BeautifulSoup(response.text, "html.parser")
+        soup = _soup(response)
         evidence: dict[str, object] = {}
         discovered: list[str] = []
         score = 0.0
@@ -551,7 +572,7 @@ class LiveWhaleDetector:
                     needs_review=False,
                 )
 
-        soup = BeautifulSoup(response.text, "html.parser")
+        soup = _soup(response)
         evidence: dict[str, object] = {}
         discovered: list[str] = []
         score = 0.0
@@ -678,7 +699,7 @@ class EmbeddedJsonDetector:
             return _blocked_result("access denied or challenge page detected")
         import json as _json
 
-        soup = BeautifulSoup(response.text, "html.parser")
+        soup = _soup(response)
         best_doc = None
         best_len = -1
         for script in soup.find_all("script", attrs={"type": "application/json"}):
@@ -1114,7 +1135,14 @@ def run_all_detectors(response: FetchResponse) -> dict[str, PatternDetectionResu
         "campus_labs_engage": CampusLabsEngageDetector(),
         "generic_html_cards": StaticHtmlDetector(),
     }
-    return {name: detector.detect(response) for name, detector in detectors.items()}
+    cache: dict[str, BeautifulSoup] = {}
+    token = _shared_soup.set(cache)
+    try:
+        return {name: detector.detect(response) for name, detector in detectors.items()}
+    finally:
+        _shared_soup.reset(token)
+        for soup in cache.values():
+            soup.decompose()
 
 
 def run_detection(
