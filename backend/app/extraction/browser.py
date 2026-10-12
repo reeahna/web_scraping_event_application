@@ -19,6 +19,10 @@ Safety, all enforced here rather than trusted to the caller:
   submitted to
 * the browser, context and pages are always closed in a finally block, even
   on error or timeout
+* at most ``BROWSER_MAX_CONCURRENT`` Chromium instances run at once per
+  process (default 1), launched with low-memory flags, because the production
+  box runs the web server, the scheduler and the browser in one small instance
+  and several concurrent Chromiums are enough to run it out of memory
 
 The SSRF host check is indirected through `_host_allowed` so tests can permit
 a local fixture server without weakening the production default.
@@ -31,6 +35,7 @@ import contextlib
 import hashlib
 import json
 import sys
+import weakref
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
@@ -60,6 +65,24 @@ _CHALLENGE_MARKERS = (
 _LOGIN_WALL_MARKERS = ("sign in to continue", "please log in", "log in to view", "members only")
 _ALLOWED_SCHEMES = frozenset({"http", "https", "data", "about", "blob"})
 _BLOCKED_RESOURCE_TYPES = frozenset({"image", "media", "font"})
+
+# Chromium flags that keep a headless render small inside a container. Docker
+# gives /dev/shm only 64MB, which Chromium otherwise fills and crashes on; the
+# rest turn off GPU, extensions and background services a scrape never uses.
+_LAUNCH_ARGS = (
+    "--disable-dev-shm-usage",
+    "--disable-gpu",
+    "--disable-extensions",
+    "--disable-background-networking",
+    "--disable-component-update",
+    "--mute-audio",
+    "--no-first-run",
+)
+
+# One semaphore per event loop (in production that is one per process). Keyed
+# by loop because an asyncio.Semaphore is bound to the loop that first waits on
+# it, and tests run each case on a fresh loop.
+_launch_slots: weakref.WeakKeyDictionary = weakref.WeakKeyDictionary()
 
 
 # Bound on a captured request body — enough to template a filter, never a
@@ -107,6 +130,20 @@ class BrowserPagedResult:
     pages: list[BrowserJsonPage] = field(default_factory=list)
     blocked_reason: str | None = None
     warnings: tuple[str, ...] = ()
+
+
+def _browser_slot() -> asyncio.Semaphore:
+    """The process-wide cap on concurrently running browsers. The scheduler's
+    site runs, bulk imports and onboarding drain all render through here, so
+    without it they could start a Chromium each at the same moment."""
+    loop = asyncio.get_running_loop()
+    slot = _launch_slots.get(loop)
+    if slot is None:
+        from app.config import get_settings
+
+        slot = asyncio.Semaphore(max(1, get_settings().browser_max_concurrent))
+        _launch_slots[loop] = slot
+    return slot
 
 
 async def _host_allowed(url: str) -> bool:
@@ -210,7 +247,8 @@ class BrowserFetchStrategy:
 
         # Browser launch is offloaded to a Proactor-backed thread when the
         # request loop cannot spawn subprocesses (uvicorn --reload on Windows).
-        return await _run_browser(lambda: self._render_impl(url, plan))
+        async with _browser_slot():
+            return await _run_browser(lambda: self._render_impl(url, plan))
 
     async def _render_impl(self, url: str, plan: BrowserPlan) -> BrowserRenderResult:
         from playwright.async_api import async_playwright
@@ -218,50 +256,51 @@ class BrowserFetchStrategy:
         observed_json: list[tuple[str, object]] = []
         observed_requests: dict[str, dict] = {}
         warnings: list[str] = []
+        pw = None
         browser = None
         context = None
 
         try:
-            async with async_playwright() as pw:
-                browser = await pw.chromium.launch(headless=True)
-                context = await browser.new_context(
-                    accept_downloads=False,
-                    service_workers="block",
-                    java_script_enabled=True,
-                    user_agent=plan.user_agent,
-                )
-                context.set_default_timeout(plan.max_total_ms)
-                page = await context.new_page()
-                # New windows/popups are closed immediately rather than
-                # followed.
-                context.on("page", lambda p: _safe_close(p))
-                await self._install_guards(
-                    context, plan, observed_json, observed_requests, warnings
-                )
+            pw = await async_playwright().start()
+            browser = await pw.chromium.launch(headless=True, args=list(_LAUNCH_ARGS))
+            context = await browser.new_context(
+                accept_downloads=False,
+                service_workers="block",
+                java_script_enabled=True,
+                user_agent=plan.user_agent,
+            )
+            context.set_default_timeout(plan.max_total_ms)
+            page = await context.new_page()
+            # New windows/popups are closed immediately rather than
+            # followed.
+            context.on("page", lambda p: _safe_close(p))
+            await self._install_guards(
+                context, plan, observed_json, observed_requests, warnings
+            )
 
-                response = await page.goto(url, wait_until="domcontentloaded")
-                status = response.status if response is not None else 0
-                final_url = page.url
+            response = await page.goto(url, wait_until="domcontentloaded")
+            status = response.status if response is not None else 0
+            final_url = page.url
 
-                html = await page.content()
-                challenge = _challenge_reason(html, status)
-                if challenge is not None:
-                    # Never attempt to solve or bypass — report and stop.
-                    return BrowserRenderResult(
-                        final_url=final_url, rendered_html="", status_code=status,
-                        blocked_reason=challenge, warnings=tuple(warnings),
-                    )
-
-                await self._run_plan(page, plan, warnings)
-                html = await page.content()
+            html = await page.content()
+            challenge = _challenge_reason(html, status)
+            if challenge is not None:
+                # Never attempt to solve or bypass — report and stop.
                 return BrowserRenderResult(
-                    final_url=page.url,
-                    rendered_html=html,
-                    status_code=status,
-                    observed_json=observed_json,
-                    observed_requests=observed_requests,
-                    warnings=tuple(warnings),
+                    final_url=final_url, rendered_html="", status_code=status,
+                    blocked_reason=challenge, warnings=tuple(warnings),
                 )
+
+            await self._run_plan(page, plan, warnings)
+            html = await page.content()
+            return BrowserRenderResult(
+                final_url=page.url,
+                rendered_html=html,
+                status_code=status,
+                observed_json=observed_json,
+                observed_requests=observed_requests,
+                warnings=tuple(warnings),
+            )
         except Exception as exc:  # noqa: BLE001 - a render/launch failure must not crash the app
             return BrowserRenderResult(
                 final_url=url, rendered_html="", status_code=0,
@@ -269,9 +308,11 @@ class BrowserFetchStrategy:
                 warnings=tuple(warnings),
             )
         finally:
-            # Always tear down, even on timeout/error/launch failure.
+            # Always tear down, even on timeout/error/launch failure, and
+            # before the Playwright driver stops (see _safe_close_context).
             await _safe_close_context(context)
             await _safe_close_browser(browser)
+            await _safe_stop(pw)
 
     async def render_and_fetch_json_pages(
         self,
@@ -298,11 +339,12 @@ class BrowserFetchStrategy:
                 blocked_reason=f"ssrf_blocked:{urlsplit(source_page_url).hostname}",
             )
 
-        return await _run_browser(
-            lambda: self._render_and_fetch_json_pages_impl(
-                source_page_url, plan, next_url=next_url, max_pages=max_pages
+        async with _browser_slot():
+            return await _run_browser(
+                lambda: self._render_and_fetch_json_pages_impl(
+                    source_page_url, plan, next_url=next_url, max_pages=max_pages
+                )
             )
-        )
 
     async def _render_and_fetch_json_pages_impl(
         self,
@@ -318,60 +360,61 @@ class BrowserFetchStrategy:
         observed_requests: dict[str, dict] = {}
         warnings: list[str] = []
         pages: list[BrowserJsonPage] = []
+        pw = None
         browser = None
         context = None
 
         try:
-            async with async_playwright() as pw:
-                browser = await pw.chromium.launch(headless=True)
-                context = await browser.new_context(
-                    accept_downloads=False, service_workers="block", java_script_enabled=True,
-                    user_agent=plan.user_agent,
-                )
-                context.set_default_timeout(plan.max_total_ms)
-                page = await context.new_page()
-                context.on("page", lambda p: _safe_close(p))
-                await self._install_guards(
-                    context, plan, observed_json, observed_requests, warnings
-                )
-                response = await page.goto(source_page_url, wait_until="domcontentloaded")
-                status = response.status if response is not None else 0
-                html = await page.content()
-                challenge = _challenge_reason(html, status)
-                if challenge is not None:
-                    return BrowserPagedResult(
-                        final_url=page.url, status_code=status,
-                        blocked_reason=challenge, warnings=tuple(warnings),
-                    )
-                await self._run_plan(page, plan, warnings)
-
-                for _ in range(max_pages):
-                    url = next_url(pages, observed_json)
-                    if not url:
-                        break
-                    if not await _host_allowed(url):
-                        warnings.append(f"ssrf_blocked:{urlsplit(url).hostname}")
-                        break
-                    fetched = await page.evaluate(
-                        """async (u) => {
-                            const r = await fetch(u, {credentials: 'include'});
-                            const t = await r.text();
-                            let j = null;
-                            try { j = JSON.parse(t); } catch (e) { j = null; }
-                            return { status: r.status, json: j };
-                        }""",
-                        url,
-                    )
-                    pages.append(
-                        BrowserJsonPage(
-                            url=url, status=int(fetched.get("status", 0)),
-                            json=fetched.get("json"),
-                        )
-                    )
+            pw = await async_playwright().start()
+            browser = await pw.chromium.launch(headless=True, args=list(_LAUNCH_ARGS))
+            context = await browser.new_context(
+                accept_downloads=False, service_workers="block", java_script_enabled=True,
+                user_agent=plan.user_agent,
+            )
+            context.set_default_timeout(plan.max_total_ms)
+            page = await context.new_page()
+            context.on("page", lambda p: _safe_close(p))
+            await self._install_guards(
+                context, plan, observed_json, observed_requests, warnings
+            )
+            response = await page.goto(source_page_url, wait_until="domcontentloaded")
+            status = response.status if response is not None else 0
+            html = await page.content()
+            challenge = _challenge_reason(html, status)
+            if challenge is not None:
                 return BrowserPagedResult(
-                    final_url=page.url, status_code=status, pages=pages,
-                    warnings=tuple(warnings),
+                    final_url=page.url, status_code=status,
+                    blocked_reason=challenge, warnings=tuple(warnings),
                 )
+            await self._run_plan(page, plan, warnings)
+
+            for _ in range(max_pages):
+                url = next_url(pages, observed_json)
+                if not url:
+                    break
+                if not await _host_allowed(url):
+                    warnings.append(f"ssrf_blocked:{urlsplit(url).hostname}")
+                    break
+                fetched = await page.evaluate(
+                    """async (u) => {
+                        const r = await fetch(u, {credentials: 'include'});
+                        const t = await r.text();
+                        let j = null;
+                        try { j = JSON.parse(t); } catch (e) { j = null; }
+                        return { status: r.status, json: j };
+                    }""",
+                    url,
+                )
+                pages.append(
+                    BrowserJsonPage(
+                        url=url, status=int(fetched.get("status", 0)),
+                        json=fetched.get("json"),
+                    )
+                )
+            return BrowserPagedResult(
+                final_url=page.url, status_code=status, pages=pages,
+                warnings=tuple(warnings),
+            )
         except Exception as exc:  # noqa: BLE001 - a fetch/launch failure must not crash the app
             return BrowserPagedResult(
                 final_url=source_page_url, status_code=0, pages=pages,
@@ -381,6 +424,7 @@ class BrowserFetchStrategy:
         finally:
             await _safe_close_context(context)
             await _safe_close_browser(browser)
+            await _safe_stop(pw)
 
     async def _install_guards(
         self, context, plan, observed_json, observed_requests, warnings
@@ -392,22 +436,22 @@ class BrowserFetchStrategy:
             parsed = urlsplit(request.url)
             scheme = (parsed.scheme or "").lower()
             if scheme not in _ALLOWED_SCHEMES:
-                await route.abort()
+                await _settle(route.abort())
                 return
             if scheme in ("data", "about", "blob"):
-                await route.continue_()
+                await _settle(route.continue_())
                 return
             if plan.block_media and request.resource_type in _BLOCKED_RESOURCE_TYPES:
-                await route.abort()
+                await _settle(route.abort())
                 return
             host = parsed.hostname or ""
             if host not in allowed_hosts:
                 allowed_hosts[host] = await _host_allowed(request.url)
             if not allowed_hosts[host]:
                 warnings.append(f"blocked_subrequest:{host}")
-                await route.abort()
+                await _settle(route.abort())
                 return
-            await route.continue_()
+            await _settle(route.continue_())
 
         await context.route("**/*", route_handler)
 
@@ -967,14 +1011,42 @@ def _safe_close(page) -> None:
     asyncio.ensure_future(page.close())  # noqa: RUF006
 
 
+async def _settle(action) -> None:
+    """Await a route's continue_/abort, ignoring a page that already closed.
+    The handler awaits a DNS check before deciding, so a subrequest still in
+    flight when the render finishes reaches continue_ after the context is
+    gone; that request no longer matters and must not log a traceback."""
+    from playwright.async_api import Error as PlaywrightError
+
+    with contextlib.suppress(PlaywrightError):
+        await action
+
+
 async def _safe_close_context(context) -> None:
+    if context is None:
+        return
+    # Stop intercepting first, so routes still in flight are dropped quietly
+    # instead of raising TargetClosedError once the context is closed. This
+    # has to run while the driver is still up; stopping Playwright with a
+    # route callback pending is what logged those tracebacks in production.
+    with contextlib.suppress(Exception):
+        await context.unroute_all(behavior="ignoreErrors")
     with contextlib.suppress(Exception):
         await context.close()
 
 
 async def _safe_close_browser(browser) -> None:
+    if browser is None:
+        return
     with contextlib.suppress(Exception):
         await browser.close()
+
+
+async def _safe_stop(pw) -> None:
+    if pw is None:
+        return
+    with contextlib.suppress(Exception):
+        await pw.stop()
 
 
 def observed_json_as_text(observed_json: list[tuple[str, object]]) -> list[str]:

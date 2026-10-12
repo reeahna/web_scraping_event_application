@@ -613,12 +613,14 @@ async def drain_onboarding_queue(db: Session, *, max_jobs: int = 25) -> int:
 
     Only the single scheduler leader calls this, so no cross-process job claim
     is needed; `process_job` already isolates each job's transaction."""
-    from sqlalchemy import distinct, select
+    from sqlalchemy import select
 
     from app.repositories.onboarding import get_batch
 
     batch_ids = list(
-        db.scalars(select(distinct(OnboardingJob.batch_id)).where(OnboardingJob.status == QUEUED))
+        db.scalars(
+            select(OnboardingJob.batch_id).where(OnboardingJob.status == QUEUED).distinct()
+        )
     )
     processed = 0
     for batch_id in batch_ids:
