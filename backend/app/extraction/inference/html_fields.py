@@ -263,7 +263,10 @@ def infer_container(soup: BeautifulSoup, policy: AutoOnboardingPolicy) -> Contai
         if len(matched) != len(elements):
             continue
         # Nested self-matches (a card inside a card) can't be a card list.
-        if any(other is not el and other in el.parents for el in elements for other in elements):
+        # Compared by identity: bs4's Tag == compares whole subtrees, and a
+        # pairwise check made large listings take minutes.
+        member_ids = {id(el) for el in elements}
+        if any(id(parent) in member_ids for el in elements for parent in el.parents):
             continue
 
         count = len(elements)

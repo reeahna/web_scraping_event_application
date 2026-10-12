@@ -28,6 +28,7 @@ from app.extraction.patterns.paged_json_events import (
     PAGE_METADATA_KEYS,
     infer_field_paths,
     norm_key,
+    page_metadata,
     record_root,
     records_at,
 )
@@ -1040,7 +1041,9 @@ class PagedJsonEventsDetector:
                 discovered_endpoints=(), browser_required=False, warnings=(),
                 detector_version=DETECTOR_VERSION, needs_review=False,
             )
-        metadata = sorted(str(k) for k in payload if norm_key(k) in PAGE_METADATA_KEYS)
+        metadata = sorted(
+            str(k) for k in page_metadata(payload) if norm_key(k) in PAGE_METADATA_KEYS
+        )
         confidence = 0.7 + (0.05 if metadata else 0.0)
         confidence += 0.05 if "external_source_id" in paths else 0.0
         confidence += 0.05 if "canonical_url" in paths else 0.0

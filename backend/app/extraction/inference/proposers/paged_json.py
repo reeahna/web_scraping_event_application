@@ -12,7 +12,8 @@ no hostname is ever referenced.
 from __future__ import annotations
 
 import json
-from urllib.parse import urlsplit, urlunsplit
+import re
+from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 
 from app.extraction.inference.base import DEFAULT_REQUIRED_FIELDS, failed_proposal
 from app.extraction.inference.types import (
@@ -32,6 +33,55 @@ from app.schemas.extraction import SiteConfiguration
 # Requested page size when the API is a Spring Data page (it accepts `size`).
 # Fewer, larger pages are kinder to the source than many 10-record pages.
 SPRING_PAGE_SIZE = 50
+
+# Observed query parameters that are a position in the walk (pagination owns
+# these) or a credential/cache-buster (never persisted). Compared after
+# lower-casing and dropping non-alphanumerics. Everything else is a filter
+# (a group, calendar or category id) and is kept: without it the endpoint
+# returns every record the API holds.
+_POSITION_PARAMS = frozenset({
+    "page", "pagenumber", "pageindex", "pageno", "offset", "skip", "start", "cursor", "after",
+    "before", "size", "limit", "perpage", "pagesize", "take", "count", "rows",
+})
+_SECRET_PARAMS = frozenset({
+    "code", "state", "sig", "signature", "nonce", "password", "auth", "authorization",
+    "ts", "t", "timestamp", "",
+})
+_SECRET_FRAGMENTS = ("token", "secret", "session")
+
+
+def _is_secret(norm: str) -> bool:
+    return (
+        norm in _SECRET_PARAMS
+        or norm.endswith("key")
+        or any(fragment in norm for fragment in _SECRET_FRAGMENTS)
+    )
+
+
+# A fixed date or epoch in a filter freezes the window on the day it was seen.
+_DATE_VALUE_RE = re.compile(r"^\d{4}-\d{2}-\d{2}|^\d{10}(\d{3})?$")
+
+
+def _norm(name: str) -> str:
+    return "".join(ch for ch in name.lower() if ch.isalnum())
+
+
+def split_observed_query(query: str) -> tuple[list[tuple[str, str]], list[str]]:
+    """(kept filter parameters, names of dropped ones) for an observed query."""
+    kept: list[tuple[str, str]] = []
+    dropped: list[str] = []
+    for name, value in parse_qsl(query, keep_blank_values=True):
+        norm = _norm(name)
+        if (
+            norm in _POSITION_PARAMS
+            or _is_secret(norm)
+            or _DATE_VALUE_RE.match(value.strip())
+        ):
+            dropped.append(name)
+        else:
+            kept.append((name, value))
+    return kept, sorted(set(dropped))
+
 
 # Engine field -> the extractor's raw key, for the required-fields check.
 _REQUIRED_SOURCE = {
@@ -72,13 +122,14 @@ class PagedJsonEventsProposer:
         endpoint = next(
             (e for e in context.detection.discovered_endpoints if e), context.response.final_url
         )
-        # Never persist the observed query string — it may carry a token or a
-        # page position. Required filters are surfaced as a warning instead.
+        # Keep the observed filters; drop page positions, credentials and
+        # fixed dates (see split_observed_query).
         parts = urlsplit(endpoint)
-        observed_query_names = sorted({p.split("=", 1)[0] for p in parts.query.split("&") if p})
+        kept, dropped = split_observed_query(parts.query)
         is_spring_page = isinstance(payload, dict) and isinstance(payload.get("pageable"), dict)
-        query = f"size={SPRING_PAGE_SIZE}" if is_spring_page else ""
-        endpoint = urlunsplit((parts.scheme, parts.netloc, parts.path, query, ""))
+        if is_spring_page:
+            kept.append(("size", str(SPRING_PAGE_SIZE)))
+        endpoint = urlunsplit((parts.scheme, parts.netloc, parts.path, urlencode(kept), ""))
 
         # Without a link field, identity comes from the record id (like ICS's
         # UID), so a URL is not required of every event.
@@ -139,11 +190,10 @@ class PagedJsonEventsProposer:
                 "link is not required"
             )
         warnings: list[str] = []
-        if observed_query_names:
+        if dropped:
             warnings.append(
-                f"observed query parameters {observed_query_names} were not persisted "
-                "(they may carry tokens or a page position); configure required filters "
-                "manually."
+                f"observed query parameters {dropped} were not persisted (a page position, "
+                "a credential or a fixed date); the other parameters are kept as filters."
             )
         return ConfigurationProposal(
             configuration=configuration,

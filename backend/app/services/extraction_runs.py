@@ -201,22 +201,37 @@ _MIN_FEED_ENTRIES = 2
 
 async def follow_advertised_feed(
     page: FetchResponse,
+    notes: list[str] | None = None,
 ) -> tuple[FetchResponse, PatternDetectionResult] | None:
     """When a listing page links its own calendar feed (iCalendar or RSS/Atom),
     fetch that feed through the SSRF-safe HTTP strategy and detect it. Returns
     the feed's response and detection when a feed pattern recognises it, else
     None. At most MAX_FEED_CANDIDATES fetches; never follows a page that was
-    itself blocked."""
+    itself blocked. When `notes` is given, one line per feed explains why it
+    was or wasn't used, so an admin can see what was tried."""
+    notes = notes if notes is not None else []
     if page.blocked_reason is not None or not page.text:
+        return None
+    links = feed_links(page.text, page.final_url)
+    if not links:
+        notes.append("feed: the page links no iCalendar or RSS/Atom feed")
         return None
     fetch_config = FetchConfig(allowed_content_types=_FEED_CONTENT_TYPES)
     fetch = HttpFetchStrategy()
-    for url in feed_links(page.text, page.final_url):
+    for url in links:
         response = await fetch.fetch(FetchRequest(url=url), fetch_config)
-        if response.blocked_reason is not None or response.status_code != 200:
+        if response.blocked_reason is not None:
+            notes.append(f"feed {url}: blocked ({response.blocked_reason})")
+            continue
+        if response.status_code != 200:
+            notes.append(f"feed {url}: HTTP {response.status_code}")
             continue
         detection = detect_patterns(response)
         if detection.pattern_name not in _FEED_PATTERNS:
+            notes.append(
+                f"feed {url}: not a calendar feed "
+                f"(content type {response.content_type or 'unknown'})"
+            )
             continue
         lowered = response.text.lower()
         entries = (
@@ -225,7 +240,9 @@ async def follow_advertised_feed(
             else lowered.count("<item") + lowered.count("<entry")
         )
         if entries < _MIN_FEED_ENTRIES:
+            notes.append(f"feed {url}: only {entries} entr{'y' if entries == 1 else 'ies'}")
             continue
+        notes.append(f"feed {url}: used ({detection.pattern_name}, {entries} entries)")
         return response, detection
     return None
 
@@ -303,10 +320,12 @@ async def run_detection_detailed(
         # it links its own calendar feed, the feed *is* the source — dated,
         # structured and far cheaper to process than a long rendered listing —
         # and everything below runs against it.
-        followed = await follow_advertised_feed(response)
+        feed_notes: list[str] = []
+        followed = await follow_advertised_feed(response, feed_notes)
         if followed is not None:
             response, detection = followed
             listing_url = response.final_url
+        detection.evidence["feed_notes"] = feed_notes
     completed_at = datetime.now(UTC)
 
     # A "no confident winner" result can still carry a plausible-but-below-

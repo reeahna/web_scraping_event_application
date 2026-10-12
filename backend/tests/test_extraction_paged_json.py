@@ -306,3 +306,51 @@ def test_records_without_links_are_identified_by_id():
     assert config.api_endpoint == API
     assert "canonical_url" not in config.required_fields
     assert proposal.missing_required_fields == ()
+
+
+# --- Laravel-style pages and observed filters ---------------------------------
+
+
+def _laravel_resource(records, *, current=1, last=3):
+    return {
+        "data": records,
+        "links": {"next": f"{API}?page={current + 1}" if current < last else None},
+        "meta": {"current_page": current, "last_page": last, "per_page": len(records)},
+    }
+
+
+GIVE_RECORDS = [
+    {"id": n, "title": f"Volunteer shift {n}", "start_date_time": "2026-11-01 09:00:00",
+     "url": f"https://volunteer.example.org/event/{n}"}
+    for n in (1, 2, 3)
+]
+
+
+def test_nested_meta_page_metadata_is_recognised():
+    body = _laravel_resource(GIVE_RECORDS)
+    result = PagedJsonEventsDetector().detect(_response(body))
+    assert result.pattern_name == NAME
+    assert result.evidence["record_path"] == "data"
+
+
+def test_nested_meta_drives_pagination():
+    config = _config(events_root="data")
+    assert _next(_laravel_resource(GIVE_RECORDS), config=config).url == f"{API}?page=2"
+    last_page = _laravel_resource(GIVE_RECORDS, current=3, last=3)
+    assert _next(last_page, config=config) is None
+
+
+def test_flat_laravel_paginator_is_recognised():
+    body = {"data": GIVE_RECORDS, "current_page": 1, "last_page": 2, "per_page": 3}
+    assert PagedJsonEventsDetector().detect(_response(body)).pattern_name == NAME
+    assert _next(body, config=_config(events_root="data")).url == f"{API}?page=2"
+
+
+def test_observed_filters_are_kept_and_positions_secrets_dates_dropped():
+    url = (
+        f"{API}?group_id=265981&type=upcoming&page=2&per_page=12&api_token=abc"
+        "&start_date=2026-10-12&_=1792537200000"
+    )
+    proposal = _propose(_laravel_resource(GIVE_RECORDS), url=url)
+    assert proposal.configuration.api_endpoint == f"{API}?group_id=265981&type=upcoming"
+    assert any("not persisted" in w for w in proposal.warnings)

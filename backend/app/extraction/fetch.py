@@ -292,6 +292,43 @@ class HttpFetchStrategy:
         return b"".join(chunks), truncated
 
 
+# Chromium network errors (`net::ERR_<code>`), by code prefix, grouped by what
+# they mean for an admin.
+_NET_ERROR_PROSE: tuple[tuple[tuple[str, ...], str], ...] = (
+    (
+        ("HTTP2_PROTOCOL_ERROR", "CONNECTION_RESET", "CONNECTION_CLOSED", "EMPTY_RESPONSE"),
+        "The site dropped the browser's connection. Some sites turn away automated "
+        "browsers this way.",
+    ),
+    (("NAME_NOT_RESOLVED", "NAME_RESOLUTION_FAILED"), "The site's address could not be found."),
+    (("CERT_", "SSL_"), "The site's security certificate was rejected."),
+    (("TIMED_OUT", "CONNECTION_TIMED_OUT"), "The site did not respond in time."),
+    (
+        ("CONNECTION_REFUSED", "CONNECTION_FAILED", "ADDRESS_UNREACHABLE"),
+        "The site refused the connection.",
+    ),
+    (("TOO_MANY_REDIRECTS",), "The page redirects in a loop."),
+    (
+        ("BLOCKED_BY_CLIENT", "ACCESS_DENIED", "ABORTED", "FAILED"),
+        "Bulletin's browser stopped the request, usually because the page or a redirect "
+        "pointed at an address Bulletin does not fetch.",
+    ),
+)
+
+
+def _explain_browser_error(detail: str) -> str:
+    if detail.startswith("net::ERR_"):
+        code = detail.removeprefix("net::ERR_")
+        for needles, prose in _NET_ERROR_PROSE:
+            if any(code.startswith(needle) for needle in needles):
+                return f"{prose} ({detail})"
+        return f"The browser could not load the page ({detail})."
+    return (
+        f"The restricted browser failed to load the page ({detail}). This is a problem "
+        "running the browser on Bulletin's server, not a block by the site."
+    )
+
+
 def explain_block_reason(reason: str | None) -> str | None:
     """A plain-language sentence for any machine block reason, for the admin
     UI. Falls back to the raw code rather than showing nothing."""
@@ -314,10 +351,7 @@ def explain_block_reason(reason: str | None) -> str | None:
     if kind == "login_wall":
         return f"The page asks visitors to sign in (\"{detail}\"), so it cannot be imported."
     if kind == "browser_error":
-        return (
-            f"The restricted browser failed to load the page ({detail}). This is a problem "
-            "running the browser on Bulletin's server, not a block by the site."
-        )
+        return _explain_browser_error(detail)
     if kind == "ssrf_blocked":
         return (
             f"{detail or 'The address'} resolves to a private or disallowed network address, "

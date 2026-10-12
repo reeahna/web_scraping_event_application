@@ -23,6 +23,7 @@ from urllib.parse import parse_qs, urljoin, urlsplit
 from bs4 import BeautifulSoup
 
 from app.extraction.network_safety import BlockedHostError, validate_request_url
+from app.extraction.patterns.paged_json_events import page_metadata
 from app.extraction.types import FetchRequest, FetchResponse
 from app.schemas.extraction import SiteConfiguration
 
@@ -317,7 +318,8 @@ class PageMetadataPagination:
             return None
         if not isinstance(payload, dict):
             return None
-        if payload.get("last") is True or payload.get("hasNext") is False:
+        flags = page_metadata(payload)
+        if flags.get("last") is True or flags.get("hasNext") is False:
             return None
 
         root = (config.json_paths or {}).get("events_root") or "content"
@@ -325,9 +327,10 @@ class PageMetadataPagination:
         if isinstance(records, list) and not records:
             return None
 
-        total_pages = _metadata_int(payload, _TOTAL_PAGES_KEYS)
-        zero_based = _metadata_int(payload, _ZERO_BASED_PAGE_KEYS)
-        one_based = _metadata_int(payload, _ONE_BASED_PAGE_KEYS)
+        metadata = page_metadata(payload)
+        total_pages = _metadata_int(metadata, _TOTAL_PAGES_KEYS)
+        zero_based = _metadata_int(metadata, _ZERO_BASED_PAGE_KEYS)
+        one_based = _metadata_int(metadata, _ONE_BASED_PAGE_KEYS)
         if zero_based is not None:
             next_page = zero_based + 1
             if total_pages is not None and next_page >= total_pages:

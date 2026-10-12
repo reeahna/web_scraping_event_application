@@ -52,6 +52,7 @@ PAGE_METADATA_KEYS = frozenset(
         "totalpages", "totalelements", "number", "size", "last", "first",
         "numberofelements", "pageable", "page", "pagenumber", "currentpage",
         "pagesize", "pagecount", "totalitems", "totalcount", "total", "hasnext",
+        "lastpage", "perpage", "nextpageurl",
     }
 )
 
@@ -63,11 +64,13 @@ _FIELD_KEYS: dict[str, tuple[str, ...]] = {
     "start_datetime": (
         "startdatetime", "startdate", "start", "startsat", "starttime", "eventstart",
         "begindate", "begin", "datestart", "startdateutc", "eventdate", "date", "firstdate",
-        "datetime", "dates", "occurrences",
+        "datetime", "dates", "occurrences", "startson", "startdatetimeutc", "startutc",
+        "startdatelocal", "startdatetimelocal",
     ),
     "end_datetime": (
         "enddatetime", "enddate", "end", "endsat", "endtime", "eventend", "dateend",
-        "finishdate", "lastdate", "datetime",
+        "finishdate", "lastdate", "datetime", "endson", "enddatetimeutc", "endutc",
+        "enddatelocal", "enddatetimelocal",
     ),
     "canonical_url": (
         "url", "eventurl", "permalink", "link", "detailurl", "canonicalurl", "weburl",
@@ -105,13 +108,32 @@ def norm_key(key: Any) -> str:
     return "".join(ch for ch in str(key).lower() if ch.isalnum())
 
 
+# Objects some APIs nest their page metadata under, e.g. a Laravel API
+# resource's `{"data": [...], "meta": {"current_page": 1, "last_page": 4}}`.
+PAGE_METADATA_CONTAINERS = ("meta", "pagination", "paging", "pageinfo", "page")
+
+
+def page_metadata(payload: Any) -> dict:
+    """The response's page metadata as one flat dict: top-level keys, plus the
+    keys of a nested metadata object (top level wins)."""
+    if not isinstance(payload, dict):
+        return {}
+    merged: dict = {}
+    for key, value in payload.items():
+        if norm_key(key) in PAGE_METADATA_CONTAINERS and isinstance(value, dict):
+            merged.update(value)
+    merged.update(payload)
+    return merged
+
+
 def record_root(payload: Any) -> str | None:
     """The top-level key holding the record array of a paged response, or
     None. `content` qualifies on its own; the more generic names only count
-    next to page metadata, so an unrelated `{"data": [...]}` is not claimed."""
+    next to page metadata (top level or in a `meta`-style object), so an
+    unrelated `{"data": [...]}` is not claimed."""
     if not isinstance(payload, dict):
         return None
-    has_metadata = any(norm_key(k) in PAGE_METADATA_KEYS for k in payload)
+    has_metadata = any(norm_key(k) in PAGE_METADATA_KEYS for k in page_metadata(payload))
     for key in RECORD_ROOTS:
         value = payload.get(key)
         if not isinstance(value, list):
