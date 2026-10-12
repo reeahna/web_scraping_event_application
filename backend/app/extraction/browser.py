@@ -38,7 +38,7 @@ import sys
 import weakref
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
-from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
+from urllib.parse import parse_qsl, urlencode, urljoin, urlsplit, urlunsplit
 
 from app.extraction.challenge import find_marker
 from app.extraction.network_safety import (
@@ -614,6 +614,47 @@ def _records_at(payload, record_path: str) -> list:
     return [r for r in found if isinstance(r, dict)] if isinstance(found, list) else []
 
 
+# Record-array roots of the structured APIs the registered patterns read, tried
+# in order when a configuration names none: Simpleview `docs.docs`, The Events
+# Calendar / LiveWhale `events`, paged JSON `content`, Engage `value`, then
+# generic names. Shapes, not providers: a root is used only if it holds objects.
+_RECORD_PATH_CANDIDATES = (
+    "docs.docs", "events", "content", "value", "items", "results", "hits", "data", "records",
+)
+
+
+def _infer_record_path(payload) -> str | None:
+    for path in _RECORD_PATH_CANDIDATES:
+        found = _get_at_path(payload, path)
+        if isinstance(found, list) and any(isinstance(r, dict) for r in found):
+            return path
+    return None
+
+
+# Where a JSON API states its own next page (The Events Calendar
+# `next_rest_url`, JSON:API / HAL `links.next`, Laravel `next_page_url`, ...).
+_NEXT_LINK_CANDIDATES = (
+    "next_rest_url", "next_page_url", "nextPageUrl", "next", "links.next", "links.next.href",
+    "_links.next.href", "meta.next", "paging.next", "pagination.next",
+)
+
+
+def _next_link(payload, current_url: str) -> str | None:
+    """The next-page URL a response advertises, resolved against the page it
+    came from, or None. Only same-origin links are followed."""
+    for path in _NEXT_LINK_CANDIDATES:
+        found = _get_at_path(payload, path)
+        if isinstance(found, dict):
+            found = found.get("href")
+        if not isinstance(found, str) or not found.strip():
+            continue
+        url = urljoin(current_url, found.strip())
+        here, there = urlsplit(current_url), urlsplit(url)
+        if (there.scheme, there.netloc) == (here.scheme, here.netloc) and url != current_url:
+            return url
+    return None
+
+
 # Candidate paths for a "total" count, tried in order after any configured path.
 _TOTAL_PATH_CANDIDATES = ("docs.total", "docs.count", "total", "count", "meta.total")
 # Stable-identifier fields for cross-page dedup, best first.
@@ -773,7 +814,7 @@ class BrowserStructuredResponseFetchStrategy:
         plan: BrowserPlan | None = None,
         browser: BrowserFetchStrategy | None = None,
         recipe=None,
-        record_path: str = "docs.docs",
+        record_path: str | None = None,
         timezone: str | None = None,
         max_pages: int = 20,
         max_records: int = 2000,
@@ -784,7 +825,10 @@ class BrowserStructuredResponseFetchStrategy:
         self._plan = plan
         self._browser = browser or BrowserFetchStrategy()
         self._recipe = recipe
-        self._record_path = record_path or "docs.docs"
+        # None means "find it in the response": the configuration names no
+        # record root, so the first page's own shape decides (see
+        # _infer_record_path) rather than a Simpleview-specific default.
+        self._record_path = record_path or None
         self._timezone = timezone
         self._max_pages = max(1, max_pages)
         self._max_records = max(1, max_records)
@@ -847,12 +891,14 @@ class BrowserStructuredResponseFetchStrategy:
 
     async def _fetch_paginated(self) -> FetchResponse:
         record_path = self._record_path
+        resolved = {"path": record_path}
         total_path = self._recipe.pagination.total_path if self._recipe is not None else None
         state = {
             "processed": 0, "records": [], "seen": set(), "total": None, "raw": 0,
             "rows": [], "stop": None, "last_status": 200, "last_returned": 0, "last_new": 0,
             "last_json_ok": True, "seed_url": None, "json_param": None, "offset_path": None,
             "limit": None, "first_count": None, "incomplete": False, "failed_offset": None,
+            "last_next": None, "visited": set(),
         }
 
         def _effective_limit() -> int:
@@ -863,9 +909,16 @@ class BrowserStructuredResponseFetchStrategy:
                 page = pages[state["processed"]]
                 index = state["processed"]
                 state["processed"] += 1
+                state["visited"].add(page.url)
+                state["last_next"] = (
+                    _next_link(page.json, page.url) if page.json is not None else None
+                )
                 if state["total"] is None and page.json is not None:
                     state["total"] = _detect_total(page.json, total_path)
-                records = _records_at(page.json, record_path) if page.json is not None else []
+                if resolved["path"] is None and page.json is not None:
+                    resolved["path"] = _infer_record_path(page.json)
+                path = resolved["path"]
+                records = _records_at(page.json, path) if page.json is not None and path else []
                 if index == 0:
                     state["first_count"] = len(records)
                 state["raw"] += len(records)
@@ -935,6 +988,10 @@ class BrowserStructuredResponseFetchStrategy:
                 state["stop"] = "max_pages"
                 return None
             if not (state["seed_url"] and state["json_param"] and state["offset_path"] and limit):
+                # No offset to advance: follow the next page the API itself links.
+                follow = state["last_next"]
+                if follow and follow not in state["visited"]:
+                    return follow
                 state["stop"] = "no_offset_cursor"
                 return None
             # Subsequent pages: the same request with ONLY the offset advanced.
@@ -995,7 +1052,7 @@ class BrowserStructuredResponseFetchStrategy:
 
         first_json = result.pages[0].json if result.pages and result.pages[0].json else {}
         combined = copy.deepcopy(first_json) if isinstance(first_json, dict) else {}
-        _set_at_path(combined, record_path, state["records"])
+        _set_at_path(combined, resolved["path"] or "docs.docs", state["records"])
         final_url = result.pages[0].url if result.pages else result.final_url
         return self._json_response(combined, final_url=final_url, pagination=pagination)
 

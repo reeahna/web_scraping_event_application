@@ -111,9 +111,12 @@ async def test_repreview_after_stale_edit_unblocks_approval(db_session, draft_we
 
 
 @pytest.mark.asyncio
-async def test_approval_blocked_when_latest_detection_flagged_browser_required(
+async def test_stale_browser_required_detection_does_not_block_a_previewed_draft(
     db_session, draft_website
 ):
+    # Detection flagged the listing page as browser-only, but the current draft
+    # (e.g. one recovery built on a discovered API) previewed successfully over
+    # HTTP. The draft's own preview decides, not the earlier detection verdict.
     website, admin = draft_website
     website.proposed_pattern = {"detection": {"browser_required": True}, "configuration": None}
     db_session.commit()
@@ -121,9 +124,20 @@ async def test_approval_blocked_when_latest_detection_flagged_browser_required(
     with patched_http_fetch(html_handler("jsonld_single_event.html")):
         await preview_extraction(db_session, website)
 
-    with pytest.raises(AppError) as exc:
+    approve_configuration(db_session, website, approved_by_user_id=admin.id)
+    assert website.approved_pattern == website.configuration
+
+
+@pytest.mark.asyncio
+async def test_stale_browser_required_detection_still_needs_a_preview(
+    db_session, draft_website
+):
+    website, admin = draft_website
+    website.proposed_pattern = {"detection": {"browser_required": True}, "configuration": None}
+    db_session.commit()
+
+    with pytest.raises(AppError):
         approve_configuration(db_session, website, approved_by_user_id=admin.id)
-    assert "browser rendering" in str(exc.value).lower()
 
 
 def test_approval_blocked_for_unregistered_pattern_name(db_session, draft_website):

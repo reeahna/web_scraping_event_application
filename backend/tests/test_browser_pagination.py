@@ -350,3 +350,61 @@ def test_pagination_bounds_use_record_cap_not_max_pages():
     # 60 events) is NOT used.
     assert bounds == {"max_records": 250, "max_pages": _BROWSER_STRUCTURED_PAGE_CAP}
     assert _BROWSER_STRUCTURED_PAGE_CAP >= 9  # enough for 108 records at 12/page
+
+
+# --- record root inferred when the configuration names none -------------------
+
+
+TRIBE = "https://visit.example.com/wp-json/tribe/events/v1/events"
+
+
+def _tribe_page(page, per_page=3, pages=2):
+    events = [
+        {"id": n, "title": f"Show {n}", "start_date": "2026-11-01 19:00:00",
+         "url": f"https://visit.example.com/event/{n}/"}
+        for n in range((page - 1) * per_page, page * per_page)
+    ]
+    body = {"events": events, "total": per_page * pages, "total_pages": pages}
+    if page < pages:
+        body["next_rest_url"] = f"{TRIBE}?page={page + 1}"
+    return body
+
+
+class _TribeBrowser:
+    """A browser observing The Events Calendar REST API: records under
+    `events` (not Simpleview's `docs.docs`), pages linked by `next_rest_url`."""
+
+    def __init__(self):
+        self.fetched_urls: list[str] = []
+
+    async def render_and_fetch_json_pages(self, source_page_url, plan=None, *, next_url, max_pages):
+        pages: list[BrowserJsonPage] = []
+        for _ in range(max_pages):
+            url = next_url(pages, [(TRIBE, _tribe_page(1))])
+            if not url:
+                break
+            self.fetched_urls.append(url)
+            number = int(dict(parse_qsl(urlsplit(url).query)).get("page", 1))
+            pages.append(BrowserJsonPage(url=url, status=200, json=_tribe_page(number)))
+        return BrowserPagedResult(final_url=source_page_url, status_code=200, pages=pages)
+
+
+def test_record_root_is_inferred_and_api_next_links_are_followed():
+    browser = _TribeBrowser()
+    strategy = BrowserStructuredResponseFetchStrategy(
+        source_page_url=URL, endpoint_match="/wp-json/tribe/events/v1/events",
+        browser=browser, timezone="UTC",
+    )
+    resp = asyncio.run(strategy.fetch(FetchRequest(url=API), FetchConfig()))
+    body = json.loads(resp.text)
+    assert [e["id"] for e in body["events"]] == [0, 1, 2, 3, 4, 5]
+    assert browser.fetched_urls == [TRIBE, f"{TRIBE}?page=2"]
+    assert resp.pagination["reported_total"] == 6
+    assert resp.pagination["stop_reason"] == "reported_total_reached"
+
+
+def test_cross_origin_next_links_are_not_followed():
+    from app.extraction.browser import _next_link
+
+    assert _next_link({"next_rest_url": "https://elsewhere.example.net/p2"}, TRIBE) is None
+    assert _next_link({"links": {"next": "?page=2"}}, TRIBE) == f"{TRIBE}?page=2"

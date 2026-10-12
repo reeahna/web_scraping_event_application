@@ -368,7 +368,7 @@ def _recovery_browser_fetch(config, *, source_page_url: str, strategy):
         plan=_browser_plan_for(config),
         browser=strategy,
         recipe=config.request_recipe,
-        record_path=(config.json_paths or {}).get("events_root", "docs.docs"),
+        record_path=(config.json_paths or {}).get("events_root"),
         timezone=config.timezone,
         **_browser_pagination_bounds(config),
     )
