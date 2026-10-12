@@ -160,9 +160,12 @@ _DATE_FIELDS = frozenset(
     {
         "startdate", "start", "startdatetime", "begindate", "date", "dates",
         "eventdate", "datetime", "starttime", "start_date", "startdateutc",
+        "startson", "startsat",
     }
 )
-_ENDDATE_FIELDS = frozenset({"enddate", "end", "enddatetime", "finishdate", "end_date"})
+_ENDDATE_FIELDS = frozenset(
+    {"enddate", "end", "enddatetime", "finishdate", "end_date", "endson", "endsat"}
+)
 _URL_FIELDS = frozenset(
     {"url", "link", "detailurl", "permalink", "canonicalurl", "href", "eventurl", "slug"}
 )

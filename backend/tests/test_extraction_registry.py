@@ -65,6 +65,8 @@ def test_default_registry_has_the_expected_patterns():
         "inline_json_events",
         # First-party paged JSON APIs (`content` + page metadata)
         "paged_json_events",
+        # Campus Labs Engage discovery API
+        "campus_labs_engage",
     }
     # Every registered pattern is automatically configurable.
     assert all(registry.get(name).proposer is not None for name in registry.names())

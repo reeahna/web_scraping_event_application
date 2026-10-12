@@ -11,6 +11,7 @@ from dataclasses import dataclass
 from app.extraction.detection import (
     RELIABILITY_ORDER,
     AlgoliaSearchDetector,
+    CampusLabsEngageDetector,
     EmbeddedJsonDetector,
     IcsCalendarDetector,
     InlineJsonEventsDetector,
@@ -27,6 +28,7 @@ from app.extraction.detection import (
     WordPressRestDetector,
 )
 from app.extraction.inference.base import PatternConfigurationProposer
+from app.extraction.inference.proposers.engage import CampusLabsEngageProposer
 from app.extraction.inference.proposers.feeds import (
     AlgoliaSearchProposer,
     IcsCalendarProposer,
@@ -50,6 +52,8 @@ from app.extraction.inference.proposers.structured import (
 from app.extraction.patterns.algolia_search import PATTERN_VERSION as _ALGOLIA_VERSION
 from app.extraction.patterns.algolia_search import AlgoliaSearchPattern
 from app.extraction.patterns.base import ExtractionPattern
+from app.extraction.patterns.campus_labs_engage import PATTERN_VERSION as _ENGAGE_VERSION
+from app.extraction.patterns.campus_labs_engage import CampusLabsEngagePattern
 from app.extraction.patterns.embedded_json import PATTERN_VERSION as _EMBEDDED_VERSION
 from app.extraction.patterns.embedded_json import EmbeddedJsonPattern
 from app.extraction.patterns.ics_calendar import PATTERN_VERSION as _ICS_VERSION
@@ -367,6 +371,22 @@ def build_default_registry() -> PatternRegistry:
             supported_pagination=("none", "page_metadata", "query_param"),
             proposer=PagedJsonEventsProposer(),
             display_name="Paged JSON events API",
+            classification="structured",
+        )
+    )
+    registry.register(
+        PatternRegistration(
+            name="campus_labs_engage",
+            detector=CampusLabsEngageDetector(),
+            extractor=CampusLabsEngagePattern(),
+            config_schema=SiteConfiguration,
+            priority=RELIABILITY_ORDER.index("campus_labs_engage"),
+            version=_ENGAGE_VERSION,
+            browser_required=False,
+            # Paged by the request recipe's skip/take cursor.
+            supported_pagination=("none",),
+            proposer=CampusLabsEngageProposer(),
+            display_name="Campus Labs Engage",
             classification="structured",
         )
     )

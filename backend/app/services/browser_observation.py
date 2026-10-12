@@ -50,6 +50,7 @@ _STRUCTURED_API_PATTERNS = frozenset(
         "livewhale_json",
         "simpleview_events",
         "paged_json_events",
+        "campus_labs_engage",
     }
 )
 
@@ -137,6 +138,7 @@ _EXTERNAL_API_PATTERNS = frozenset(
         "simpleview_events",
         "algolia_search",
         "paged_json_events",
+        "campus_labs_engage",
     }
 )
 

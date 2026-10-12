@@ -7,7 +7,7 @@ executable content). The pipeline is: fetch → detect → extract → normalize
 validate → dedup, and it is deterministic (identical input + config → identical
 output).
 
-## Registered patterns (13)
+## Registered patterns (14)
 
 | Pattern | Source shape |
 |---------|--------------|
@@ -23,6 +23,7 @@ output).
 | `next_data` | Next.js `__NEXT_DATA__` |
 | `nuxt_payload` | Nuxt `__NUXT_DATA__` |
 | `algolia_search` | Algolia search response (key via secret reference) |
+| `campus_labs_engage` | Campus Labs Engage discovery API (`value` records; recipe with `endsAfter`/`skip`/`take`) |
 | `paged_json_events` | Paged JSON API (`content` + page metadata, Spring-style); fields inferred |
 
 ## Shared capabilities (Phase 8G)
