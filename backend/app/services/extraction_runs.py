@@ -897,7 +897,7 @@ def _build_fetch_strategy(config: SiteConfiguration) -> FetchStrategy:
             endpoint_match=config.api_endpoint or "",
             plan=plan,
             recipe=config.request_recipe,
-            record_path=(config.json_paths or {}).get("events_root", "docs.docs"),
+            record_path=(config.json_paths or {}).get("events_root"),
             timezone=config.timezone,
             **_browser_pagination_bounds(config),
         )

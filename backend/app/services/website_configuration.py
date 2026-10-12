@@ -131,13 +131,12 @@ def approve_configuration(db: Session, website: Website, *, approved_by_user_id:
             "Configuration cannot be approved.",
             status_code=409,
         )
-    proposed_detection = (website.proposed_pattern or {}).get("detection") or {}
-    if proposed_detection.get("browser_required"):
-        raise AppError(
-            "The latest detection indicated this site requires browser rendering, which is "
-            "not supported yet. Configuration cannot be approved.",
-            status_code=409,
-        )
+    # A detection-time "browser required" verdict is deliberately not checked
+    # here. It describes the listing page as first fetched, not this draft:
+    # recovery routinely replaces it with a configuration that works over HTTP
+    # (a discovered API, an advertised feed) or runs through the browser. What
+    # decides approvability is the draft's own successful preview, required
+    # just below for the current configuration version.
 
     if website.city_id is None or website.city is None or not website.city.is_active:
         raise AppError(

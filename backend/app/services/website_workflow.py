@@ -245,10 +245,6 @@ def build_website_workflow(
             )
         if not city_active:
             approval_blockers.append("The source has no active city.")
-        if detection_browser_required:
-            approval_blockers.append(
-                "The configuration requires browser rendering, which cannot be approved."
-            )
         if preview is None:
             approval_blockers.append("No preview has been run for the current configuration.")
         elif not preview_matches:
@@ -536,7 +532,10 @@ def build_website_workflow(
         if isinstance(current_config, dict)
         else "http"
     )
-    browser_required = execution_strategy == "browser" or detection_browser_required
+    # A draft states its own transport; the detection verdict only matters before one exists.
+    browser_required = execution_strategy == "browser" or (
+        detection_browser_required and not has_draft
+    )
 
     return WebsiteWorkflow(
         current_step=current_step,
