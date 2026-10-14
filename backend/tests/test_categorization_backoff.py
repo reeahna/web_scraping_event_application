@@ -78,3 +78,22 @@ def test_other_failures_pause_instead_of_retrying_next_tick(monkeypatch):
     started = datetime.now(UTC)
     asyncio.run(runtime._categorization_tick())
     assert timedelta(minutes=14) <= _pause(runtime, started) <= timedelta(minutes=16)
+
+
+def test_repeated_failures_wait_longer_each_time_up_to_a_cap(monkeypatch):
+    runtime = _runtime(monkeypatch, GeminiError("HTTP 503: overloaded"))
+    pauses = []
+    for _ in range(6):
+        runtime._categorization_cooldown_until = None
+        started = datetime.now(UTC)
+        asyncio.run(runtime._categorization_tick())
+        pauses.append(round(_pause(runtime, started).total_seconds() / 60))
+    assert pauses == [15, 30, 60, 120, 240, 240]
+
+
+def test_a_success_resets_the_failure_backoff(monkeypatch):
+    runtime = _runtime(monkeypatch, GeminiError("HTTP 503: overloaded"))
+    runtime._categorization_failures = 3
+    monkeypatch.setattr(ai_categorization, "drain_categorization_queue", lambda *a, **k: 0)
+    asyncio.run(runtime._categorization_tick())
+    assert runtime._categorization_failures == 0

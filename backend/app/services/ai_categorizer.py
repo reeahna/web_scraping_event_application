@@ -53,6 +53,13 @@ class GeminiUnavailable(GeminiError):
     """No API key is configured, so categorization cannot run at all."""
 
 
+class GeminiOverloaded(GeminiError):
+    """Google answered with a 5xx after retries (in practice 503 "the model is
+    overloaded"). Not our fault and not a quota problem, but on the free tier
+    each failed request still counts toward the daily limit, so callers back
+    off rather than asking again straight away."""
+
+
 class GeminiQuotaExceeded(GeminiError):
     """The API returned 429 after retries: the rate or daily-quota limit is
     reached. Callers stop cleanly and resume later — the free-tier daily quota
@@ -262,6 +269,7 @@ class GeminiCategorizer:
         timeout: float = 60.0,
         min_interval_seconds: float = 4.0,
         max_retries: int = 4,
+        fallback_model: str | None = None,
     ) -> None:
         if not api_key:
             raise GeminiUnavailable("no Gemini API key configured")
@@ -269,6 +277,13 @@ class GeminiCategorizer:
         self._min_interval = max(0.0, min_interval_seconds)
         self._max_retries = max(0, max_retries)
         self._url = _ENDPOINT.format(model=model)
+        # When the primary model is overloaded (5xx), the same request is sent
+        # once to this model instead. Free-tier capacity and quota are per model.
+        self._fallback_url = (
+            _ENDPOINT.format(model=fallback_model)
+            if fallback_model and fallback_model != model
+            else None
+        )
         self._last_request_at = 0.0
         # The key rides as a query parameter per Google AI Studio's REST API; it
         # never goes in a logged header.
@@ -298,12 +313,13 @@ class GeminiCategorizer:
                 "responseMimeType": "application/json",
             },
         }
+        url = self._url
         attempt = 0
         while True:
             self._throttle()
             self._last_request_at = time.monotonic()
             try:
-                response = self._client.post(self._url, json=payload)
+                response = self._client.post(url, json=payload)
             except httpx.HTTPError as exc:
                 if attempt >= self._max_retries:
                     raise GeminiError(f"request failed: {exc}") from exc
@@ -317,10 +333,16 @@ class GeminiCategorizer:
                 wait = float(delay) if delay and delay.isdigit() else min(2**attempt, 60)
                 time.sleep(wait)
                 continue
+            if response.status_code >= 500 and self._fallback_url and url != self._fallback_url:
+                url = self._fallback_url
+                attempt = 0
+                continue
             if response.status_code != 200:
                 message = f"HTTP {response.status_code}: {_error_message(response)}"
                 if response.status_code == 429:
                     raise GeminiQuotaExceeded(message, _retry_after_seconds(response))
+                if response.status_code >= 500:
+                    raise GeminiOverloaded(message)
                 raise GeminiError(message)
             return response.json()
 

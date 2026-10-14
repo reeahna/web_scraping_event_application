@@ -133,6 +133,7 @@ def main() -> None:
             timeout=settings.gemini_timeout_seconds,
             min_interval_seconds=settings.gemini_min_interval_seconds,
             max_retries=settings.gemini_max_retries,
+            fallback_model=settings.gemini_fallback_model,
         ) as categorizer:
             for start in range(0, total, batch_size):
                 chunk = events[start : start + batch_size]

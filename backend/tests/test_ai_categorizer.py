@@ -14,6 +14,7 @@ from app.services.ai_categorizer import (
     EventToClassify,
     GeminiCategorizer,
     GeminiError,
+    GeminiOverloaded,
     GeminiQuotaExceeded,
     GeminiUnavailable,
     _parse_labels,
@@ -187,3 +188,59 @@ def test_http_429_reports_which_quota_from_the_error_json():
 def test_quota_exceeded_is_a_gemini_error():
     # The script and the scheduler both rely on this subclass relationship.
     assert issubclass(GeminiQuotaExceeded, GeminiError)
+
+
+class _SequenceClient:
+    """Answers each POST with the next response and records the URLs asked."""
+
+    def __init__(self, *responses: _FakeResponse):
+        self._responses = list(responses)
+        self.urls: list[str] = []
+
+    def post(self, url, json):
+        self.urls.append(url)
+        return self._responses.pop(0)
+
+    def close(self):
+        pass
+
+
+def test_http_503_raises_overloaded():
+    categorizer = GeminiCategorizer("test-key", "m", min_interval_seconds=0.0, max_retries=0)
+    categorizer._client = _FakeClient(_FakeResponse(503, text="overloaded"))
+    with pytest.raises(GeminiOverloaded):
+        categorizer.classify_batch(CATEGORIES, [EventToClassify(id=1, title="x")])
+
+
+def test_overloaded_model_falls_back_once():
+    categorizer = GeminiCategorizer(
+        "test-key", "main", min_interval_seconds=0.0, max_retries=0, fallback_model="lite"
+    )
+    ok = _FakeResponse(200, body=_response([{"id": 1, "category": "music"}]))
+    client = _SequenceClient(_FakeResponse(503, text="overloaded"), ok)
+    categorizer._client = client
+    labels = categorizer.classify_batch(CATEGORIES, [EventToClassify(id=1, title="x")])
+    assert labels == {1: EventLabel("music")}
+    assert ["main" in client.urls[0], "lite" in client.urls[1]] == [True, True]
+
+
+def test_fallback_that_is_also_overloaded_raises():
+    categorizer = GeminiCategorizer(
+        "test-key", "main", min_interval_seconds=0.0, max_retries=0, fallback_model="lite"
+    )
+    client = _SequenceClient(_FakeResponse(503, text="busy"), _FakeResponse(503, text="busy"))
+    categorizer._client = client
+    with pytest.raises(GeminiOverloaded):
+        categorizer.classify_batch(CATEGORIES, [EventToClassify(id=1, title="x")])
+    assert len(client.urls) == 2
+
+
+def test_quota_error_does_not_fall_back():
+    categorizer = GeminiCategorizer(
+        "test-key", "main", min_interval_seconds=0.0, max_retries=0, fallback_model="lite"
+    )
+    client = _SequenceClient(_FakeResponse(429, text="quota"))
+    categorizer._client = client
+    with pytest.raises(GeminiQuotaExceeded):
+        categorizer.classify_batch(CATEGORIES, [EventToClassify(id=1, title="x")])
+    assert len(client.urls) == 1
