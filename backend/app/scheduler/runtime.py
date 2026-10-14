@@ -75,8 +75,12 @@ class SchedulerRuntime:
         self._categorization_cooldown = timedelta(hours=1)
         # Any other failure (Google's 503 "overloaded" in practice) waits this
         # long instead of retrying on the next one-minute tick, since a failed
-        # request can still count against the 20-a-day free quota.
+        # request still counts against the 20-a-day free quota. The wait doubles
+        # with each failure in a row, up to the cap, and resets on a success, so
+        # a day when the model stays overloaded spends a few requests, not all 20.
         self._categorization_error_cooldown = timedelta(minutes=15)
+        self._categorization_error_cooldown_max = timedelta(hours=4)
+        self._categorization_failures = 0
 
     def start(self) -> None:
         db = self._session_factory()
@@ -289,6 +293,7 @@ class SchedulerRuntime:
                 self._session_factory,
                 limit=get_settings().gemini_batch_size,
             )
+            self._categorization_failures = 0
             if labeled:
                 logger.info("AI-categorized %d event(s)", labeled)
         except GeminiQuotaExceeded as exc:
@@ -303,7 +308,12 @@ class SchedulerRuntime:
                 self._categorization_cooldown_until.isoformat(),
             )
         except Exception as exc:  # noqa: BLE001 - a tick must never kill the loop
-            self._categorization_cooldown_until = now + self._categorization_error_cooldown
+            wait = min(
+                self._categorization_error_cooldown * 2 ** min(self._categorization_failures, 8),
+                self._categorization_error_cooldown_max,
+            )
+            self._categorization_failures += 1
+            self._categorization_cooldown_until = now + wait
             logger.warning(
                 "categorization tick failed: %s; pausing until %s",
                 exc,

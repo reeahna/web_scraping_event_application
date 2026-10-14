@@ -142,6 +142,7 @@ without any of it.
 | `ATTENDABILITY_FILTER_ENABLED` | `true` | Leave out non-events (see above) |
 | `UNSPLASH_ACCESS_KEY` | unset | Placeholder photos for imageless events |
 | `GEMINI_API_KEY` | unset | AI categorization of new events |
+| `GEMINI_FALLBACK_MODEL` | unset | Second Gemini model to try when the main one answers 503 "overloaded" |
 | `GEOCODING_ENABLED`, `GEOCODING_PROVIDER` | off | Fill in map coordinates from addresses |
 | `EMAIL_ENABLED`, `EMAIL_BACKEND` | off | Alert emails |
 | `CONTACT_EMAIL` | unset | Shown on the privacy policy and terms |

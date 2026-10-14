@@ -138,6 +138,9 @@ class Settings(BaseSettings):
     # a full-catalog pass inside the free rate limits.
     gemini_api_key: str | None = None
     gemini_model: str = "gemini-3.6-flash"
+    # Optional second model, tried once when gemini_model answers 503 "overloaded".
+    # A lighter model is usually less busy and has its own free-tier quota.
+    gemini_fallback_model: str | None = None
     # Events per request. The free tier caps requests (20 a day, 5 a minute for
     # Flash at the time of writing), not events, so a big batch stretches the
     # daily quota furthest; 100 events is still far inside the token limit.

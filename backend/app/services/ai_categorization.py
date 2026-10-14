@@ -149,6 +149,7 @@ def drain_categorization_queue(
             timeout=settings.gemini_timeout_seconds,
             min_interval_seconds=0.0,
             max_retries=0,
+            fallback_model=settings.gemini_fallback_model,
         ) as categorizer:
             labels = categorizer.classify_batch(options, to_classify)
 
