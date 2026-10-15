@@ -10,6 +10,7 @@ from app.core.csrf import verify_csrf
 from app.core.exceptions import AppError, NotFoundError
 from app.core.flash import set_flash
 from app.core.forms import OptionalId, reject_unexpected_form_fields
+from app.core.search import LIKE_ESCAPE, contains_pattern
 from app.core.templating import render
 from app.dependencies import ClientIp, CorrelationId, DbSession
 from app.models.city import City
@@ -81,9 +82,13 @@ def list_events(
 ):
     query = db.query(Event)
     if q.strip():
-        term = f"%{q.strip()}%"
+        term = contains_pattern(q.strip())
         query = query.filter(
-            or_(Event.title.ilike(term), Event.venue.ilike(term), Event.source.ilike(term))
+            or_(
+                Event.title.ilike(term, escape=LIKE_ESCAPE),
+                Event.venue.ilike(term, escape=LIKE_ESCAPE),
+                Event.source.ilike(term, escape=LIKE_ESCAPE),
+            )
         )
     if city_id is not None:
         query = query.filter(Event.city_id == city_id)

@@ -2,6 +2,7 @@ from sqlalchemy import func, or_
 from sqlalchemy.orm import Session
 
 from app.core.onboarding import DRAFT
+from app.core.search import LIKE_ESCAPE, contains_pattern
 from app.models.website import Website
 from app.schemas.website import WebsiteCreate, WebsiteUpdate
 
@@ -50,8 +51,13 @@ def search_websites(
 ) -> tuple[list[Website], int]:
     q = db.query(Website)
     if query:
-        like = f"%{query}%"
-        q = q.filter(or_(Website.name.ilike(like), Website.base_url.ilike(like)))
+        like = contains_pattern(query)
+        q = q.filter(
+            or_(
+                Website.name.ilike(like, escape=LIKE_ESCAPE),
+                Website.base_url.ilike(like, escape=LIKE_ESCAPE),
+            )
+        )
     if city_id is not None:
         q = q.filter(Website.city_id == city_id)
     if onboarding_status:

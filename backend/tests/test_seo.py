@@ -151,8 +151,10 @@ def test_social_preview_tags_are_present(client, published_event):
 
 def test_robots_disallows_the_private_areas(client):
     body = client.get("/robots.txt").text
-    for prefix in ("/admin/", "/account/", "/auth/"):
-        assert f"Disallow: {prefix}" in body
+    lines = body.splitlines()
+    for prefix in ("/admin", "/account", "/auth", "/register"):
+        # The bare path, so /admin itself is covered and not only /admin/...
+        assert f"Disallow: {prefix}" in lines
     assert "Sitemap: http" in body
 
 

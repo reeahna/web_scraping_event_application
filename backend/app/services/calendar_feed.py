@@ -6,7 +6,7 @@ parsing the HTML. It holds exactly what the public listing shows, through the
 same visibility rules.
 """
 
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, datetime, time, timedelta
 from urllib.parse import urlsplit
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
@@ -24,11 +24,18 @@ REFRESH_INTERVAL = timedelta(hours=6)
 _MAX_DESCRIPTION = 1000
 
 
-def _zone(name: str | None) -> ZoneInfo:
-    try:
-        return ZoneInfo(name or "UTC")
-    except (ZoneInfoNotFoundError, ValueError):
-        return ZoneInfo("UTC")
+def _zone(*names: str | None) -> ZoneInfo:
+    """The first of `names` that is a real time zone, else UTC. A scraped event
+    can carry a zone name that does not exist; its town's zone is then a far
+    better guess than UTC."""
+    for name in names:
+        if not name:
+            continue
+        try:
+            return ZoneInfo(name)
+        except (ZoneInfoNotFoundError, ValueError):
+            continue
+    return ZoneInfo("UTC")
 
 
 def _event_component(event: Event, *, host: str, tz: ZoneInfo, now: datetime) -> CalendarEvent:
@@ -40,11 +47,19 @@ def _event_component(event: Event, *, host: str, tz: ZoneInfo, now: datetime) ->
     item.add("url", page)
 
     if event.start_time is not None:
-        item.add("dtstart", datetime.combine(event.start_date, event.start_time, tzinfo=tz))
+        start = datetime.combine(event.start_date, event.start_time, tzinfo=tz)
+        item.add("dtstart", start)
+        end = None
         if event.end_time is not None:
             end = datetime.combine(event.end_date or event.start_date, event.end_time, tzinfo=tz)
-            if end > item.decoded("dtstart"):
-                item.add("dtend", end)
+            if end <= start and event.end_date is None:
+                # 22:00 to 02:00 with no end date ends the next morning.
+                end += timedelta(days=1)
+        elif event.end_date is not None and event.end_date > event.start_date:
+            # A multi-day event with no end time runs to the end of its last day.
+            end = datetime.combine(event.end_date + timedelta(days=1), time(0), tzinfo=tz)
+        if end is not None and end > start:
+            item.add("dtend", end)
     else:
         # An all-day event; iCalendar's end date is exclusive.
         item.add("dtstart", event.start_date)
@@ -90,7 +105,7 @@ def town_calendar(city: City, events: list[Event]) -> bytes:
     for event in events:
         if event.start_date is None:
             continue
-        tz = _zone(event.timezone or city.timezone)
+        tz = _zone(event.timezone, city.timezone)
         calendar.add_component(_event_component(event, host=host, tz=tz, now=now))
     # Times carry their zone (TZID); this adds the matching VTIMEZONE blocks
     # strict calendar apps need to place them correctly.

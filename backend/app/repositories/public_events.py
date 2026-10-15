@@ -30,6 +30,7 @@ from sqlalchemy import and_, exists, func, not_, or_, select
 from sqlalchemy.orm import Session, aliased
 
 from app.config import get_settings
+from app.core.search import LIKE_ESCAPE, contains_pattern
 from app.models.city import City
 from app.models.event import Event
 from app.models.website import Website
@@ -199,13 +200,13 @@ def _apply_filters(
     if exclude_source_ids:
         query = query.filter(not_(Event.website_id.in_(exclude_source_ids)))
     if search:
-        like = f"%{search.strip()}%"
+        like = contains_pattern(search.strip())
         query = query.filter(
             or_(
-                Event.title.ilike(like),
-                Event.venue.ilike(like),
-                Event.corrected_venue.ilike(like),
-                Event.description.ilike(like),
+                Event.title.ilike(like, escape=LIKE_ESCAPE),
+                Event.venue.ilike(like, escape=LIKE_ESCAPE),
+                Event.corrected_venue.ilike(like, escape=LIKE_ESCAPE),
+                Event.description.ilike(like, escape=LIKE_ESCAPE),
             )
         )
     if recurrence == "recurring":
