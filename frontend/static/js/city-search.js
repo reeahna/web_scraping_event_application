@@ -109,11 +109,11 @@
       count.textContent = `${town.count} event${town.count === 1 ? "" : "s"}`;
       item.appendChild(count);
 
-      item.addEventListener("mousedown", (event) => {
-        // mousedown, not click: the input's blur would close the list first.
-        event.preventDefault();
-        go(town);
-      });
+      // Keep focus in the input on press, so its blur doesn't close the
+      // list, but only go on click: a press that is dragged off the town and
+      // released elsewhere cancels, as WCAG 2.5.2 asks.
+      item.addEventListener("mousedown", (event) => event.preventDefault());
+      item.addEventListener("click", () => go(town));
       list.appendChild(item);
     });
 
