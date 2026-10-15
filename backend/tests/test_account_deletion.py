@@ -100,3 +100,20 @@ def test_the_account_page_offers_deletion(client, make_user, login):
     _signed_in(client, make_user, login)
     page = client.get("/account").text
     assert 'action="/account/delete"' in page
+
+
+def test_the_same_email_can_sign_up_again_after_deleting(
+    client, make_user, login, db_session, make_city
+):
+    old = _signed_in(client, make_user, login, email="returner@example.com")
+    engagement.follow(db_session, user_id=old.id, follow_type="city", target_id=make_city().id)
+    assert _delete(client, confirmation="DELETE").status_code == 303
+
+    # Signing in again with the same Google account starts a brand-new account.
+    resp = login("returner@example.com")
+    assert resp.status_code == 303 and resp.headers["location"] == "/"
+    db_session.expire_all()
+    fresh = db_session.query(User).filter_by(email="returner@example.com").one()
+    # A fresh, empty account: nothing from the deleted one carries over.
+    assert engagement.followed_cities(db_session, user_id=fresh.id) == []
+    assert client.get("/account").status_code == 200

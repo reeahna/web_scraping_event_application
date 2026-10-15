@@ -87,7 +87,7 @@ def test_with_new_accounts_off_strangers_are_refused_but_members_and_owner_get_i
 
     assert login("stranger@example.com").headers["location"] == "/auth/login"
     assert db_session.query(User).filter_by(email="stranger@example.com").count() == 0
-    assert login("member@example.com").headers["location"] == "/account"
+    assert login("member@example.com").headers["location"] == "/"
     assert login("owner@example.com").headers["location"] == "/admin"
 
 

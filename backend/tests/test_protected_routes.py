@@ -58,4 +58,4 @@ def test_next_param_rejects_absolute_or_protocol_relative_urls(make_user, login)
 
     resp = login("henry@example.com", next="//evil.example.com/phish")
     assert resp.status_code == 303
-    assert resp.headers["location"] == "/account"
+    assert resp.headers["location"] == "/"

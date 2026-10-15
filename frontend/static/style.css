@@ -2609,6 +2609,17 @@ a.wf-danger, button.wf-danger {
 .signin-logo {
   display: inline-flex;
 }
+/* "Sign in as the test user" (development/staging only) */
+.signin-test {
+  margin-top: var(--space-4);
+}
+.signin-button-test {
+  width: 100%;
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+  border-style: dashed;
+}
 .signin-note {
   text-wrap: balance;
   margin: var(--space-5) 0 0;

@@ -29,8 +29,17 @@
     {% if not registration_enabled %}
     <p class="auth-aside">New accounts aren't being accepted right now; existing accounts can still sign in.</p>
     {% endif %}
-    {% else %}
+    {% elif not test_login_enabled %}
     <p class="banner banner-warning">Sign-in isn't set up on this site yet.</p>
+    {% endif %}
+
+    {% if test_login_enabled %}
+    <form class="signin-test" method="post" action="/auth/test-login">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}" />
+      {% if next %}<input type="hidden" name="next" value="{{ next }}" />{% endif %}
+      <button type="submit" class="signin-button signin-button-test">Sign in as the test user</button>
+      <p class="auth-aside">For trying the site in development or staging. Not available on the live site.</p>
+    </form>
     {% endif %}
 
     <p class="signin-note">
