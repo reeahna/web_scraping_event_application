@@ -91,7 +91,7 @@
         {% endif %}
       </div>
       {% else %}
-      <p class="event-detail-signin"><a href="/auth/login">Log in</a> to save events and follow cities.</p>
+      <p class="event-detail-signin"><a href="/auth/login?next={{ request.url.path|urlencode }}">Log in</a> to save events and follow cities.</p>
       {% endif %}
     </header>
 

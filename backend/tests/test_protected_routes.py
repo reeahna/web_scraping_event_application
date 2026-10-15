@@ -59,3 +59,40 @@ def test_next_param_rejects_absolute_or_protocol_relative_urls(make_user, login)
     resp = login("henry@example.com", next="//evil.example.com/phish")
     assert resp.status_code == 303
     assert resp.headers["location"] == "/"
+
+def test_signed_out_form_post_returns_to_the_page_it_came_from(client):
+    # Saving an event with an expired session: the POST cannot be replayed
+    # after sign-in, so the person goes back to the event page instead.
+    client.get("/")
+    resp = client.post(
+        "/account/save/1",
+        data={"csrf_token": client.cookies.get("csrf_token")},
+        headers={"accept": "text/html", "referer": "http://testserver/events/1"},
+        follow_redirects=False,
+    )
+    assert resp.status_code == 303
+    assert resp.headers["location"] == "/auth/login?next=%2Fevents%2F1"
+
+
+def test_signed_out_form_post_ignores_another_sites_referer(client):
+    client.get("/")
+    resp = client.post(
+        "/account/save/1",
+        data={"csrf_token": client.cookies.get("csrf_token")},
+        headers={"accept": "text/html", "referer": "https://evil.example/events/1"},
+        follow_redirects=False,
+    )
+    assert resp.headers["location"] == "/auth/login"
+
+
+def test_sign_in_links_bring_people_back_to_the_page(
+    client, make_city, make_website, make_event
+):
+    from datetime import UTC, datetime, timedelta
+
+    city = make_city()
+    site = make_website(city, is_active=True, approved_pattern={"pattern_name": "static_html"})
+    event = make_event(city, website=site, start_date=datetime.now(UTC).date() + timedelta(days=1))
+    page = client.get(f"/events/{event.id}").text
+    assert f'href="/auth/login?next=/events/{event.id}"' in page
+    assert f'href="/auth/login?next=/city/{city.slug}"' in client.get(f"/city/{city.slug}").text

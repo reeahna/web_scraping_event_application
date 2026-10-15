@@ -44,7 +44,9 @@
             <button type="submit" class="nav-button">Log Out</button>
           </form>
         {% else %}
-          <a href="/auth/login" class="nav-button-link">Sign in</a>
+          {# Come back to this page after signing in (not from the sign-in page itself). #}
+          {% set signin_next = request.url.path if request.url.path not in ("/", "/auth/login") else "" %}
+          <a href="/auth/login{% if signin_next %}?next={{ signin_next|urlencode }}{% endif %}" class="nav-button-link">Sign in</a>
         {% endif %}
         {% endblock %}
       </nav>
