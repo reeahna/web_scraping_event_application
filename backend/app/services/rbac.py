@@ -76,6 +76,14 @@ def can_assign_role(db: Session, actor: User, target_role: Role) -> bool:
     return True
 
 
+def can_manage_user(db: Session, actor: User, target: User) -> bool:
+    """Whether `actor` may change `target`'s account state (activate or
+    deactivate it). A user holding Administrator or Super Administrator can
+    only be managed by someone allowed to grant that role, so an ordinary
+    users.update holder cannot lock out a more privileged admin."""
+    return all(can_assign_role(db, actor, ur.role) for ur in target.user_roles)
+
+
 def require_permission(code: str) -> Callable[..., User]:
     def dependency(current_user: CurrentUser, db: DbSession) -> User:
         if not user_has_permission(db, current_user, code):
