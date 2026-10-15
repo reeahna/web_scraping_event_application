@@ -1,5 +1,6 @@
 import json
 from typing import Annotated
+from urllib.parse import urlencode
 
 from fastapi import APIRouter, Depends, Form, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
@@ -17,6 +18,7 @@ from app.models.website import Website
 from app.repositories.city import (
     create_city,
     get_city,
+    get_city_by_name,
     get_city_by_slug,
     search_cities,
     update_city,
@@ -53,14 +55,34 @@ def _format_errors(exc: ValidationError) -> dict[str, str]:
     return result
 
 
-def _parse_float(value: str) -> float | None:
+class _FieldParseError(ValueError):
+    """A raw form value that could not be parsed, tagged with its form field."""
+
+    def __init__(self, field: str, message: str):
+        super().__init__(message)
+        self.errors = {field: message}
+
+
+def _parse_float(field: str, value: str) -> float | None:
     value = value.strip()
-    return float(value) if value else None
+    if not value:
+        return None
+    try:
+        return float(value)
+    except ValueError:
+        raise _FieldParseError(field, "Must be a number, or left blank") from None
 
 
 def _parse_boundary(value: str) -> dict | None:
     value = value.strip()
-    return json.loads(value) if value else None
+    if not value:
+        return None
+    try:
+        return json.loads(value)
+    except ValueError:
+        raise _FieldParseError(
+            "boundary_config", "Must be valid JSON, or left blank"
+        ) from None
 
 
 def _build_city_data(
@@ -84,8 +106,8 @@ def _build_city_data(
         universities=[line for line in universities.splitlines() if line.strip()],
         country=country or None,
         timezone=timezone,
-        default_latitude=_parse_float(default_latitude),
-        default_longitude=_parse_float(default_longitude),
+        default_latitude=_parse_float("default_latitude", default_latitude),
+        default_longitude=_parse_float("default_longitude", default_longitude),
         boundary_config=_parse_boundary(boundary_config),
         is_active=is_active,
     )
@@ -104,9 +126,10 @@ def list_cities_view(
     page: int = 1,
 ):
     cities, total = search_cities(db, query=q, status=status, page=page, per_page=PER_PAGE)
-    base_url = f"/admin/cities?status={status}"
+    params = {"status": status}
     if q:
-        base_url += f"&q={q}"
+        params["q"] = q
+    base_url = "/admin/cities?" + urlencode(params)
     return render(
         request,
         "admin/cities/list.html",
@@ -202,7 +225,7 @@ def create_city_view(
             },
             status_code=422,
         )
-    except ValueError:
+    except _FieldParseError as exc:
         return render(
             request,
             "admin/cities/form.html",
@@ -211,7 +234,7 @@ def create_city_view(
                 "mode": "create",
                 "city": None,
                 "form": form_values,
-                "errors": {"boundary_config": "Must be valid JSON, or left blank"},
+                "errors": exc.errors,
             },
             status_code=422,
         )
@@ -226,6 +249,19 @@ def create_city_view(
                 "city": None,
                 "form": form_values,
                 "errors": {"slug": "A city with this slug already exists."},
+            },
+            status_code=409,
+        )
+    if get_city_by_name(db, data.name) is not None:
+        return render(
+            request,
+            "admin/cities/form.html",
+            {
+                "current_user": current_user,
+                "mode": "create",
+                "city": None,
+                "form": form_values,
+                "errors": {"name": "A city with this name already exists."},
             },
             status_code=409,
         )
@@ -386,7 +422,7 @@ def update_city_view(
             },
             status_code=422,
         )
-    except ValueError:
+    except _FieldParseError as exc:
         return render(
             request,
             "admin/cities/form.html",
@@ -395,7 +431,7 @@ def update_city_view(
                 "mode": "edit",
                 "city": city,
                 "form": form_values,
-                "errors": {"boundary_config": "Must be valid JSON, or left blank"},
+                "errors": exc.errors,
             },
             status_code=422,
         )
@@ -411,6 +447,20 @@ def update_city_view(
                 "city": city,
                 "form": form_values,
                 "errors": {"slug": "A city with this slug already exists."},
+            },
+            status_code=409,
+        )
+    existing = get_city_by_name(db, data.name)
+    if existing is not None and existing.id != city.id:
+        return render(
+            request,
+            "admin/cities/form.html",
+            {
+                "current_user": current_user,
+                "mode": "edit",
+                "city": city,
+                "form": form_values,
+                "errors": {"name": "A city with this name already exists."},
             },
             status_code=409,
         )

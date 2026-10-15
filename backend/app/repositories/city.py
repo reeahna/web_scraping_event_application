@@ -1,4 +1,4 @@
-from sqlalchemy import or_, select
+from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session
 
 from app.core.search import LIKE_ESCAPE, contains_pattern
@@ -53,6 +53,11 @@ def get_city(db: Session, city_id: int) -> City | None:
 
 def get_city_by_slug(db: Session, slug: str) -> City | None:
     return db.query(City).filter(City.slug == slug).first()
+
+
+def get_city_by_name(db: Session, name: str) -> City | None:
+    """Case-insensitive lookup, so "Ithaca" and "ithaca" count as one town."""
+    return db.query(City).filter(func.lower(City.name) == name.strip().lower()).first()
 
 
 def list_cities(db: Session, *, active_only: bool = True) -> list[City]:
