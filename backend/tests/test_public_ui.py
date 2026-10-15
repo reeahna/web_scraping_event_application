@@ -148,3 +148,56 @@ class TestEmptyState:
         city, _, _ = _visible_event(make_city, make_website, make_event, title="Present Event")
         resp = client.get(_listing(city))
         assert "No events match these filters" not in resp.text
+
+
+class TestTimeZoneShown:
+    def test_card_and_detail_show_the_towns_time_zone(
+        self, client, make_city, make_website, make_event
+    ):
+        from datetime import date
+
+        city = make_city(name="Bloomington", slug="bloomington-in",
+                         timezone="America/Indiana/Indianapolis")
+        website = make_website(city, is_active=True, approved_pattern={"pattern_name": "x"})
+        summer = date(TODAY.year + 1, 7, 10)
+        event = make_event(city, website=website, title="Zone Event",
+                           start_date=summer, start_time=time(19, 0))
+
+        listing = client.get(_listing(city)).text
+        assert '7:00 PM <span class="event-tz">EDT</span>' in listing
+        detail = client.get(f"/events/{event.id}").text
+        assert '7:00 PM <span class="event-tz">EDT</span>' in detail
+
+    def test_no_zone_shown_for_an_unconfigured_town_or_untimed_event(
+        self, client, make_city, make_website, make_event
+    ):
+        city, _, event = _visible_event(
+            make_city, make_website, make_event, title="UTC Event", start_time=time(19, 0)
+        )
+        assert 'class="event-tz"' not in client.get(_listing(city)).text
+        assert 'class="event-tz"' not in client.get(f"/events/{event.id}").text
+
+
+class TestTownNamedOnceOnCards:
+    def test_card_names_the_town_when_the_venue_does_not(
+        self, client, make_city, make_website, make_event
+    ):
+        city = make_city(name="Bloomington", slug="bloomington-in")
+        website = make_website(city, is_active=True, approved_pattern={"pattern_name": "x"})
+        make_event(city, website=website, title="Campus Talk", venue="Assembly Hall",
+                   start_date=TOMORROW)
+        page = client.get(_listing(city)).text
+        card = page.split("<h3>Campus Talk</h3>", 1)[1].split("</a>", 1)[0]
+        assert "<span>Assembly Hall</span>" in card
+        assert card.count("Bloomington") == 1
+
+    def test_card_does_not_repeat_a_town_the_venue_already_names(
+        self, client, make_city, make_website, make_event
+    ):
+        city = make_city(name="Bloomington", slug="bloomington-in")
+        website = make_website(city, is_active=True, approved_pattern={"pattern_name": "x"})
+        make_event(city, website=website, title="Jazz Night",
+                   venue="The Bluebird, Bloomington", start_date=TOMORROW)
+        page = client.get(_listing(city)).text
+        card = page.split("<h3>Jazz Night</h3>", 1)[1].split("</a>", 1)[0]
+        assert card.count("Bloomington") == 1
