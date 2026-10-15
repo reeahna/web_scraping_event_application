@@ -99,13 +99,17 @@ def _time_unknown(column):
     return or_(column.is_(None), column == time(0, 0))
 
 
-def _without_repeat_listings(query, *, today: date):
+def _without_repeat_listings(query, *, today: date, filters: dict | None = None):
     """Leave out an event when an earlier-added public event has the same title
     (by Event.normalized_title, which ignores case and punctuation) on the same
     day in the same city, at the same time or with no time given on either.
 
     Two showings of a play on one day at different times both stay; the same
-    showing on two sources becomes one card."""
+    showing on two sources becomes one card.
+
+    `filters` are the visitor's filters (see _filter_conditions). Only a copy
+    that passes them counts as "earlier": otherwise a filter that drops the
+    kept copy (excluding its source, say) would hide every copy of the event."""
     other = aliased(Event)
     other_website = aliased(Website)
     earlier_copy = (
@@ -123,6 +127,7 @@ def _without_repeat_listings(query, *, today: date):
                 other.start_time == Event.start_time,
             ),
             *_visible(other, other_website, today=today),
+            *(_filter_conditions(other, today=today, **filters) if filters else ()),
         )
     )
     return query.filter(~exists(earlier_copy))
@@ -158,16 +163,17 @@ def public_event_ids(db: Session, *, today: date, limit: int) -> list[int]:
     ]
 
 
-def _listing_query(db: Session, *, today: date, source_id: int | None):
+def _listing_query(db: Session, *, today: date, **filters):
+    """The public listing with the visitor's filters applied."""
     query = _base_public_query(db, today=today)
     # Filtered to one source, that source's own copy is the one to show.
-    if source_id is None:
-        query = _without_repeat_listings(query, today=today)
-    return query
+    if filters.get("source_id") is None:
+        query = _without_repeat_listings(query, today=today, filters=filters)
+    return query.filter(*_filter_conditions(Event, today=today, **filters))
 
 
-def _apply_filters(
-    query,
+def _filter_conditions(
+    entity,
     *,
     today: date,
     city_id: int | None,
@@ -180,51 +186,54 @@ def _apply_filters(
     date_to: date | None,
     exclude_category_ids: tuple[int, ...] = (),
     exclude_source_ids: tuple[int, ...] = (),
-):
+) -> list:
+    """The visitor's filters as WHERE conditions on `entity` (Event, or an alias
+    of it), so the repeat-listing check can hold the other copy to them too."""
+    conditions = []
     if city_id is not None:
-        query = query.filter(Event.city_id == city_id)
+        conditions.append(entity.city_id == city_id)
     if category_id is not None:
-        query = query.filter(
-            or_(Event.category_id == category_id, Event.category_override_id == category_id)
+        conditions.append(
+            or_(entity.category_id == category_id, entity.category_override_id == category_id)
         )
     if source_id is not None:
-        query = query.filter(Event.website_id == source_id)
+        conditions.append(entity.website_id == source_id)
     if exclude_category_ids:
         # Against the category the event is shown under: an admin override
         # wins over the scraped one. An uncategorised event is never excluded
         # (NOT IN on a NULL would otherwise drop it).
-        effective = func.coalesce(Event.category_override_id, Event.category_id)
-        query = query.filter(
+        effective = func.coalesce(entity.category_override_id, entity.category_id)
+        conditions.append(
             or_(effective.is_(None), not_(effective.in_(exclude_category_ids)))
         )
     if exclude_source_ids:
-        query = query.filter(not_(Event.website_id.in_(exclude_source_ids)))
+        conditions.append(not_(entity.website_id.in_(exclude_source_ids)))
     if search:
         like = contains_pattern(search.strip())
-        query = query.filter(
+        conditions.append(
             or_(
-                Event.title.ilike(like, escape=LIKE_ESCAPE),
-                Event.venue.ilike(like, escape=LIKE_ESCAPE),
-                Event.corrected_venue.ilike(like, escape=LIKE_ESCAPE),
-                Event.description.ilike(like, escape=LIKE_ESCAPE),
+                entity.title.ilike(like, escape=LIKE_ESCAPE),
+                entity.venue.ilike(like, escape=LIKE_ESCAPE),
+                entity.corrected_venue.ilike(like, escape=LIKE_ESCAPE),
+                entity.description.ilike(like, escape=LIKE_ESCAPE),
             )
         )
     if recurrence == "recurring":
-        query = query.filter(Event.recurrence_parent_id.isnot(None))
+        conditions.append(entity.recurrence_parent_id.isnot(None))
     elif recurrence == "single":
-        query = query.filter(Event.recurrence_parent_id.is_(None))
+        conditions.append(entity.recurrence_parent_id.is_(None))
     if upcoming_only:
-        query = query.filter(Event.start_date.isnot(None), Event.start_date > today)
+        conditions.append(and_(entity.start_date.isnot(None), entity.start_date > today))
     if date_from is not None:
-        query = query.filter(
+        conditions.append(
             or_(
-                Event.end_date >= date_from,
-                and_(Event.end_date.is_(None), Event.start_date >= date_from),
+                entity.end_date >= date_from,
+                and_(entity.end_date.is_(None), entity.start_date >= date_from),
             )
         )
     if date_to is not None:
-        query = query.filter(Event.start_date.isnot(None), Event.start_date <= date_to)
-    return query
+        conditions.append(and_(entity.start_date.isnot(None), entity.start_date <= date_to))
+    return conditions
 
 
 def list_public_events(
@@ -244,8 +253,8 @@ def list_public_events(
     page: int = 1,
     per_page: int = PUBLIC_EVENTS_PER_PAGE,
 ) -> tuple[list[Event], int, bool]:
-    query = _apply_filters(
-        _listing_query(db, today=today, source_id=source_id),
+    query = _listing_query(
+        db,
         today=today, city_id=city_id, category_id=category_id, source_id=source_id,
         search=search, recurrence=recurrence, upcoming_only=upcoming_only,
         date_from=date_from, date_to=date_to,
@@ -281,8 +290,8 @@ def list_public_map_points(
     """Only visible, matching events that have usable public coordinates. The
     public coordinate (correction > source > geocoded) is computed in Python via
     the model property, and nothing sensitive is included in the payload."""
-    query = _apply_filters(
-        _listing_query(db, today=today, source_id=source_id),
+    query = _listing_query(
+        db,
         today=today, city_id=city_id, category_id=category_id, source_id=source_id,
         search=search, recurrence=recurrence, upcoming_only=upcoming_only,
         date_from=date_from, date_to=date_to,
