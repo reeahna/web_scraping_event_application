@@ -63,3 +63,15 @@ def test_search_still_finds_a_plain_term(client, town_event):
 def test_town_search_treats_percent_literally(db_session, town_event):
     assert search_public_cities(db_session, query="%") == []
     assert [c.name for c in search_public_cities(db_session, query="bloom")] == ["Bloomington"]
+
+
+@pytest.mark.parametrize(
+    "path",
+    [f"/admin/cities/{HUGE}", f"/admin/websites/{HUGE}", f"/admin/cities?page={HUGE}"],
+)
+def test_huge_numbers_in_admin_urls_never_cause_a_server_error(
+    client, make_super_admin, login, path
+):
+    make_super_admin("root@example.com")
+    login("root@example.com")
+    assert client.get(path, headers=HTML).status_code < 500
