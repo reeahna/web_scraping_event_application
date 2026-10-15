@@ -332,3 +332,11 @@ def list_public_sources(
 
 def get_public_event(db: Session, event_id: int, *, today: date) -> Event | None:
     return _base_public_query(db, today=today).filter(Event.id == event_id).first()
+
+
+def get_public_event_ids(db: Session, event_ids: list[int], *, today: date) -> set[int]:
+    """Which of these event ids are public today (the ones get_public_event finds)."""
+    if not event_ids:
+        return set()
+    rows = _base_public_query(db, today=today).filter(Event.id.in_(event_ids))
+    return {event_id for (event_id,) in rows.with_entities(Event.id)}

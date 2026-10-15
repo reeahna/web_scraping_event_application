@@ -73,16 +73,41 @@ def unsave(
 
 @router.get("/account/saved", response_class=HTMLResponse)
 def saved_page(request: Request, current_user: CurrentUser, db: DbSession):
-    events = engagement.list_saved_events(db, user_id=current_user.id)
+    current, finished = engagement.saved_events_by_state(
+        db, user_id=current_user.id, today=current_public_date()
+    )
     return render(
         request,
         "saved_events.html",
         {
             "current_user": current_user,
             "can_access_admin": can_access_admin(db, current_user),
-            "events": events,
+            "current_items": current,
+            "finished_items": finished,
+            "past_count": sum(1 for item in finished if item.state == "past"),
         },
     )
+
+
+@router.post("/account/saved/clear-past")
+def clear_past_saved(
+    request: Request,
+    current_user: CurrentUser,
+    db: DbSession,
+    csrf_token: str = Form(...),
+):
+    verify_csrf(request, csrf_token)
+    removed = engagement.clear_past_saved_events(
+        db, user_id=current_user.id, today=current_public_date()
+    )
+    response = RedirectResponse("/account/saved", status_code=303)
+    set_flash(
+        response,
+        f"Removed {removed} past event{'s' if removed != 1 else ''}."
+        if removed
+        else "No past events to remove.",
+    )
+    return response
 
 
 # --- follows -----------------------------------------------------------------

@@ -103,3 +103,61 @@ def test_save_csrf_required(client, make_user, login, make_city, make_website, m
     resp = client.post(f"/account/save/{event.id}", data={"csrf_token": "wrong"},
                        follow_redirects=False)
     assert resp.status_code in (400, 403)
+
+
+def test_saved_page_greys_out_past_events(
+    client, make_user, login, make_city, make_website, make_event, db_session
+):
+    city, website, upcoming = _visible_event(make_city, make_website, make_event, title="Soon")
+    past = make_event(
+        city, website=website, title="Already Over",
+        start_date=TOMORROW - timedelta(days=10),
+    )
+    user = make_user(email="p@example.com", password="password12345",
+                     role_name=REGISTERED_USER)
+    engagement.save_event(db_session, user_id=user.id, event_id=upcoming.id)
+    engagement.save_event(db_session, user_id=user.id, event_id=past.id)
+    login("p@example.com", "password12345")
+    page = client.get("/account/saved").text
+    assert "Coming up" in page
+    assert f'href="/events/{upcoming.id}"' in page
+    # The past event is listed, greyed out, explained, and not linked to a page that 404s.
+    assert "Already Over" in page
+    assert "saved-item-finished" in page
+    assert "This event has already happened" in page
+    assert f'href="/events/{past.id}"' not in page
+    assert "Remove past events" in page
+
+
+def test_saved_page_marks_unlisted_future_event(
+    client, make_user, login, make_city, make_website, make_event, db_session
+):
+    _, _, event = _visible_event(make_city, make_website, make_event, title="Pulled")
+    user = make_user(email="u@example.com", password="password12345",
+                     role_name=REGISTERED_USER)
+    engagement.save_event(db_session, user_id=user.id, event_id=event.id)
+    event.is_active = False
+    db_session.commit()
+    login("u@example.com", "password12345")
+    page = client.get("/account/saved").text
+    assert "No longer listed" in page
+    assert f'href="/events/{event.id}"' not in page
+
+
+def test_clear_past_saved_events(
+    client, make_user, login, make_city, make_website, make_event, db_session
+):
+    city, website, upcoming = _visible_event(make_city, make_website, make_event, title="Keep")
+    past = make_event(
+        city, website=website, title="Drop", start_date=TOMORROW - timedelta(days=5)
+    )
+    user = make_user(email="c@example.com", password="password12345",
+                     role_name=REGISTERED_USER)
+    engagement.save_event(db_session, user_id=user.id, event_id=upcoming.id)
+    engagement.save_event(db_session, user_id=user.id, event_id=past.id)
+    login("c@example.com", "password12345")
+    csrf = client.cookies.get("csrf_token")
+    resp = client.post("/account/saved/clear-past", data={"csrf_token": csrf},
+                       follow_redirects=False)
+    assert resp.status_code == 303
+    assert engagement.saved_event_ids(db_session, user_id=user.id) == {upcoming.id}

@@ -7,6 +7,8 @@ saved events, follows, or preferences can never be read or changed by another.
 from __future__ import annotations
 
 import secrets
+from dataclasses import dataclass
+from datetime import date
 
 from sqlalchemy import delete, func, select
 from sqlalchemy.orm import Session
@@ -19,6 +21,7 @@ from app.models.user_engagement import (
     SavedEvent,
     UserFollow,
 )
+from app.repositories.public_events import get_public_event_ids
 
 _FOLLOW_TYPES = {"city", "category", "source"}
 
@@ -70,6 +73,74 @@ def list_saved_events(db: Session, *, user_id: int) -> list[Event]:
             .order_by(Event.start_date.asc(), Event.id.asc())
         )
     )
+
+
+@dataclass(frozen=True)
+class SavedEventItem:
+    """One saved event as the saved-events page shows it.
+
+    ``state`` is "upcoming", "ongoing" (a multi-day event that has started and
+    not ended), "past" (it has already happened) or "unavailable" (still in the
+    future but no longer public: removed by the source, archived or merged as a
+    duplicate). Only upcoming and ongoing events link to their detail page,
+    because the detail page 404s for anything that is not public.
+    """
+
+    event: Event
+    state: str
+    days_until: int | None = None
+
+    @property
+    def is_linkable(self) -> bool:
+        return self.state in ("upcoming", "ongoing")
+
+
+def _has_happened(event: Event, today: date) -> bool:
+    last_day = event.end_date or event.start_date
+    return last_day is not None and last_day < today
+
+
+def saved_events_by_state(
+    db: Session, *, user_id: int, today: date
+) -> tuple[list[SavedEventItem], list[SavedEventItem]]:
+    """The user's saved events split into (current, finished).
+
+    Current holds upcoming and ongoing events, soonest first. Finished holds
+    events that already happened (most recent first) followed by ones that are
+    no longer listed, so the page can grey them out instead of linking to a
+    detail page that no longer exists.
+    """
+    events = list_saved_events(db, user_id=user_id)
+    public_ids = get_public_event_ids(db, [e.id for e in events], today=today)
+    current: list[SavedEventItem] = []
+    past: list[SavedEventItem] = []
+    unavailable: list[SavedEventItem] = []
+    for event in events:
+        if _has_happened(event, today):
+            past.append(SavedEventItem(event, "past"))
+        elif event.id not in public_ids:
+            unavailable.append(SavedEventItem(event, "unavailable"))
+        elif event.start_date is not None and event.start_date < today:
+            current.append(SavedEventItem(event, "ongoing", 0))
+        else:
+            days = (event.start_date - today).days if event.start_date else None
+            current.append(SavedEventItem(event, "upcoming", days))
+    past.sort(key=lambda i: (i.event.end_date or i.event.start_date, i.event.id), reverse=True)
+    return current, past + unavailable
+
+
+def clear_past_saved_events(db: Session, *, user_id: int, today: date) -> int:
+    """Remove every saved event that has already happened. Returns how many."""
+    ids = [
+        e.id for e in list_saved_events(db, user_id=user_id) if _has_happened(e, today)
+    ]
+    if not ids:
+        return 0
+    db.execute(
+        delete(SavedEvent).where(SavedEvent.user_id == user_id, SavedEvent.event_id.in_(ids))
+    )
+    db.commit()
+    return len(ids)
 
 
 def saved_event_ids(db: Session, *, user_id: int) -> set[int]:
