@@ -111,7 +111,20 @@ def assign_report_view(
         raise NotFoundError("Unsupported-site report not found")
 
     before = {"assigned_user_id": report.assigned_user_id}
-    new_assignee = int(assigned_user_id) if assigned_user_id else None
+    new_assignee: int | None = None
+    if assigned_user_id:
+        try:
+            new_assignee = int(assigned_user_id)
+        except ValueError:
+            raise AppError("Invalid assignee selected.", status_code=422) from None
+        # Only someone who can act on reports may be assigned one — the same
+        # set the form offers.
+        assignable_ids = {user.id for user in users_with_permission(db, "reports.manage")}
+        if new_assignee not in assignable_ids:
+            raise AppError(
+                "That user does not exist or cannot manage unsupported-site reports.",
+                status_code=422,
+            )
     assign(db, report, assigned_user_id=new_assignee, correlation_id=correlation_id)
     record_audit(
         db,
