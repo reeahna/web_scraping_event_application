@@ -25,13 +25,60 @@
 
   var map = L.map(el, { scrollWheelZoom: false });
   // Start on the town when it has a known centre, otherwise the whole US;
-  // fitBounds overrides either once markers arrive.
+  // zoomToTown refines either once markers arrive.
   if (hasCenter) {
     map.setView([centerLat, centerLng], 13);
   } else {
     map.setView([39.5, -98.35], 4);
   }
   L.tileLayer(tileUrl, { attribution: attribution, maxZoom: 19 }).addTo(map);
+
+  // Events further than this from the town still get a pin, but they do not
+  // drive the zoom: one mis-geocoded venue in another state would otherwise
+  // pull the view out to the whole country.
+  var TOWN_RADIUS_KM = 40;
+
+  function distanceKm(a, b) {
+    var rad = Math.PI / 180;
+    var dLat = (b[0] - a[0]) * rad;
+    var dLng = (b[1] - a[1]) * rad;
+    var h =
+      Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+      Math.cos(a[0] * rad) * Math.cos(b[0] * rad) *
+        Math.sin(dLng / 2) * Math.sin(dLng / 2);
+    return 12742 * Math.asin(Math.min(1, Math.sqrt(h)));
+  }
+
+  function median(values) {
+    var sorted = values.slice().sort(function (x, y) {
+      return x - y;
+    });
+    var mid = Math.floor(sorted.length / 2);
+    return sorted.length % 2 ? sorted[mid] : (sorted[mid - 1] + sorted[mid]) / 2;
+  }
+
+  // Zoom to the town the visitor chose: its own centre when the town has one,
+  // otherwise the middle of its events (the median ignores far-off outliers).
+  // Only the events near that point decide how far in to go.
+  function zoomToTown(points) {
+    if (!points.length) {
+      return;
+    }
+    var center = hasCenter
+      ? [centerLat, centerLng]
+      : [
+          median(points.map(function (p) { return p[0]; })),
+          median(points.map(function (p) { return p[1]; })),
+        ];
+    var nearby = points.filter(function (p) {
+      return distanceKm(center, p) <= TOWN_RADIUS_KM;
+    });
+    if (nearby.length) {
+      map.fitBounds(nearby, { padding: [30, 30], maxZoom: 15 });
+    } else {
+      map.setView(center, 13);
+    }
+  }
 
   function popupHtml(point) {
     // Build with the DOM, not string concatenation, so titles/venues can never
@@ -91,9 +138,7 @@
         bounds.push([p.latitude, p.longitude]);
       });
       map.addLayer(cluster);
-      if (bounds.length) {
-        map.fitBounds(bounds, { padding: [30, 30], maxZoom: 15 });
-      }
+      zoomToTown(bounds);
     })
     .catch(function () {
       /* The list remains the authoritative, accessible view. */
