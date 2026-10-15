@@ -79,14 +79,14 @@ def production_blockers(settings) -> list[ReadinessIssue]:
     if not enabled_provider_names(settings):
         issues.append(ReadinessIssue(
             "no_sign_in_provider",
-            "No sign-in provider (Google, Microsoft or Facebook) has a client id and "
+            "No sign-in provider (Google, Microsoft, Facebook or Yahoo) has a client id and "
             "secret, so nobody can sign in.",
             "warning",
         ))
     if not settings.superadmin_email:
         issues.append(ReadinessIssue(
             "no_superadmin_email",
-            "SUPERADMIN_EMAIL is not set; with sign-in by Google/Microsoft/Facebook "
+            "SUPERADMIN_EMAIL is not set; with sign-in by Google/Microsoft/Facebook/Yahoo "
             "only, nobody can be made a Super Administrator without it.",
             "warning",
         ))

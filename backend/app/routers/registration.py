@@ -1,5 +1,5 @@
 """/register used to be a password sign-up form. Accounts are now created by
-signing in with Google, Microsoft or Facebook, so old links land on sign-in."""
+signing in with Google, Microsoft, Facebook or Yahoo, so old links land on sign-in."""
 
 from fastapi import APIRouter
 from fastapi.responses import RedirectResponse

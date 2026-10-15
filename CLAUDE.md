@@ -40,5 +40,5 @@ python -m pytest tests/test_public_ui.py -q   # one file
   `upgrade head`, `downgrade -1`, `upgrade head`.
 - Never commit secrets or `.env`; configuration is environment variables
   (`backend/.env.example` lists them, `backend/README.md` explains them).
-- There are no passwords: sign-in is Google/Microsoft/Facebook OAuth only.
+- There are no passwords: sign-in is Google/Microsoft/Facebook/Yahoo OAuth only.
 - More detail: `backend/README.md` (features and configuration) and `docs/`.

@@ -1,6 +1,6 @@
 """The sign-in page and sign-out.
 
-There is no password login: people sign in with Google, Microsoft or Facebook
+There is no password login: people sign in with Google, Microsoft, Facebook or Yahoo
 (app.routers.oauth), so the app never holds a password. This page lists the
 providers that are switched on and carries a `next` path through to them.
 """

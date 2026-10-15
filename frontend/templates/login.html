@@ -1,7 +1,7 @@
 {% extends "base.html" %}
 
 {% block title %}Sign in — {{ site_name }}{% endblock %}
-{% block meta_description %}Sign in to {{ site_name }} with Google, Microsoft or Facebook to save events, follow towns and get alerts.{% endblock %}
+{% block meta_description %}Sign in to {{ site_name }} with Google, Microsoft, Facebook or Yahoo to save events, follow towns and get alerts.{% endblock %}
 
 {% block content %}
 <section class="signin">
@@ -20,6 +20,8 @@
           <svg viewBox="0 0 21 21" width="20" height="20"><path fill="#F25022" d="M1 1h9v9H1z"/><path fill="#7FBA00" d="M11 1h9v9h-9z"/><path fill="#00A4EF" d="M1 11h9v9H1z"/><path fill="#FFB900" d="M11 11h9v9h-9z"/></svg>
         {% elif provider == "facebook" %}
           <svg viewBox="0 0 24 24" width="20" height="20"><path fill="#1877F2" d="M24 12a12 12 0 1 0-13.88 11.85v-8.38H7.08V12h3.04V9.36c0-3 1.8-4.67 4.54-4.67 1.31 0 2.69.24 2.69.24v2.95h-1.52c-1.49 0-1.96.93-1.96 1.88V12h3.33l-.53 3.47h-2.8v8.38A12 12 0 0 0 24 12z"/></svg>
+        {% elif provider == "yahoo" %}
+          <svg viewBox="0 0 24 24" width="20" height="20"><rect width="24" height="24" rx="5" fill="#6001D2"/><path fill="#fff" d="M4.5 7.2h3.1l1.8 4.6 1.8-4.6h3l-4.5 10.3H6.6l1.3-2.9zm11.2 0h3.2l-2.4 6.2h-2.4zm-1.5 7.8a1.4 1.4 0 1 1 0 2.8 1.4 1.4 0 0 1 0-2.8z"/></svg>
         {% endif %}
         </span>
         <span>Continue with {{ provider|capitalize }}</span>

@@ -54,7 +54,7 @@ plain-text guide to the site, and each town has an iCalendar feed at
 `/city/{slug}/events.ics` that calendar apps can subscribe to.
 
 **Accounts.** There are no passwords. People sign in at `/auth/login` with
-Google, Microsoft or Facebook (each switches on when its client ID and secret are
+Google, Microsoft, Facebook or Yahoo (each switches on when its client ID and secret are
 set), and the first sign-in creates the account. A new account gets only the
 **Registered User** role, which has no admin permissions. The address in
 `SUPERADMIN_EMAIL` becomes Super Administrator when it signs in through a provider
@@ -146,7 +146,7 @@ without any of it.
 | `GEOCODING_ENABLED`, `GEOCODING_PROVIDER` | off | Fill in map coordinates from addresses |
 | `EMAIL_ENABLED`, `EMAIL_BACKEND` | off | Alert emails |
 | `CONTACT_EMAIL` | unset | Shown on the privacy policy and terms |
-| `GOOGLE_/MICROSOFT_/FACEBOOK_CLIENT_ID` and `_SECRET` | unset | Sign-in providers; set at least one (Google for the admin) |
+| `GOOGLE_/MICROSOFT_/FACEBOOK_/YAHOO_CLIENT_ID` and `_SECRET` | unset | Sign-in providers; set at least one (Google for the admin) |
 | `OAUTH_REDIRECT_BASE_URL` | `PUBLIC_BASE_URL` | Base of the provider callback URLs, if different from the site's address |
 | `COOKIE_SECURE`, `BEHIND_HTTPS`, `TRUSTED_HOSTS` | off | Set in production (already in `render.yaml`) |
 | `RATE_LIMIT_BACKEND`, `REDIS_URL` | `memory` | Use `redis` to share rate limits across processes |

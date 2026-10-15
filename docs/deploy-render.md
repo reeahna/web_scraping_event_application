@@ -33,7 +33,7 @@ When it finishes you get a URL like `https://city-events.onrender.com`
 with HTTPS already set up.
 
 ### 3. Set up sign-in and your admin account
-There are no passwords: people sign in with Google, Microsoft or Facebook.
+There are no passwords: people sign in with Google, Microsoft, Facebook or Yahoo.
 
 1. In the Google Cloud console (**APIs & Services → Credentials**), create an
    **OAuth client ID** of type *Web application*. Add the authorized redirect URI
@@ -43,10 +43,18 @@ There are no passwords: people sign in with Google, Microsoft or Facebook.
 3. Visit your URL, click **Sign in → Google** with that address, and you land in
    the admin as Super Administrator.
 
-Microsoft (`MICROSOFT_CLIENT_ID`/`_SECRET`) and Facebook
-(`FACEBOOK_CLIENT_ID`/`_SECRET`) work the same way with their own callback paths
-(`/auth/oauth/microsoft/callback`, `/auth/oauth/facebook/callback`), but only a
-Google sign-in can claim `SUPERADMIN_EMAIL`, because Google confirms the address.
+Microsoft, Facebook and Yahoo work the same way: create an app with the
+provider, register its callback URL, and add its ID and secret in Render. Each
+button appears on the sign-in page once both values are set. Only a Google
+sign-in can claim `SUPERADMIN_EMAIL`, because Google confirms the address.
+
+| Provider | Where to create the app | Callback URL to register | Render variables |
+|---|---|---|---|
+| Microsoft | [Microsoft Entra admin center](https://entra.microsoft.com) → **App registrations → New registration**. Supported account types: *Accounts in any organizational directory and personal Microsoft accounts*. Platform: *Web*. Then **Certificates & secrets → New client secret**. | `…/auth/oauth/microsoft/callback` | `MICROSOFT_CLIENT_ID` (the *Application (client) ID*), `MICROSOFT_CLIENT_SECRET` (the secret's *Value*) |
+| Facebook (Meta) | [Meta for Developers](https://developers.facebook.com/apps) → **Create app** → use case *Authenticate and request data from users with Facebook Login*. Under **Facebook Login → Settings**, add the callback as a *Valid OAuth Redirect URI*; under **Use cases → Customize**, add the `email` permission. Switch the app to **Live** so people other than you can sign in. | `…/auth/oauth/facebook/callback` | `FACEBOOK_CLIENT_ID` (*App ID*), `FACEBOOK_CLIENT_SECRET` (*App secret*, under **App settings → Basic**) |
+| Yahoo | [Yahoo Developer apps](https://developer.yahoo.com/apps/) → **Create an App**. Application type: *Web Application*. Under **API Permissions → OpenID Connect Permissions**, tick *Email* and *Profile*. | `…/auth/oauth/yahoo/callback` (Yahoo only accepts an `https://` address, so local `http://localhost` sign-in can't be tested with Yahoo) | `YAHOO_CLIENT_ID` (*Client ID*), `YAHOO_CLIENT_SECRET` (*Client Secret*) |
+
+`…` is your site's address, for example `https://<your-service>.onrender.com`.
 
 ### 4. (Optional) AI event categorization
 The keyword rules categorize events for free, but Gemini labels them much more
