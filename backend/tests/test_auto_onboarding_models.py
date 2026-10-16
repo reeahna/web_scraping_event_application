@@ -26,6 +26,7 @@ from app.models.auto_onboarding_policy import (
     AutoOnboardingPolicyCity,
     AutoOnboardingPolicyRole,
 )
+from app.models.role import Role
 from app.repositories.auto_onboarding import (
     action_results_for_decision,
     create_action_result,
@@ -188,7 +189,7 @@ def test_role_assignments_are_unique_per_policy(db_session):
     policy = AutoOnboardingPolicy(name="Role scoped")
     db_session.add(policy)
     db_session.commit()
-    role_id = db_session.query(AutoOnboardingPolicy).first().id  # any existing id works
+    role_id = db_session.query(Role).first().id
     db_session.add(AutoOnboardingPolicyRole(policy_id=policy.id, role_id=role_id))
     db_session.commit()
     db_session.add(AutoOnboardingPolicyRole(policy_id=policy.id, role_id=role_id))

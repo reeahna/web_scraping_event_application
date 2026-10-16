@@ -3,6 +3,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.exceptions import RequestValidationError
 from fastapi.staticfiles import StaticFiles
+from sqlalchemy.exc import DataError
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from app.config import get_settings
@@ -10,6 +11,7 @@ from app.core.exceptions import (
     AppError,
     NotAuthenticatedError,
     app_error_handler,
+    data_error_handler,
     http_exception_handler,
     not_authenticated_handler,
     overflow_handler,
@@ -107,6 +109,7 @@ app.add_exception_handler(NotAuthenticatedError, not_authenticated_handler)
 app.add_exception_handler(StarletteHTTPException, http_exception_handler)
 app.add_exception_handler(RequestValidationError, request_validation_handler)
 app.add_exception_handler(OverflowError, overflow_handler)
+app.add_exception_handler(DataError, data_error_handler)
 app.add_exception_handler(Exception, unhandled_exception_handler)
 
 app.include_router(home.router)

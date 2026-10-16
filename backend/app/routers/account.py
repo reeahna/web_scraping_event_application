@@ -96,13 +96,21 @@ async def update_account(
         )
 
     normalized_name = display_name.strip()
-    if not normalized_name:
+    # Control and invisible format characters (NUL, zero-width space) would
+    # make a name that looks blank, or one PostgreSQL refuses to store.
+    if not normalized_name or not normalized_name.isprintable():
         return _render_account(
             request,
             current_user,
             db,
             display_name=display_name,
-            errors={"display_name": "Display name is required."},
+            errors={
+                "display_name": (
+                    "Display name can't contain hidden or control characters."
+                    if normalized_name
+                    else "Display name is required."
+                )
+            },
             edit_mode=True,
             status_code=422,
         )

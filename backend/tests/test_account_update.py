@@ -312,3 +312,13 @@ def test_email_is_read_only_on_account_form(client, make_user, login):
     response = client.get("/account")
     assert user.email in response.text
     assert 'name="email"' not in response.text
+
+
+def test_display_name_with_hidden_characters_is_refused(client, make_user, login, db_session):
+    user = make_user(email="hidden-chars@example.com", role_name=REGISTERED_USER)
+    login(user.email)
+    for name in ("a\x00b", "​"):
+        response = _post_account(client, name)
+        assert response.status_code == 422, repr(name)
+    db_session.refresh(user)
+    assert user.full_name is None

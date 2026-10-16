@@ -8,7 +8,12 @@ TESTS_DIR = Path(__file__).resolve().parent
 TEST_DB_PATH = TESTS_DIR / "test_app.db"
 TEST_TMP_PATH = TESTS_DIR / ".tmp"
 TEST_TMP_PATH.mkdir(exist_ok=True)
-os.environ["DATABASE_URL"] = f"sqlite:///{TEST_DB_PATH.as_posix()}"
+# TEST_DATABASE_URL runs the suite on another database (CI sets it to its
+# PostgreSQL service). It is a separate variable on purpose: the suite empties
+# every table, so it must never pick up an ordinary DATABASE_URL by accident.
+os.environ["DATABASE_URL"] = os.environ.get(
+    "TEST_DATABASE_URL", f"sqlite:///{TEST_DB_PATH.as_posix()}"
+)
 os.environ["TEMP"] = str(TEST_TMP_PATH)
 os.environ["TMP"] = str(TEST_TMP_PATH)
 # The extraction fixtures' events sit in whatever town each fixture names
