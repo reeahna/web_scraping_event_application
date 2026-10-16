@@ -432,8 +432,12 @@ async def correct_location(
     }
     event.corrected_venue = venue.strip() or None
     event.corrected_address = address.strip() or None
-    event.corrected_latitude = _coordinate(latitude, latitude=True)
-    event.corrected_longitude = _coordinate(longitude, latitude=False)
+    corrected_latitude = _coordinate(latitude, latitude=True)
+    corrected_longitude = _coordinate(longitude, latitude=False)
+    if (corrected_latitude is None) != (corrected_longitude is None):
+        raise AppError("Enter both latitude and longitude, or neither", status_code=422)
+    event.corrected_latitude = corrected_latitude
+    event.corrected_longitude = corrected_longitude
     event.location_corrected_by_user_id = current_user.id
     event.location_corrected_at = datetime.now(UTC)
     db.commit()
@@ -496,6 +500,20 @@ async def clear_location_correction(
     return RedirectResponse(f"/admin/events/{event.id}", status_code=303)
 
 
+def _preferred_chain_reaches(db: DbSession, start: Event, target_id: int) -> bool:
+    """Whether following duplicate_preferred_event_id from `start` arrives at
+    `target_id`; pointing `target_id` at `start` would then form a cycle."""
+    seen: set[int] = set()
+    current: Event | None = start
+    while current is not None and current.id not in seen:
+        if current.id == target_id:
+            return True
+        seen.add(current.id)
+        next_id = current.duplicate_preferred_event_id
+        current = db.get(Event, next_id) if next_id is not None else None
+    return False
+
+
 @router.post("/{event_id}/duplicate-status")
 async def update_duplicate_status(
     event_id: int,
@@ -517,10 +535,18 @@ async def update_duplicate_status(
     if duplicate_status not in allowed:
         raise AppError("Invalid duplicate status", status_code=422)
     event = _event_or_404(db, event_id)
+    if duplicate_status == "confirmed_duplicate" and preferred_event_id is None:
+        raise AppError("A confirmed duplicate needs a preferred event", status_code=422)
     if preferred_event_id is not None:
         preferred = _event_or_404(db, preferred_event_id)
         if preferred.id == event.id:
             raise AppError("Preferred event must be a different record", status_code=422)
+        if duplicate_status == "confirmed_duplicate" and _preferred_chain_reaches(
+            db, preferred, event.id
+        ):
+            raise AppError(
+                "Preferred event already points back to this record", status_code=422
+            )
     before = {
         "duplicate_status": event.duplicate_status,
         "preferred_event_id": event.duplicate_preferred_event_id,
@@ -553,6 +579,8 @@ async def recategorize_event(
     event_id: int,
     request: Request,
     db: DbSession,
+    correlation_id: CorrelationId,
+    ip_address: ClientIp,
     current_user: ViewEvents,
     csrf_token: str = Form(...),
 ):
@@ -560,5 +588,24 @@ async def recategorize_event(
     await reject_unexpected_form_fields(request, {"csrf_token"})
     _require(db, current_user, "events.review")
     event = _event_or_404(db, event_id)
+    before = {
+        "category_id": event.category_id,
+        "categorization_rule_id": event.categorization_rule_id,
+        "category_source": event.category_source,
+    }
     apply_categorization(db, event)
+    _audit(
+        db,
+        current_user,
+        "event_recategorized",
+        event,
+        correlation_id,
+        ip_address,
+        before=before,
+        after={
+            "category_id": event.category_id,
+            "categorization_rule_id": event.categorization_rule_id,
+            "category_source": event.category_source,
+        },
+    )
     return RedirectResponse(f"/admin/events/{event.id}", status_code=303)
