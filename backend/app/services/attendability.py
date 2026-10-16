@@ -156,13 +156,14 @@ _SERVICE_TITLE = _rx(
 )
 
 # A course's own class meetings, which a university calendar can list next to
-# its public talks: "Monday Lecture", "Lecture 5", "Week 3 Lecture: Enzymes",
+# its public talks: "Monday Lecture", "Monday Lessons", "Lecture 5", "Week 3 Lecture: Enzymes",
 # "BIOL 1010 Lecture", "Recitation". A named or public lecture ("Thomas H.
 # Lake Lecture with Meghan Sullivan", "Lecture: Rivers", "A lecture and Q&A
 # with ...") says more than this and is kept.
 _CLASS_SESSION_TITLE = _rx(
     r"^\s*((mon|tues|wednes|thurs|fri|satur|sun)day|daily|weekly|class|course|morning|"
-    r"afternoon|evening)?\s*lectures?\s*(\d+|[-–:]?\s*(week|day|unit|module|part)\s*\d+)?\s*$|"
+    r"afternoon|evening)?\s*(lectures?|lessons?|class(es)?)\s*"
+    r"(\d+|[-–:]?\s*(week|day|unit|module|part)\s*\d+)?\s*$|"
     r"^\s*(week|unit|module)\s*\d+\b.*\blectures?\b|"
     r"\b\d{3,4}[a-z]?\s+lectures?\b|"
     r"\b(class|course) (lectures?|sessions?|meetings?)\b|"

@@ -112,6 +112,8 @@ from tests.extraction_helpers import html_handler, patched_http_fetch
         ("CCBB Seminar Guest Speaker: Dr. Tianyi Mao 10/9/26", INTERNAL),
         # A course's own class meetings.
         ("Monday Lecture", INTERNAL),
+        ("Monday Lessons", INTERNAL),
+        ("Thursday Class", INTERNAL),
         ("Lecture", INTERNAL),
         ("Lecture 5", INTERNAL),
         ("Class Lecture - Week 3", INTERNAL),
@@ -216,6 +218,8 @@ def test_not_attendable_titles(title, reason):
         "Guest Lecture: AI Ethics",
         "Monday Night Lecture Series: The History of Jazz",
         "General Board Meeting",
+        "Free Lindy Hop Dance Lessons (Beginner)",
+        "Weekly Latin Dance Lessons",
         "General Body Meeting",
         "Board of Programmers Meeting",
         "Study Abroad Fair",
