@@ -1,7 +1,7 @@
 """External authentication providers (Phase 14).
 
 A provider-independent OAuth/OIDC layer built on Authlib (we never hand-roll
-the protocol). Google, Microsoft, and Facebook are each configured
+the protocol). Google, Microsoft, Facebook, and Yahoo are each configured
 independently and are only offered when they have credentials, so the app runs
 with any or all disabled. Tests inject a MockProvider — no real OAuth app is
 ever contacted.

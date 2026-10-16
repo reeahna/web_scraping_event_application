@@ -74,6 +74,19 @@ _SPECS: dict[str, ProviderSpec] = {
         subject_field="id", email_field="email", verified_field=None,
         name_field="name", avatar_field=None,
     ),
+    "yahoo": ProviderSpec(
+        name="yahoo",
+        authorize_url="https://api.login.yahoo.com/oauth2/request_auth",
+        token_url="https://api.login.yahoo.com/oauth2/get_token",
+        userinfo_url="https://api.login.yahoo.com/openid/v1/userinfo",
+        scopes="openid email profile",
+        is_oidc=True,
+        # Yahoo does send email_verified, but it is not read: like Microsoft
+        # and Facebook, a Yahoo sign-in never links to an existing account by
+        # email or claims SUPERADMIN_EMAIL. Only Google is trusted for that.
+        subject_field="sub", email_field="email", verified_field=None,
+        name_field="name", avatar_field="picture",
+    ),
 }
 
 ALL_PROVIDERS = tuple(_SPECS)
