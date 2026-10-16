@@ -16,6 +16,7 @@ from app.services.home_town import (
     hide_out_of_town_events,
     is_away_game,
     is_outside_home_town,
+    names_other_campus,
 )
 from app.services.website_configuration import approve_configuration
 from tests.extraction_helpers import html_handler, patched_http_fetch
@@ -319,3 +320,32 @@ async def test_scheduler_sweep_takes_down_out_of_town_events(db_session, make_ci
     await runtime._home_town_sweep_tick()
     db_session.expire_all()
     assert [e.title for e in db_session.query(Event).filter_by(is_active=True)] == ["Jazz Night"]
+
+
+@pytest.mark.parametrize(
+    "title,town,away",
+    [
+        ("Iowa Ice Hockey at Nebraska", "Iowa City", True),
+        ("Iowa Ice Hockey at SIUE", "Iowa City", True),
+        ("Iowa Volleyball vs. USC", "Iowa City", False),
+        ("Pickup Basketball at SRSC", "Bloomington", False),
+        ("Pickup Basketball at the Rec", "Iowa City", False),
+    ],
+)
+def test_town_team_away_game(title, town, away):
+    assert is_away_game(title, town) is away
+
+
+@pytest.mark.parametrize(
+    "title,other",
+    [
+        ("10/17 1:00 PM Indiana University Kokomo Volleyball vs Kentucky Christian", True),
+        ("10/17 4:00 PM IU Indy Men’s Soccer vs Milwaukee", True),
+        ("IUK Women’s Volleyball 10/17/26", True),
+        ("10/16 7:30 PM Indiana University Women’s Soccer vs #5 Michigan State", False),
+        ("IU East Asian Studies Center Film Night", False),
+    ],
+)
+def test_title_naming_another_campus(title, other):
+    assert names_other_campus(title, "Bloomington") is other
+    assert names_other_campus(title, "Iowa City") is False

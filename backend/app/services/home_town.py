@@ -78,6 +78,23 @@ _OTHER_CAMPUS_TITLES = {
 }
 
 
+# Town -> titles that name a different campus of the same university, whatever
+# the source: an athletics or esports feed lists every campus's games
+# ("Indiana University Kokomo Volleyball vs ...", "IU Indy Men's Soccer vs ...").
+_OTHER_CAMPUS_TITLES_BY_TOWN = {
+    "bloomington": re.compile(
+        r"\b(IU|Indiana University) (Indy|Indianapolis|Southeast|South Bend|Kokomo|Northwest|"
+        r"East(?! Asian)|Fort Wayne|Columbus)\b|\b(IUPUI|IUPUC|IUK|IUSB|IUN|IUFW)\b"
+    ),
+}
+
+
+def names_other_campus(title: str | None, town: str | None) -> bool:
+    """True when the title names another campus of the home town's university."""
+    pattern = _OTHER_CAMPUS_TITLES_BY_TOWN.get((town or "").casefold())
+    return bool(title and pattern and pattern.search(title))
+
+
 def from_other_campus_calendar(url: str | None, title: str | None = None) -> bool:
     """True when an event link sits under another campus's calendar, or its
     title names another campus."""
@@ -155,10 +172,29 @@ def _at_other_schools_tournament(title: str, town: str | None) -> bool:
     return not (_words(match.group("rest")) & _home_names(match.group("school"), town))
 
 
+# A home-town team "at" somewhere, named by the town rather than "University":
+# "Iowa Ice Hockey at Nebraska" in Iowa City. "Pickup Basketball at the SRSC"
+# names no town, so it stays.
+_TOWN_TEAM_AT = re.compile(
+    rf"^(?P<team>.*?)\b({_SPORTS})\s+(at|@)\s+(?!the\b)", re.IGNORECASE
+)
+
+
+def _town_team_away(title: str, town: str | None) -> bool:
+    match = _TOWN_TEAM_AT.search(title)
+    if match is None or not town:
+        return False
+    return bool(_words(match.group("team")) & _words(town))
+
+
 def is_away_game(title: str | None, town: str | None = None) -> bool:
     if not title or _WATCH_PARTY.search(title):
         return False
-    return bool(_AWAY_GAME.search(title)) or _at_other_schools_tournament(title, town)
+    return (
+        bool(_AWAY_GAME.search(title))
+        or _at_other_schools_tournament(title, town)
+        or _town_team_away(title, town)
+    )
 
 
 def _state_code(value: str | None) -> str | None:
@@ -269,6 +305,8 @@ def candidate_outside_home_town(candidate, city) -> bool:
         return True
     if from_other_campus_calendar(candidate.canonical_url, candidate.title):
         return True
+    if names_other_campus(candidate.title, city.name if city is not None else None):
+        return True
     if city is None:
         return False
     return is_outside_home_town(
@@ -284,6 +322,8 @@ def event_outside_home_town(event) -> bool:
     if is_away_game(event.title, city.name if city is not None else None):
         return True
     if from_other_campus_calendar(event.canonical_url, event.title):
+        return True
+    if names_other_campus(event.title, city.name if city is not None else None):
         return True
     if city is None:
         return False
