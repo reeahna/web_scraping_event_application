@@ -2,38 +2,125 @@
 
 {% block title %}Saved events — {{ site_name }}{% endblock %}
 
-{% block content %}
-<div class="page-container">
-  <h1>Your saved events</h1>
-  <p class="hero-subtext"><a href="/account/alerts">Manage alert preferences</a></p>
-
-  {% if events %}
-  <div class="event-grid">
-    {% for event in events %}
-    <div class="event-card event-card-static">
-      <a class="event-card-link" href="/events/{{ event.id }}">
-        <div class="event-card-body">
-          {% if event.effective_category %}<span class="badge badge-pending">{{ event.effective_category.name }}</span>{% endif %}
-          <h2>{{ event.title }}</h2>
-          <div class="event-card-meta">
-            <span class="event-card-date">{{ event.start_date | human_date }}{% if event.start_time %} · {{ event.start_time | human_time }}{% set tz = event | event_tz %}{% if tz %} <span class="event-tz">{{ tz }}</span>{% endif %}{% endif %}{% if event.recurrence_parent_id %} <span class="badge badge-muted event-card-recurring">recurring</span>{% endif %}</span>
-            <span>{{ event.public_venue or 'Venue TBD' }}</span>
-            {% if event.city and event.city.name not in (event.public_venue or '') %}<span>{{ event.city.name }}</span>{% endif %}
-          </div>
-        </div>
-      </a>
-      <form method="post" action="/account/unsave/{{ event.id }}" class="inline-form">
-        <input type="hidden" name="csrf_token" value="{{ csrf_token }}" />
-        <input type="hidden" name="next" value="/account/saved" />
-        <button type="submit" class="nav-button">Remove</button>
-      </form>
+{% macro saved_item(item) %}
+{% set event = item.event %}
+{% set finished = not item.is_linkable %}
+<li class="saved-item{% if finished %} saved-item-finished{% endif %}">
+  <div class="saved-item-thumb" aria-hidden="true">
+    {% if event.image_url %}
+    <img src="{{ event.image_url }}" alt="" loading="lazy" />
+    {% else %}
+    {% set ph = category_photo(event) %}
+    {% if ph %}
+    <img src="{{ ph.thumb_url or ph.image_url }}" alt="" loading="lazy" />
+    {% else %}
+    <div class="saved-item-thumb-fallback ph-{{ event.id % 8 }}">
+      <svg viewBox="0 0 24 24" width="28" height="28" fill="none" stroke="currentColor" stroke-width="1.5">
+        <rect x="3" y="5" width="18" height="16" rx="2" />
+        <path d="M3 9h18" />
+        <path d="M8 3v4M16 3v4" />
+      </svg>
     </div>
-    {% endfor %}
+    {% endif %}
+    {% endif %}
   </div>
+
+  <div class="saved-item-body">
+    <p class="saved-item-when">
+      {% if item.state == "ongoing" %}<span class="saved-chip saved-chip-now">Happening now</span>
+      {% elif item.days_until == 0 %}<span class="saved-chip saved-chip-soon">Today</span>
+      {% elif item.days_until == 1 %}<span class="saved-chip saved-chip-soon">Tomorrow</span>
+      {% elif item.days_until is not none and item.days_until < 7 %}<span class="saved-chip">In {{ item.days_until }} days</span>
+      {% endif %}
+      {% if event.start_date %}{{ event.start_date | human_date }}{% else %}Date TBD{% endif %}{% if event.start_time %} · {{ event.start_time | human_time }}{% set tz = event | event_tz %}{% if tz %} <span class="event-tz">{{ tz }}</span>{% endif %}{% endif %}{% if event.end_date and event.end_date != event.start_date %} – {{ event.end_date | human_date }}{% endif %}
+    </p>
+    <h3 class="saved-item-title">
+      {% if item.is_linkable %}<a href="/events/{{ event.id }}">{{ event.title }}</a>{% else %}{{ event.title }}{% endif %}
+    </h3>
+    <p class="saved-item-where">
+      {{ event.public_venue or 'Venue TBD' }}{% if event.city and event.city.name not in (event.public_venue or '') %} · {{ event.city.name }}{% endif %}
+      {% if event.effective_category %}<span class="badge badge-muted">{{ event.effective_category.name }}</span>{% endif %}
+      {% if event.is_cancelled and not finished %}<span class="badge badge-danger">Cancelled</span>{% endif %}
+    </p>
+    {% if finished %}
+    <p class="saved-item-status">
+      <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+        <circle cx="12" cy="12" r="10" />
+        <path d="M12 16v-4M12 8h.01" />
+      </svg>
+      {% if item.state == "past" %}
+      <span><strong>Expired.</strong> This event has already happened, so it no longer has a page here.</span>
+      {% else %}
+      <span><strong>No longer listed.</strong> This event was taken down by its source, so it no longer has a page here.</span>
+      {% endif %}
+    </p>
+    {% endif %}
+  </div>
+
+  <div class="saved-item-actions">
+    {% if item.is_linkable %}
+    <a class="saved-action saved-action-primary" href="/events/{{ event.id }}">View event<span class="sr-only">: {{ event.title }}</span></a>
+    {% elif event.canonical_url %}
+    <a class="saved-action" href="{{ event.canonical_url }}" rel="noopener noreferrer" target="_blank">Original listing<span class="sr-only">: {{ event.title }} (opens in a new tab)</span> <span aria-hidden="true">&#8599;</span></a>
+    {% endif %}
+    <form method="post" action="/account/unsave/{{ event.id }}" class="inline-form">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}" />
+      <input type="hidden" name="next" value="/account/saved" />
+      <button type="submit" class="saved-action saved-action-remove">Remove<span class="sr-only">: {{ event.title }}</span></button>
+    </form>
+  </div>
+</li>
+{% endmacro %}
+
+{% block content %}
+<div class="page-container saved-page">
+  <header class="saved-header">
+    <div>
+      <h1>Saved events</h1>
+      {% if current_items or finished_items %}
+      <p class="saved-summary">
+        {{ current_items | length }} coming up{% if finished_items %} · {{ finished_items | length }} past or no longer listed{% endif %}
+      </p>
+      {% endif %}
+    </div>
+    <a class="saved-header-link" href="/account/alerts">Alert preferences</a>
+  </header>
+
+  {% if current_items or finished_items %}
+  <section class="saved-section" aria-labelledby="saved-upcoming-heading">
+    <h2 id="saved-upcoming-heading">Coming up</h2>
+    {% if current_items %}
+    <ul class="saved-list">
+      {% for item in current_items %}{{ saved_item(item) }}{% endfor %}
+    </ul>
+    {% else %}
+    <p class="saved-section-empty">Nothing coming up. <a href="/">Find events</a> to save.</p>
+    {% endif %}
+  </section>
+
+  {% if finished_items %}
+  <section class="saved-section" aria-labelledby="saved-past-heading">
+    <div class="saved-section-head">
+      <h2 id="saved-past-heading">Past and no longer listed</h2>
+      {% if past_count %}
+      <form method="post" action="/account/saved/clear-past" class="inline-form">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}" />
+        <button type="submit" class="saved-action saved-action-remove">Remove past events</button>
+      </form>
+      {% endif %}
+    </div>
+    <ul class="saved-list">
+      {% for item in finished_items %}{{ saved_item(item) }}{% endfor %}
+    </ul>
+  </section>
+  {% endif %}
   {% else %}
   <div class="empty-state">
+    <svg viewBox="0 0 24 24" width="48" height="48" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true">
+      <path d="M12 3l2.7 5.6 6.1.9-4.4 4.3 1 6.1L12 17l-5.4 2.9 1-6.1L3.2 9.5l6.1-.9z" />
+    </svg>
     <h2>No saved events yet</h2>
-    <p>Browse events and tap “Save event” to keep them here.</p>
+    <p>Open any event and choose “Save event” to keep it here. You can get a reminder before it starts.</p>
     <a href="/" class="filter-clear-link">Find events</a>
   </div>
   {% endif %}
