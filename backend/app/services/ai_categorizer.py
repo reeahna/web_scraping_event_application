@@ -390,7 +390,7 @@ class GeminiCategorizer:
 class GroqCategorizer(GeminiCategorizer):
     """The same batch categorizer against Groq's OpenAI-compatible API. Groq's
     free tier allows far more requests a day than Gemini's (around 1,000 for
-    Llama 3.3 70B at the time of writing) but caps tokens per minute, so
+    gpt-oss-120b at the time of writing) but caps tokens per minute, so
     batches are smaller and requests further apart."""
 
     def __init__(
@@ -418,7 +418,7 @@ class GroqCategorizer(GeminiCategorizer):
         return self
 
     def _payload(self, prompt: str) -> dict:
-        return {
+        payload = {
             "model": self.model,
             "temperature": 0.0,
             # JSON mode returns an object, so the array is wrapped in "labels".
@@ -432,6 +432,11 @@ class GroqCategorizer(GeminiCategorizer):
                 {"role": "user", "content": prompt},
             ],
         }
+        if self.model.startswith("openai/gpt-oss"):
+            # Its reasoning tokens count against the per-minute token limit and
+            # labeling needs little of it.
+            payload["reasoning_effort"] = "low"
+        return payload
 
     def _response_text(self, body: dict) -> str:
         choices = body.get("choices") or []
