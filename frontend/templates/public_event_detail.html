@@ -58,7 +58,7 @@
       <h1>{{ event.title }}</h1>
       <p class="event-detail-datetime">
         {{ event.start_date | human_date_long }}{% if event.end_date and event.end_date != event.start_date %} &ndash; {{ event.end_date | human_date_long }}{% endif %}
-        {% if event.start_time %}<br />{{ event.start_time | human_time }}{% if event.end_time %} &ndash; {{ event.end_time | human_time }}{% endif %}{% endif %}
+        {% if event.start_time %}<br />{{ event.start_time | human_time }}{% if event.end_time %} &ndash; {{ event.end_time | human_time }}{% endif %}{% set tz = event | event_tz %}{% if tz %} <span class="event-tz">{{ tz }}</span>{% endif %}{% endif %}
       </p>
       {% if current_user %}
       <div class="event-detail-actions">

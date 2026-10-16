@@ -8,7 +8,7 @@ from fastapi.templating import Jinja2Templates
 
 from app.config import get_settings
 from app.core.csrf import get_or_create_csrf_token, set_csrf_cookie
-from app.core.formatting import human_date, human_date_long, human_time
+from app.core.formatting import event_time_zone, human_date, human_date_long, human_time
 from app.core.onboarding import onboarding_label
 from app.core.report_status import report_status_label
 from app.extraction.fetch import explain_block_reason
@@ -22,6 +22,7 @@ templates = Jinja2Templates(directory=str(TEMPLATES_DIR))
 templates.env.filters["human_date"] = human_date
 templates.env.filters["human_date_long"] = human_date_long
 templates.env.filters["human_time"] = human_time
+templates.env.filters["event_tz"] = event_time_zone
 # `pct` renders a 0..1 rate null-safely ('—' when absent, '0%' when a real
 # zero); `quality_view` normalizes a persisted/partial quality snapshot so
 # templates can distinguish absent metrics from evaluated zeros (Phase 8G
