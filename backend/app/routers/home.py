@@ -2,14 +2,19 @@ from datetime import date
 from urllib.parse import urlencode
 
 from fastapi import APIRouter, Request
-from fastapi.responses import HTMLResponse
+from fastapi.responses import HTMLResponse, RedirectResponse
 from starlette.datastructures import QueryParams
 
 from app.config import get_settings
 from app.core.exceptions import NotFoundError
 from app.core.templating import render
 from app.dependencies import DbSession, OptionalCurrentUser
-from app.repositories.city import get_city_by_slug, list_cities, search_public_cities
+from app.repositories.city import (
+    get_city_by_slug,
+    get_city_by_slug_ignoring_case,
+    list_cities,
+    search_public_cities,
+)
 from app.repositories.event_category import list_active_categories
 from app.repositories.public_events import (
     PUBLIC_EVENTS_PER_PAGE,
@@ -250,6 +255,13 @@ def home(request: Request, current_user: OptionalCurrentUser, db: DbSession):
 @router.get("/city/{slug}", response_class=HTMLResponse)
 def city_page(slug: str, request: Request, current_user: OptionalCurrentUser, db: DbSession):
     city = get_city_by_slug(db, slug)
+    if city is None:
+        canonical = get_city_by_slug_ignoring_case(db, slug)
+        if canonical is not None and canonical.is_active:
+            # /city/BLOOMINGTON -> /city/bloomington, keeping the filters.
+            # A relative Location, so the redirect never echoes the Host header.
+            query = f"?{request.url.query}" if request.url.query else ""
+            return RedirectResponse(f"/city/{canonical.slug}{query}", status_code=301)
     if city is None or not city.is_active:
         raise NotFoundError("City not found")
     # The city page pins the city filter.

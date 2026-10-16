@@ -4,6 +4,7 @@ from fastapi import Request
 from fastapi.encoders import jsonable_encoder
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse, RedirectResponse, Response
+from sqlalchemy.exc import DataError
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from app.core.logging import get_logger
@@ -121,9 +122,25 @@ async def overflow_handler(request: Request, exc: OverflowError) -> Response:
     fails inside the query. No row can have such an id: answer as not found."""
     if "SQLite INTEGER" not in str(exc):
         return await unhandled_exception_handler(request, exc)
+    return _client_error(request, 404, "Not found")
+
+
+async def data_error_handler(request: Request, exc: DataError) -> Response:
+    """PostgreSQL's counterparts of the above: an id past its integer range is
+    not found, and a NUL byte (which text columns cannot hold) is a bad
+    request. Any other DataError is a real bug and is reported as one."""
+    reason = type(getattr(exc, "orig", None)).__name__
+    if reason == "NumericValueOutOfRange":
+        return _client_error(request, 404, "Not found")
+    if "NUL (0x00)" in str(exc.orig):
+        return _client_error(request, 400, "Bad request")
+    return await unhandled_exception_handler(request, exc)
+
+
+def _client_error(request: Request, status_code: int, detail: str) -> Response:
     if _wants_html(request):
-        return error_page(request, 404)
-    return JSONResponse(status_code=404, content={"detail": "Not found"})
+        return error_page(request, status_code)
+    return JSONResponse(status_code=status_code, content={"detail": detail})
 
 
 async def not_authenticated_handler(request: Request, exc: NotAuthenticatedError) -> Response:

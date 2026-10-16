@@ -65,8 +65,14 @@ def safe_next(next_url: str | None) -> str:
     return next_url if _is_safe_next(next_url) else "/"
 
 
+# OAuthLoginState.next_url's column size; a longer address could not be stored.
+_MAX_NEXT_LENGTH = 500
+
+
 def _is_safe_next(next_url: str | None) -> bool:
-    if not next_url or any(ord(char) < 32 or ord(char) == 127 for char in next_url):
+    if not next_url or len(next_url) > _MAX_NEXT_LENGTH:
+        return False
+    if any(ord(char) < 32 or ord(char) == 127 for char in next_url):
         return False
     if not next_url.startswith("/") or next_url.startswith("//"):
         return False
@@ -203,10 +209,20 @@ def _grant_superadmin_if_named(
         db.commit()
 
 
+def _fit_name(name: str | None) -> str | None:
+    """A provider's display name as it can be stored: no control characters
+    and at most 255 characters (the column size). A provider can send any
+    profile name, and an overlong one would otherwise block sign-in."""
+    if not name:
+        return None
+    cleaned = "".join(char for char in name if char.isprintable()).strip()
+    return cleaned[:255] or None
+
+
 def _apply_identity_fields(identity: ExternalIdentity, info: ExternalIdentityInfo, now) -> None:
     identity.email = info.email
     identity.email_verified = info.email_verified
-    identity.display_name = info.display_name
+    identity.display_name = _fit_name(info.display_name)
     identity.avatar_url = info.avatar_url
     identity.last_login_at = now
 
@@ -267,7 +283,7 @@ def _resolve_user(
         and not _is_named_superadmin(info, settings)
     ):
         raise OAuthError("registration_closed", "New accounts are not being accepted.")
-    user = create_user(db, email=email_norm, full_name=info.display_name)
+    user = create_user(db, email=email_norm, full_name=_fit_name(info.display_name))
     role = db.scalar(select(Role).where(Role.name == REGISTERED_USER, Role.is_active.is_(True)))
     if role is not None:
         db.add(UserRole(user_id=user.id, role_id=role.id))

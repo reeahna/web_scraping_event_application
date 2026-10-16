@@ -70,4 +70,7 @@ jobs:
           python -m alembic downgrade base
           python -m alembic upgrade head
       - name: Tests against PostgreSQL
+        # tests/conftest.py uses SQLite unless TEST_DATABASE_URL names another DB.
+        env:
+          TEST_DATABASE_URL: postgresql+psycopg://events:events@localhost:5432/events_test
         run: python -m pytest -q

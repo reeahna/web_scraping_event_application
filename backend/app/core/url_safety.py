@@ -10,6 +10,7 @@ knowable from the URL string itself.
 """
 
 import ipaddress
+import socket
 from urllib.parse import urlsplit
 
 ALLOWED_SCHEMES = frozenset({"http", "https"})
@@ -34,14 +35,19 @@ def _ip_is_blocked(ip: ipaddress.IPv4Address | ipaddress.IPv6Address) -> bool:
 
 
 def _parse_numeric_ipv4(hostname: str) -> ipaddress.IPv4Address | None:
-    """Catches the classic SSRF bypass of encoding an IPv4 address as a single
-    decimal integer (e.g. 2130706433 == 127.0.0.1)."""
+    """Catches the classic SSRF bypasses of spelling an IPv4 address in a form
+    other than a dotted quad: a single decimal integer (2130706433), shorthand
+    (127.1), hex (0x7f000001) or octal (0177.0.0.1). These are the forms
+    `inet_aton` (and so many resolvers) accept."""
     if hostname.isdigit():
         try:
             return ipaddress.IPv4Address(int(hostname))
         except (ValueError, ipaddress.AddressValueError):
             return None
-    return None
+    try:
+        return ipaddress.IPv4Address(socket.inet_aton(hostname))
+    except (OSError, ValueError):
+        return None
 
 
 def validate_public_url(url: str) -> str:
@@ -71,8 +77,15 @@ def validate_public_url(url: str) -> str:
         # e.g. an invalid IPv6 literal in brackets
         raise UnsafeURLError("Malformed URL") from exc
 
+    # A fully-qualified name may end in a dot ("localhost."); it names the same host.
+    hostname = hostname.rstrip(".")
     if not hostname:
         raise UnsafeURLError("Malformed URL: missing host")
+
+    try:
+        _ = parsed.port  # raises ValueError for a non-numeric or out-of-range port
+    except ValueError as exc:
+        raise UnsafeURLError("URL port is invalid or out of range") from exc
 
     if hostname in _BLOCKED_HOSTS or any(
         hostname.endswith(suffix) for suffix in _BLOCKED_HOST_SUFFIXES

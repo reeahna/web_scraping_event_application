@@ -50,7 +50,7 @@ class UnsupportedSiteReport(Base):
     browser_recovery: Mapped[dict[str, Any] | None] = mapped_column(JSON, default=None)
     failure_reason: Mapped[str | None] = mapped_column(String(500), default=None)
     fingerprint: Mapped[str] = mapped_column(String(64), index=True)
-    status: Mapped[str] = mapped_column(String(16), default="open")
+    status: Mapped[str] = mapped_column(String(32), default="open")
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 
     assigned_user_id: Mapped[int | None] = mapped_column(

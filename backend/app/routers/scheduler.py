@@ -132,6 +132,16 @@ def _website_or_404(db: Session, website_id: int) -> Website:
     return website
 
 
+def _audit_schedule(db: Session, user: User, action: str, website_id: int) -> None:
+    record_audit(
+        db,
+        actor_id=user.id,
+        action=action,
+        entity_type="website",
+        entity_id=website_id,
+    )
+
+
 @router.get("/health")
 def health(db: DbSession, _: ViewSites) -> JSONResponse:
     h = scheduler_health(db)
@@ -176,12 +186,15 @@ def queue_now(
     state.paused = False
     state.next_run_at = datetime.now(UTC)
     db.commit()
+    _audit_schedule(db, current_user, "scheduler_run_queued", website_id)
     set_flash(response, "Queued a scheduled run — the scheduler process will run it shortly.")
     return response
 
 
 @router.post("/websites/{website_id}/run-now")
-def run_now(website_id: int, db: DbSession, _: RunSites, __: CsrfChecked) -> JSONResponse:
+def run_now(
+    website_id: int, db: DbSession, current_user: RunSites, __: CsrfChecked
+) -> JSONResponse:
     website = _website_or_404(db, website_id)
     eligibility = evaluate_eligibility(website)
     if not eligibility.eligible:
@@ -193,25 +206,35 @@ def run_now(website_id: int, db: DbSession, _: RunSites, __: CsrfChecked) -> JSO
     state.paused = False
     state.next_run_at = datetime.now(UTC)
     db.commit()
+    _audit_schedule(db, current_user, "scheduler_run_queued", website_id)
     return JSONResponse({"scheduled": True})
 
 
 @router.post("/websites/{website_id}/cancel")
-def cancel(website_id: int, db: DbSession, _: RunSites, __: CsrfChecked) -> JSONResponse:
+def cancel(
+    website_id: int, db: DbSession, current_user: RunSites, __: CsrfChecked
+) -> JSONResponse:
     _website_or_404(db, website_id)
     ok = request_cancel(db, website_id)
+    if ok:
+        _audit_schedule(db, current_user, "scheduler_cancel_requested", website_id)
     return JSONResponse({"cancel_requested": ok})
 
 
 @router.post("/websites/{website_id}/pause")
-def pause(website_id: int, db: DbSession, _: RunSites, __: CsrfChecked) -> JSONResponse:
+def pause(
+    website_id: int, db: DbSession, current_user: RunSites, __: CsrfChecked
+) -> JSONResponse:
     _website_or_404(db, website_id)
     set_paused(db, website_id, paused=True)
+    _audit_schedule(db, current_user, "scheduler_paused", website_id)
     return JSONResponse({"paused": True})
 
 
 @router.post("/websites/{website_id}/resume")
-def resume(website_id: int, db: DbSession, _: RunSites, __: CsrfChecked) -> JSONResponse:
+def resume(
+    website_id: int, db: DbSession, current_user: RunSites, __: CsrfChecked
+) -> JSONResponse:
     website = _website_or_404(db, website_id)
     eligibility = evaluate_eligibility(website)
     if not eligibility.eligible:
@@ -219,4 +242,5 @@ def resume(website_id: int, db: DbSession, _: RunSites, __: CsrfChecked) -> JSON
             {"resumed": False, "reasons": list(eligibility.reasons)}, status_code=409
         )
     set_paused(db, website_id, paused=False)
+    _audit_schedule(db, current_user, "scheduler_resumed", website_id)
     return JSONResponse({"resumed": True})

@@ -55,6 +55,17 @@ def get_city_by_slug(db: Session, slug: str) -> City | None:
     return db.query(City).filter(City.slug == slug).first()
 
 
+def get_city_by_slug_ignoring_case(db: Session, slug: str) -> City | None:
+    """The town whose slug matches `slug` apart from letter case, so a link
+    typed as /city/BLOOMINGTON can be redirected to its canonical URL."""
+    return (
+        db.query(City)
+        .filter(func.lower(City.slug) == slug.lower())
+        .order_by(City.id)
+        .first()
+    )
+
+
 def get_city_by_name(db: Session, name: str) -> City | None:
     """Case-insensitive lookup, so "Ithaca" and "ithaca" count as one town."""
     return db.query(City).filter(func.lower(City.name) == name.strip().lower()).first()

@@ -3,6 +3,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.exceptions import RequestValidationError
 from fastapi.staticfiles import StaticFiles
+from sqlalchemy.exc import DataError
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from app.config import get_settings
@@ -10,6 +11,7 @@ from app.core.exceptions import (
     AppError,
     NotAuthenticatedError,
     app_error_handler,
+    data_error_handler,
     http_exception_handler,
     not_authenticated_handler,
     overflow_handler,
@@ -19,6 +21,7 @@ from app.core.exceptions import (
 from app.core.logging import configure_logging, get_logger
 from app.core.middleware import (
     CorrelationIdMiddleware,
+    HeadAsGetMiddleware,
     MaxBodySizeMiddleware,
     SecurityHeadersMiddleware,
 )
@@ -85,7 +88,7 @@ app = FastAPI(
 app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
 
 # Middleware is applied in reverse registration order, so register the
-# correlation id last (outermost) and the request-size guard first.
+# HEAD handling and correlation id last (outermost) and the request-size guard first.
 app.add_middleware(MaxBodySizeMiddleware, max_bytes=settings.max_request_bytes)
 if settings.security_headers_enabled:
     app.add_middleware(
@@ -98,12 +101,15 @@ if settings.trusted_hosts:
 
     app.add_middleware(TrustedHostMiddleware, allowed_hosts=settings.trusted_hosts)
 app.add_middleware(CorrelationIdMiddleware)
+# Outermost of all: everything inside sees a HEAD request as the GET it stands for.
+app.add_middleware(HeadAsGetMiddleware)
 
 app.add_exception_handler(AppError, app_error_handler)
 app.add_exception_handler(NotAuthenticatedError, not_authenticated_handler)
 app.add_exception_handler(StarletteHTTPException, http_exception_handler)
 app.add_exception_handler(RequestValidationError, request_validation_handler)
 app.add_exception_handler(OverflowError, overflow_handler)
+app.add_exception_handler(DataError, data_error_handler)
 app.add_exception_handler(Exception, unhandled_exception_handler)
 
 app.include_router(home.router)
