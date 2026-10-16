@@ -148,6 +148,20 @@ _SERVICE_TITLE = _rx(
     r"(\b|_)individual (clients|sessions|appointments)\b"
 )
 
+# A course's own class meetings, which a university calendar can list next to
+# its public talks: "Monday Lecture", "Lecture 5", "Week 3 Lecture: Enzymes",
+# "BIOL 1010 Lecture", "Recitation". A named or public lecture ("Thomas H.
+# Lake Lecture with Meghan Sullivan", "Lecture: Rivers", "A lecture and Q&A
+# with ...") says more than this and is kept.
+_CLASS_SESSION_TITLE = _rx(
+    r"^\s*((mon|tues|wednes|thurs|fri|satur|sun)day|daily|weekly|class|course|morning|"
+    r"afternoon|evening)?\s*lectures?\s*(\d+|[-–:]?\s*(week|day|unit|module|part)\s*\d+)?\s*$|"
+    r"^\s*(week|unit|module)\s*\d+\b.*\blectures?\b|"
+    r"\b\d{3,4}[a-z]?\s+lectures?\b|"
+    r"\b(class|course) (lectures?|sessions?|meetings?)\b|"
+    r"\b(recitation|discussion|lab|lecture) sections?\b|^\s*recitations?\b"
+)
+
 # A theme week or month is a banner over other events, not one itself:
 # "Wellness Week", "Pride Month".
 _THEME_PERIOD_TITLE = _rx(r"^\s*([\w'&-]+\s+){1,3}(week|month)\s*$")
@@ -295,7 +309,7 @@ def not_attendable_reason(
         return INTERNAL
     if _CERTIFICATION_TITLE.search(title):
         return CERTIFICATION
-    if _SERVICE_TITLE.search(title):
+    if _SERVICE_TITLE.search(title) or _CLASS_SESSION_TITLE.search(title):
         return INTERNAL
     if _THEME_PERIOD_TITLE.search(title):
         return DEADLINE

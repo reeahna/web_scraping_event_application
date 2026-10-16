@@ -170,6 +170,15 @@ class SchedulerRuntime:
                 id="home_town_sweep", max_instances=1, coalesce=True,
                 next_run_time=datetime.now(UTC),
             )
+        # The same for the attendability filter (online-only, conferences,
+        # internal business, class lectures, ...): a rule added after an event
+        # was imported takes it down without waiting for its source to re-list it.
+        if settings.attendability_filter_enabled:
+            self._scheduler.add_job(
+                self._attendability_sweep_tick, "interval", hours=24,
+                id="attendability_sweep", max_instances=1, coalesce=True,
+                next_run_time=datetime.now(UTC),
+            )
         self._scheduler.start()
 
     async def _heartbeat_tick(self) -> None:
@@ -364,6 +373,28 @@ class SchedulerRuntime:
                 logger.info("took down %d out-of-town event(s)", hidden)
         except Exception as exc:  # noqa: BLE001 - a tick must never kill the loop
             logger.warning("home-town sweep failed: %s", exc)
+
+    async def _attendability_sweep_tick(self) -> None:
+        if not self._is_leader:
+            return
+        from app.services.attendability import hide_unattendable_events
+
+        def sweep() -> list[tuple[str, str]]:
+            db = self._session_factory()
+            try:
+                found = hide_unattendable_events(db, apply=True)
+                return [(event.title, reason) for event, reason in found]
+            finally:
+                db.close()
+
+        try:
+            hidden = await asyncio.to_thread(sweep)
+            for title, reason in hidden:
+                logger.info("took down %s event: %s", reason, title)
+            if hidden:
+                logger.info("took down %d event(s) that are not attendable", len(hidden))
+        except Exception as exc:  # noqa: BLE001 - a tick must never kill the loop
+            logger.warning("attendability sweep failed: %s", exc)
 
     async def _run_one(self, website_id: int) -> None:
         async with self._semaphore:
