@@ -12,6 +12,7 @@ from app.schemas.extraction import SiteConfiguration
 from app.services.extraction_runs import preview_extraction, run_extraction
 from app.services.home_town import (
     address_town,
+    at_other_school_event,
     from_other_campus_calendar,
     hide_out_of_town_events,
     is_away_game,
@@ -62,6 +63,12 @@ def test_address_town(address, expected):
         ("303 E. Kirkwood Ave., Bloomington", False),
         ("Assembly Hall", False),  # no town named: kept
         ("1140 IN-135, Greenwood, IN, 46143", True),
+        # Eventbrite sometimes gives the town and ZIP but no state.
+        ("1140 IN-135, Greenwood, 46142", True),
+        ("111 S Walnut St, Bloomington, 47401", False),
+        ("5129 S Emerson Ave, Indianapolis,, IN, 46237", True),
+        ("1395 Jordan St, Suite B, Ellettsville, 47429", True),
+        ("1395 Jordan St, Suite B, Bloomington, 47401", False),
         (None, False),
     ],
 )
@@ -349,3 +356,24 @@ def test_town_team_away_game(title, town, away):
 def test_title_naming_another_campus(title, other):
     assert names_other_campus(title, "Bloomington") is other
     assert names_other_campus(title, "Iowa City") is False
+
+
+@pytest.mark.parametrize(
+    "title,away",
+    [
+        ("University of Loyola Chicago Club Softball Series", True),
+        ("University of Illinois Urbana-Champaign Mock Trial Tournament", True),
+        ("Drake University Mock Trial Tournament", True),
+        ("University of Iowa Mock Trial Tournament", False),
+        ("Iowa City Jazz Series", False),
+        ("Penn State University Lecture Series", False),
+    ],
+)
+def test_other_schools_tournament(title, away):
+    from types import SimpleNamespace
+
+    city = SimpleNamespace(
+        name="Iowa City", universities=[SimpleNamespace(name="University of Iowa")]
+    )
+    assert at_other_school_event(title, city) is away
+    assert at_other_school_event(title, SimpleNamespace(name="Iowa City", universities=[])) is False
