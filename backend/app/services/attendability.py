@@ -108,7 +108,9 @@ _PROFESSIONAL_TITLE = _rx(
     r"(autism|disabilit(y|ies)|health|clinical|pain|opioid|dementia|psychiatry) echo|"
     r"project echo|"
     r"(grow|strengthen|start|scale|build) (a |your )?(small )?(\w+ ){0,2}business|"
-    r"business owners?|small business working session|money is expensive)\b"
+    r"business owners?|small business working session|money is expensive|"
+    r"for (executives|people leaders|managers|supervisors)|project management|buying event|"
+    r"access mba)\b"
 )
 
 # --- aimed at someone other than college students ------------------------------
@@ -123,10 +125,13 @@ _AUDIENCE_TITLE = _rx(
     r"senior u|seniors?['’] (academy|university)|intro to (email|computers|the internet)|"
     r"computer basics|"
     r"senior (expo|citizens?|center)|seniors (55|60|62|65)|older adults|retirees|"
-    r"(55|60|62|65)\s*(\+|and (up|over|older))|"
+    r"(50|55|60|62|65)\s*(\+|and (up|over|older))|teens?|tots?|emeriti|"
     r"ages? (2[5-9]|[3-9]\d)\s*(-|–|to|\+|and)|"
     r"(alumni|iuaa)\b.*\b(game watch|chapter|reception|happy hour|weekend|reunion)|"
-    r"\balumni (association|chapter|club|reception|game watch))\b"
+    r"game watch\b.*\b(alumni|iuaa)|iuaa|"
+    r"\balumni (association|chapter|club|reception|game watch))\b|"
+    # "Art Hive for 50+": the "+" ends the title, so no word boundary follows.
+    r"\b(50|55|60|62|65)\s*\+"
 )
 
 # A joint social for two residence-hall floors: "Smith 2 & Ed 3: Lucky Charms".
@@ -137,6 +142,8 @@ _FLOOR_PAIR_TITLE = _rx(r"^\s*[a-z]+ \d\s*(&|and)\s*[a-z]+ \d\s*:")
 _SERVICE_TITLE = _rx(
     r"\bdrop[- ]in (career|advising|tutoring|coaching|hours|help|consultations?|writing)\b|"
     r"\b(career coaching|study tables?|tutoring hours|writing (center|tutor)|advising hours)\b|"
+    # A study group's own booking: "Motor Speech Study Session", "LGSA Study Hour".
+    r"\bstudy (sesh\w*|sessions?|hours?)\b|\bexam \d\b|"
     r"^\s*(study|studying|study hall|learning lab|open lab|lab hours|tutoring|advising|"
     r"quiet study|group study)\s*$|"
     # How to apply to a program: "Learn How to Apply for the 2027 Rural
@@ -146,6 +153,22 @@ _SERVICE_TITLE = _rx(
     r"\borientation session\b|"
     # Appointments with a clinic or service: "Corvalan Collab_Individual Clients".
     r"(\b|_)individual (clients|sessions|appointments)\b"
+)
+
+# A course's own class meetings, which a university calendar can list next to
+# its public talks: "Monday Lecture", "Monday Lessons", "Lecture 5", "Week 3 Lecture: Enzymes",
+# "BIOL 1010 Lecture", "Recitation". A named or public lecture ("Thomas H.
+# Lake Lecture with Meghan Sullivan", "Lecture: Rivers", "A lecture and Q&A
+# with ...") says more than this and is kept.
+_CLASS_SESSION_TITLE = _rx(
+    r"^\s*((mon|tues|wednes|thurs|fri|satur|sun)day|daily|weekly|class|course|morning|"
+    r"afternoon|evening)?\s*(lectures?|lessons?|class(es)?)\s*"
+    r"(\d+|[-–:]?\s*(week|day|unit|module|part)\s*\d+)?\s*$|"
+    r"^\s*(week|unit|module)\s*\d+\b.*\blectures?\b|"
+    r"\b\d{3,4}[a-z]?\s+lectures?\b|"
+    r"\b(class|course) (lectures?|sessions?|meetings?)\b|"
+    r"\b(recitation|discussion|lab|lecture) sections?\b|^\s*recitations?\b|"
+    r"^\s*(discussion|lab)\s*(\d+(/\d+)?)?\s*$"
 )
 
 # A theme week or month is a banner over other events, not one itself:
@@ -226,7 +249,20 @@ _INTERNAL_TITLE = _rx(
     # A campus office or service listed as if it were an event:
     # "Embedded Accessible Educational Services (AES)".
     r"\bservices\s*(\([A-Z]{2,6}\))?\s*$|"
-    r"^\s*(meetings?|closed|hold|reserved|tbd|tba)\s*$"
+    r"^\s*(meetings?|closed|hold|reserved|tbd|tba)\s*(#?\d+)?\s*$|"
+    # A club's officers meeting among themselves: "Executive Board Meeting",
+    # "GPSG Cabinet Meetings", "WAC Weekly Leadership Meeting".
+    r"\b(executive|exec|e-?board|(?<!general )board|cabinet|leadership)"
+    r"( weekly)?( board)? meetings?\b|"
+    r"\b(set[- ]?up|pre-event meeting)\s*$|\(closed\)|\btest event\b|"
+    r"\bjournal club\b|\bvisiting resident\b|\bfaculty candidate\b|\bjob talk\b|"
+    r"\blimited submissions\b|^\s*faculty (and|&) staff\b|"
+    # Teaching development for instructors.
+    r"\b(syllabus|rubric|course-specific|student evaluations?)\b|\bin the classroom\b|"
+    r"\b(system|educator|staff|volunteer|employee|g?ta) trainings?\b|"
+    r"\btraining (meeting|weekend)\b|[-–]\s*trainings?\s*$|"
+    # Notices rather than events.
+    r"\bmove your car\b|\b(football|game ?day) parking\b|\bsurvey\s*$"
 )
 # Case-sensitive: a course section ("SWK-S 502 0001", "NURS-B 444", "ANAT-D502")
 # or a room code ("Rm IB 317") at the front of a title is a class or a booking.
@@ -234,7 +270,9 @@ _INTERNAL_CODES = re.compile(
     r"^\s*[A-Z]{2,5}(-[A-Z]?\s?\d{3}|\s[A-Z]\d{3})[A-Z]?\b|\bRms?\.? [A-Z]{0,3}\s?\d{2,4}\b|"
     # A room booking signed with the booker's lowercase initials:
     # "IUH-Years of Service Awards/Lori Kern/ce", "IUH-MillionMeals/SGirgis/dmg".
-    r"/\s*[a-z]{2,4}\s*$|^\s*IUH\s*-|"
+    r"/\s*[a-z]{2,4}\s*$|^\s*IU(H|SON|SM)\s*-|"
+    # A course number on its own: "Tanner H399 Honors", "SWK ... with 481".
+    r"\b[A-Z]\d{3}\b|"
     # A course listed by its number: "FOLK 100: Foundations of our Fields".
     r"^\s*[A-Z]{2,5} [A-Z]?\d{3}[A-Z]?\s*:|"
     # A department's research talk series: "CCBB Seminar Guest Speaker: Dr. ...".
@@ -295,7 +333,7 @@ def not_attendable_reason(
         return INTERNAL
     if _CERTIFICATION_TITLE.search(title):
         return CERTIFICATION
-    if _SERVICE_TITLE.search(title):
+    if _SERVICE_TITLE.search(title) or _CLASS_SESSION_TITLE.search(title):
         return INTERNAL
     if _THEME_PERIOD_TITLE.search(title):
         return DEADLINE

@@ -110,6 +110,56 @@ from tests.extraction_helpers import html_handler, patched_http_fetch
         ("Mysticism Reading Group", INTERNAL),
         ("Dame’s meeting", INTERNAL),
         ("CCBB Seminar Guest Speaker: Dr. Tianyi Mao 10/9/26", INTERNAL),
+        # A course's own class meetings.
+        ("Monday Lecture", INTERNAL),
+        ("Monday Lessons", INTERNAL),
+        ("Thursday Class", INTERNAL),
+        ("Lecture", INTERNAL),
+        ("Lecture 5", INTERNAL),
+        ("Class Lecture - Week 3", INTERNAL),
+        ("Week 3 Lecture: Enzyme Kinetics", INTERNAL),
+        ("Biology 1010 Lecture", INTERNAL),
+        ("Recitation", INTERNAL),
+        ("Discussion Section 2", INTERNAL),
+        ("Class Session: Intro to Statistics", INTERNAL),
+        # Seen on the live site in the first daily review.
+        ("Executive Board Meeting", INTERNAL),
+        ("GPSG Cabinet Meetings", INTERNAL),
+        ("WAC Weekly Leadership Meeting", INTERNAL),
+        ("Meeting #2", INTERNAL),
+        ("GSSO Escape Room Setup", INTERNAL),
+        ("Kill Roy: Volume 10 Pre-Event Meeting", INTERNAL),
+        ("Instructor Luncheon (Closed)", INTERNAL),
+        ("LIVEWHALE TEST EVENT", INTERNAL),
+        ("ICMH Journal Club", INTERNAL),
+        ("BMBP Presents Faculty Candidate David L. Mobley", INTERNAL),
+        ("Introduction to Limited Submissions", INTERNAL),
+        ("Faculty and Staff Flu Shot Clinics", INTERNAL),
+        ("Experiential Learning Series: Creating a Community-Engaged Course Syllabus", INTERNAL),
+        ("Simplifying Complex Concepts in the Classroom", INTERNAL),
+        ("eShipGlobal System Training", INTERNAL),
+        ("Help Center Training Weekend", INTERNAL),
+        ("IU Football Parking - October 17 vs. Ohio State", INTERNAL),
+        ("Move your Car by 6 p.m. - Ohio State vs IU", INTERNAL),
+        ("Trellis Student Financial Wellness Survey", INTERNAL),
+        ("IUSON - H356 Group 1", INTERNAL),
+        ("IUSM - FCP1 small groups", INTERNAL),
+        ("Tanner H399 Honors", INTERNAL),
+        ("Motor Speech Study Session", INTERNAL),
+        ("Izzy study seshhhh", INTERNAL),
+        ("Anatomy Review, Exam 2", INTERNAL),
+        ("Discussion 10/20", INTERNAL),
+        ("2026 Game Watch Football IUAA Nashville IU vs Ohio State", AUDIENCE),
+        ("IUAA Colorado: Hoosier Halloween", AUDIENCE),
+        ("Teen Winter Skate Night", AUDIENCE),
+        ("Tot-Tastic Day Off", AUDIENCE),
+        ("Art Hive for 50+", AUDIENCE),
+        ("Emeriti House Current Events", AUDIENCE),
+        ("AI Strategy for Executives: Organizational Adoption and Execution", PROFESSIONAL),
+        ("Anxiety at Work (for People Leaders)", PROFESSIONAL),
+        ("Fundamentals of Project Management", PROFESSIONAL),
+        ("Access MBA- Bogota, Columbia", PROFESSIONAL),
+        ("Bloomington, IN Roadshow- A free, Five Day Only Buying Event", PROFESSIONAL),
         ("Autism Echo & Developmental Disabilites.", PROFESSIONAL),
         ("Road to Retirement: Fundamentals of Retirement Income Planning", PROFESSIONAL),
     ],
@@ -161,6 +211,22 @@ def test_not_attendable_titles(title, reason):
         "Halloween Charcuterie Workshop at Soaked Winery",
         "Crimson Investment Group Call Out Meeting",
         "Small Business Saturday Pop Up Shop & Fashion Event",
+        # Public and named lectures are talks people go to.
+        "2026 Thomas H. Lake Lecture with Meghan Sullivan",
+        "One Person, No Vote: A lecture and Q&A with Carol Anderson",
+        "Lecture: Rivers",
+        "Guest Lecture: AI Ethics",
+        "Monday Night Lecture Series: The History of Jazz",
+        "General Board Meeting",
+        "Free Lindy Hop Dance Lessons (Beginner)",
+        "Weekly Latin Dance Lessons",
+        "General Body Meeting",
+        "Board of Programmers Meeting",
+        "Study Abroad Fair",
+        "The World is Your Classroom!",
+        "Building a Successful MCAT Study Plan",
+        "IU Football Watch Party: Hoosiers vs. Ohio State",
+        "Janette Fishell, organ; remarks by Jesse Eschbach (University of North Texas, Emeritus)",
     ],
 )
 def test_attendable_titles_are_kept(title):
@@ -315,3 +381,22 @@ def test_cleanup_decodes_html_entities_left_in_stored_titles(db_session, make_ci
     assert (event.title, event.venue, event.normalized_title) == (
         "Rock & Roll", "Bear’s Place", title_key("Rock & Roll")
     )
+
+
+@pytest.mark.asyncio
+async def test_scheduler_sweep_takes_down_unattendable_events(db_session, make_city, make_event):
+    from app.scheduler.runtime import SchedulerRuntime
+
+    city = make_city(name="Bloomington", slug="bloomington", state_or_region="Indiana")
+    make_event(city, title="Jazz Night", canonical_url="https://x/1")
+    make_event(city, title="Monday Lecture", canonical_url="https://x/2")
+
+    runtime = SchedulerRuntime(holder="test")
+    await runtime._attendability_sweep_tick()  # not the leader: leaves everything
+    db_session.expire_all()
+    assert db_session.query(Event).filter_by(is_active=True).count() == 2
+
+    runtime._is_leader = True
+    await runtime._attendability_sweep_tick()
+    db_session.expire_all()
+    assert [e.title for e in db_session.query(Event).filter_by(is_active=True)] == ["Jazz Night"]

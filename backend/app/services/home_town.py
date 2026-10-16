@@ -78,6 +78,23 @@ _OTHER_CAMPUS_TITLES = {
 }
 
 
+# Town -> titles that name a different campus of the same university, whatever
+# the source: an athletics or esports feed lists every campus's games
+# ("Indiana University Kokomo Volleyball vs ...", "IU Indy Men's Soccer vs ...").
+_OTHER_CAMPUS_TITLES_BY_TOWN = {
+    "bloomington": re.compile(
+        r"\b(IU|Indiana University) (Indy|Indianapolis|Southeast|South Bend|Kokomo|Northwest|"
+        r"East(?! Asian)|Fort Wayne|Columbus)\b|\b(IUPUI|IUPUC|IUK|IUSB|IUN|IUFW)\b"
+    ),
+}
+
+
+def names_other_campus(title: str | None, town: str | None) -> bool:
+    """True when the title names another campus of the home town's university."""
+    pattern = _OTHER_CAMPUS_TITLES_BY_TOWN.get((town or "").casefold())
+    return bool(title and pattern and pattern.search(title))
+
+
 def from_other_campus_calendar(url: str | None, title: str | None = None) -> bool:
     """True when an event link sits under another campus's calendar, or its
     title names another campus."""
@@ -155,10 +172,29 @@ def _at_other_schools_tournament(title: str, town: str | None) -> bool:
     return not (_words(match.group("rest")) & _home_names(match.group("school"), town))
 
 
+# A home-town team "at" somewhere, named by the town rather than "University":
+# "Iowa Ice Hockey at Nebraska" in Iowa City. "Pickup Basketball at the SRSC"
+# names no town, so it stays.
+_TOWN_TEAM_AT = re.compile(
+    rf"^(?P<team>.*?)\b({_SPORTS})\s+(at|@)\s+(?!the\b)", re.IGNORECASE
+)
+
+
+def _town_team_away(title: str, town: str | None) -> bool:
+    match = _TOWN_TEAM_AT.search(title)
+    if match is None or not town:
+        return False
+    return bool(_words(match.group("team")) & _words(town))
+
+
 def is_away_game(title: str | None, town: str | None = None) -> bool:
     if not title or _WATCH_PARTY.search(title):
         return False
-    return bool(_AWAY_GAME.search(title)) or _at_other_schools_tournament(title, town)
+    return (
+        bool(_AWAY_GAME.search(title))
+        or _at_other_schools_tournament(title, town)
+        or _town_team_away(title, town)
+    )
 
 
 def _state_code(value: str | None) -> str | None:
@@ -207,11 +243,20 @@ _NOT_A_TOWN = re.compile(
 )
 
 
+_UNIT = re.compile(r"(suite|ste|unit|apt|#|floor|fl|room|rm)\.?\s*#?\s*\w{1,5}", re.IGNORECASE)
+
+
 def _trailing_town(address: str) -> str | None:
     """'Lawrence County Courthouse Square 1005 15th St, Bedford': a street
     with a number, then a part that is only a name. Local listings often
     stop at the town and leave the state off."""
     parts = [p.strip() for p in address.split(",") if p.strip()]
+    # "1140 IN-135, Greenwood, 46142": a ZIP code after the town, no state.
+    if len(parts) >= 3 and re.fullmatch(r"\d{5}(-\d{4})?", parts[-1]):
+        parts = parts[:-1]
+    # "1395 Jordan St, Suite B, North Liberty": a suite or unit between.
+    if len(parts) >= 3 and _UNIT.fullmatch(parts[-2]):
+        del parts[-2]
     if len(parts) < 2 or not re.search(r"\d", parts[-2]):
         return None
     last = parts[-1]
@@ -228,9 +273,11 @@ def address_town(address: str | None) -> tuple[str, str | None] | None:
     contain a comma."""
     if not address:
         return None
-    matches = list(_TOWN_STATE.finditer(address.replace("\n", ", ")))
+    # "Indianapolis,, IN" and "(Delaware Township), NJ" as some listings write them.
+    address = re.sub(r"[()]", "", re.sub(r",\s*(,\s*)+", ", ", address.replace("\n", ", ")))
+    matches = list(_TOWN_STATE.finditer(address))
     if not matches:
-        town = _trailing_town(address.replace("\n", ", "))
+        town = _trailing_town(address)
         return (town, None) if town else None
     town, state = matches[-1].group(1), matches[-1].group(2)
     # "123 Main St Bloomington" without a comma before the town: take the
@@ -264,10 +311,39 @@ def is_outside_home_town(
     return not same_town
 
 
+# Another school's club tournament a team travels to: "University of Loyola
+# Chicago Club Softball Series", "Drake University Mock Trial Tournament".
+_SCHOOL_HOSTED = re.compile(
+    r"^\s*(?P<school>university of [\w .&'-]+?|[\w .&'-]+? (university|college))\b"
+    r".*\b(tournament|invitational|regatta|classic|club \w+ series)\s*$",
+    re.IGNORECASE,
+)
+
+
+def at_other_school_event(title: str | None, city) -> bool:
+    """True when the title opens with a school that is not one of the town's
+    own (as listed on the city) and names a tournament it hosts. A town with
+    no schools listed is left alone."""
+    if not title or city is None:
+        return False
+    match = _SCHOOL_HOSTED.search(title)
+    universities = getattr(city, "universities", None) or []
+    if match is None or not universities:
+        return False
+    home = _words(city.name or "")
+    for university in universities:
+        home |= _home_names(university.name, None)
+    return not (_words(match.group("school")) & home)
+
+
 def candidate_outside_home_town(candidate, city) -> bool:
     if is_away_game(candidate.title, city.name if city is not None else None):
         return True
     if from_other_campus_calendar(candidate.canonical_url, candidate.title):
+        return True
+    if names_other_campus(candidate.title, city.name if city is not None else None):
+        return True
+    if at_other_school_event(candidate.title, city):
         return True
     if city is None:
         return False
@@ -284,6 +360,10 @@ def event_outside_home_town(event) -> bool:
     if is_away_game(event.title, city.name if city is not None else None):
         return True
     if from_other_campus_calendar(event.canonical_url, event.title):
+        return True
+    if names_other_campus(event.title, city.name if city is not None else None):
+        return True
+    if at_other_school_event(event.title, city):
         return True
     if city is None:
         return False
