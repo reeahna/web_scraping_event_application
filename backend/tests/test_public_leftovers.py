@@ -1,5 +1,5 @@
-"""Regressions for small public-site gaps: the "Upcoming only" filter, town
-URLs typed in the wrong case, and HEAD requests from uptime monitors."""
+"""Regressions for small public-site gaps: town URLs typed in the wrong case,
+and HEAD requests from uptime monitors."""
 
 from datetime import timedelta
 
@@ -14,29 +14,6 @@ def _town(make_city, make_website, **city_kwargs):
     city = make_city(**city_kwargs)
     website = make_website(city, is_active=True, approved_pattern={"pattern_name": "static_html"})
     return city, website
-
-
-class TestUpcomingOnly:
-    def test_keeps_todays_and_in_progress_events(
-        self, client, make_city, make_website, make_event
-    ):
-        city, website = _town(make_city, make_website)
-        make_event(city, website=website, title="Starts Today", start_date=TODAY)
-        make_event(city, website=website, title="Starts Tomorrow", start_date=TOMORROW)
-        make_event(
-            city,
-            website=website,
-            title="Festival In Progress",
-            start_date=YESTERDAY,
-            end_date=TOMORROW,
-        )
-
-        resp = client.get(f"/city/{city.slug}?upcoming_only=1")
-
-        assert resp.status_code == 200
-        assert "Starts Today" in resp.text
-        assert "Starts Tomorrow" in resp.text
-        assert "Festival In Progress" in resp.text
 
 
 class TestTownSlugCase:

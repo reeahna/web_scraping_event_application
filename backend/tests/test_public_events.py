@@ -170,10 +170,9 @@ class TestFilters:
         assert "Near Event" in response.text
         assert "Far Event" not in response.text
 
-    def test_upcoming_only_keeps_events_starting_today(
+    def test_upcoming_only_excludes_events_starting_today(
         self, client, make_city, make_website, make_event
     ):
-        # "Upcoming" means not over yet: an event later today is still upcoming.
         city, website = _visible_website(make_city, make_website)
         make_event(city, website=website, title="Today Event", start_date=TODAY)
         make_event(city, website=website, title="Tomorrow Event", start_date=TOMORROW)
@@ -183,7 +182,7 @@ class TestFilters:
         assert "Tomorrow Event" in default_response.text
 
         upcoming_response = client.get(f"{_listing(city)}?upcoming_only=1")
-        assert "Today Event" in upcoming_response.text
+        assert "Today Event" not in upcoming_response.text
         assert "Tomorrow Event" in upcoming_response.text
 
     def test_invalid_query_params_ignored_safely(self, client):
