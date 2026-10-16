@@ -1,4 +1,4 @@
-"""Gemini-backed event categorization.
+"""LLM-backed event categorization (Groq or Gemini).
 
 A focused labeling pass that reads an event's own words (title, description,
 source category, venue) and picks the single best-fitting category from the
@@ -18,8 +18,11 @@ import pipeline:
 * The whole thing degrades to "unavailable" with no key, so nothing depends on
   it — the keyword rules remain the default categorizer.
 
-Only the Google AI Studio API key is required. No key is ever supplied in
-development or tests, so no automated code path reaches the network.
+Two providers share one prompt and parser: Groq (GroqCategorizer, used when
+GROQ_API_KEY is set; its free tier allows far more requests a day) and Google's
+Gemini (GeminiCategorizer). The exception classes keep their Gemini names but
+are raised by both. No key is ever supplied in development or tests, so no
+automated code path reaches the network.
 """
 
 from __future__ import annotations
@@ -38,6 +41,7 @@ from app.core.categories import CATEGORY_DESCRIPTIONS
 PROMPT_VERSION = "cat-v2"
 
 _ENDPOINT = "https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent"
+_GROQ_ENDPOINT = "https://api.groq.com/openai/v1/chat/completions"
 _MAX_DESCRIPTION_CHARS = 600
 # Statuses worth a retry with backoff: rate limiting and transient server / 5xx.
 _RETRYABLE_STATUSES = frozenset({429, 500, 502, 503, 504})
@@ -197,6 +201,9 @@ def _parse_labels(text: str) -> dict[int, EventLabel]:
         if not match:
             raise GeminiError(f"response was not JSON: {text[:200]!r}") from None
         data = json.loads(match.group(0))
+    if isinstance(data, dict):
+        # JSON-object mode (Groq) wraps the array: {"labels": [...]}.
+        data = next((value for value in data.values() if isinstance(value, list)), None)
     if not isinstance(data, list):
         raise GeminiError("response JSON was not a list")
     labels: dict[int, EventLabel] = {}
@@ -225,14 +232,21 @@ def _error_message(response: httpx.Response) -> str:
     return _clean(str(message), limit=500)
 
 
-_RETRY_IN = re.compile(r"retry in ((?:\d+(?:\.\d+)?[hms])+)", re.IGNORECASE)
+_RETRY_IN = re.compile(r"(?:retry|try again) in ((?:\d+(?:\.\d+)?[hms])+)", re.IGNORECASE)
 _DURATION_PART = re.compile(r"(\d+(?:\.\d+)?)([hms])")
 
 
 def _retry_after_seconds(response: httpx.Response) -> float | None:
     """How long a 429 says to wait. Google puts it in a RetryInfo detail
     ("retryDelay": "26487s") and in the message ("Please retry in 7h21m27s");
-    either is enough. None when neither is present."""
+    Groq in a Retry-After header and the message ("Please try again in
+    7m12.5s"). Any one is enough. None when none is present."""
+    header = response.headers.get("retry-after")
+    if header:
+        try:
+            return float(header)
+        except ValueError:
+            pass
     try:
         body = response.json()
     except ValueError:
@@ -305,14 +319,20 @@ class GeminiCategorizer:
         if elapsed < self._min_interval:
             time.sleep(self._min_interval - elapsed)
 
-    def _post(self, prompt: str) -> dict:
-        payload = {
+    def _payload(self, prompt: str) -> dict:
+        return {
             "contents": [{"parts": [{"text": prompt}]}],
             "generationConfig": {
                 "temperature": 0.0,
                 "responseMimeType": "application/json",
             },
         }
+
+    def _response_text(self, body: dict) -> str:
+        return _extract_text(body)
+
+    def _post(self, prompt: str) -> dict:
+        payload = self._payload(prompt)
         url = self._url
         attempt = 0
         while True:
@@ -358,10 +378,64 @@ class GeminiCategorizer:
         valid = {option.slug for option in categories}
         prompt = build_prompt(categories, events)
         body = self._post(prompt)
-        labels = _parse_labels(_extract_text(body))
+        labels = _parse_labels(self._response_text(body))
         requested = {event.id for event in events}
         return {
             event_id: label
             for event_id, label in labels.items()
             if event_id in requested and label.category in valid
         }
+
+
+class GroqCategorizer(GeminiCategorizer):
+    """The same batch categorizer against Groq's OpenAI-compatible API. Groq's
+    free tier allows far more requests a day than Gemini's (around 1,000 for
+    Llama 3.3 70B at the time of writing) but caps tokens per minute, so
+    batches are smaller and requests further apart."""
+
+    def __init__(
+        self,
+        api_key: str,
+        model: str,
+        *,
+        timeout: float = 60.0,
+        min_interval_seconds: float = 4.0,
+        max_retries: int = 4,
+    ) -> None:
+        if not api_key:
+            raise GeminiUnavailable("no Groq API key configured")
+        self.model = model
+        self._min_interval = max(0.0, min_interval_seconds)
+        self._max_retries = max(0, max_retries)
+        self._url = _GROQ_ENDPOINT
+        self._fallback_url = None
+        self._last_request_at = 0.0
+        self._client = httpx.Client(
+            timeout=timeout, headers={"Authorization": f"Bearer {api_key}"}
+        )
+
+    def __enter__(self) -> GroqCategorizer:
+        return self
+
+    def _payload(self, prompt: str) -> dict:
+        return {
+            "model": self.model,
+            "temperature": 0.0,
+            # JSON mode returns an object, so the array is wrapped in "labels".
+            "response_format": {"type": "json_object"},
+            "messages": [
+                {
+                    "role": "system",
+                    "content": 'Reply with a JSON object {"labels": [...]} whose '
+                    "labels array is exactly the array the user asks for.",
+                },
+                {"role": "user", "content": prompt},
+            ],
+        }
+
+    def _response_text(self, body: dict) -> str:
+        choices = body.get("choices") or []
+        text = ((choices[0] or {}).get("message") or {}).get("content") if choices else None
+        if not text or not str(text).strip():
+            raise GeminiError("empty response text")
+        return str(text)

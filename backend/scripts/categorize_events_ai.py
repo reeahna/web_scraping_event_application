@@ -1,4 +1,4 @@
-"""Categorize events with Gemini (Google AI Studio).
+"""Categorize events with Groq or Gemini (Groq when GROQ_API_KEY is set).
 
 A one-shot, resumable labeling pass that reads each event's own words and
 assigns the best-fitting category — far more accurately than the keyword rules,
@@ -6,7 +6,8 @@ which mislabel things like a "cooking class" as education instead of food. It
 writes the automatic category only (category_source="ai") and never touches an
 administrator's manual override.
 
-Usage (from backend/, with its venv active and GEMINI_API_KEY set in .env):
+Usage (from backend/, with its venv active and GROQ_API_KEY or GEMINI_API_KEY
+set in .env):
 
     python scripts/categorize_events_ai.py            # label what still needs it
     python scripts/categorize_events_ai.py --only-other   # only the "Other" pile
@@ -22,8 +23,9 @@ resumes where it left off.
 
 By default events already labeled by a previous AI run are skipped, so the pass
 is idempotent and cheap to resume: re-running only spends API calls on events it
-has not labeled yet. Get a free key at https://aistudio.google.com/apikey and
-put it in .env as GEMINI_API_KEY (locally) or in the Render environment.
+has not labeled yet. Get a free key at https://console.groq.com/keys (or
+https://aistudio.google.com/apikey for Gemini) and put it in .env as
+GROQ_API_KEY (or GEMINI_API_KEY) locally, or in the Render environment.
 """
 
 import argparse
@@ -39,13 +41,15 @@ from app.models.event import Event
 from app.models.event_category import EventCategory
 from app.services.ai_categorization import (
     apply_labels,
+    batch_size,
     categorizable_events,
+    make_categorizer,
     pending_events,
+    provider_name,
 )
 from app.services.ai_categorizer import (
     CategoryOption,
     EventToClassify,
-    GeminiCategorizer,
     GeminiError,
     GeminiQuotaExceeded,
 )
@@ -89,14 +93,16 @@ def _select_events(db, *, force: bool, only_other: bool, limit: int | None) -> l
 def main() -> None:
     args = _parse_args()
     settings = get_settings()
-    if not settings.gemini_api_key:
+    provider = provider_name()
+    if provider is None:
         print(
-            "No GEMINI_API_KEY configured. Get a free key at "
-            "https://aistudio.google.com/apikey and add it to .env as "
-            "GEMINI_API_KEY, then re-run.",
+            "No GROQ_API_KEY or GEMINI_API_KEY configured. Get a free Groq key at "
+            "https://console.groq.com/keys and add it to .env (or the Render "
+            "environment) as GROQ_API_KEY, then re-run.",
             file=sys.stderr,
         )
         sys.exit(1)
+    model = settings.groq_model if provider == "groq" else settings.gemini_model
 
     db = SessionLocal()
     try:
@@ -116,27 +122,20 @@ def main() -> None:
             db, force=args.force, only_other=args.only_other, limit=args.limit
         )
         total = len(events)
-        print(f"Model: {settings.gemini_model}  Events to categorize: {total}")
+        print(f"Provider: {provider}  Model: {model}  Events to categorize: {total}")
         if total == 0:
             return
 
-        batch_size = max(1, settings.gemini_batch_size)
+        size = batch_size()
         counts: Counter[str] = Counter()
         labeled = 0
         hidden = 0
         failed_batches = 0
         quota_reached = False
 
-        with GeminiCategorizer(
-            settings.gemini_api_key,
-            settings.gemini_model,
-            timeout=settings.gemini_timeout_seconds,
-            min_interval_seconds=settings.gemini_min_interval_seconds,
-            max_retries=settings.gemini_max_retries,
-            fallback_model=settings.gemini_fallback_model,
-        ) as categorizer:
-            for start in range(0, total, batch_size):
-                chunk = events[start : start + batch_size]
+        with make_categorizer() as categorizer:
+            for start in range(0, total, size):
+                chunk = events[start : start + size]
                 to_classify = [
                     EventToClassify(
                         id=event.id,
@@ -170,7 +169,7 @@ def main() -> None:
                     if label and label.category in by_slug:
                         counts[label.category] += 1
                 db.commit()
-                print(f"  ...{min(start + batch_size, total)}/{total} ({labeled} labeled)")
+                print(f"  ...{min(start + size, total)}/{total} ({labeled} labeled)")
 
         if quota_reached:
             remaining = total - labeled

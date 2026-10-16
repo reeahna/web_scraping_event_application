@@ -281,7 +281,7 @@ class SchedulerRuntime:
         now = datetime.now(UTC)
         if self._categorization_cooldown_until and now < self._categorization_cooldown_until:
             return
-        from app.config import get_settings
+        from app.services.ai_categorization import batch_size as categorization_batch_size
         from app.services.ai_categorization import drain_categorization_queue
         from app.services.ai_categorizer import GeminiQuotaExceeded
 
@@ -291,7 +291,7 @@ class SchedulerRuntime:
             labeled = await asyncio.to_thread(
                 drain_categorization_queue,
                 self._session_factory,
-                limit=get_settings().gemini_batch_size,
+                limit=categorization_batch_size(),
             )
             self._categorization_failures = 0
             if labeled:
