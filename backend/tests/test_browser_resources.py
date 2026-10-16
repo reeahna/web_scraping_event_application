@@ -2,7 +2,8 @@
 
 Production runs the web server, the scheduler and Chromium in one 512MB
 instance. Scheduled runs, bulk imports and onboarding can all want a browser at
-the same moment, so renders share a per-process cap; and a render that ends
+the same moment, so renders share a cap across every process on the machine
+(the web server's admin retry and the scheduler's runs included); and a render that ends
 while subrequests are still being checked must not leave route callbacks
 raising TargetClosedError against the closed context.
 """
@@ -104,6 +105,42 @@ def test_the_browser_cap_is_configurable(monkeypatch):
     ):
         asyncio.run(_render_many(4))
     assert peak["max"] == 2
+
+
+def test_the_cap_holds_across_event_loops_like_the_web_server_and_scheduler(
+    monkeypatch, tmp_path
+):
+    """The web server and the scheduler are separate processes with separate
+    event loops, so a per-loop semaphore alone let each start a Chromium at the
+    same time and the 512MB instance was OOM-killed. Two loops on two threads
+    stand in for the two processes: they share only the lock files."""
+    pytest.importorskip("fcntl")
+    monkeypatch.setattr("app.extraction.browser._LOCK_DIR", str(tmp_path))
+    monkeypatch.setattr("app.extraction.browser._LOCK_POLL_SECONDS", 0.01)
+    guard = threading.Lock()
+    peak = {"now": 0, "max": 0}
+
+    async def fake_impl(self, url, plan):
+        with guard:
+            peak["now"] += 1
+            peak["max"] = max(peak["max"], peak["now"])
+        await asyncio.sleep(0.05)
+        with guard:
+            peak["now"] -= 1
+        return BrowserRenderResult(final_url=url, rendered_html="", status_code=200)
+
+    with (
+        patch("app.extraction.browser._host_allowed", new=AsyncMock(return_value=True)),
+        patch.object(BrowserFetchStrategy, "_render_impl", fake_impl),
+    ):
+        threads = [
+            threading.Thread(target=lambda: asyncio.run(_render_many(3))) for _ in range(2)
+        ]
+        for thread in threads:
+            thread.start()
+        for thread in threads:
+            thread.join(timeout=10)
+    assert peak["max"] == 1
 
 
 def test_subrequests_still_being_checked_at_teardown_do_not_raise(server, browser_available, capfd):
