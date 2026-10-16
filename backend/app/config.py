@@ -73,6 +73,14 @@ class Settings(BaseSettings):
     # one-time state record, so this keeps an anonymous visitor from filling
     # that table.
     sign_in_starts_per_15_minutes: int = 30
+    # A "Sign in as the test user" button on the sign-in page, for trying the
+    # site as an ordinary signed-in person in development or staging without a
+    # Google/Microsoft/Facebook account. The account (TEST_USER_EMAIL, a
+    # Registered User) is created on its first use. Anyone who can reach the
+    # page can use the button, so the app refuses to start with it on when
+    # APP_ENV=production.
+    test_login_enabled: bool = False
+    test_user_email: str = "test-user@bulletin.invalid"
 
     # Single application-wide timezone used to compute "today" for public
     # event visibility (see app/repositories/public_events.py). Deliberately
@@ -251,6 +259,15 @@ class Settings(BaseSettings):
         if external_host and not self.trusted_hosts:
             self.trusted_hosts = [external_host]
 
+        return self
+
+    @model_validator(mode="after")
+    def _no_test_login_in_production(self) -> "Settings":
+        if self.test_login_enabled and self.app_env == "production":
+            raise ValueError(
+                "TEST_LOGIN_ENABLED lets anyone sign in without a password and "
+                "cannot be used with APP_ENV=production."
+            )
         return self
 
 

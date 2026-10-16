@@ -1,4 +1,4 @@
-from urllib.parse import quote
+from urllib.parse import quote, urlsplit
 
 from fastapi import Request
 from fastapi.encoders import jsonable_encoder
@@ -38,11 +38,19 @@ def _wants_html(request: Request) -> bool:
     return "text/html" in request.headers.get("accept", "")
 
 
-def _safe_next_path(request: Request) -> str:
-    path = request.url.path
-    if request.url.query:
-        path = f"{path}?{request.url.query}"
-    return path
+def _safe_next_path(request: Request) -> str | None:
+    """Where to return after signing in. A GET comes back to itself; a form
+    post (say, saving an event after the session expired) cannot be replayed
+    as a GET, so it returns to the page the form was on, when the browser says
+    and that page is on this site. Sign-in re-checks the path with safe_next."""
+    if request.method in ("GET", "HEAD"):
+        path, query = request.url.path, request.url.query
+    else:
+        referer = urlsplit(request.headers.get("referer", ""))
+        if not referer.path or referer.netloc != request.url.netloc:
+            return None
+        path, query = referer.path, referer.query
+    return f"{path}?{query}" if query else path
 
 
 # What a visitor reads for each status. A browser gets a page with a way back

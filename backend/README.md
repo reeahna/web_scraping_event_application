@@ -26,6 +26,12 @@ locally, set `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET` and `SUPERADMIN_EMAIL` i
 `.env`, with `http://localhost:8100/auth/oauth/google/callback` as an authorized
 redirect URI on the Google OAuth client.
 
+To try the site as an ordinary signed-in person without any of that, set
+`TEST_LOGIN_ENABLED=true`: the sign-in page then has a "Sign in as the test user"
+button for a Registered User account (`TEST_USER_EMAIL`), created on first use.
+It is for development and staging; the app refuses to start with it on when
+`APP_ENV=production`.
+
 Scraping runs in a separate process, never inside the web server. To have
 imports run on their schedule locally, start it in a second terminal:
 
@@ -60,7 +66,10 @@ set), and the first sign-in creates the account. A new account gets only the
 `SUPERADMIN_EMAIL` becomes Super Administrator when it signs in through a provider
 that has verified it (Google). Signed-in users can save events
 (`/account/saved`), follow towns, set alert preferences (`/account/alerts`), and
-delete their account from `/account`. Starting a sign-in is limited to 30 per
+delete their account from `/account`. Signing in lands on the homepage (admins
+land in `/admin`) unless the person was on their way to a particular page.
+Deleting an account really removes it, so the same email address can sign up
+again later and gets a fresh, empty account. Starting a sign-in is limited to 30 per
 address in 15 minutes.
 
 The privacy policy and terms are at `/privacy` and `/terms`.
@@ -137,6 +146,8 @@ without any of it.
 | `APP_TIMEZONE` | `UTC` | Decides what "today" means for the listings |
 | `REGISTRATION_ENABLED` | `true` | Whether a first sign-in creates a new account |
 | `SUPERADMIN_EMAIL` | unset | Google address that becomes Super Administrator on sign-in |
+| `TEST_LOGIN_ENABLED` | `false` | "Sign in as the test user" button for development/staging; refused with `APP_ENV=production` |
+| `TEST_USER_EMAIL` | `test-user@bulletin.invalid` | The test user's address |
 | `BROWSER_EXTRACTION_ENABLED` | `false` | Headless-browser fallback for sources that need it |
 | `BROWSER_MAX_CONCURRENT` | `1` | Headless browsers one process runs at once (a few hundred MB each) |
 | `ATTENDABILITY_FILTER_ENABLED` | `true` | Leave out non-events (see above) |

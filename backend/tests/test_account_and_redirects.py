@@ -58,7 +58,7 @@ def test_registered_user_account_has_no_admin_controls(client, make_user, login)
 @pytest.mark.parametrize(
     ("role_name", "expected"),
     [
-        (REGISTERED_USER, "/account"),
+        (REGISTERED_USER, "/"),
         (EDITOR, "/admin"),
         (ADMINISTRATOR, "/admin"),
         (SUPER_ADMINISTRATOR, "/admin"),
@@ -96,4 +96,4 @@ def test_safe_next_path_takes_priority(make_super_admin, login, next_path):
 def test_unsafe_or_malformed_next_falls_back_by_permissions(make_user, login, unsafe_next):
     make_user(email="unsafe-next@example.com", role_name=REGISTERED_USER)
     response = login("unsafe-next@example.com", next=unsafe_next)
-    assert response.headers["location"] == "/account"
+    assert response.headers["location"] == "/"
