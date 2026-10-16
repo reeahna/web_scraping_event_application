@@ -16,7 +16,10 @@ from app.core.exceptions import NotFoundError
 from app.core.flash import set_flash
 from app.core.templating import render
 from app.dependencies import CurrentUser, DbSession, OptionalCurrentUser
+from app.models.city import City
 from app.models.event import Event
+from app.models.event_category import EventCategory
+from app.models.website import Website
 from app.repositories.public_events import current_public_date, get_public_event
 from app.services import engagement
 from app.services.rbac import can_access_admin
@@ -24,6 +27,19 @@ from app.services.rbac import can_access_admin
 router = APIRouter(tags=["engagement"])
 
 _FOLLOW_TYPES = {"city", "category", "source"}
+
+
+def _followable(db, follow_type: str, target_id: int) -> bool:
+    """Whether the town, category or source exists and is shown publicly, so a
+    follow never points at nothing (or at a page that is a 404)."""
+    if follow_type == "city":
+        city = db.get(City, target_id)
+        return city is not None and city.is_active
+    if follow_type == "category":
+        category = db.get(EventCategory, target_id)
+        return category is not None and category.is_active
+    website = db.get(Website, target_id)
+    return website is not None and website.is_active and website.archived_at is None
 
 
 def _safe_next(value: str | None, default: str) -> str:
@@ -108,6 +124,8 @@ def follow(
         )
         message = "Unfollowed."
     else:
+        if not _followable(db, follow_type, target_id):
+            raise NotFoundError("Unknown follow target")
         engagement.follow(
             db, user_id=current_user.id, follow_type=follow_type, target_id=target_id
         )

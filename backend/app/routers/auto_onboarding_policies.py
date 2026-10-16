@@ -182,6 +182,14 @@ FORM_SECTIONS: tuple[tuple[str, tuple[str, ...]], ...] = (
 )
 
 
+def _form_id(value: str, label: str) -> int:
+    """Parses an id submitted in a form, rejecting anything but a whole number."""
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        raise AppError(f"Invalid {label} selected.", status_code=422) from None
+
+
 def _policy_or_404(db, policy_id: int) -> AutoOnboardingPolicy:
     policy = get_policy(db, policy_id)
     if policy is None:
@@ -389,6 +397,8 @@ def change_policy_status(
 ):
     verify_csrf(request, csrf_token)
     policy = _policy_or_404(db, policy_id)
+    if active not in ("true", "false"):
+        raise AppError("Status must be 'true' or 'false'.", status_code=422)
     set_active(
         db,
         policy,
@@ -436,11 +446,12 @@ def assign_city_view(
 ):
     verify_csrf(request, csrf_token)
     policy = _policy_or_404(db, policy_id)
+    parsed_city_id = _form_id(city_id, "city")
     if action == "remove":
         remove_city(
             db,
             policy,
-            city_id=int(city_id),
+            city_id=parsed_city_id,
             actor_id=current_user.id,
             correlation_id=correlation_id,
         )
@@ -449,7 +460,7 @@ def assign_city_view(
         assign_city(
             db,
             policy,
-            city_id=int(city_id),
+            city_id=parsed_city_id,
             actor_id=current_user.id,
             correlation_id=correlation_id,
         )
@@ -473,7 +484,7 @@ async def set_roles_view(
     verify_csrf(request, csrf_token)
     policy = _policy_or_404(db, policy_id)
     form = await request.form()
-    role_ids = [int(value) for value in form.getlist("role_ids")]
+    role_ids = [_form_id(value, "role") for value in form.getlist("role_ids")]
     set_roles(
         db, policy, role_ids=role_ids, actor_id=current_user.id, correlation_id=correlation_id
     )

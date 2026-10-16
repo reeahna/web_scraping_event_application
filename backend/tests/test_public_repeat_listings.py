@@ -110,3 +110,24 @@ def test_a_hidden_earlier_copy_does_not_hide_the_visible_one(
     _event(make_event, city, bureau, "Heist", "https://bureau/heist")
 
     assert _listed(db_session) == [("Heist", bureau.id)]
+
+
+def test_a_filter_that_drops_the_kept_copy_shows_the_other_one(
+    db_session, make_city, make_website, make_event, make_category
+):
+    city, theatre, bureau = _setup(make_city, make_website)
+    music = make_category(name="Probe Music", slug="probe-music")
+    arts = make_category(name="Probe Arts", slug="probe-arts")
+    _event(make_event, city, theatre, "Jazz Night", "https://theatre/jazz", category=music)
+    _event(make_event, city, bureau, "Jazz Night!", "https://bureau/jazz", category=arts)
+
+    assert _listed(db_session) == [("Jazz Night", theatre.id)]
+    # Each filter removes the theatre's copy; the bureau's must take its place
+    # rather than the event vanishing.
+    for filters in (
+        {"exclude_source_ids": (theatre.id,)},
+        {"category_id": arts.id},
+        {"exclude_category_ids": (music.id,)},
+        {"search": "Night!"},
+    ):
+        assert _listed(db_session, **filters) == [("Jazz Night!", bureau.id)], filters

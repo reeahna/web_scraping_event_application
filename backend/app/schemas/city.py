@@ -1,3 +1,4 @@
+import math
 import re
 from typing import Any
 from zoneinfo import available_timezones
@@ -48,6 +49,20 @@ class CityBase(BaseModel):
                 f"'{v}' is not a recognized IANA timezone "
                 "(e.g. 'America/Indiana/Indianapolis', 'UTC')"
             )
+        return v
+
+    @field_validator("default_latitude")
+    @classmethod
+    def validate_latitude(cls, v: float | None) -> float | None:
+        if v is not None and not (math.isfinite(v) and -90 <= v <= 90):
+            raise ValueError("Latitude must be a number between -90 and 90")
+        return v
+
+    @field_validator("default_longitude")
+    @classmethod
+    def validate_longitude(cls, v: float | None) -> float | None:
+        if v is not None and not (math.isfinite(v) and -180 <= v <= 180):
+            raise ValueError("Longitude must be a number between -180 and 180")
         return v
 
 

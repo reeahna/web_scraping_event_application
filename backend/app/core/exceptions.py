@@ -1,6 +1,8 @@
 from urllib.parse import quote
 
 from fastapi import Request
+from fastapi.encoders import jsonable_encoder
+from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse, RedirectResponse, Response
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
@@ -93,6 +95,27 @@ async def http_exception_handler(request: Request, exc: StarletteHTTPException) 
     return JSONResponse(
         status_code=exc.status_code, content={"detail": exc.detail}, headers=exc.headers
     )
+
+
+async def request_validation_handler(request: Request, exc: RequestValidationError) -> Response:
+    """A request whose URL or form does not parse, e.g. /events/abc. A browser
+    gets the friendly page: a malformed id in the path is a page that does not
+    exist (404), anything else a bad request (400). API callers keep FastAPI's
+    usual 422 with the field details."""
+    if _wants_html(request):
+        in_path = any(error.get("loc", ())[:1] == ("path",) for error in exc.errors())
+        return error_page(request, 404 if in_path else 400)
+    return JSONResponse(status_code=422, content={"detail": jsonable_encoder(exc.errors())})
+
+
+async def overflow_handler(request: Request, exc: OverflowError) -> Response:
+    """SQLite refuses integers past 64 bits, so a URL like /events/99999999999999999999
+    fails inside the query. No row can have such an id: answer as not found."""
+    if "SQLite INTEGER" not in str(exc):
+        return await unhandled_exception_handler(request, exc)
+    if _wants_html(request):
+        return error_page(request, 404)
+    return JSONResponse(status_code=404, content={"detail": "Not found"})
 
 
 async def not_authenticated_handler(request: Request, exc: NotAuthenticatedError) -> Response:
