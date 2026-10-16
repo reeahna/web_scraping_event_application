@@ -2895,3 +2895,83 @@ a.wf-danger, button.wf-danger {
     flex: 1;
   }
 }
+
+/* --- Alerts inbox -------------------------------------------------------
+   Reuses the saved-events row styles; unread alerts get an accent dot and
+   a tinted edge, alerts about past events are greyed like saved events. */
+.inbox-header-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-4);
+}
+.inbox-header-actions .saved-action {
+  width: auto;
+}
+.inbox-item {
+  display: grid;
+  grid-template-columns: 12px 1fr auto;
+  align-items: start;
+  gap: var(--space-3);
+  padding: var(--space-4);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-sm);
+}
+.inbox-item-unread {
+  border-left: 4px solid var(--accent);
+}
+.inbox-dot {
+  width: 10px;
+  height: 10px;
+  margin-top: 6px;
+  border-radius: 50%;
+}
+.inbox-item-unread .inbox-dot {
+  background: var(--accent);
+}
+.inbox-meta {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  font-size: var(--font-xs);
+  color: var(--muted);
+}
+.inbox-message {
+  font-size: var(--font-sm);
+  color: var(--muted);
+}
+.inbox-item:not(.inbox-item-unread) .saved-item-title {
+  font-weight: 600;
+}
+.nav-count {
+  display: inline-block;
+  min-width: 1.4em;
+  padding: 0 6px;
+  margin-left: 2px;
+  border-radius: var(--radius-pill);
+  background: var(--accent);
+  color: #fff;
+  font-size: var(--font-xs);
+  font-weight: 700;
+  line-height: 1.5;
+  text-align: center;
+}
+@media (max-width: 640px) {
+  .inbox-item {
+    grid-template-columns: 12px 1fr;
+  }
+  .inbox-item .saved-item-actions {
+    grid-column: 1 / -1;
+    flex-direction: row;
+  }
+  .inbox-item .saved-item-actions > * {
+    flex: 1;
+  }
+}
+.inbox-item.saved-item-finished {
+  background: var(--bg);
+  box-shadow: none;
+  border-style: dashed;
+}

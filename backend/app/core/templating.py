@@ -8,7 +8,13 @@ from fastapi.templating import Jinja2Templates
 
 from app.config import get_settings
 from app.core.csrf import get_or_create_csrf_token, set_csrf_cookie
-from app.core.formatting import event_time_zone, human_date, human_date_long, human_time
+from app.core.formatting import (
+    event_time_zone,
+    human_date,
+    human_date_long,
+    human_time,
+    time_ago,
+)
 from app.core.onboarding import onboarding_label
 from app.core.report_status import report_status_label
 from app.extraction.fetch import explain_block_reason
@@ -23,6 +29,7 @@ templates.env.filters["human_date"] = human_date
 templates.env.filters["human_date_long"] = human_date_long
 templates.env.filters["human_time"] = human_time
 templates.env.filters["event_tz"] = event_time_zone
+templates.env.filters["time_ago"] = time_ago
 # `pct` renders a 0..1 rate null-safely ('—' when absent, '0%' when a real
 # zero); `quality_view` normalizes a persisted/partial quality snapshot so
 # templates can distinguish absent metrics from evaluated zeros (Phase 8G
@@ -51,6 +58,22 @@ def _unread_notification_count(user_id: int) -> int:
 
 
 templates.env.globals["unread_notification_count"] = _unread_notification_count
+
+
+def _unread_alert_count(user_id: int) -> int:
+    """The public nav's Alerts badge: unread alerts in the user's inbox. Same
+    short-lived-session pattern as _unread_notification_count above."""
+    from app.database import SessionLocal
+    from app.services.user_alerts import unread_count
+
+    db = SessionLocal()
+    try:
+        return unread_count(db, user_id=user_id)
+    finally:
+        db.close()
+
+
+templates.env.globals["unread_alert_count"] = _unread_alert_count
 templates.env.globals["current_year"] = lambda: datetime.now(UTC).year
 templates.env.filters["onboarding_label"] = onboarding_label
 # Registered globally so no template has to render a naive UTC string with

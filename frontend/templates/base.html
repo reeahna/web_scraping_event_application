@@ -37,7 +37,8 @@
         {% if current_user %}
           {% if can_access_admin %}<a href="/admin">Admin</a>{% endif %}
           <a href="/account/saved">Saved</a>
-          <a href="/account/alerts">Alerts</a>
+          {% set alert_unread = unread_alert_count(current_user.id) %}
+          <a href="/account/inbox" class="nav-alerts">Alerts{% if alert_unread %} <span class="nav-count" aria-hidden="true">{{ alert_unread if alert_unread < 100 else "99+" }}</span><span class="sr-only">({{ alert_unread }} unread)</span>{% endif %}</a>
           <a href="/account">My Account</a>
           <form method="post" action="/auth/logout" class="inline-form">
             <input type="hidden" name="csrf_token" value="{{ csrf_token }}" />
