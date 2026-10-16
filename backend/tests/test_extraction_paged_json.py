@@ -354,3 +354,56 @@ def test_observed_filters_are_kept_and_positions_secrets_dates_dropped():
     proposal = _propose(_laravel_resource(GIVE_RECORDS), url=url)
     assert proposal.configuration.api_endpoint == f"{API}?group_id=265981&type=upcoming"
     assert any("not persisted" in w for w in proposal.warnings)
+
+
+# --- `events` root beside a `meta` block ---------------------------------------
+
+
+def _volunteer_page(current=1, last=2):
+    return {
+        "events": [
+            {
+                "event_id": 9000 + n,
+                "title": f"Food bank shift {n}",
+                "start_date_time": "2026-10-20 09:00:00",
+                "end_date_time": "2026-10-20 12:00:00",
+                "datetime_zone": "America/Chicago",
+                "datetime_text": "Tue, Oct 20 9am - 12pm",
+                "description": "<p>Sort donations.</p>",
+                "latitude": 40.1, "longitude": -88.2,
+            }
+            for n in range(3)
+        ],
+        "label": "Upcoming",
+        "links": {"next": f"{API}?page={current + 1}" if current < last else None},
+        "meta": {"current_page": current, "last_page": last, "per_page": 3, "total": 6},
+    }
+
+
+def test_events_root_beside_meta_is_read_and_paged():
+    detection = PagedJsonEventsDetector().detect(_response(_volunteer_page()))
+    assert detection.pattern_name == NAME
+    assert detection.evidence["record_path"] == "events"
+    proposal = _propose(_volunteer_page(), url=f"{API}?group_id=265981&page=1")
+    config = proposal.configuration
+    assert config.api_endpoint == f"{API}?group_id=265981"
+    assert config.json_paths["events_root"] == "events"
+    assert config.json_paths["external_source_id"] == "event_id"
+    assert proposal.missing_required_fields == ()
+    events = _normalized(_volunteer_page(), config)
+    assert [e.title for e in events][:1] == ["Food bank shift 0"]
+    assert events[0].start_time.isoformat() == "09:00:00"
+    assert _next(_volunteer_page(), url=f"{API}?group_id=265981", config=config).url == (
+        f"{API}?group_id=265981&page=2"
+    )
+    assert _next(_volunteer_page(current=2), config=config) is None
+
+
+def test_bare_events_list_without_page_metadata_is_not_claimed():
+    body = {"events": [{"title": "x", "start_date": "2026-11-01"}]}
+    assert PagedJsonEventsDetector().detect(_response(body)).pattern_name is None
+
+
+def test_sql_style_datetimes_keep_their_time():
+    assert local_datetime_string("2026-10-20 09:00:00", TZ) == "2026-10-20T09:00:00"
+    assert local_datetime_string("2026-10-20 14:00:00+00:00", TZ) == "2026-10-20T09:00:00"
