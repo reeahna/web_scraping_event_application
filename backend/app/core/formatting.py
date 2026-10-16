@@ -7,7 +7,7 @@ aren't portable between Linux and Windows) by formatting the day-of-month
 as a plain int instead.
 """
 
-from datetime import date, datetime, time
+from datetime import UTC, date, datetime, time
 from typing import Any
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
@@ -61,3 +61,28 @@ def event_time_zone(event: Any) -> str:
     city = getattr(event, "city", None)
     zone_name = getattr(event, "timezone", None) or (city.timezone if city else None)
     return time_zone_abbreviation(zone_name, event.start_date, event.start_time)
+
+
+def time_ago(value: datetime | None, now: datetime | None = None) -> str:
+    """'just now', '5 minutes ago', '3 hours ago', 'yesterday', '4 days ago',
+    then a plain date. For the alerts inbox, where recency matters more than
+    the exact clock time."""
+    if value is None:
+        return ""
+    if value.tzinfo is None:
+        value = value.replace(tzinfo=UTC)
+    seconds = int(((now or datetime.now(UTC)) - value).total_seconds())
+    if seconds < 60:
+        return "just now"
+    minutes = seconds // 60
+    if minutes < 60:
+        return f"{minutes} minute{'s' if minutes != 1 else ''} ago"
+    hours = minutes // 60
+    if hours < 24:
+        return f"{hours} hour{'s' if hours != 1 else ''} ago"
+    days = hours // 24
+    if days == 1:
+        return "yesterday"
+    if days < 7:
+        return f"{days} days ago"
+    return human_date(value.date())

@@ -21,7 +21,7 @@ from app.models.event import Event
 from app.models.event_category import EventCategory
 from app.models.website import Website
 from app.repositories.public_events import current_public_date, get_public_event
-from app.services import engagement
+from app.services import engagement, user_alerts
 from app.services.rbac import can_access_admin
 
 router = APIRouter(tags=["engagement"])
@@ -157,6 +157,92 @@ def follow(
         message = "Following — you'll get alerts for new events."
     response = RedirectResponse(_safe_next(next, "/"), status_code=303)
     set_flash(response, message)
+    return response
+
+
+# --- alerts inbox ------------------------------------------------------------
+
+
+@router.get("/account/inbox", response_class=HTMLResponse)
+def inbox_page(request: Request, current_user: CurrentUser, db: DbSession):
+    items = user_alerts.list_inbox(db, user_id=current_user.id, today=current_public_date())
+    return render(
+        request,
+        "alerts_inbox.html",
+        {
+            "current_user": current_user,
+            "can_access_admin": can_access_admin(db, current_user),
+            "items": items,
+            "unread_total": sum(1 for item in items if item.is_unread),
+        },
+    )
+
+
+def _own_alert_or_404(db, *, user_id: int, notification_id: int):
+    notification = user_alerts.get_own_alert(
+        db, user_id=user_id, notification_id=notification_id
+    )
+    if notification is None:
+        raise NotFoundError("Alert not found")
+    return notification
+
+
+@router.post("/account/inbox/{notification_id}/open")
+def open_alert(
+    notification_id: int,
+    request: Request,
+    current_user: CurrentUser,
+    db: DbSession,
+    csrf_token: str = Form(...),
+):
+    """Mark the alert read and go to what it is about."""
+    verify_csrf(request, csrf_token)
+    notification = _own_alert_or_404(db, user_id=current_user.id, notification_id=notification_id)
+    user_alerts.mark_read(db, notification)
+    return RedirectResponse(_safe_next(notification.action_url, "/account/inbox"), status_code=303)
+
+
+@router.post("/account/inbox/{notification_id}/read")
+def read_alert(
+    notification_id: int,
+    request: Request,
+    current_user: CurrentUser,
+    db: DbSession,
+    csrf_token: str = Form(...),
+):
+    verify_csrf(request, csrf_token)
+    notification = _own_alert_or_404(db, user_id=current_user.id, notification_id=notification_id)
+    user_alerts.mark_read(db, notification)
+    return RedirectResponse("/account/inbox", status_code=303)
+
+
+@router.post("/account/inbox/{notification_id}/dismiss")
+def dismiss_alert(
+    notification_id: int,
+    request: Request,
+    current_user: CurrentUser,
+    db: DbSession,
+    csrf_token: str = Form(...),
+):
+    verify_csrf(request, csrf_token)
+    notification = _own_alert_or_404(db, user_id=current_user.id, notification_id=notification_id)
+    user_alerts.dismiss(db, notification)
+    response = RedirectResponse("/account/inbox", status_code=303)
+    set_flash(response, "Alert removed.")
+    return response
+
+
+@router.post("/account/inbox/read-all")
+def read_all_alerts(
+    request: Request,
+    current_user: CurrentUser,
+    db: DbSession,
+    csrf_token: str = Form(...),
+):
+    verify_csrf(request, csrf_token)
+    user_alerts.mark_all_read(db, user_id=current_user.id)
+    response = RedirectResponse("/account/inbox", status_code=303)
+    set_flash(response, "All alerts marked as read.")
     return response
 
 

@@ -5,7 +5,7 @@
 {% block content %}
 <div class="page-container">
   <h1>Alert preferences</h1>
-  <p class="hero-subtext">Choose how you hear about events. <a href="/account/saved">Your saved events</a></p>
+  <p class="hero-subtext">Choose how you hear about events. <a href="/account/inbox">Your alerts</a> · <a href="/account/saved">Your saved events</a></p>
 
   <form method="post" action="/account/alerts" class="filter-form filter-form-stacked">
     <input type="hidden" name="csrf_token" value="{{ csrf_token }}" />
