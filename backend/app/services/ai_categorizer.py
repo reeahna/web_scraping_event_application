@@ -37,8 +37,10 @@ import httpx
 from app.core.categories import CATEGORY_DESCRIPTIONS
 
 # Bump when the prompt or category framing changes so cached labels from an
-# older framing are recomputed rather than trusted.
-PROMPT_VERSION = "cat-v2"
+# older framing are recomputed rather than trusted. cat-v3: Groq replaced
+# Gemini, whose labels were not accurate enough to keep, so every event is
+# labeled again.
+PROMPT_VERSION = "cat-v3"
 
 _ENDPOINT = "https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent"
 _GROQ_ENDPOINT = "https://api.groq.com/openai/v1/chat/completions"
