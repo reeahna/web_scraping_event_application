@@ -90,8 +90,8 @@ active Super Administrator cannot be removed.
   and resolve possible duplicates. Scraped fields (title, dates, URL and so on)
   are never edited by hand; corrections are stored alongside them.
 - *Categories and rules*: 14 seeded categories and keyword/venue/source rules
-  that assign them. With a Gemini key, the scheduler also labels new events
-  with AI.
+  that assign them. With a Groq or Gemini key, the scheduler also labels new
+  events with AI.
 - *Scheduler*, *Reports*, *Notifications*: run status, failures, and the health
   of each source.
 
@@ -152,7 +152,9 @@ without any of it.
 | `BROWSER_MAX_CONCURRENT` | `1` | Headless browsers one process runs at once (a few hundred MB each) |
 | `ATTENDABILITY_FILTER_ENABLED` | `true` | Leave out non-events (see above) |
 | `UNSPLASH_ACCESS_KEY` | unset | Placeholder photos for imageless events |
-| `GEMINI_API_KEY` | unset | AI categorization of new events |
+| `GROQ_API_KEY` | unset | AI categorization of new events with Groq (used instead of Gemini when set) |
+| `GROQ_MODEL` | `llama-3.3-70b-versatile` | Groq model for categorization |
+| `GEMINI_API_KEY` | unset | AI categorization with Gemini, when no Groq key is set |
 | `GEMINI_FALLBACK_MODEL` | unset | Second Gemini model to try when the main one answers 503 "overloaded" |
 | `GEOCODING_ENABLED`, `GEOCODING_PROVIDER` | off | Fill in map coordinates from addresses |
 | `EMAIL_ENABLED`, `EMAIL_BACKEND` | off | Alert emails |

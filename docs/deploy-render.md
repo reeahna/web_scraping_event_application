@@ -57,10 +57,14 @@ sign-in can claim `SUPERADMIN_EMAIL`, because Google confirms the address.
 `…` is your site's address, for example `https://<your-service>.onrender.com`.
 
 ### 4. (Optional) AI event categorization
-The keyword rules categorize events for free, but Gemini labels them much more
-accurately (it knows a "cooking class" is food, not education). Get a free key
-at https://aistudio.google.com/apikey, add it in the Render dashboard under the
-service's **Environment** as `GEMINI_API_KEY`, then from the **Shell** run:
+The keyword rules categorize events for free, but an AI model labels them much
+more accurately (it knows a "cooking class" is food, not education). Get a free
+Groq key at https://console.groq.com/keys and add it in the Render dashboard
+under the service's **Environment** as `GROQ_API_KEY`. The scheduler then labels
+upcoming events in the background. (A Gemini key from
+https://aistudio.google.com/apikey as `GEMINI_API_KEY` also works, but its free
+tier allows only 20 requests a day.) To label a batch right away, from the
+**Shell** run:
 
 ```bash
 python scripts/categorize_events_ai.py
