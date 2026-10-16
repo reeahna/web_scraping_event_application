@@ -1,7 +1,7 @@
 """External identities and OAuth login state (Phase 14).
 
 `ExternalIdentity` is the provider-independent link between a local user and an
-account at an external provider (Google/Microsoft/Facebook or any future one).
+account at an external provider (Google/Microsoft/Facebook/Yahoo or any future one).
 The unique (provider, subject) constraint is the duplicate-identity guard: one
 provider account maps to at most one local user. We deliberately store no
 third-party password and do not retain provider access/refresh tokens — only

@@ -35,7 +35,7 @@ from app.repositories.auto_onboarding import (
     list_policies,
     newest_decision_ids_for_jobs,
 )
-from app.repositories.city import list_cities
+from app.repositories.city import get_city, list_cities
 from app.repositories.onboarding import (
     get_batch,
     get_job,
@@ -106,6 +106,14 @@ def _submission_context(request: Request, current_user: User, db, **extra) -> di
     }
 
 
+def _parse_form_id(value: str) -> int | None:
+    """A submitted select value as an id, or None when blank or not a whole number."""
+    try:
+        return int(value) if value else None
+    except ValueError:
+        return None
+
+
 # --- Submission -------------------------------------------------------------
 
 
@@ -151,9 +159,11 @@ async def onboard_submit(
     elif not parsed.rows:
         errors["submission"] = "No valid URLs were submitted."
 
-    selected_city_id = int(city_id) if city_id else None
-    if selected_city_id is None and not errors:
+    selected_city_id = _parse_form_id(city_id)
+    if not city_id and not errors:
         errors["city_id"] = "Choose a default city — sources cannot be approved without one."
+    elif city_id and (selected_city_id is None or get_city(db, selected_city_id) is None):
+        errors["city_id"] = "The selected city does not exist."
     if default_timezone and default_timezone not in _VALID_TIMEZONES:
         errors["default_timezone"] = f"'{default_timezone}' is not a recognized IANA timezone."
     elif default_timezone and is_fixed_offset_abbreviation(default_timezone):
@@ -170,8 +180,10 @@ async def onboard_submit(
     # enables automatic approval or activation — the submitter holds
     # settings.manage. Selecting a permissive policy must never be a way for a
     # submit-only user to grant themselves approval power.
-    selected_policy_id = int(policy_id) if policy_id else None
-    if selected_policy_id is not None and not errors:
+    selected_policy_id = _parse_form_id(policy_id)
+    if policy_id and selected_policy_id is None:
+        errors["policy_id"] = "The selected onboarding policy no longer exists."
+    elif selected_policy_id is not None and not errors:
         policy = get_policy(db, selected_policy_id)
         if policy is None:
             errors["policy_id"] = "The selected onboarding policy no longer exists."

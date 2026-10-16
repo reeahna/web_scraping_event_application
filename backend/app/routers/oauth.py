@@ -63,6 +63,20 @@ def callback(
     except oauth_login.OAuthError as exc:
         return _fail(db, provider, correlation_id, ip_address, reason=exc.code)
 
+    return finish_sign_in(
+        db, request, user, next_url,
+        detail=f"OAuth login via {provider}",
+        correlation_id=correlation_id,
+        ip_address=ip_address,
+    )
+
+
+def finish_sign_in(
+    db, request: Request, user, next_url: str, *, detail: str, correlation_id, ip_address
+) -> RedirectResponse:
+    """Start a brand-new session for `user` (session-fixation prevention),
+    audit the login, and send them on to `next_url`."""
+    settings = get_settings()
     raw_token = create_session(db, user, request)
     user.last_login_at = datetime.now(UTC)
     db.commit()
@@ -72,14 +86,14 @@ def callback(
         action="login",
         entity_type="user",
         entity_id=user.id,
-        detail=f"OAuth login via {provider}",
+        detail=detail,
         correlation_id=correlation_id,
         ip_address=ip_address,
     )
     if next_url == "/":
-        # No page to return to: admins land in the admin, everyone else on
-        # their account page.
-        next_url = "/admin" if can_access_admin(db, user) else "/account"
+        # No page to return to: admins land in the admin, everyone else on the
+        # homepage, which is what they came to the site for.
+        next_url = "/admin" if can_access_admin(db, user) else "/"
     response = RedirectResponse(url=next_url, status_code=303)
     response.set_cookie(
         settings.session_cookie_name,

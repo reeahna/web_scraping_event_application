@@ -16,10 +16,10 @@
   token is minted on every login — session-fixation safe.
 - Cookies: `HttpOnly`, `SameSite=Lax`, `Secure` in production (`COOKIE_SECURE`).
 - CSRF: double-submit token on every state-changing form/POST (`app/core/csrf`).
-- Sign-in is social only (Google, Microsoft, Facebook). There is no password
+- Sign-in is social only (Google, Microsoft, Facebook, Yahoo). There is no password
   login, so no password, reset token or verification token is ever stored.
 - `SUPERADMIN_EMAIL` grants Super Administrator, but only on a sign-in whose
-  provider has verified that address (Google). Microsoft and Facebook sign-ins
+  provider has verified that address (Google). Microsoft, Facebook and Yahoo sign-ins
   can't claim it.
 - Registered users hold **zero** administrative permissions by default.
 

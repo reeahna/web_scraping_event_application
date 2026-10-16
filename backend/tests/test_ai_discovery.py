@@ -41,7 +41,7 @@ def test_ai_crawlers_are_named_and_share_the_private_area_rules(client):
     first_rule = next(i for i, line in enumerate(lines) if line.startswith("Disallow"))
     agents = [i for i, line in enumerate(lines) if line.startswith("User-agent")]
     assert len(agents) == len(AI_CRAWLERS) + 1 and max(agents) < first_rule
-    assert "Disallow: /admin/" in text and "Allow" not in text.replace("Disallow", "")
+    assert "Disallow: /admin\n" in text and "Allow" not in text.replace("Disallow", "")
 
 
 # --- llms.txt --------------------------------------------------------------------
@@ -166,3 +166,32 @@ def test_terms_welcome_reading_and_indexing(client):
     text = client.get("/terms").text
     assert "welcome to read, link to and index" in text
     assert "scrape" not in text
+
+
+def test_feed_falls_back_to_the_towns_zone_for_an_unknown_event_zone(
+    client, make_city, make_website, make_event
+):
+    town, site = _town(make_city, make_website)
+    make_event(town, website=site, title="Talk", start_date=TOMORROW,
+               start_time=time(9, 0), timezone="Not/AZone")
+    cal = Calendar.from_ical(client.get("/city/bloomington/events.ics").content)
+    start = next(iter(cal.walk("VEVENT"))).decoded("dtstart")
+    assert start.hour == 9 and str(start.tzinfo) == "America/Indiana/Indianapolis"
+
+
+def test_feed_keeps_the_end_of_overnight_and_multi_day_events(
+    client, make_city, make_website, make_event
+):
+    town, site = _town(make_city, make_website)
+    make_event(town, website=site, title="Late Show", start_date=TOMORROW,
+               start_time=time(22, 0), end_time=time(2, 0))
+    make_event(town, website=site, title="Festival", start_date=TOMORROW,
+               start_time=time(10, 0), end_date=TOMORROW + timedelta(days=4),
+               canonical_url="https://x/festival")
+    cal = Calendar.from_ical(client.get("/city/bloomington/events.ics").content)
+    events = {str(e["summary"]): e for e in cal.walk("VEVENT")}
+
+    late = events["Late Show"].decoded("dtend")
+    assert (late.date(), late.hour) == (TOMORROW + timedelta(days=1), 2)
+    # No end time: the festival runs to the end of its last day.
+    assert events["Festival"].decoded("dtend").date() == TOMORROW + timedelta(days=5)

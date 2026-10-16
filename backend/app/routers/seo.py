@@ -60,7 +60,8 @@ MAX_FEED_EVENTS = 1000
 @router.get("/robots.txt", include_in_schema=False)
 def robots_txt() -> Response:
     lines = [f"User-agent: {name}" for name in AI_CRAWLERS] + ["User-agent: *"]
-    lines += [f"Disallow: {prefix}/" for prefix in DISALLOWED_PREFIXES]
+    # No trailing slash, so the bare paths (/admin, /account) are covered too.
+    lines += [f"Disallow: {prefix}" for prefix in DISALLOWED_PREFIXES]
     lines.append(f"Sitemap: {absolute_url('/sitemap.xml')}")
     return Response("\n".join(lines) + "\n", media_type="text/plain")
 

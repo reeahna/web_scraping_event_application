@@ -1,5 +1,6 @@
 import json
 from typing import Annotated
+from urllib.parse import urlencode
 
 from fastapi import APIRouter, Depends, Form, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
@@ -29,9 +30,9 @@ from app.repositories.auto_onboarding import (
     latest_decision_for_website,
     list_decisions_for_website,
 )
-from app.repositories.city import list_cities
+from app.repositories.city import get_city, list_cities
 from app.repositories.extraction_run import get_extraction_run, list_extraction_runs_for_website
-from app.repositories.onboarding import find_website_match
+from app.repositories.onboarding import WebsiteMatch, find_website_matches
 from app.repositories.unsupported_site_report import list_reports_for_website
 from app.repositories.website import (
     count_by_onboarding_status,
@@ -47,6 +48,7 @@ from app.schemas.extraction_config_forms import (
     build_site_configuration,
     configuration_to_form,
 )
+from app.schemas.schedule import parse_schedule_config
 from app.schemas.website import WebsiteCreate, WebsiteUpdate
 from app.services.ai.provider import usage_status as ai_usage_status
 from app.services.ai_configuration import request_ai_configuration
@@ -93,9 +95,45 @@ def _format_errors(exc: ValidationError) -> dict[str, str]:
     return result
 
 
-def _parse_json_field(value: str) -> dict | None:
+class _FieldParseError(ValueError):
+    """A raw form value that could not be parsed, tagged with its form field."""
+
+    def __init__(self, field: str, message: str):
+        super().__init__(message)
+        self.errors = {field: message}
+
+
+def _parse_city_id(value: str) -> int | None:
     value = value.strip()
-    return json.loads(value) if value else None
+    if not value:
+        return None
+    try:
+        return int(value)
+    except ValueError:
+        raise _FieldParseError("city_id", "Choose a city from the list") from None
+
+
+def _parse_schedule_config(value: str) -> dict | None:
+    """Parse and validate the schedule JSON, so a bad schedule is a form error
+    here instead of a site the scheduler silently skips later."""
+    value = value.strip()
+    if not value:
+        return None
+    try:
+        raw = json.loads(value)
+    except ValueError:
+        raise _FieldParseError("schedule_config", "Must be valid JSON, or left blank") from None
+    if not isinstance(raw, dict):
+        raise _FieldParseError("schedule_config", "Must be a JSON object, or left blank")
+    try:
+        parse_schedule_config(raw)
+    except ValidationError as exc:
+        details = "; ".join(
+            f"{'.'.join(str(p) for p in err['loc']) or 'value'}: {err['msg']}"
+            for err in exc.errors()
+        )
+        raise _FieldParseError("schedule_config", f"Invalid schedule — {details}") from None
+    return raw
 
 
 def _build_website_data(
@@ -113,17 +151,53 @@ def _build_website_data(
     return schema_cls(
         name=name,
         source_display_name=source_display_name or None,
-        city_id=int(city_id) if city_id else None,
+        city_id=_parse_city_id(city_id),
         base_url=base_url,
         event_listing_url=event_listing_url or None,
         timezone_override=timezone_override or None,
         requires_js=requires_js,
-        schedule_config=_parse_json_field(schedule_config),
+        schedule_config=_parse_schedule_config(schedule_config),
     )
 
 
-def _json_error_context() -> dict[str, str]:
-    return {"schedule_config": "Must be valid JSON, or left blank"}
+def _form_errors_after_parse(db, data: WebsiteCreate | WebsiteUpdate) -> dict[str, str]:
+    """Checks that need the database: an unknown city would otherwise surface
+    as a foreign-key IntegrityError (a 500) on save."""
+    if data.city_id is not None and get_city(db, data.city_id) is None:
+        return {"city_id": "Choose a city from the list"}
+    return {}
+
+
+def _find_duplicate(
+    db, data: WebsiteCreate | WebsiteUpdate, *, exclude_id: int | None = None
+) -> WebsiteMatch | None:
+    """The existing website that already covers this one's listing or base URL.
+
+    `exclude_id` lets an edit ignore the website being edited."""
+    for candidate_url in (data.event_listing_url, data.base_url):
+        if not candidate_url:
+            continue
+        for match in find_website_matches(db, candidate_url):
+            if match.website.id != exclude_id:
+                return match
+    return None
+
+
+def _duplicate_message(match: WebsiteMatch) -> str:
+    if match.is_archived:
+        # An archived match still blocks creation — otherwise every
+        # archived source could be silently re-created as a duplicate.
+        # Restoring it is an administrator decision, never automatic.
+        return (
+            f"'{match.website.name}' (website #{match.website.id}) already covers this "
+            f"URL but has been archived — {match.description}. Restore that website, or "
+            "have an administrator confirm this really is a separate source."
+        )
+    return (
+        f"'{match.website.name}' (website #{match.website.id}, status "
+        f"{match.website.onboarding_status}) already covers this URL — "
+        f"{match.description}. Open that website instead of creating a second one."
+    )
 
 
 # --- List / filter -----------------------------------------------------------------
@@ -169,9 +243,12 @@ def list_websites_view(
         per_page=PER_PAGE,
     )
     cities = list_cities(db, active_only=False)
-    base_url = (
-        f"/admin/websites?q={q or ''}&city_id={city_id or ''}"
-        f"&onboarding_status={onboarding_status or ''}"
+    base_url = "/admin/websites?" + urlencode(
+        {
+            "q": q or "",
+            "city_id": city_id or "",
+            "onboarding_status": onboarding_status or "",
+        }
     )
     return render(
         request,
@@ -268,7 +345,7 @@ def create_website_view(
             },
             status_code=422,
         )
-    except ValueError:
+    except _FieldParseError as exc:
         return render(
             request,
             "admin/websites/form.html",
@@ -277,7 +354,23 @@ def create_website_view(
                 "mode": "create",
                 "website": None,
                 "form": form_values,
-                "errors": _json_error_context(),
+                "errors": exc.errors,
+                "cities": cities,
+            },
+            status_code=422,
+        )
+
+    errors = _form_errors_after_parse(db, data)
+    if errors:
+        return render(
+            request,
+            "admin/websites/form.html",
+            {
+                "current_user": current_user,
+                "mode": "create",
+                "website": None,
+                "form": form_values,
+                "errors": errors,
                 "cities": cities,
             },
             status_code=422,
@@ -287,41 +380,23 @@ def create_website_view(
     # just the bulk one: this form is how the duplicate found during Phase 8C
     # verification was created. Matching is the same canonical comparison
     # bulk onboarding uses (app.core.url_canonical).
-    for candidate_url in (data.event_listing_url, data.base_url):
-        if not candidate_url:
-            continue
-        match = find_website_match(db, candidate_url)
-        if match is not None:
-            if match.is_archived:
-                # An archived match still blocks creation — otherwise every
-                # archived source could be silently re-created as a duplicate.
-                # Restoring it is an administrator decision, never automatic.
-                message = (
-                    f"'{match.website.name}' (website #{match.website.id}) already covers this "
-                    f"URL but has been archived — {match.description}. Restore that website, or "
-                    "have an administrator confirm this really is a separate source."
-                )
-            else:
-                message = (
-                    f"'{match.website.name}' (website #{match.website.id}, status "
-                    f"{match.website.onboarding_status}) already covers this URL — "
-                    f"{match.description}. Open that website instead of creating a second one."
-                )
-            return render(
-                request,
-                "admin/websites/form.html",
-                {
-                    "current_user": current_user,
-                    "mode": "create",
-                    "website": None,
-                    "form": form_values,
-                    "errors": {"base_url": message},
-                    "cities": cities,
-                    "duplicate_website": match.website,
-                    "duplicate_is_archived": match.is_archived,
-                },
-                status_code=409,
-            )
+    match = _find_duplicate(db, data)
+    if match is not None:
+        return render(
+            request,
+            "admin/websites/form.html",
+            {
+                "current_user": current_user,
+                "mode": "create",
+                "website": None,
+                "form": form_values,
+                "errors": {"base_url": _duplicate_message(match)},
+                "cities": cities,
+                "duplicate_website": match.website,
+                "duplicate_is_archived": match.is_archived,
+            },
+            status_code=409,
+        )
 
     website = create_website(db, data)
     record_audit(
@@ -536,7 +611,7 @@ def update_website_view(
             },
             status_code=422,
         )
-    except ValueError:
+    except _FieldParseError as exc:
         return render(
             request,
             "admin/websites/form.html",
@@ -545,10 +620,46 @@ def update_website_view(
                 "mode": "edit",
                 "website": website,
                 "form": form_values,
-                "errors": _json_error_context(),
+                "errors": exc.errors,
                 "cities": cities,
             },
             status_code=422,
+        )
+
+    errors = _form_errors_after_parse(db, data)
+    if errors:
+        return render(
+            request,
+            "admin/websites/form.html",
+            {
+                "current_user": current_user,
+                "mode": "edit",
+                "website": website,
+                "form": form_values,
+                "errors": errors,
+                "cities": cities,
+            },
+            status_code=422,
+        )
+
+    # The same duplicate check as create, ignoring this website itself, so an
+    # edit cannot point two websites at one source.
+    match = _find_duplicate(db, data, exclude_id=website.id)
+    if match is not None:
+        return render(
+            request,
+            "admin/websites/form.html",
+            {
+                "current_user": current_user,
+                "mode": "edit",
+                "website": website,
+                "form": form_values,
+                "errors": {"base_url": _duplicate_message(match)},
+                "cities": cities,
+                "duplicate_website": match.website,
+                "duplicate_is_archived": match.is_archived,
+            },
+            status_code=409,
         )
 
     before = {"name": website.name, "base_url": website.base_url, "city_id": website.city_id}

@@ -14,7 +14,7 @@
 
 {% if notifications %}
 <table>
-  <thead><tr><th>Created</th><th>Severity</th><th>Title</th><th>Message</th><th></th><th></th></tr></thead>
+  <thead><tr><th>Created</th><th>Severity</th><th>Title</th><th>Message</th><th><span class="sr-only">Mark read</span></th><th><span class="sr-only">Dismiss</span></th></tr></thead>
   <tbody>
     {% for n in notifications %}
     <tr class="{{ 'notification-unread' if not n.read_at else '' }}">

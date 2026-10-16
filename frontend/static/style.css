@@ -91,6 +91,21 @@ a { color: inherit; }
 
 button, input, select, textarea { font: inherit; color: inherit; }
 
+/* The site header is sticky, so without this an element reached by
+   Shift+Tab (or an in-page link) scrolls to the top edge and sits hidden
+   behind it (WCAG 2.4.11 Focus Not Obscured). Header is ~70px tall. */
+html { scroll-padding-top: 6rem; }
+
+/* Browser-default checkboxes are 13px, under the 24px minimum target
+   (WCAG 2.5.8). 20px plus the 2px of space around each one clears it. */
+input[type="checkbox"], input[type="radio"] {
+  width: 20px;
+  height: 20px;
+  margin: 2px;
+  flex: 0 0 auto;
+  accent-color: var(--accent);
+}
+
 .sr-only {
   position: absolute;
   width: 1px;
@@ -490,7 +505,7 @@ button:hover {
 
 .banner-warning {
   background: rgba(220, 38, 38, 0.08);
-  color: var(--danger);
+  color: var(--danger-text);
 }
 
 .form-error {
@@ -1129,7 +1144,7 @@ button:hover {
 /* A zero on the operational dashboard is worth showing but not worth reading
    first; dimming it lets the non-zero counts carry the eye. */
 .metric-card.is-zero .metric-value {
-  color: var(--border-strong);
+  color: var(--muted);
   font-weight: 600;
 }
 
@@ -1306,8 +1321,9 @@ button:hover {
 }
 
 .checkbox-grid input[type="checkbox"] {
-  width: auto;
-  margin: 0;
+  width: 20px;
+  height: 20px;
+  margin: 2px;
   flex: 0 0 auto;
 }
 
@@ -1412,8 +1428,9 @@ button:hover {
 }
 
 .field-checkboxes input[type="checkbox"] {
-  width: auto;
-  margin: 0;
+  width: 20px;
+  height: 20px;
+  margin: 2px;
 }
 
 .input-mono {
@@ -1569,8 +1586,8 @@ button:hover {
 }
 
 .filter-field-checkbox input[type="checkbox"] {
-  width: 18px;
-  height: 18px;
+  width: 20px;
+  height: 20px;
   accent-color: var(--accent);
 }
 
@@ -1928,7 +1945,7 @@ button:hover {
 }
 
 .pagination-disabled {
-  color: var(--border-strong);
+  color: var(--muted);
   font-weight: 600;
 }
 
@@ -2506,6 +2523,9 @@ a.wf-danger, button.wf-danger {
 
 .site-footer-links a {
   color: var(--muted);
+  /* 24px tall so the two links clear the minimum target size (WCAG 2.5.8). */
+  display: inline-block;
+  line-height: 24px;
 }
 
 /* Privacy policy and terms pages */
@@ -2608,6 +2628,17 @@ a.wf-danger, button.wf-danger {
 }
 .signin-logo {
   display: inline-flex;
+}
+/* "Sign in as the test user" (development/staging only) */
+.signin-test {
+  margin-top: var(--space-4);
+}
+.signin-button-test {
+  width: 100%;
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+  border-style: dashed;
 }
 .signin-note {
   text-wrap: balance;

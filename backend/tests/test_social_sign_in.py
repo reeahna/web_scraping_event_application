@@ -87,7 +87,7 @@ def test_with_new_accounts_off_strangers_are_refused_but_members_and_owner_get_i
 
     assert login("stranger@example.com").headers["location"] == "/auth/login"
     assert db_session.query(User).filter_by(email="stranger@example.com").count() == 0
-    assert login("member@example.com").headers["location"] == "/account"
+    assert login("member@example.com").headers["location"] == "/"
     assert login("owner@example.com").headers["location"] == "/admin"
 
 
@@ -181,3 +181,45 @@ def test_the_real_google_client_builds_a_sign_in_link():
     assert query["client_id"] == ["id-123"] and query["state"] == ["s1"]
     assert query["nonce"] == ["n1"]
     assert query["redirect_uri"] == ["https://example.test/auth/oauth/google/callback"]
+
+
+def test_the_real_yahoo_client_builds_a_sign_in_link():
+    from types import SimpleNamespace
+    from urllib.parse import parse_qs, urlparse
+
+    from app.services.oauth import build_provider, enabled_provider_names
+
+    settings = SimpleNamespace(yahoo_client_id="yid", yahoo_client_secret="ysecret")
+    assert enabled_provider_names(settings) == ["yahoo"]
+    url = build_provider(settings, "yahoo").authorization_url(
+        state="s1", nonce="n1", redirect_uri="https://example.test/auth/oauth/yahoo/callback"
+    )
+    parsed = urlparse(url)
+    query = parse_qs(parsed.query)
+    assert parsed.netloc == "api.login.yahoo.com"
+    assert query["client_id"] == ["yid"] and query["nonce"] == ["n1"]
+    assert query["scope"] == ["openid email profile"]
+
+
+def test_a_yahoo_address_is_never_treated_as_verified():
+    """Only Google is trusted to vouch for an address, so a Yahoo sign-in can't
+    take over an existing account or claim SUPERADMIN_EMAIL."""
+    from app.services.oauth.providers import _SPECS, _info_from_userinfo
+
+    info = _info_from_userinfo(
+        _SPECS["yahoo"],
+        {"sub": "Y123", "email": "owner@yahoo.com", "email_verified": True, "name": "Owner"},
+    )
+    assert info.subject == "Y123" and info.email == "owner@yahoo.com"
+    assert info.email_verified is False
+
+
+def test_sign_in_page_shows_every_provider_button(client, monkeypatch):
+    import app.routers.auth as auth_router
+
+    providers = ["google", "microsoft", "facebook", "yahoo"]
+    monkeypatch.setattr(auth_router, "enabled_providers", lambda settings: providers)
+    page = client.get("/auth/login").text
+    for name in providers:
+        assert f'href="/auth/oauth/{name}"' in page
+    assert "Continue with Yahoo" in page

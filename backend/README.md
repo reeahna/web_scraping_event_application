@@ -26,6 +26,12 @@ locally, set `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET` and `SUPERADMIN_EMAIL` i
 `.env`, with `http://localhost:8100/auth/oauth/google/callback` as an authorized
 redirect URI on the Google OAuth client.
 
+To try the site as an ordinary signed-in person without any of that, set
+`TEST_LOGIN_ENABLED=true`: the sign-in page then has a "Sign in as the test user"
+button for a Registered User account (`TEST_USER_EMAIL`), created on first use.
+It is for development and staging; the app refuses to start with it on when
+`APP_ENV=production`.
+
 Scraping runs in a separate process, never inside the web server. To have
 imports run on their schedule locally, start it in a second terminal:
 
@@ -54,13 +60,16 @@ plain-text guide to the site, and each town has an iCalendar feed at
 `/city/{slug}/events.ics` that calendar apps can subscribe to.
 
 **Accounts.** There are no passwords. People sign in at `/auth/login` with
-Google, Microsoft or Facebook (each switches on when its client ID and secret are
+Google, Microsoft, Facebook or Yahoo (each switches on when its client ID and secret are
 set), and the first sign-in creates the account. A new account gets only the
 **Registered User** role, which has no admin permissions. The address in
 `SUPERADMIN_EMAIL` becomes Super Administrator when it signs in through a provider
 that has verified it (Google). Signed-in users can save events
 (`/account/saved`), follow towns, set alert preferences (`/account/alerts`), and
-delete their account from `/account`. Starting a sign-in is limited to 30 per
+delete their account from `/account`. Signing in lands on the homepage (admins
+land in `/admin`) unless the person was on their way to a particular page.
+Deleting an account really removes it, so the same email address can sign up
+again later and gets a fresh, empty account. Starting a sign-in is limited to 30 per
 address in 15 minutes.
 
 The privacy policy and terms are at `/privacy` and `/terms`.
@@ -137,6 +146,8 @@ without any of it.
 | `APP_TIMEZONE` | `UTC` | Decides what "today" means for the listings |
 | `REGISTRATION_ENABLED` | `true` | Whether a first sign-in creates a new account |
 | `SUPERADMIN_EMAIL` | unset | Google address that becomes Super Administrator on sign-in |
+| `TEST_LOGIN_ENABLED` | `false` | "Sign in as the test user" button for development/staging; refused with `APP_ENV=production` |
+| `TEST_USER_EMAIL` | `test-user@bulletin.invalid` | The test user's address |
 | `BROWSER_EXTRACTION_ENABLED` | `false` | Headless-browser fallback for sources that need it |
 | `BROWSER_MAX_CONCURRENT` | `1` | Headless browsers one process runs at once (a few hundred MB each) |
 | `ATTENDABILITY_FILTER_ENABLED` | `true` | Leave out non-events (see above) |
@@ -146,7 +157,7 @@ without any of it.
 | `GEOCODING_ENABLED`, `GEOCODING_PROVIDER` | off | Fill in map coordinates from addresses |
 | `EMAIL_ENABLED`, `EMAIL_BACKEND` | off | Alert emails |
 | `CONTACT_EMAIL` | unset | Shown on the privacy policy and terms |
-| `GOOGLE_/MICROSOFT_/FACEBOOK_CLIENT_ID` and `_SECRET` | unset | Sign-in providers; set at least one (Google for the admin) |
+| `GOOGLE_/MICROSOFT_/FACEBOOK_/YAHOO_CLIENT_ID` and `_SECRET` | unset | Sign-in providers; set at least one (Google for the admin) |
 | `OAUTH_REDIRECT_BASE_URL` | `PUBLIC_BASE_URL` | Base of the provider callback URLs, if different from the site's address |
 | `COOKIE_SECURE`, `BEHIND_HTTPS`, `TRUSTED_HOSTS` | off | Set in production (already in `render.yaml`) |
 | `RATE_LIMIT_BACKEND`, `REDIS_URL` | `memory` | Use `redis` to share rate limits across processes |

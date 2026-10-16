@@ -228,6 +228,18 @@ def update_policy(
     cleaned = validate_values(values)
     _require_confirmation(cleaned, policy, confirmations or {})
 
+    if name is not None and name.strip():
+        duplicate = (
+            db.query(AutoOnboardingPolicy)
+            .filter(
+                AutoOnboardingPolicy.name == name.strip(),
+                AutoOnboardingPolicy.id != policy.id,
+            )
+            .first()
+        )
+        if duplicate is not None:
+            raise AppError(f"A policy named '{name.strip()}' already exists.", status_code=422)
+
     before = {field: getattr(policy, field) for field in VERSIONED_FIELDS}
     if name is not None and name.strip():
         policy.name = name.strip()

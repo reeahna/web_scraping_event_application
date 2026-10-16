@@ -161,3 +161,21 @@ def test_clear_past_saved_events(
                        follow_redirects=False)
     assert resp.status_code == 303
     assert engagement.saved_event_ids(db_session, user_id=user.id) == {upcoming.id}
+
+
+def test_following_something_that_does_not_exist_is_refused(
+    client, make_user, login, make_city, db_session
+):
+    hidden = make_city(name="Hidden", slug="hidden", is_active=False)
+    csrf = _signin(client, make_user, login)
+    for follow_type, target_id in (("city", 999999), ("city", hidden.id),
+                                   ("category", -5), ("source", 0)):
+        resp = client.post(
+            "/account/follow",
+            data={"csrf_token": csrf, "follow_type": follow_type, "target_id": target_id},
+            follow_redirects=False,
+        )
+        assert resp.status_code == 404, (follow_type, target_id)
+        assert engagement.followers_of(
+            db_session, follow_type=follow_type, target_id=target_id
+        ) == []

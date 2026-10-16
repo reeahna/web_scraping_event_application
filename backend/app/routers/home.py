@@ -25,13 +25,19 @@ from app.services.rbac import can_access_admin
 router = APIRouter()
 
 
+# The largest id or page number worth querying for. Anything bigger cannot
+# match a row, and SQLite refuses integers past 64 bits outright.
+_MAX_INT = 2**31 - 1
+
+
 def _parse_int(value: str | None) -> int | None:
     if not value:
         return None
     try:
-        return int(value)
+        number = int(value)
     except ValueError:
         return None
+    return number if 0 < number <= _MAX_INT else None
 
 
 def _parse_ids(values: list[str]) -> tuple[int, ...]:

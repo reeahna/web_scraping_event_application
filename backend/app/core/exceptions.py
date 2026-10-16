@@ -1,6 +1,8 @@
-from urllib.parse import quote
+from urllib.parse import quote, urlsplit
 
 from fastapi import Request
+from fastapi.encoders import jsonable_encoder
+from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse, RedirectResponse, Response
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
@@ -36,11 +38,19 @@ def _wants_html(request: Request) -> bool:
     return "text/html" in request.headers.get("accept", "")
 
 
-def _safe_next_path(request: Request) -> str:
-    path = request.url.path
-    if request.url.query:
-        path = f"{path}?{request.url.query}"
-    return path
+def _safe_next_path(request: Request) -> str | None:
+    """Where to return after signing in. A GET comes back to itself; a form
+    post (say, saving an event after the session expired) cannot be replayed
+    as a GET, so it returns to the page the form was on, when the browser says
+    and that page is on this site. Sign-in re-checks the path with safe_next."""
+    if request.method in ("GET", "HEAD"):
+        path, query = request.url.path, request.url.query
+    else:
+        referer = urlsplit(request.headers.get("referer", ""))
+        if not referer.path or referer.netloc != request.url.netloc:
+            return None
+        path, query = referer.path, referer.query
+    return f"{path}?{query}" if query else path
 
 
 # What a visitor reads for each status. A browser gets a page with a way back
@@ -93,6 +103,27 @@ async def http_exception_handler(request: Request, exc: StarletteHTTPException) 
     return JSONResponse(
         status_code=exc.status_code, content={"detail": exc.detail}, headers=exc.headers
     )
+
+
+async def request_validation_handler(request: Request, exc: RequestValidationError) -> Response:
+    """A request whose URL or form does not parse, e.g. /events/abc. A browser
+    gets the friendly page: a malformed id in the path is a page that does not
+    exist (404), anything else a bad request (400). API callers keep FastAPI's
+    usual 422 with the field details."""
+    if _wants_html(request):
+        in_path = any(error.get("loc", ())[:1] == ("path",) for error in exc.errors())
+        return error_page(request, 404 if in_path else 400)
+    return JSONResponse(status_code=422, content={"detail": jsonable_encoder(exc.errors())})
+
+
+async def overflow_handler(request: Request, exc: OverflowError) -> Response:
+    """SQLite refuses integers past 64 bits, so a URL like /events/99999999999999999999
+    fails inside the query. No row can have such an id: answer as not found."""
+    if "SQLite INTEGER" not in str(exc):
+        return await unhandled_exception_handler(request, exc)
+    if _wants_html(request):
+        return error_page(request, 404)
+    return JSONResponse(status_code=404, content={"detail": "Not found"})
 
 
 async def not_authenticated_handler(request: Request, exc: NotAuthenticatedError) -> Response:

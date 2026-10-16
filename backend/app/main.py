@@ -1,6 +1,7 @@
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
+from fastapi.exceptions import RequestValidationError
 from fastapi.staticfiles import StaticFiles
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
@@ -11,6 +12,8 @@ from app.core.exceptions import (
     app_error_handler,
     http_exception_handler,
     not_authenticated_handler,
+    overflow_handler,
+    request_validation_handler,
     unhandled_exception_handler,
 )
 from app.core.logging import configure_logging, get_logger
@@ -99,6 +102,8 @@ app.add_middleware(CorrelationIdMiddleware)
 app.add_exception_handler(AppError, app_error_handler)
 app.add_exception_handler(NotAuthenticatedError, not_authenticated_handler)
 app.add_exception_handler(StarletteHTTPException, http_exception_handler)
+app.add_exception_handler(RequestValidationError, request_validation_handler)
+app.add_exception_handler(OverflowError, overflow_handler)
 app.add_exception_handler(Exception, unhandled_exception_handler)
 
 app.include_router(home.router)

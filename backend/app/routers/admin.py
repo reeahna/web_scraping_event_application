@@ -6,7 +6,7 @@ from sqlalchemy import func
 
 from app.core.csrf import verify_csrf
 from app.core.exceptions import AppError, NotFoundError
-from app.core.permissions import SUPER_ADMINISTRATOR
+from app.core.permissions import DEFAULT_ROLES, SUPER_ADMINISTRATOR
 from app.core.report_status import DISMISSED, RESOLVED
 from app.core.templating import render
 from app.dependencies import ClientIp, CorrelationId, CurrentUser, DbSession
@@ -27,6 +27,7 @@ from app.services.rbac import (
     assert_not_last_super_admin,
     can_access_admin,
     can_assign_role,
+    can_manage_user,
     count_active_super_admins,
     get_effective_permissions,
     require_permission,
@@ -187,6 +188,12 @@ def activate_user(
     target = db.get(User, user_id)
     if target is None:
         raise NotFoundError("User not found")
+    if not can_manage_user(db, current_user, target):
+        raise AppError(
+            "Only a Super Administrator may activate or deactivate an Administrator "
+            "or Super Administrator.",
+            status_code=403,
+        )
 
     before = {"is_active": target.is_active}
     target.is_active = True
@@ -219,6 +226,12 @@ def deactivate_user(
     target = db.get(User, user_id)
     if target is None:
         raise NotFoundError("User not found")
+    if not can_manage_user(db, current_user, target):
+        raise AppError(
+            "Only a Super Administrator may activate or deactivate an Administrator "
+            "or Super Administrator.",
+            status_code=403,
+        )
 
     assert_not_last_super_admin(db, target)
 
@@ -364,6 +377,9 @@ def create_role(
     csrf_token: str = Form(...),
 ):
     verify_csrf(request, csrf_token)
+    name = name.strip()
+    if not name:
+        raise AppError("Role name is required", status_code=422)
     if db.query(Role).filter(Role.name == name).first() is not None:
         raise AppError("A role with this name already exists", status_code=400)
 
@@ -431,6 +447,20 @@ def update_role(
         "permissions": sorted(rp.permission.code for rp in role.role_permissions),
     }
 
+    name = name.strip()
+    if not name:
+        raise AppError("Role name is required", status_code=422)
+    # Built-in roles are matched by name throughout (ELEVATED_ROLES, the
+    # last-super-admin guards), so renaming one would silently drop those
+    # protections.
+    if role.name in DEFAULT_ROLES and name != role.name:
+        raise AppError("Built-in roles cannot be renamed", status_code=403)
+    if (
+        name != role.name
+        and db.query(Role).filter(Role.name == name, Role.id != role.id).first() is not None
+    ):
+        raise AppError("A role with this name already exists", status_code=409)
+
     new_active = is_active is not None
     if (
         role.name == SUPER_ADMINISTRATOR
@@ -444,19 +474,31 @@ def update_role(
             status_code=403,
         )
 
-    role.name = name
-    role.description = description or None
-    role.is_active = new_active
-
     requested_codes = set(permission_codes or [])
     current_codes = {rp.permission.code for rp in role.role_permissions}
     to_add = requested_codes - current_codes
     to_remove = current_codes - requested_codes
 
+    # Super Administrator always holds every permission; trimming it would let
+    # one super admin lock all of them out of the admin area.
+    if role.name == SUPER_ADMINISTRATOR and (to_add or to_remove):
+        raise AppError(
+            "The Super Administrator role's permissions cannot be changed", status_code=403
+        )
+
     if to_add:
         code_to_permission = {
             p.code: p for p in db.query(Permission).filter(Permission.code.in_(to_add)).all()
         }
+        unknown = sorted(to_add - code_to_permission.keys())
+        if unknown:
+            raise AppError(f"Unknown permission: {', '.join(unknown)}", status_code=422)
+
+    role.name = name
+    role.description = description or None
+    role.is_active = new_active
+
+    if to_add:
         for code in to_add:
             db.add(RolePermission(role_id=role.id, permission_id=code_to_permission[code].id))
     if to_remove:

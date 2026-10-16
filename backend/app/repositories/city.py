@@ -1,6 +1,7 @@
-from sqlalchemy import or_, select
+from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session
 
+from app.core.search import LIKE_ESCAPE, contains_pattern
 from app.models.city import City
 from app.models.city_university import CityUniversity
 from app.schemas.city import CityCreate, CityUpdate
@@ -54,6 +55,11 @@ def get_city_by_slug(db: Session, slug: str) -> City | None:
     return db.query(City).filter(City.slug == slug).first()
 
 
+def get_city_by_name(db: Session, name: str) -> City | None:
+    """Case-insensitive lookup, so "Ithaca" and "ithaca" count as one town."""
+    return db.query(City).filter(func.lower(City.name) == name.strip().lower()).first()
+
+
 def list_cities(db: Session, *, active_only: bool = True) -> list[City]:
     query = db.query(City)
     if active_only:
@@ -70,18 +76,21 @@ def search_public_cities(db: Session, *, query: str | None = None) -> list[City]
     statement = db.query(City).filter(City.is_active.is_(True))
     term = (query or "").strip()
     if term:
-        like = f"%{term}%"
+        like = contains_pattern(term)
         # A correlated EXISTS rather than a join, so a town with two schools
         # matching the term still comes back once.
         matches_school = (
             select(CityUniversity.id)
-            .where(CityUniversity.city_id == City.id, CityUniversity.name.ilike(like))
+            .where(
+                CityUniversity.city_id == City.id,
+                CityUniversity.name.ilike(like, escape=LIKE_ESCAPE),
+            )
             .exists()
         )
         statement = statement.filter(
             or_(
-                City.name.ilike(like),
-                City.state_or_region.ilike(like),
+                City.name.ilike(like, escape=LIKE_ESCAPE),
+                City.state_or_region.ilike(like, escape=LIKE_ESCAPE),
                 matches_school,
             )
         )
@@ -99,8 +108,13 @@ def search_cities(
     """Search/filter/paginate cities for the admin list page."""
     q = db.query(City)
     if query:
-        like = f"%{query}%"
-        q = q.filter(or_(City.name.ilike(like), City.slug.ilike(like)))
+        like = contains_pattern(query)
+        q = q.filter(
+            or_(
+                City.name.ilike(like, escape=LIKE_ESCAPE),
+                City.slug.ilike(like, escape=LIKE_ESCAPE),
+            )
+        )
     if status == "active":
         q = q.filter(City.is_active.is_(True))
     elif status == "inactive":
