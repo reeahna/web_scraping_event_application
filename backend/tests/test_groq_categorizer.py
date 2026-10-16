@@ -23,12 +23,21 @@ CATEGORIES = [CategoryOption("music", "Music"), CategoryOption("other", "Other")
 
 
 def test_payload_is_openai_style_json_mode():
-    categorizer = GroqCategorizer("k", "llama-3.3-70b-versatile")
+    categorizer = GroqCategorizer("k", "openai/gpt-oss-120b")
     payload = categorizer._payload("PROMPT")
-    assert payload["model"] == "llama-3.3-70b-versatile"
+    assert payload["model"] == "openai/gpt-oss-120b"
+    assert payload["reasoning_effort"] == "low"
     assert payload["response_format"] == {"type": "json_object"}
     assert payload["messages"][-1] == {"role": "user", "content": "PROMPT"}
     assert categorizer._client.headers["authorization"] == "Bearer k"
+
+
+def test_other_models_get_no_reasoning_effort():
+    assert "reasoning_effort" not in GroqCategorizer("k", "qwen/qwen3.6-27b")._payload("P")
+
+
+def test_default_model_is_not_retired():
+    assert get_settings().groq_model == "openai/gpt-oss-120b"
 
 
 def test_classify_batch_reads_wrapped_labels(monkeypatch):

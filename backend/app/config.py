@@ -170,13 +170,15 @@ class Settings(BaseSettings):
     # Groq (app.services.ai_categorizer.GroqCategorizer). When GROQ_API_KEY is
     # set it is used instead of Gemini, by the scheduler and the script alike;
     # the gemini_* settings above that are not model-specific (scheduled
-    # labeling, hiding unwanted events) still apply. Groq's free tier allows
-    # about 1,000 requests a day but only ~12K tokens a minute, so batches are
-    # small (25 events is ~6K tokens) and the script waits 30s between them.
+    # labeling, hiding unwanted events) still apply. Groq retired Llama 3.3 70B
+    # in August 2026; gpt-oss-120b is its suggested replacement. The free tier
+    # allows about 1,000 requests a day but only ~8K tokens a minute, so
+    # batches are small (25 events is ~6K tokens) and the script waits 60s
+    # between them.
     groq_api_key: str | None = None
-    groq_model: str = "llama-3.3-70b-versatile"
+    groq_model: str = "openai/gpt-oss-120b"
     groq_batch_size: int = 25
-    groq_min_interval_seconds: float = 30.0
+    groq_min_interval_seconds: float = 60.0
 
     # Asynchronous geocoding (app.services.geocoding). Disabled by default: the
     # application is fully functional without it and no live third-party
