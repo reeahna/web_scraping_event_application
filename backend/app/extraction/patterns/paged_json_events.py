@@ -31,6 +31,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import re
 from datetime import UTC, datetime
 from typing import Any
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
@@ -45,7 +46,10 @@ PATTERN_VERSION = "1"
 EVENTS_ROOT_DEFAULT = "content"
 # Top-level keys a paged API may put its record array under. `content` is the
 # Spring Data name; the others only count when page metadata sits beside them.
-RECORD_ROOTS = ("content", "items", "results", "records", "data")
+# `events` is tried last and, like the other generic names, only next to page
+# metadata. Vendor APIs that also use `events` (The Events Calendar, LiveWhale)
+# have their own detectors at higher confidence, so they keep winning.
+RECORD_ROOTS = ("content", "items", "results", "records", "data", "events")
 # Page metadata keys, compared case/punctuation-insensitively.
 PAGE_METADATA_KEYS = frozenset(
     {
@@ -266,13 +270,17 @@ def _zone(name: str | None) -> ZoneInfo | None:
         return None
 
 
+_SQL_DATETIME_RE = re.compile(r"^\d{4}-\d{2}-\d{2} \d{2}:\d{2}")
+
+
 def local_datetime_string(value: Any, timezone: str | None) -> Any:
     """Machine timestamps as a local wall-clock ISO string; anything else
     unchanged (date-only strings, local times and prose are normalize's job).
 
     * epoch seconds or milliseconds (int/float, or a digit string),
     * Jackson `LocalDateTime` arrays: [2026, 10, 12] or [2026, 10, 12, 19, 30],
-    * ISO strings carrying `Z` or an offset — converted to `timezone`.
+    * ISO strings carrying `Z` or an offset — converted to `timezone`,
+    * SQL-style "YYYY-MM-DD HH:MM[:SS]" — returned in ISO form (`T`).
     """
     zone = _zone(timezone)
     moment: datetime | None = None
@@ -296,8 +304,11 @@ def local_datetime_string(value: Any, timezone: str | None) -> Any:
             return datetime(*parts).isoformat()
         except ValueError:
             return None
-    elif isinstance(value, str) and "T" in value:
+    elif isinstance(value, str) and ("T" in value or _SQL_DATETIME_RE.match(value.strip())):
+        # A SQL-style "2026-10-20 09:00:00" is the ISO form with a space.
         text = value.strip()
+        if _SQL_DATETIME_RE.match(text):
+            value = text = text.replace(" ", "T", 1)
         try:
             parsed = datetime.fromisoformat(text.replace("Z", "+00:00"))
         except ValueError:
