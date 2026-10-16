@@ -223,7 +223,9 @@ def _filter_conditions(
     elif recurrence == "single":
         conditions.append(entity.recurrence_parent_id.is_(None))
     if upcoming_only:
-        conditions.append(and_(entity.start_date.isnot(None), entity.start_date > today))
+        # Not over yet: starts today or later, or is still running (a
+        # multi-day event that began earlier but ends today or later).
+        conditions.append(or_(entity.start_date >= today, entity.end_date >= today))
     if date_from is not None:
         conditions.append(
             or_(

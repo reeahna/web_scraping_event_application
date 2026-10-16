@@ -4,6 +4,7 @@ from collections.abc import Awaitable, Callable
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.requests import Request
 from starlette.responses import Response
+from starlette.types import ASGIApp, Message, Receive, Scope, Send
 
 CORRELATION_ID_HEADER = "X-Correlation-ID"
 
@@ -71,3 +72,27 @@ class MaxBodySizeMiddleware(BaseHTTPMiddleware):
             except ValueError:
                 return Response("Invalid Content-Length", status_code=400)
         return await call_next(request)
+
+
+class HeadAsGetMiddleware:
+    """Answers HEAD on every GET route (uptime monitors and link checkers use
+    it): the request is handled as a GET and the response goes out with the
+    same status and headers but no body. A route without GET still answers
+    405. Pure ASGI, so the body is dropped as it streams, never buffered."""
+
+    def __init__(self, app: ASGIApp) -> None:
+        self.app = app
+
+    async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
+        if scope["type"] != "http" or scope["method"] != "HEAD":
+            await self.app(scope, receive, send)
+            return
+
+        async def send_without_body(message: Message) -> None:
+            if message["type"] == "http.response.body":
+                if message.get("more_body", False):
+                    return
+                message = {"type": "http.response.body", "body": b"", "more_body": False}
+            await send(message)
+
+        await self.app({**scope, "method": "GET"}, receive, send_without_body)

@@ -6,14 +6,15 @@ upcoming public events. Nothing under /admin or /account appears, and robots.txt
 disallows those prefixes so a crawler that finds a link does not follow it.
 """
 
-from fastapi import APIRouter, Response
+from fastapi import APIRouter, Request, Response
+from fastapi.responses import RedirectResponse
 from sqlalchemy import select
 
 from app.config import get_settings
 from app.core.exceptions import NotFoundError
 from app.dependencies import DbSession
 from app.models.city import City
-from app.repositories.city import get_city_by_slug
+from app.repositories.city import get_city_by_slug, get_city_by_slug_ignoring_case
 from app.repositories.public_events import (
     current_public_date,
     list_public_events,
@@ -95,10 +96,17 @@ def sitemap_xml(db: DbSession) -> Response:
 
 
 @router.get("/city/{slug}/events.ics", include_in_schema=False)
-def town_calendar_feed(slug: str, db: DbSession) -> Response:
+def town_calendar_feed(slug: str, request: Request, db: DbSession) -> Response:
     """A town's upcoming events as an iCalendar feed (subscribe in a calendar
     app, or read with any program). The same events the town page lists."""
     city = get_city_by_slug(db, slug)
+    if city is None:
+        canonical = get_city_by_slug_ignoring_case(db, slug)
+        if canonical is not None and canonical.is_active:
+            query = f"?{request.url.query}" if request.url.query else ""
+            return RedirectResponse(
+                f"/city/{canonical.slug}/events.ics{query}", status_code=301
+            )
     if city is None or not city.is_active:
         raise NotFoundError("City not found")
     events, _, _ = list_public_events(
