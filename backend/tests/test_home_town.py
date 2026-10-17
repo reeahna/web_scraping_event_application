@@ -377,3 +377,16 @@ def test_other_schools_tournament(title, away):
     )
     assert at_other_school_event(title, city) is away
     assert at_other_school_event(title, SimpleNamespace(name="Iowa City", universities=[])) is False
+
+
+@pytest.mark.parametrize(
+    "title,away",
+    [
+        ("Lehigh University Men's Rowing vs Head of the Schuylkill", True),
+        ("Lehigh University Women's Rowing vs Head of the Charles", True),
+        ("Lehigh University Men's Rowing vs Head of the Lehigh", False),
+        ("Lehigh University Men's Soccer vs Boston U.", False),
+    ],
+)
+def test_away_regatta(title, away):
+    assert is_away_game(title, "Bethlehem") is away
