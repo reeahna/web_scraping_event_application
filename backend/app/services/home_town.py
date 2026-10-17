@@ -187,6 +187,21 @@ def _town_team_away(title: str, town: str | None) -> bool:
     return bool(_words(match.group("team")) & _words(town))
 
 
+# A regatta named for another river: "Lehigh University Men's Rowing vs Head of
+# the Schuylkill". One named for the home town's own river names the school or
+# the town ("Head of the Lehigh"), so it stays.
+_HEAD_OF_THE = re.compile(
+    r"^(?P<school>.*?)\browing\b.*\bhead of the (?P<river>[\w ]+?)\s*$", re.IGNORECASE
+)
+
+
+def _away_regatta(title: str, town: str | None) -> bool:
+    match = _HEAD_OF_THE.search(title)
+    if match is None:
+        return False
+    return not (_words(match.group("river")) & _home_names(match.group("school"), town))
+
+
 def is_away_game(title: str | None, town: str | None = None) -> bool:
     if not title or _WATCH_PARTY.search(title):
         return False
@@ -194,6 +209,7 @@ def is_away_game(title: str | None, town: str | None = None) -> bool:
         bool(_AWAY_GAME.search(title))
         or _at_other_schools_tournament(title, town)
         or _town_team_away(title, town)
+        or _away_regatta(title, town)
     )
 
 

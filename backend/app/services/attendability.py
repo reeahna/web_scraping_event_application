@@ -144,6 +144,8 @@ _SERVICE_TITLE = _rx(
     r"\b(career coaching|study tables?|tutoring hours|writing (center|tutor)|advising hours)\b|"
     # A study group's own booking: "Motor Speech Study Session", "LGSA Study Hour".
     r"\bstudy (sesh\w*|sessions?|hours?)\b|\bexam \d\b|"
+    # A campus tool's open hours: "Stellic Drop-ins".
+    r"^\s*\w+ drop[- ]ins\s*$|"
     r"^\s*(study|studying|study hall|learning lab|open lab|lab hours|tutoring|advising|"
     r"quiet study|group study)\s*$|"
     # How to apply to a program: "Learn How to Apply for the 2027 Rural
