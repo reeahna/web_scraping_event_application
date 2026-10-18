@@ -402,3 +402,18 @@ async def test_scheduler_sweep_takes_down_unattendable_events(db_session, make_c
     await runtime._attendability_sweep_tick()
     db_session.expire_all()
     assert [e.title for e in db_session.query(Event).filter_by(is_active=True)] == ["Jazz Night"]
+
+
+
+@pytest.mark.parametrize(
+    "url,internal",
+    [
+        ("https://events.iu.edu/campus-center/event/2454799-cell-biology", True),
+        ("https://events.iu.edu/live/event/123-jazz-night", False),
+        ("https://example.com/campus-center/event/1", False),
+        (None, False),
+    ],
+)
+def test_room_booking_calendar(url, internal):
+    reason = not_attendable_reason(title="Jazz Night", url=url)
+    assert (reason == INTERNAL) is internal

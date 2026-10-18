@@ -22,6 +22,7 @@ from __future__ import annotations
 import json
 import re
 from typing import Any
+from urllib.parse import urlsplit
 
 from sqlalchemy.orm import Session
 
@@ -296,6 +297,23 @@ _SOURCE_CATEGORY = {
 _ONLINE_ATTENDANCE_MODE = "OnlineEventAttendanceMode"
 
 
+# Host -> calendars (first path segment of an event link) that publish room
+# bookings and the course schedule rather than events: IU's "campus-center"
+# calendar lists "CELL BIOLOGY", "Swim Club Practice", "Ben Wilck 321".
+_BOOKING_CALENDARS = {
+    "events.iu.edu": re.compile(r"^campus-center$", re.IGNORECASE),
+}
+
+
+def _from_booking_calendar(url: str | None) -> bool:
+    if not url:
+        return False
+    parts = urlsplit(url)
+    pattern = _BOOKING_CALENDARS.get((parts.hostname or "").casefold())
+    first = parts.path.strip("/").split("/", 1)[0]
+    return bool(pattern and first and pattern.search(first))
+
+
 def not_attendable_reason(
     *,
     title: str | None,
@@ -304,6 +322,7 @@ def not_attendable_reason(
     address: str | None = None,
     source_category: str | None = None,
     raw: dict[str, Any] | None = None,
+    url: str | None = None,
 ) -> str | None:
     """Why this is not an event someone can turn up to, or None when it is.
 
@@ -312,6 +331,9 @@ def not_attendable_reason(
     can be explained."""
     title = title or ""
     description = description or ""
+
+    if _from_booking_calendar(url):
+        return INTERNAL
 
     if _CANCELLED_TITLE.search(title):
         return CANCELLED
@@ -363,6 +385,7 @@ def candidate_not_attendable_reason(candidate) -> str | None:
         address=candidate.address,
         source_category=candidate.source_category,
         raw=candidate.raw,
+        url=candidate.canonical_url,
     )
 
 
@@ -374,6 +397,7 @@ def event_not_attendable_reason(event) -> str | None:
         venue=event.public_venue,
         address=event.public_address,
         source_category=event.source_category,
+        url=event.canonical_url,
     )
 
 
