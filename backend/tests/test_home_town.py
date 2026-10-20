@@ -104,6 +104,9 @@ def test_is_outside_home_town_for_any_town(address, outside):
         ("https://events.iu.edu/campus-center/event/6-imu-recruitment", False),
         ("https://events.iu.edu/academicdatesiub/event/7-refund", False),
         ("https://events.iu.edu/live/event/8-back-to-school-bash", False),
+        ("https://cougarlife.kokomo.iu.edu/event/12757561", True),
+        ("https://www.iusb.edu/events/1", True),
+        ("https://beinvolved.indiana.edu/event/1", False),
         ("https://example.com/indianapolis/event/9", False),  # only campus calendars
         (None, False),
     ],
@@ -386,6 +389,9 @@ def test_other_schools_tournament(title, away):
         ("Lehigh University Women's Rowing vs Head of the Charles", True),
         ("Lehigh University Men's Rowing vs Head of the Lehigh", False),
         ("Lehigh University Men's Soccer vs Boston U.", False),
+        ("Lehigh University Women's Golf vs Landfall Tradition - Country Club of Landfall",
+         True),
+        ("Lehigh University Women's Golf vs Lehigh Invitational", False),
     ],
 )
 def test_away_regatta(title, away):

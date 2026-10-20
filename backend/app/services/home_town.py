@@ -67,6 +67,14 @@ _OTHER_CAMPUS_CALENDARS = {
 }
 
 
+# Hosts that belong to another campus outright: IU Kokomo's student-life site
+# ("cougarlife.kokomo.iu.edu") and the like.
+_OTHER_CAMPUS_HOSTS = re.compile(
+    r"(^|\.)(indianapolis|southeast|southbend|kokomo|northwest|fortwayne|columbus|east)"
+    r"\.iu\.edu$|(^|\.)(iupui|iusb|iun|ius|iue|iuk|pfw)\.edu$"
+)
+
+
 # Host -> titles that name a different campus. Some shared calendars (the
 # central "live" one, departments) carry other campuses' events too, and then
 # only the title says so: "IU Indy Garden Volunteer Hours".
@@ -102,6 +110,8 @@ def from_other_campus_calendar(url: str | None, title: str | None = None) -> boo
         return False
     parts = urlsplit(url)
     host = (parts.hostname or "").casefold()
+    if _OTHER_CAMPUS_HOSTS.search(host):
+        return True
     pattern = _OTHER_CAMPUS_CALENDARS.get(host)
     if pattern is None:
         return False
@@ -141,6 +151,8 @@ _SCHOOL_SPORT = re.compile(
 _HOSTED_TOURNAMENT = re.compile(
     r"\b(invitational|classic|intercollegiate|shootout)\b", re.IGNORECASE
 )
+# Golf tournaments also go by "Tradition": "Women's Golf vs Landfall Tradition".
+_GOLF_TOURNAMENT = re.compile(r"\bgolf\b.*\btradition\b", re.IGNORECASE)
 _NOT_A_NAME = {
     "university", "college", "of", "the", "and", "at", "men", "mens", "women", "womens",
     "s", "am", "pm",
@@ -167,7 +179,9 @@ def _home_names(school: str, town: str | None) -> set[str]:
 
 def _at_other_schools_tournament(title: str, town: str | None) -> bool:
     match = _SCHOOL_SPORT.search(title)
-    if match is None or not _HOSTED_TOURNAMENT.search(match.group("rest")):
+    if match is None or not (
+        _HOSTED_TOURNAMENT.search(match.group("rest")) or _GOLF_TOURNAMENT.search(title)
+    ):
         return False
     return not (_words(match.group("rest")) & _home_names(match.group("school"), town))
 

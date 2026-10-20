@@ -88,7 +88,7 @@ _PROFESSIONAL_TITLE = _rx(
     r"healthcare|finance|engineering|hospitality|fashion|blockchain|tech|women in business)"
     r"(\s+and\s+business)?\s+networking|"
     r"networking (breakfast|luncheon|lunch|happy hour|mixer) for|"
-    r"masterminds?|real estate|realtors?|mortgage|landlords?|property management|"
+    r"masterminds?|btaa|real estate|realtors?|mortgage|landlords?|property management|"
     r"investors? (meetup|summit|forum)|"
     r"(for|with) (small )?business owners|entrepreneurs, hr|for (hr|human resources) professionals|"
     r"(fair housing|osha|food handler|forklift|cpr/aed for (employers|businesses)) (basics |"
@@ -124,13 +124,13 @@ _AUDIENCE_TITLE = _rx(
     # "Smith 2 & Ed 3: Lucky Charms" (two floors' joint social).
     r"floors? \d+|"
     r"senior u|seniors?['’] (academy|university)|intro to (email|computers|the internet)|"
-    r"computer basics|"
+    r"computer basics|senior planet|"
     r"senior (expo|citizens?|center)|seniors (55|60|62|65)|older adults|retirees|"
     r"(50|55|60|62|65)\s*(\+|and (up|over|older))|teens?|tots?|emeriti|"
     r"ages? (2[5-9]|[3-9]\d)\s*(-|–|to|\+|and)|"
     r"(alumni|iuaa)\b.*\b(game watch|chapter|reception|happy hour|weekend|reunion)|"
     r"game watch\b.*\b(alumni|iuaa)|iuaa|"
-    r"\balumni (association|chapter|club|reception|game watch))\b|"
+    r"\balumni (association|chapter|club|reception|game watch|awards?))\b|"
     # "Art Hive for 50+": the "+" ends the title, so no word boundary follows.
     r"\b(50|55|60|62|65)\s*\+"
 )
@@ -144,7 +144,7 @@ _SERVICE_TITLE = _rx(
     r"\bdrop[- ]in (career|advising|tutoring|coaching|hours|help|consultations?|writing)\b|"
     r"\b(career coaching|study tables?|tutoring hours|writing (center|tutor)|advising hours)\b|"
     # A study group's own booking: "Motor Speech Study Session", "LGSA Study Hour".
-    r"\bstudy (sesh\w*|sessions?|hours?)\b|\bexam \d\b|"
+    r"\bstudy (sesh\w*|sessions?|hours?|nights?)\b|\bexam \d\b|"
     # A campus tool's open hours: "Stellic Drop-ins".
     r"^\s*\w+ drop[- ]ins\s*$|"
     r"^\s*(study|studying|study hall|learning lab|open lab|lab hours|tutoring|advising|"
@@ -234,7 +234,7 @@ _INTERNAL_TITLE = _rx(
     r"\b((staff|faculty|department(al)?|committee|lab|team|advisory|executive|all[- ]hands)"
     r"\s+meetings?|faculty senate|"
     r"(dissertation|thesis|doctoral|qualifying|prospectus)\s+(defen[cs]e|exam|proposal)|"
-    r"office hours|professional development|staff (training|development)|"
+    r"(open )?office hours|open office|professional development|staff (training|development)|"
     r"employee (training|orientation)|new employee|compliance training|"
     r"(hr|human resources|benefits) (training|session|workshop|webinar|orientation)|"
     # Room bookings and logistics a calendar system publishes alongside events.
@@ -257,11 +257,13 @@ _INTERNAL_TITLE = _rx(
     # "GPSG Cabinet Meetings", "WAC Weekly Leadership Meeting".
     r"\b(executive|exec|e-?board|(?<!general )board|cabinet|leadership)"
     r"( weekly)?( board)? meetings?\b|"
-    r"\b(set[- ]?up|pre-event meeting)\s*$|\(closed\)|\btest event\b|"
+    r"\b(set[- ]?up|pre-event meeting)\s*$|\bcaptains?['’]? meetings?\b|\(closed\)|\btest event\b|"
     r"\bjournal club\b|\bvisiting resident\b|\bfaculty candidate\b|\bjob talk\b|"
     r"\blimited submissions\b|^\s*faculty (and|&) staff\b|"
     # Teaching development for instructors.
     r"\b(syllabus|rubric|course-specific|student evaluations?)\b|\bin the classroom\b|"
+    r"^\s*new faculty\b|^\s*teaching (for|in) an? \w+ (campus|classroom)\b|"
+    r"\bwhy students struggle\b|\bscholarly writing (program|retreat)\b|"
     r"\b(system|educator|staff|volunteer|employee|g?ta) trainings?\b|"
     r"\btraining (meeting|weekend)\b|[-–]\s*trainings?\s*$|"
     # Notices rather than events.
