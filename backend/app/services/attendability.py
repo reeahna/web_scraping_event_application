@@ -124,7 +124,7 @@ _AUDIENCE_TITLE = _rx(
     # "Smith 2 & Ed 3: Lucky Charms" (two floors' joint social).
     r"floors? \d+|"
     r"senior u|seniors?['’] (academy|university)|intro to (email|computers|the internet)|"
-    r"computer basics|senior planet|"
+    r"computer basics|senior planet|prospective (\w+ )?students?|"
     r"senior (expo|citizens?|center)|seniors (55|60|62|65)|older adults|retirees|"
     r"(50|55|60|62|65)\s*(\+|and (up|over|older))|teens?|tots?|emeriti|"
     r"ages? (2[5-9]|[3-9]\d)\s*(-|–|to|\+|and)|"
@@ -248,7 +248,7 @@ _INTERNAL_TITLE = _rx(
     # A lab's own meeting ("Elston Group Meeting - First Years") and teaching
     # for medical residents ("Internal Medicine Residency Didactics").
     r"(residency|fellowship|resident) (didactics|conference|lectures?)|didactics)\b|"
-    r"^\s*\w+ group meetings?\b|^\s*\w+['’]s meetings?\s*$|\breading group\b|"
+    r"^\s*\w+ group meetings?\b|\b\w+ supergroup\s*$|^\s*\w+['’]s meetings?\s*$|\breading group\b|"
     # A campus office or service listed as if it were an event:
     # "Embedded Accessible Educational Services (AES)".
     r"\bservices\s*(\([A-Z]{2,6}\))?\s*$|"
@@ -305,13 +305,18 @@ _ONLINE_ATTENDANCE_MODE = "OnlineEventAttendanceMode"
 _BOOKING_CALENDARS = {
     "events.iu.edu": re.compile(r"^campus-center$", re.IGNORECASE),
 }
+# Calendars run for alumni rather than students: the IU Alumni Association's
+# ("Raclin Legends Honors Night", "IU McKinney Moot Court Finals & Reception").
+_ALUMNI_CALENDARS = {
+    "events.iu.edu": re.compile(r"^iu-alumni$", re.IGNORECASE),
+}
 
 
-def _from_booking_calendar(url: str | None) -> bool:
+def _on_calendar(url: str | None, calendars: dict[str, re.Pattern[str]]) -> bool:
     if not url:
         return False
     parts = urlsplit(url)
-    pattern = _BOOKING_CALENDARS.get((parts.hostname or "").casefold())
+    pattern = calendars.get((parts.hostname or "").casefold())
     first = parts.path.strip("/").split("/", 1)[0]
     return bool(pattern and first and pattern.search(first))
 
@@ -334,8 +339,10 @@ def not_attendable_reason(
     title = title or ""
     description = description or ""
 
-    if _from_booking_calendar(url):
+    if _on_calendar(url, _BOOKING_CALENDARS):
         return INTERNAL
+    if _on_calendar(url, _ALUMNI_CALENDARS):
+        return AUDIENCE
 
     if _CANCELLED_TITLE.search(title):
         return CANCELLED

@@ -92,7 +92,7 @@ _OTHER_CAMPUS_TITLES = {
 _OTHER_CAMPUS_TITLES_BY_TOWN = {
     "bloomington": re.compile(
         r"\b(IU|Indiana University) (Indy|Indianapolis|Southeast|South Bend|Kokomo|Northwest|"
-        r"East(?! Asian)|Fort Wayne|Columbus)\b|\b(IUPUI|IUPUC|IUK|IUSB|IUN|IUFW)\b"
+        r"East(?! Asian)|Fort Wayne|Columbus|McKinney)\b|\b(IUPUI|IUPUC|IUK|IUSB|IUN|IUFW)\b"
     ),
 }
 
@@ -101,6 +101,26 @@ def names_other_campus(title: str | None, town: str | None) -> bool:
     """True when the title names another campus of the home town's university."""
     pattern = _OTHER_CAMPUS_TITLES_BY_TOWN.get((town or "").casefold())
     return bool(title and pattern and pattern.search(title))
+
+
+# Town -> its own county. A title that opens with another county is held there:
+# "Daviess County Together: A Conversation on ..." on IU's rural-engagement
+# calendar, listed for Bloomington.
+_HOME_COUNTIES = {
+    "bloomington": {"monroe"},
+    "iowa city": {"johnson"},
+    "bethlehem": {"northampton", "lehigh"},
+    "college park": {"prince george's", "prince george’s", "prince georges"},
+    "champaign": {"champaign"},
+}
+_LEADING_COUNTY = re.compile(r"^\s*([A-Z][\w'’.]*(?: [A-Z][\w'’.]*)?) County\b")
+
+
+def names_other_county(title: str | None, town: str | None) -> bool:
+    """True when the title opens with a county other than the home town's."""
+    home = _HOME_COUNTIES.get((town or "").casefold())
+    match = _LEADING_COUNTY.search(title or "")
+    return bool(home and match and match.group(1).casefold() not in home)
 
 
 def from_other_campus_calendar(url: str | None, title: str | None = None) -> bool:
@@ -134,6 +154,8 @@ _AWAY_GAME = re.compile(
     rf"\b(university|college|IU|state)\b.*?\b({_SPORTS})\s+(at|@)\s",
     re.IGNORECASE,
 )
+# A tailgate held at the other team's stadium: "IU vs Michigan Away Game Tailgate".
+_AWAY_TAILGATE = re.compile(r"\baway game tailgate\b", re.IGNORECASE)
 _WATCH_PARTY = re.compile(r"\b(watch|viewing|screening)\b", re.IGNORECASE)
 
 # A team entered in a tournament named for its host: "Indiana University Men's
@@ -220,7 +242,7 @@ def is_away_game(title: str | None, town: str | None = None) -> bool:
     if not title or _WATCH_PARTY.search(title):
         return False
     return (
-        bool(_AWAY_GAME.search(title))
+        bool(_AWAY_GAME.search(title) or _AWAY_TAILGATE.search(title))
         or _at_other_schools_tournament(title, town)
         or _town_team_away(title, town)
         or _away_regatta(title, town)
@@ -373,6 +395,8 @@ def candidate_outside_home_town(candidate, city) -> bool:
         return True
     if names_other_campus(candidate.title, city.name if city is not None else None):
         return True
+    if names_other_county(candidate.title, city.name if city is not None else None):
+        return True
     if at_other_school_event(candidate.title, city):
         return True
     if city is None:
@@ -392,6 +416,8 @@ def event_outside_home_town(event) -> bool:
     if from_other_campus_calendar(event.canonical_url, event.title):
         return True
     if names_other_campus(event.title, city.name if city is not None else None):
+        return True
+    if names_other_county(event.title, city.name if city is not None else None):
         return True
     if at_other_school_event(event.title, city):
         return True

@@ -18,6 +18,7 @@ from app.services.home_town import (
     is_away_game,
     is_outside_home_town,
     names_other_campus,
+    names_other_county,
 )
 from app.services.website_configuration import approve_configuration
 from tests.extraction_helpers import html_handler, patched_http_fetch
@@ -354,6 +355,7 @@ def test_town_team_away_game(title, town, away):
         ("IUK Women’s Volleyball 10/17/26", True),
         ("10/16 7:30 PM Indiana University Women’s Soccer vs #5 Michigan State", False),
         ("IU East Asian Studies Center Film Night", False),
+        ("IU McKinney Robert H. Staton Moot Court Finals & Reception", True),
     ],
 )
 def test_title_naming_another_campus(title, other):
@@ -392,7 +394,25 @@ def test_other_schools_tournament(title, away):
         ("Lehigh University Women's Golf vs Landfall Tradition - Country Club of Landfall",
          True),
         ("Lehigh University Women's Golf vs Lehigh Invitational", False),
+        ("IU vs Michigan Away Game Tailgate", True),
+        ("IU Football Watch Party: Away Game vs Michigan", False),
     ],
 )
 def test_away_regatta(title, away):
     assert is_away_game(title, "Bethlehem") is away
+
+
+@pytest.mark.parametrize(
+    "title,town,other",
+    [
+        ("Daviess County Together: A Conversation on Caring", "Bloomington", True),
+        ("Brown County Fall Hike", "Bloomington", True),
+        ("Monroe County Fair", "Bloomington", False),
+        ("Lehigh County Historical Society Talk", "Bethlehem", False),
+        ("Prince George's County Job Fair", "College Park", False),
+        ("Daviess County Together", "Springfield", False),  # no home county known
+        ("A Talk on Daviess County History", "Bloomington", False),
+    ],
+)
+def test_title_naming_another_county(title, town, other):
+    assert names_other_county(title, town) is other

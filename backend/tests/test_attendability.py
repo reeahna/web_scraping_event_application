@@ -160,6 +160,8 @@ from tests.extraction_helpers import html_handler, patched_http_fetch
         ("Scholarly Writing Program Fall Retreat", INTERNAL),
         ("Senior Planet: AI & Disinformation", AUDIENCE),
         ("College Alumni Awards Celebration", AUDIENCE),
+        ("Cheri Goodall - Chemical Biology Supergroup", INTERNAL),
+        ("Prospective Doctoral Student Open House", AUDIENCE),
         ("BTAA WIT Coffee Catch-up: Cyber Safety/Security Panel", PROFESSIONAL),
         ("2026 Game Watch Football IUAA Nashville IU vs Ohio State", AUDIENCE),
         ("IUAA Colorado: Hoosier Halloween", AUDIENCE),
@@ -234,6 +236,8 @@ def test_not_attendable_titles(title, reason):
         "Weekly Latin Dance Lessons",
         "WellSpace Drop-In Series: Meet SWAC",
         "Bi-Weekly Application Accountability Night",
+        "Superhero Movie Night",
+        "Supergroup: A Tribute to The Traveling Wilburys",
         "Halloween Trivia Night",
         "Three Minute Thesis Prep Event (October)",
         "Senior Recital – Jane Doe, violin",
@@ -433,3 +437,15 @@ async def test_scheduler_sweep_takes_down_unattendable_events(db_session, make_c
 def test_room_booking_calendar(url, internal):
     reason = not_attendable_reason(title="Jazz Night", url=url)
     assert (reason == INTERNAL) is internal
+
+
+@pytest.mark.parametrize(
+    "url,alumni",
+    [
+        ("https://events.iu.edu/iu-alumni/event/2355473-raclin-legends-honors-night", True),
+        ("https://events.iu.edu/live/event/123-jazz-night", False),
+    ],
+)
+def test_alumni_calendar(url, alumni):
+    reason = not_attendable_reason(title="Jazz Night", url=url)
+    assert (reason == AUDIENCE) is alumni
