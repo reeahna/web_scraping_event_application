@@ -1,0 +1,18 @@
+name,slug,state_or_region,universities,timezone
+Champaign-Urbana,champaign-il,IL,University of Illinois Urbana-Champaign,America/Chicago
+Bloomington,bloomington-in,IN,Indiana University Bloomington,America/Indiana/Indianapolis
+Iowa City,iowa-city-ia,IA,University of Iowa,America/Chicago
+College Park,college-park-md,MD,"University of Maryland, College Park",America/New_York
+Ann Arbor,ann-arbor-mi,MI,University of Michigan,America/Detroit
+East Lansing,east-lansing-mi,MI,Michigan State University,America/Detroit
+Minneapolis,minneapolis-mn,MN,University of Minnesota Twin Cities; Augsburg University,America/Chicago
+Lincoln,lincoln-ne,NE,University of Nebraska–Lincoln,America/Chicago
+Evanston,evanston-il,IL,Northwestern University,America/Chicago
+Columbus,columbus-oh,OH,The Ohio State University,America/New_York
+Eugene,eugene-or,Oregon,University of Oregon,America/Los_Angeles
+State College,state-college-pa,Pennsylvania,The Pennsylvania State University,America/New_York
+West Lafayette,west-lafayette-in,Indiana,Purdue University,America/Indiana/Indianapolis
+New Brunswick,new-brunswick-nj,New Jersey,"Rutgers, The State University of New Jersey",America/New_York
+Los Angeles,los-angeles-ca,California,"University of California, Los Angeles; University of Southern California",America/Los_Angeles
+Seattle,seattle-wa,Washington,University of Washington; Seattle University; Seattle Pacific University,America/Los_Angeles
+Madison,madison-wi,Wisconsin,University of Wisconsin–Madison; Edgewood University; Madison Area Technical College,America/Chicago

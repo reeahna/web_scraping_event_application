@@ -1,0 +1,8 @@
+url,name,source_display_name,city_slug,timezone
+https://huskylink.washington.edu/calendar,Seattle - HuskyLink Events,UW HuskyLink Events,seattle-wa,America/Los_Angeles
+https://hub.washington.edu/whats-happening/hub-events/,Seattle - HUB Events,UW HUB Events,seattle-wa,America/Los_Angeles
+https://events.seattleu.edu/calendar,Seattle - Seattle U Events,Seattle University Events,seattle-wa,America/Los_Angeles
+https://spu.edu/about-spu/events,Seattle - SPU Events,Seattle Pacific University Events,seattle-wa,America/Los_Angeles
+https://www.seattlecenter.com/events/event-calendar,Seattle - Seattle Center,Seattle Center Events,seattle-wa,America/Los_Angeles
+https://www.stgpresents.org/calendar/,Seattle - STG Presents,STG Presents Shows,seattle-wa,America/Los_Angeles
+https://udistrictseattle.com/about/events,Seattle - U District,U District Events,seattle-wa,America/Los_Angeles

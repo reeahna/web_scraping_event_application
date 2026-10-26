@@ -210,6 +210,10 @@ class Settings(BaseSettings):
     # source with its own geographic filter is left to it. See
     # app/services/home_town.py. On by default.
     home_town_filter_enabled: bool = True
+    # Create the towns listed in data/college_towns/cities.csv and queue each
+    # source CSV in that folder for onboarding, once per file (see
+    # app/services/college_towns.py). Off by default.
+    college_town_import_enabled: bool = False
 
     # Public UI (Phase 12). A configurable fallback image shown on event cards
     # and detail pages that have no image; None uses the built-in inline icon.
