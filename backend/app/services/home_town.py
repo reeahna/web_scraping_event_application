@@ -61,7 +61,8 @@ _TOWN_STATE = re.compile(
 _OTHER_CAMPUS_CALENDARS = {
     "events.iu.edu": re.compile(
         r"indianapolis|iupui|herron|southeast|southbend|kokomo|northwest|fortwayne|"
-        r"columbus|^east$|^ius$|^iusb|^iuk|^iue|^iun",
+        # Regional campuses also prefix their units: "nw-arsc" is IU Northwest's.
+        r"columbus|^east$|^ius$|^iusb|^iuk|^iue|^iun|^(nw|sb|se|fw|kok)-",
         re.IGNORECASE,
     ),
 }

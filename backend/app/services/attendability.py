@@ -144,7 +144,7 @@ _SERVICE_TITLE = _rx(
     r"\bdrop[- ]in (career|advising|tutoring|coaching|hours|help|consultations?|writing)\b|"
     r"\b(career coaching|study tables?|tutoring hours|writing (center|tutor)|advising hours)\b|"
     # A study group's own booking: "Motor Speech Study Session", "LGSA Study Hour".
-    r"\bstudy (sesh\w*|sessions?|hours?|nights?)\b|\bexam \d\b|"
+    r"\bstudy (sesh\w*|sessions?|hours?|nights?)\b|^\s*study groups?\b|\bexam \d\b|"
     # A campus tool's open hours: "Stellic Drop-ins".
     r"^\s*\w+ drop[- ]ins\s*$|"
     r"^\s*(study|studying|study hall|learning lab|open lab|lab hours|tutoring|advising|"
@@ -264,6 +264,7 @@ _INTERNAL_TITLE = _rx(
     r"\b(syllabus|rubric|course-specific|student evaluations?)\b|\bin the classroom\b|"
     r"^\s*new faculty\b|^\s*teaching (for|in) an? \w+ (campus|classroom)\b|"
     r"\bwhy students struggle\b|\bscholarly writing (program|retreat)\b|"
+    r"\bacademy of teaching scholars\b|\bcommunity of practice\b|"
     r"\b(system|educator|staff|volunteer|employee|g?ta) trainings?\b|"
     r"\btraining (meeting|weekend)\b|[-–]\s*trainings?\s*$|"
     # Notices rather than events.
@@ -281,7 +282,9 @@ _INTERNAL_CODES = re.compile(
     # A course listed by its number: "FOLK 100: Foundations of our Fields".
     r"^\s*[A-Z]{2,5} [A-Z]?\d{3}[A-Z]?\s*:|"
     # A department's research talk series: "CCBB Seminar Guest Speaker: Dr. ...".
-    r"^\s*[A-Z]{2,6} (Seminar|Colloquium)\b"
+    r"^\s*[A-Z]{2,6} (Seminar|Colloquium)\b|"
+    # A booking held under two initials and nothing else: "MC", "VL".
+    r"^\s*[A-Z]{2}\s*$"
 )
 
 # --- the source's own category label -----------------------------------------
@@ -303,7 +306,9 @@ _ONLINE_ATTENDANCE_MODE = "OnlineEventAttendanceMode"
 # bookings and the course schedule rather than events: IU's "campus-center"
 # calendar lists "CELL BIOLOGY", "Swim Club Practice", "Ben Wilck 321".
 _BOOKING_CALENDARS = {
-    "events.iu.edu": re.compile(r"^campus-center$", re.IGNORECASE),
+    # Room bookings and the course schedule, and IU Human Resources' calendar
+    # of employee programs ("Care Talks by Care.com", "Lean and AI 2.0").
+    "events.iu.edu": re.compile(r"^(campus-center|iuhumanrescal)$", re.IGNORECASE),
 }
 # Calendars run for alumni rather than students: the IU Alumni Association's
 # ("Raclin Legends Honors Night", "IU McKinney Moot Court Finals & Reception").
