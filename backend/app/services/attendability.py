@@ -124,7 +124,7 @@ _AUDIENCE_TITLE = _rx(
     # "Smith 2 & Ed 3: Lucky Charms" (two floors' joint social).
     r"floors? \d+|"
     r"senior u|seniors?['’] (academy|university)|intro to (email|computers|the internet)|"
-    r"computer basics|senior planet|prospective (\w+ )?students?|"
+    r"computer basics|senior planet|(trunk|trick)[- ]or[- ]treats?|prospective (\w+ )?students?|"
     r"senior (expo|citizens?|center)|seniors (55|60|62|65)|older adults|retirees|"
     r"(50|55|60|62|65)\s*(\+|and (up|over|older))|teens?|tots?|emeriti|"
     r"ages? (2[5-9]|[3-9]\d)\s*(-|–|to|\+|and)|"
@@ -306,15 +306,19 @@ _ONLINE_ATTENDANCE_MODE = "OnlineEventAttendanceMode"
 # bookings and the course schedule rather than events: IU's "campus-center"
 # calendar lists "CELL BIOLOGY", "Swim Club Practice", "Ben Wilck 321".
 _BOOKING_CALENDARS = {
-    # Room bookings and the course schedule, and IU Human Resources' calendar
-    # of employee programs ("Care Talks by Care.com", "Lean and AI 2.0").
-    "events.iu.edu": re.compile(r"^(campus-center|iuhumanrescal)$", re.IGNORECASE),
+    # Room bookings and the course schedule (also the Health Sciences Building's:
+    # "Simucase Group 4", "Nate"), and IU Human Resources' calendar of employee
+    # programs ("Care Talks by Care.com", "Lean and AI 2.0").
+    "events.iu.edu": re.compile(r"^(campus-center|hsb|iuhumanrescal)$", re.IGNORECASE),
 }
 # Calendars run for alumni rather than students: the IU Alumni Association's
 # ("Raclin Legends Honors Night", "IU McKinney Moot Court Finals & Reception").
 _ALUMNI_CALENDARS = {
     "events.iu.edu": re.compile(r"^iu-alumni$", re.IGNORECASE),
 }
+
+
+_LECTURESHIP = _rx(r"\blecture(ship)?s?\b")
 
 
 def _on_calendar(url: str | None, calendars: dict[str, re.Pattern[str]]) -> bool:
@@ -346,7 +350,8 @@ def not_attendable_reason(
 
     if _on_calendar(url, _BOOKING_CALENDARS):
         return INTERNAL
-    if _on_calendar(url, _ALUMNI_CALENDARS):
+    # A named lecture cross-posted to the alumni calendar is still public.
+    if _on_calendar(url, _ALUMNI_CALENDARS) and not _LECTURESHIP.search(title):
         return AUDIENCE
 
     if _CANCELLED_TITLE.search(title):

@@ -167,6 +167,8 @@ from tests.extraction_helpers import html_handler, patched_http_fetch
         ("Study group (A,K,H)", INTERNAL),
         ("MC", INTERNAL),
         ("VL", INTERNAL),
+        ("Trunk or Treat - Pediatrics SIG", AUDIENCE),
+        ("City of Bethlehem’s Annual Trick or Treat Night", AUDIENCE),
         ("BTAA WIT Coffee Catch-up: Cyber Safety/Security Panel", PROFESSIONAL),
         ("2026 Game Watch Football IUAA Nashville IU vs Ohio State", AUDIENCE),
         ("IUAA Colorado: Hoosier Halloween", AUDIENCE),
@@ -243,6 +245,7 @@ def test_not_attendable_titles(title, reason):
         "Bi-Weekly Application Accountability Night",
         "Superhero Movie Night",
         "Bible Study Group",
+        "Halloween Treats & Tricks Magic Show",
         "DJ Night",
         "Supergroup: A Tribute to The Traveling Wilburys",
         "Halloween Trivia Night",
@@ -437,6 +440,7 @@ async def test_scheduler_sweep_takes_down_unattendable_events(db_session, make_c
     [
         ("https://events.iu.edu/campus-center/event/2454799-cell-biology", True),
         ("https://events.iu.edu/iuhumanrescal/event/2333565-lean-and-ai-20", True),
+        ("https://events.iu.edu/hsb/event/2396885-simucase-group-4", True),
         ("https://events.iu.edu/live/event/123-jazz-night", False),
         ("https://example.com/campus-center/event/1", False),
         (None, False),
@@ -457,3 +461,8 @@ def test_room_booking_calendar(url, internal):
 def test_alumni_calendar(url, alumni):
     reason = not_attendable_reason(title="Jazz Night", url=url)
     assert (reason == AUDIENCE) is alumni
+
+
+def test_named_lecture_on_alumni_calendar_is_kept():
+    url = "https://events.iu.edu/iu-alumni/event/2408095-michael-r-cohen-lectureship"
+    assert not_attendable_reason(title="Michael R. Cohen Lectureship", url=url) is None

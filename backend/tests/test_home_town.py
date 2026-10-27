@@ -358,6 +358,7 @@ def test_town_team_away_game(title, town, away):
         ("10/16 7:30 PM Indiana University Women’s Soccer vs #5 Michigan State", False),
         ("IU East Asian Studies Center Film Night", False),
         ("IU McKinney Robert H. Staton Moot Court Finals & Reception", True),
+        ("PFW Blood Drive - NMDP SIG", True),
     ],
 )
 def test_title_naming_another_campus(title, other):
