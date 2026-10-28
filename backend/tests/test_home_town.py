@@ -359,6 +359,8 @@ def test_town_team_away_game(title, town, away):
         ("IU East Asian Studies Center Film Night", False),
         ("IU McKinney Robert H. Staton Moot Court Finals & Reception", True),
         ("PFW Blood Drive - NMDP SIG", True),
+        ("Free Community Head & Neck Cancer Screening - Indianapolis", True),
+        ("Indianapolis Colts Watch Party", False),
     ],
 )
 def test_title_naming_another_campus(title, other):

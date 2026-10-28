@@ -168,6 +168,7 @@ from tests.extraction_helpers import html_handler, patched_http_fetch
         ("MC", INTERNAL),
         ("VL", INTERNAL),
         ("Trunk or Treat - Pediatrics SIG", AUDIENCE),
+        ("Using VoiceThread to Engage Students*", INTERNAL),
         ("City of Bethlehem’s Annual Trick or Treat Night", AUDIENCE),
         ("BTAA WIT Coffee Catch-up: Cyber Safety/Security Panel", PROFESSIONAL),
         ("2026 Game Watch Football IUAA Nashville IU vs Ohio State", AUDIENCE),
