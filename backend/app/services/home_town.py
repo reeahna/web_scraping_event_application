@@ -106,6 +106,24 @@ def names_other_campus(title: str | None, town: str | None) -> bool:
     return bool(title and pattern and pattern.search(title))
 
 
+# Town -> nearby towns a venue or a trailing title part can name without a state:
+# "Regal Greenwood & RPX", "Mini Professional Trip - Cedar Rapids".
+_NEARBY_TOWNS = {
+    "bloomington": re.compile(r"\b(Greenwood|Indianapolis|Martinsville|Bedford)\b"),
+    "iowa city": re.compile(r"\b(Cedar Rapids|Des Moines)\b"),
+}
+
+
+def names_nearby_town(title: str | None, venue: str | None, town: str | None) -> bool:
+    """True when the venue, or the title's last dash-separated part, names a
+    nearby town rather than the home town."""
+    pattern = _NEARBY_TOWNS.get((town or "").casefold())
+    if pattern is None:
+        return False
+    tail = re.split(r"\s[-–]\s", title or "")[-1] if re.search(r"\s[-–]\s", title or "") else ""
+    return bool(pattern.search(venue or "") or pattern.fullmatch(tail.strip()))
+
+
 # Town -> its own county. A title that opens with another county is held there:
 # "Daviess County Together: A Conversation on ..." on IU's rural-engagement
 # calendar, listed for Bloomington.
@@ -400,6 +418,10 @@ def candidate_outside_home_town(candidate, city) -> bool:
         return True
     if names_other_county(candidate.title, city.name if city is not None else None):
         return True
+    if names_nearby_town(
+        candidate.title, candidate.venue, city.name if city is not None else None
+    ):
+        return True
     if at_other_school_event(candidate.title, city):
         return True
     if city is None:
@@ -421,6 +443,8 @@ def event_outside_home_town(event) -> bool:
     if names_other_campus(event.title, city.name if city is not None else None):
         return True
     if names_other_county(event.title, city.name if city is not None else None):
+        return True
+    if names_nearby_town(event.title, event.public_venue, city.name if city is not None else None):
         return True
     if at_other_school_event(event.title, city):
         return True

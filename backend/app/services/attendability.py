@@ -265,6 +265,7 @@ _INTERNAL_TITLE = _rx(
     r"^\s*new faculty\b|^\s*teaching (for|in) an? \w+ (campus|classroom)\b|"
     r"\bwhy students struggle\b|\bscholarly writing (program|retreat)\b|"
     r"\bacademy of teaching scholars\b|\bcommunity of practice\b|\bto engage students\b|"
+    r"\bstudent[- ]centered learning\b|"
     r"\b(system|educator|staff|volunteer|employee|g?ta) trainings?\b|"
     r"\btraining (meeting|weekend)\b|[-–]\s*trainings?\s*$|"
     # Notices rather than events.

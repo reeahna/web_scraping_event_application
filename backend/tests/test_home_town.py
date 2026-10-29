@@ -17,6 +17,7 @@ from app.services.home_town import (
     hide_out_of_town_events,
     is_away_game,
     is_outside_home_town,
+    names_nearby_town,
     names_other_campus,
     names_other_county,
 )
@@ -421,3 +422,18 @@ def test_away_regatta(title, away):
 )
 def test_title_naming_another_county(title, town, other):
     assert names_other_county(title, town) is other
+
+
+@pytest.mark.parametrize(
+    "title,venue,town,nearby",
+    [
+        ("Union Board Global Connections Presents: Ramyana", "Regal Greenwood & RPX",
+         "Bloomington", True),
+        ("Mini Professional Trip - Cedar Rapids", "Van Meter Inc", "Iowa City", True),
+        ("Indianapolis Colts Watch Party", "IMU Georgian Room", "Bloomington", False),
+        ("Trip Recap - Greenwood Edition", "IMU", "Bloomington", False),
+        ("Movie Night", "Regal Greenwood & RPX", "Bethlehem", False),  # no list for town
+    ],
+)
+def test_venue_or_title_naming_nearby_town(title, venue, town, nearby):
+    assert names_nearby_town(title, venue, town) is nearby
