@@ -169,6 +169,7 @@ from tests.extraction_helpers import html_handler, patched_http_fetch
         ("VL", INTERNAL),
         ("Trunk or Treat - Pediatrics SIG", AUDIENCE),
         ("Using VoiceThread to Engage Students*", INTERNAL),
+        ("ACBP Student Defense- Connor J. Cunningham", INTERNAL),
         ("WeVideo: Student Centered Learning with Learner Made Interactive Video", INTERNAL),
         ("City of Bethlehem’s Annual Trick or Treat Night", AUDIENCE),
         ("BTAA WIT Coffee Catch-up: Cyber Safety/Security Panel", PROFESSIONAL),
@@ -457,6 +458,7 @@ def test_room_booking_calendar(url, internal):
     "url,alumni",
     [
         ("https://events.iu.edu/iu-alumni/event/2355473-raclin-legends-honors-night", True),
+        ("https://events.iu.edu/emeriti/event/2314693-poetry-writing-group", True),
         ("https://events.iu.edu/live/event/123-jazz-night", False),
     ],
 )

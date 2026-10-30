@@ -234,6 +234,7 @@ _INTERNAL_TITLE = _rx(
     r"\b((staff|faculty|department(al)?|committee|lab|team|advisory|executive|all[- ]hands)"
     r"\s+meetings?|faculty senate|"
     r"(dissertation|thesis|doctoral|qualifying|prospectus)\s+(defen[cs]e|exam|proposal)|"
+    r"student defen[cs]e|"
     r"(open )?office hours|open office|professional development|staff (training|development)|"
     r"employee (training|orientation)|new employee|compliance training|"
     r"(hr|human resources|benefits) (training|session|workshop|webinar|orientation)|"
@@ -315,7 +316,8 @@ _BOOKING_CALENDARS = {
 # Calendars run for alumni rather than students: the IU Alumni Association's
 # ("Raclin Legends Honors Night", "IU McKinney Moot Court Finals & Reception").
 _ALUMNI_CALENDARS = {
-    "events.iu.edu": re.compile(r"^iu-alumni$", re.IGNORECASE),
+    # and Emeriti House's, for retired faculty ("Poetry Writing Group November 2026").
+    "events.iu.edu": re.compile(r"^(iu-alumni|emeriti)$", re.IGNORECASE),
 }
 
 
