@@ -22,6 +22,7 @@ from __future__ import annotations
 import json
 import re
 from typing import Any
+from urllib.parse import urlsplit
 
 from sqlalchemy.orm import Session
 
@@ -41,7 +42,11 @@ def _rx(pattern: str) -> re.Pattern[str]:
 
 # --- cancelled ----------------------------------------------------------------
 # University calendars keep a cancelled listing up with the word in front.
-_CANCELLED_TITLE = _rx(r"^\W*(cancell?ed|postponed)\b")
+_CANCELLED_TITLE = _rx(
+    r"^\W*(cancell?ed|postponed)\b|"
+    # Marked after the name: "Rethinking Peer Review *CANCELED*", "Talk (Cancelled)".
+    r"[*(\[]\s*(cancell?ed|postponed)\s*[*)\]]|[-–:]\s*(cancell?ed|postponed)\s*$"
+)
 
 
 # --- virtual / online only ---------------------------------------------------
@@ -87,7 +92,7 @@ _PROFESSIONAL_TITLE = _rx(
     r"healthcare|finance|engineering|hospitality|fashion|blockchain|tech|women in business)"
     r"(\s+and\s+business)?\s+networking|"
     r"networking (breakfast|luncheon|lunch|happy hour|mixer) for|"
-    r"masterminds?|real estate|realtors?|mortgage|landlords?|property management|"
+    r"masterminds?|btaa|real estate|realtors?|mortgage|landlords?|property management|"
     r"investors? (meetup|summit|forum)|"
     r"(for|with) (small )?business owners|entrepreneurs, hr|for (hr|human resources) professionals|"
     r"(fair housing|osha|food handler|forklift|cpr/aed for (employers|businesses)) (basics |"
@@ -123,13 +128,13 @@ _AUDIENCE_TITLE = _rx(
     # "Smith 2 & Ed 3: Lucky Charms" (two floors' joint social).
     r"floors? \d+|"
     r"senior u|seniors?['’] (academy|university)|intro to (email|computers|the internet)|"
-    r"computer basics|"
+    r"computer basics|senior planet|(trunk|trick)[- ]or[- ]treats?|prospective (\w+ )?students?|"
     r"senior (expo|citizens?|center)|seniors (55|60|62|65)|older adults|retirees|"
     r"(50|55|60|62|65)\s*(\+|and (up|over|older))|teens?|tots?|emeriti|"
     r"ages? (2[5-9]|[3-9]\d)\s*(-|–|to|\+|and)|"
     r"(alumni|iuaa)\b.*\b(game watch|chapter|reception|happy hour|weekend|reunion)|"
     r"game watch\b.*\b(alumni|iuaa)|iuaa|"
-    r"\balumni (association|chapter|club|reception|game watch))\b|"
+    r"\balumni (association|chapter|club|reception|game watch|awards?))\b|"
     # "Art Hive for 50+": the "+" ends the title, so no word boundary follows.
     r"\b(50|55|60|62|65)\s*\+"
 )
@@ -143,7 +148,9 @@ _SERVICE_TITLE = _rx(
     r"\bdrop[- ]in (career|advising|tutoring|coaching|hours|help|consultations?|writing)\b|"
     r"\b(career coaching|study tables?|tutoring hours|writing (center|tutor)|advising hours)\b|"
     # A study group's own booking: "Motor Speech Study Session", "LGSA Study Hour".
-    r"\bstudy (sesh\w*|sessions?|hours?)\b|\bexam \d\b|"
+    r"\bstudy (sesh\w*|sessions?|hours?|nights?)\b|^\s*study groups?\b|\bexam \d\b|"
+    # A campus tool's open hours: "Stellic Drop-ins".
+    r"^\s*\w+ drop[- ]ins\s*$|"
     r"^\s*(study|studying|study hall|learning lab|open lab|lab hours|tutoring|advising|"
     r"quiet study|group study)\s*$|"
     # How to apply to a program: "Learn How to Apply for the 2027 Rural
@@ -231,7 +238,8 @@ _INTERNAL_TITLE = _rx(
     r"\b((staff|faculty|department(al)?|committee|lab|team|advisory|executive|all[- ]hands)"
     r"\s+meetings?|faculty senate|"
     r"(dissertation|thesis|doctoral|qualifying|prospectus)\s+(defen[cs]e|exam|proposal)|"
-    r"office hours|professional development|staff (training|development)|"
+    r"student defen[cs]e|"
+    r"(open )?office hours|open office|professional development|staff (training|development)|"
     r"employee (training|orientation)|new employee|compliance training|"
     r"(hr|human resources|benefits) (training|session|workshop|webinar|orientation)|"
     # Room bookings and logistics a calendar system publishes alongside events.
@@ -245,7 +253,7 @@ _INTERNAL_TITLE = _rx(
     # A lab's own meeting ("Elston Group Meeting - First Years") and teaching
     # for medical residents ("Internal Medicine Residency Didactics").
     r"(residency|fellowship|resident) (didactics|conference|lectures?)|didactics)\b|"
-    r"^\s*\w+ group meetings?\b|^\s*\w+['’]s meetings?\s*$|\breading group\b|"
+    r"^\s*\w+ group meetings?\b|\b\w+ supergroup\s*$|^\s*\w+['’]s meetings?\s*$|\breading group\b|"
     # A campus office or service listed as if it were an event:
     # "Embedded Accessible Educational Services (AES)".
     r"\bservices\s*(\([A-Z]{2,6}\))?\s*$|"
@@ -254,11 +262,16 @@ _INTERNAL_TITLE = _rx(
     # "GPSG Cabinet Meetings", "WAC Weekly Leadership Meeting".
     r"\b(executive|exec|e-?board|(?<!general )board|cabinet|leadership)"
     r"( weekly)?( board)? meetings?\b|"
-    r"\b(set[- ]?up|pre-event meeting)\s*$|\(closed\)|\btest event\b|"
+    r"\b(set[- ]?up|pre-event meeting)\s*$|\bcaptains?['’]? meetings?\b|\(closed\)|\btest event\b|"
     r"\bjournal club\b|\bvisiting resident\b|\bfaculty candidate\b|\bjob talk\b|"
     r"\blimited submissions\b|^\s*faculty (and|&) staff\b|"
     # Teaching development for instructors.
     r"\b(syllabus|rubric|course-specific|student evaluations?)\b|\bin the classroom\b|"
+    r"^\s*new faculty\b|^\s*teaching (for|in) an? \w+ (campus|classroom)\b|"
+    r"\bwhy students struggle\b|\bscholarly writing (program|retreat)\b|"
+    r"\bacademy of teaching scholars\b|\bcommunity of practice\b|\bto engage students\b|"
+    r"\bstudent[- ]centered learning\b|\bscholarship of teaching and learning\b|"
+    r"\bresearch refresher\b|"
     r"\b(system|educator|staff|volunteer|employee|g?ta) trainings?\b|"
     r"\btraining (meeting|weekend)\b|[-–]\s*trainings?\s*$|"
     # Notices rather than events.
@@ -276,7 +289,9 @@ _INTERNAL_CODES = re.compile(
     # A course listed by its number: "FOLK 100: Foundations of our Fields".
     r"^\s*[A-Z]{2,5} [A-Z]?\d{3}[A-Z]?\s*:|"
     # A department's research talk series: "CCBB Seminar Guest Speaker: Dr. ...".
-    r"^\s*[A-Z]{2,6} (Seminar|Colloquium)\b"
+    r"^\s*[A-Z]{2,6} (Seminar|Colloquium)\b|"
+    # A booking held under two initials and nothing else: "MC", "VL".
+    r"^\s*[A-Z]{2}\s*$"
 )
 
 # --- the source's own category label -----------------------------------------
@@ -294,6 +309,40 @@ _SOURCE_CATEGORY = {
 _ONLINE_ATTENDANCE_MODE = "OnlineEventAttendanceMode"
 
 
+# Host -> calendars (first path segment of an event link) that publish room
+# bookings and the course schedule rather than events: IU's "campus-center"
+# calendar lists "CELL BIOLOGY", "Swim Club Practice", "Ben Wilck 321".
+_BOOKING_CALENDARS = {
+    # Room bookings and the course schedule (also the Health Sciences Building's:
+    # "Simucase Group 4", "Nate"), and IU Human Resources' calendar of employee
+    # programs ("Care Talks by Care.com", "Lean and AI 2.0").
+    "events.iu.edu": re.compile(r"^(campus-center|hsb|iuhumanrescal)$", re.IGNORECASE),
+}
+# Calendars run for alumni rather than students: the IU Alumni Association's
+# ("Raclin Legends Honors Night", "IU McKinney Moot Court Finals & Reception").
+_ALUMNI_CALENDARS = {
+    # and Emeriti House's, for retired faculty ("Poetry Writing Group November 2026").
+    "events.iu.edu": re.compile(r"^(iu-alumni|emeriti)$", re.IGNORECASE),
+}
+
+
+# Paid programs for working professionals: Kelley Executive Education's
+# ("Leading with AI: Influence (In-Person)").
+_PROFESSIONAL_CALENDARS = {
+    "events.iu.edu": re.compile(r"^kelley-execed$", re.IGNORECASE),
+}
+_LECTURESHIP = _rx(r"\blecture(ship)?s?\b")
+
+
+def _on_calendar(url: str | None, calendars: dict[str, re.Pattern[str]]) -> bool:
+    if not url:
+        return False
+    parts = urlsplit(url)
+    pattern = calendars.get((parts.hostname or "").casefold())
+    first = parts.path.strip("/").split("/", 1)[0]
+    return bool(pattern and first and pattern.search(first))
+
+
 def not_attendable_reason(
     *,
     title: str | None,
@@ -302,6 +351,7 @@ def not_attendable_reason(
     address: str | None = None,
     source_category: str | None = None,
     raw: dict[str, Any] | None = None,
+    url: str | None = None,
 ) -> str | None:
     """Why this is not an event someone can turn up to, or None when it is.
 
@@ -310,6 +360,14 @@ def not_attendable_reason(
     can be explained."""
     title = title or ""
     description = description or ""
+
+    if _on_calendar(url, _BOOKING_CALENDARS):
+        return INTERNAL
+    if _on_calendar(url, _PROFESSIONAL_CALENDARS):
+        return PROFESSIONAL
+    # A named lecture cross-posted to the alumni calendar is still public.
+    if _on_calendar(url, _ALUMNI_CALENDARS) and not _LECTURESHIP.search(title):
+        return AUDIENCE
 
     if _CANCELLED_TITLE.search(title):
         return CANCELLED
@@ -361,6 +419,7 @@ def candidate_not_attendable_reason(candidate) -> str | None:
         address=candidate.address,
         source_category=candidate.source_category,
         raw=candidate.raw,
+        url=candidate.canonical_url,
     )
 
 
@@ -372,6 +431,7 @@ def event_not_attendable_reason(event) -> str | None:
         venue=event.public_venue,
         address=event.public_address,
         source_category=event.source_category,
+        url=event.canonical_url,
     )
 
 

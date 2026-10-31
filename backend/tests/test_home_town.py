@@ -17,7 +17,10 @@ from app.services.home_town import (
     hide_out_of_town_events,
     is_away_game,
     is_outside_home_town,
+    names_nearby_town,
     names_other_campus,
+    names_other_county,
+    venue_at_other_school,
 )
 from app.services.website_configuration import approve_configuration
 from tests.extraction_helpers import html_handler, patched_http_fetch
@@ -104,6 +107,11 @@ def test_is_outside_home_town_for_any_town(address, outside):
         ("https://events.iu.edu/campus-center/event/6-imu-recruitment", False),
         ("https://events.iu.edu/academicdatesiub/event/7-refund", False),
         ("https://events.iu.edu/live/event/8-back-to-school-bash", False),
+        ("https://cougarlife.kokomo.iu.edu/event/12757561", True),
+        ("https://events.iu.edu/nw-arsc/event/2454466-honors-program-orientation", True),
+        ("https://events.iu.edu/news-media/event/1-x", False),
+        ("https://www.iusb.edu/events/1", True),
+        ("https://beinvolved.indiana.edu/event/1", False),
         ("https://example.com/indianapolis/event/9", False),  # only campus calendars
         (None, False),
     ],
@@ -351,6 +359,10 @@ def test_town_team_away_game(title, town, away):
         ("IUK Women’s Volleyball 10/17/26", True),
         ("10/16 7:30 PM Indiana University Women’s Soccer vs #5 Michigan State", False),
         ("IU East Asian Studies Center Film Night", False),
+        ("IU McKinney Robert H. Staton Moot Court Finals & Reception", True),
+        ("PFW Blood Drive - NMDP SIG", True),
+        ("Free Community Head & Neck Cancer Screening - Indianapolis", True),
+        ("Indianapolis Colts Watch Party", False),
     ],
 )
 def test_title_naming_another_campus(title, other):
@@ -377,3 +389,74 @@ def test_other_schools_tournament(title, away):
     )
     assert at_other_school_event(title, city) is away
     assert at_other_school_event(title, SimpleNamespace(name="Iowa City", universities=[])) is False
+
+
+@pytest.mark.parametrize(
+    "title,away",
+    [
+        ("Lehigh University Men's Rowing vs Head of the Schuylkill", True),
+        ("Lehigh University Women's Rowing vs Head of the Charles", True),
+        ("Lehigh University Men's Rowing vs Head of the Lehigh", False),
+        ("Lehigh University Men's Soccer vs Boston U.", False),
+        ("Lehigh University Women's Golf vs Landfall Tradition - Country Club of Landfall",
+         True),
+        ("Lehigh University Women's Golf vs Lehigh Invitational", False),
+        ("IU vs Michigan Away Game Tailgate", True),
+        ("IU Football Watch Party: Away Game vs Michigan", False),
+    ],
+)
+def test_away_regatta(title, away):
+    assert is_away_game(title, "Bethlehem") is away
+
+
+@pytest.mark.parametrize(
+    "title,town,other",
+    [
+        ("Daviess County Together: A Conversation on Caring", "Bloomington", True),
+        ("Brown County Fall Hike", "Bloomington", True),
+        ("Monroe County Fair", "Bloomington", False),
+        ("Lehigh County Historical Society Talk", "Bethlehem", False),
+        ("Prince George's County Job Fair", "College Park", False),
+        ("Daviess County Together", "Springfield", False),  # no home county known
+        ("A Talk on Daviess County History", "Bloomington", False),
+    ],
+)
+def test_title_naming_another_county(title, town, other):
+    assert names_other_county(title, town) is other
+
+
+@pytest.mark.parametrize(
+    "title,venue,town,nearby",
+    [
+        ("Union Board Global Connections Presents: Ramyana", "Regal Greenwood & RPX",
+         "Bloomington", True),
+        ("Mini Professional Trip - Cedar Rapids", "Van Meter Inc", "Iowa City", True),
+        ("Indianapolis Colts Watch Party", "IMU Georgian Room", "Bloomington", False),
+        ("Trip Recap - Greenwood Edition", "IMU", "Bloomington", False),
+        ("Movie Night", "Regal Greenwood & RPX", "Bethlehem", False),  # no list for town
+    ],
+)
+def test_venue_or_title_naming_nearby_town(title, venue, town, nearby):
+    assert names_nearby_town(title, venue, town) is nearby
+
+
+@pytest.mark.parametrize(
+    "venue,away",
+    [
+        ("University of Illinois", True),
+        ("MIchigan State rec center", True),
+        ("Wayne state college", True),
+        ("University of Iowa Field House", False),
+        ("IMU State Room East", False),
+        ("Hawkeye Rec Fields", False),
+        (None, False),
+    ],
+)
+def test_venue_at_other_school(venue, away):
+    from types import SimpleNamespace
+
+    city = SimpleNamespace(
+        name="Iowa City", universities=[SimpleNamespace(name="University of Iowa")]
+    )
+    assert venue_at_other_school(venue, city) is away
+    assert venue_at_other_school(venue, SimpleNamespace(name="Iowa City", universities=[])) is False

@@ -56,6 +56,8 @@ from tests.extraction_helpers import html_handler, patched_http_fetch
         ("Office Hours with the Dean", INTERNAL),
         # Titles seen on the Bloomington and Bethlehem sources.
         ("CANCELED: Full Frontal Comedy Show", CANCELLED),
+        ("Rethinking Peer Review *CANCELED*", CANCELLED),
+        ("Jazz Night (Cancelled)", CANCELLED),
         ("Pennsylvania Latino Convention 2026", CONFERENCE),
         ("Attendee Registration Indiana Society of Physician Recruiters (INSPR) 2026", CONFERENCE),
         ("Stark Seminar Series: Junfang Wu, PhD", CONFERENCE),
@@ -149,6 +151,33 @@ from tests.extraction_helpers import html_handler, patched_http_fetch
         ("Izzy study seshhhh", INTERNAL),
         ("Anatomy Review, Exam 2", INTERNAL),
         ("Discussion 10/20", INTERNAL),
+        ("Stellic Drop-ins", INTERNAL),
+        ("Chill/Study Night", INTERNAL),
+        ("AI Innovation Hub Open Office (in-person, IU Bloomington)", INTERNAL),
+        ("Team Captain Meeting", INTERNAL),
+        ("New Faculty Teaching Conversations: Share an Idea, Leave with Many", INTERNAL),
+        ("Teaching for a Multilingual Campus: Practical Strategies for Access", INTERNAL),
+        ("Improving Reading Comprehension: Why Students Struggle & What You Can Do",
+         INTERNAL),
+        ("Scholarly Writing Program Fall Retreat", INTERNAL),
+        ("Senior Planet: AI & Disinformation", AUDIENCE),
+        ("College Alumni Awards Celebration", AUDIENCE),
+        ("Cheri Goodall - Chemical Biology Supergroup", INTERNAL),
+        ("Prospective Doctoral Student Open House", AUDIENCE),
+        ("Academy of Teaching Scholars: Best Practices in Global Health Education", INTERNAL),
+        ("Care Support Community of Practice: Health Literacy", INTERNAL),
+        ("Study group (A,K,H)", INTERNAL),
+        ("MC", INTERNAL),
+        ("VL", INTERNAL),
+        ("Trunk or Treat - Pediatrics SIG", AUDIENCE),
+        ("Using VoiceThread to Engage Students*", INTERNAL),
+        ("ACBP Student Defense- Connor J. Cunningham", INTERNAL),
+        ("How to do Scholarship of Teaching and Learning: Formulating Research Questions",
+         INTERNAL),
+        ("30-minute Research Refresher: Proposal Budget Basics", INTERNAL),
+        ("WeVideo: Student Centered Learning with Learner Made Interactive Video", INTERNAL),
+        ("City of Bethlehem’s Annual Trick or Treat Night", AUDIENCE),
+        ("BTAA WIT Coffee Catch-up: Cyber Safety/Security Panel", PROFESSIONAL),
         ("2026 Game Watch Football IUAA Nashville IU vs Ohio State", AUDIENCE),
         ("IUAA Colorado: Hoosier Halloween", AUDIENCE),
         ("Teen Winter Skate Night", AUDIENCE),
@@ -220,6 +249,18 @@ def test_not_attendable_titles(title, reason):
         "General Board Meeting",
         "Free Lindy Hop Dance Lessons (Beginner)",
         "Weekly Latin Dance Lessons",
+        "WellSpace Drop-In Series: Meet SWAC",
+        "Bi-Weekly Application Accountability Night",
+        "Superhero Movie Night",
+        "Bible Study Group",
+        "The Cancelled Plans Comedy Hour",
+        "Halloween Treats & Tricks Magic Show",
+        "DJ Night",
+        "Supergroup: A Tribute to The Traveling Wilburys",
+        "Halloween Trivia Night",
+        "Three Minute Thesis Prep Event (October)",
+        "Senior Recital – Jane Doe, violin",
+        "Teaching Kids to Code: A Volunteer Fair",
         "General Body Meeting",
         "Board of Programmers Meeting",
         "Study Abroad Fair",
@@ -400,3 +441,43 @@ async def test_scheduler_sweep_takes_down_unattendable_events(db_session, make_c
     await runtime._attendability_sweep_tick()
     db_session.expire_all()
     assert [e.title for e in db_session.query(Event).filter_by(is_active=True)] == ["Jazz Night"]
+
+
+
+@pytest.mark.parametrize(
+    "url,internal",
+    [
+        ("https://events.iu.edu/campus-center/event/2454799-cell-biology", True),
+        ("https://events.iu.edu/iuhumanrescal/event/2333565-lean-and-ai-20", True),
+        ("https://events.iu.edu/hsb/event/2396885-simucase-group-4", True),
+        ("https://events.iu.edu/live/event/123-jazz-night", False),
+        ("https://example.com/campus-center/event/1", False),
+        (None, False),
+    ],
+)
+def test_room_booking_calendar(url, internal):
+    reason = not_attendable_reason(title="Jazz Night", url=url)
+    assert (reason == INTERNAL) is internal
+
+
+@pytest.mark.parametrize(
+    "url,alumni",
+    [
+        ("https://events.iu.edu/iu-alumni/event/2355473-raclin-legends-honors-night", True),
+        ("https://events.iu.edu/emeriti/event/2314693-poetry-writing-group", True),
+        ("https://events.iu.edu/live/event/123-jazz-night", False),
+    ],
+)
+def test_alumni_calendar(url, alumni):
+    reason = not_attendable_reason(title="Jazz Night", url=url)
+    assert (reason == AUDIENCE) is alumni
+
+
+def test_named_lecture_on_alumni_calendar_is_kept():
+    url = "https://events.iu.edu/iu-alumni/event/2408095-michael-r-cohen-lectureship"
+    assert not_attendable_reason(title="Michael R. Cohen Lectureship", url=url) is None
+
+
+def test_executive_education_calendar():
+    url = "https://events.iu.edu/kelley-execed/event/2137062-leading-with-ai"
+    assert not_attendable_reason(title="Leading with AI: Influence", url=url) == PROFESSIONAL
