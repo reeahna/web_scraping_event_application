@@ -56,6 +56,8 @@ from tests.extraction_helpers import html_handler, patched_http_fetch
         ("Office Hours with the Dean", INTERNAL),
         # Titles seen on the Bloomington and Bethlehem sources.
         ("CANCELED: Full Frontal Comedy Show", CANCELLED),
+        ("Rethinking Peer Review *CANCELED*", CANCELLED),
+        ("Jazz Night (Cancelled)", CANCELLED),
         ("Pennsylvania Latino Convention 2026", CONFERENCE),
         ("Attendee Registration Indiana Society of Physician Recruiters (INSPR) 2026", CONFERENCE),
         ("Stark Seminar Series: Junfang Wu, PhD", CONFERENCE),
@@ -170,6 +172,9 @@ from tests.extraction_helpers import html_handler, patched_http_fetch
         ("Trunk or Treat - Pediatrics SIG", AUDIENCE),
         ("Using VoiceThread to Engage Students*", INTERNAL),
         ("ACBP Student Defense- Connor J. Cunningham", INTERNAL),
+        ("How to do Scholarship of Teaching and Learning: Formulating Research Questions",
+         INTERNAL),
+        ("30-minute Research Refresher: Proposal Budget Basics", INTERNAL),
         ("WeVideo: Student Centered Learning with Learner Made Interactive Video", INTERNAL),
         ("City of Bethlehem’s Annual Trick or Treat Night", AUDIENCE),
         ("BTAA WIT Coffee Catch-up: Cyber Safety/Security Panel", PROFESSIONAL),
@@ -248,6 +253,7 @@ def test_not_attendable_titles(title, reason):
         "Bi-Weekly Application Accountability Night",
         "Superhero Movie Night",
         "Bible Study Group",
+        "The Cancelled Plans Comedy Hour",
         "Halloween Treats & Tricks Magic Show",
         "DJ Night",
         "Supergroup: A Tribute to The Traveling Wilburys",
@@ -470,3 +476,8 @@ def test_alumni_calendar(url, alumni):
 def test_named_lecture_on_alumni_calendar_is_kept():
     url = "https://events.iu.edu/iu-alumni/event/2408095-michael-r-cohen-lectureship"
     assert not_attendable_reason(title="Michael R. Cohen Lectureship", url=url) is None
+
+
+def test_executive_education_calendar():
+    url = "https://events.iu.edu/kelley-execed/event/2137062-leading-with-ai"
+    assert not_attendable_reason(title="Leading with AI: Influence", url=url) == PROFESSIONAL

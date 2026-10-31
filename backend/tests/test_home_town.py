@@ -20,6 +20,7 @@ from app.services.home_town import (
     names_nearby_town,
     names_other_campus,
     names_other_county,
+    venue_at_other_school,
 )
 from app.services.website_configuration import approve_configuration
 from tests.extraction_helpers import html_handler, patched_http_fetch
@@ -437,3 +438,25 @@ def test_title_naming_another_county(title, town, other):
 )
 def test_venue_or_title_naming_nearby_town(title, venue, town, nearby):
     assert names_nearby_town(title, venue, town) is nearby
+
+
+@pytest.mark.parametrize(
+    "venue,away",
+    [
+        ("University of Illinois", True),
+        ("MIchigan State rec center", True),
+        ("Wayne state college", True),
+        ("University of Iowa Field House", False),
+        ("IMU State Room East", False),
+        ("Hawkeye Rec Fields", False),
+        (None, False),
+    ],
+)
+def test_venue_at_other_school(venue, away):
+    from types import SimpleNamespace
+
+    city = SimpleNamespace(
+        name="Iowa City", universities=[SimpleNamespace(name="University of Iowa")]
+    )
+    assert venue_at_other_school(venue, city) is away
+    assert venue_at_other_school(venue, SimpleNamespace(name="Iowa City", universities=[])) is False

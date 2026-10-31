@@ -409,6 +409,27 @@ def at_other_school_event(title: str | None, city) -> bool:
     return not (_words(match.group("school")) & home)
 
 
+# A venue at another school: "University of Illinois", "MIchigan State rec center"
+# for an Iowa City club's away meet.
+# The school's name must hold a lowercase letter, so "IMU State Room" is not one.
+_VENUE_SCHOOL = re.compile(
+    r"\b[Uu]niversity of (?P<of>[A-Z][\w-]+)|\b(?P<state>[A-Z][\w-]*[a-z][\w-]*) [Ss]tate\b"
+)
+
+
+def venue_at_other_school(venue: str | None, city) -> bool:
+    """True when the venue names a university other than the town's own (as
+    listed on the city). A town with no schools listed is left alone."""
+    universities = getattr(city, "universities", None) or []
+    match = _VENUE_SCHOOL.search(venue or "")
+    if match is None or not universities:
+        return False
+    home = _words(city.name or "")
+    for university in universities:
+        home |= _home_names(university.name, None)
+    return not (_words(match.group("of") or match.group("state")) & home)
+
+
 def candidate_outside_home_town(candidate, city) -> bool:
     if is_away_game(candidate.title, city.name if city is not None else None):
         return True
@@ -423,6 +444,8 @@ def candidate_outside_home_town(candidate, city) -> bool:
     ):
         return True
     if at_other_school_event(candidate.title, city):
+        return True
+    if venue_at_other_school(candidate.venue, city):
         return True
     if city is None:
         return False
@@ -447,6 +470,8 @@ def event_outside_home_town(event) -> bool:
     if names_nearby_town(event.title, event.public_venue, city.name if city is not None else None):
         return True
     if at_other_school_event(event.title, city):
+        return True
+    if venue_at_other_school(event.public_venue, city):
         return True
     if city is None:
         return False

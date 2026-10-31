@@ -42,7 +42,11 @@ def _rx(pattern: str) -> re.Pattern[str]:
 
 # --- cancelled ----------------------------------------------------------------
 # University calendars keep a cancelled listing up with the word in front.
-_CANCELLED_TITLE = _rx(r"^\W*(cancell?ed|postponed)\b")
+_CANCELLED_TITLE = _rx(
+    r"^\W*(cancell?ed|postponed)\b|"
+    # Marked after the name: "Rethinking Peer Review *CANCELED*", "Talk (Cancelled)".
+    r"[*(\[]\s*(cancell?ed|postponed)\s*[*)\]]|[-–:]\s*(cancell?ed|postponed)\s*$"
+)
 
 
 # --- virtual / online only ---------------------------------------------------
@@ -266,7 +270,8 @@ _INTERNAL_TITLE = _rx(
     r"^\s*new faculty\b|^\s*teaching (for|in) an? \w+ (campus|classroom)\b|"
     r"\bwhy students struggle\b|\bscholarly writing (program|retreat)\b|"
     r"\bacademy of teaching scholars\b|\bcommunity of practice\b|\bto engage students\b|"
-    r"\bstudent[- ]centered learning\b|"
+    r"\bstudent[- ]centered learning\b|\bscholarship of teaching and learning\b|"
+    r"\bresearch refresher\b|"
     r"\b(system|educator|staff|volunteer|employee|g?ta) trainings?\b|"
     r"\btraining (meeting|weekend)\b|[-–]\s*trainings?\s*$|"
     # Notices rather than events.
@@ -321,6 +326,11 @@ _ALUMNI_CALENDARS = {
 }
 
 
+# Paid programs for working professionals: Kelley Executive Education's
+# ("Leading with AI: Influence (In-Person)").
+_PROFESSIONAL_CALENDARS = {
+    "events.iu.edu": re.compile(r"^kelley-execed$", re.IGNORECASE),
+}
 _LECTURESHIP = _rx(r"\blecture(ship)?s?\b")
 
 
@@ -353,6 +363,8 @@ def not_attendable_reason(
 
     if _on_calendar(url, _BOOKING_CALENDARS):
         return INTERNAL
+    if _on_calendar(url, _PROFESSIONAL_CALENDARS):
+        return PROFESSIONAL
     # A named lecture cross-posted to the alumni calendar is still public.
     if _on_calendar(url, _ALUMNI_CALENDARS) and not _LECTURESHIP.search(title):
         return AUDIENCE
