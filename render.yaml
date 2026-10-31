@@ -52,6 +52,10 @@ services:
       # limited to one per second in app/services/geocoding/provider.py.
       - key: GEOCODING_ENABLED
         value: "true"
+      # Create the towns in backend/data/college_towns/cities.csv and queue
+      # each day's source CSV there for onboarding, once per file.
+      - key: COLLEGE_TOWN_IMPORT_ENABLED
+        value: "true"
       - key: GEOCODING_PROVIDER
         value: nominatim
       - key: GEOCODING_USER_AGENT
