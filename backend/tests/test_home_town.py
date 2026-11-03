@@ -109,6 +109,7 @@ def test_is_outside_home_town_for_any_town(address, outside):
         ("https://events.iu.edu/live/event/8-back-to-school-bash", False),
         ("https://cougarlife.kokomo.iu.edu/event/12757561", True),
         ("https://events.iu.edu/nw-arsc/event/2454466-honors-program-orientation", True),
+        ("https://events.iu.edu/ius-acadaffairs/event/2466193-evcaa-open-tea-time", True),
         ("https://events.iu.edu/news-media/event/1-x", False),
         ("https://www.iusb.edu/events/1", True),
         ("https://beinvolved.indiana.edu/event/1", False),
