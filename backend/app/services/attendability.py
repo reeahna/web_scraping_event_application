@@ -92,7 +92,8 @@ _PROFESSIONAL_TITLE = _rx(
     r"healthcare|finance|engineering|hospitality|fashion|blockchain|tech|women in business)"
     r"(\s+and\s+business)?\s+networking|"
     r"networking (breakfast|luncheon|lunch|happy hour|mixer) for|"
-    r"masterminds?|btaa|real estate|realtors?|mortgage|landlords?|property management|"
+    r"masterminds?|btaa|ncta short courses?|"
+    r"real estate|realtors?|mortgage|landlords?|property management|"
     r"investors? (meetup|summit|forum)|"
     r"(for|with) (small )?business owners|entrepreneurs, hr|for (hr|human resources) professionals|"
     r"(fair housing|osha|food handler|forklift|cpr/aed for (employers|businesses)) (basics |"
@@ -134,7 +135,7 @@ _AUDIENCE_TITLE = _rx(
     r"ages? (2[5-9]|[3-9]\d)\s*(-|–|to|\+|and)|"
     r"(alumni|iuaa)\b.*\b(game watch|chapter|reception|happy hour|weekend|reunion)|"
     r"game watch\b.*\b(alumni|iuaa)|iuaa|"
-    r"\balumni (association|chapter|club|reception|game watch|awards?))\b|"
+    r"\balumni (association|chapter|club|reception|game watch|awards?|lunch(eon)?))\b|"
     # "Art Hive for 50+": the "+" ends the title, so no word boundary follows.
     r"\b(50|55|60|62|65)\s*\+"
 )
@@ -264,9 +265,13 @@ _INTERNAL_TITLE = _rx(
     # "GPSG Cabinet Meetings", "WAC Weekly Leadership Meeting".
     r"\b(executive|exec|e-?board|(?<!general )board|cabinet|leadership)"
     r"( weekly)?( board)? meetings?\b|"
-    r"\b(set[- ]?up|pre-event meeting)\s*$|\bcaptains?['’]? meetings?\b|\(closed\)|\btest event\b|"
+    r"\b(set[- ]?up|pre-event meeting)\s*$|\b(captains?|chairs?)['’]? meetings?\b|"
+    r"\(closed\)|\btest event\b|"
     r"\bjournal club\b|\bvisiting resident\b|\bfaculty candidate\b|\bjob talk\b|"
     r"\blimited submissions\b|^\s*faculty (and|&) staff\b|"
+    # Leadership and process training for staff: "Academic Leadership Series:
+    # Current Conversations with OVPFAA", "LehighLEAN Metrics".
+    r"^\s*academic leadership series\b|\blehighlean\b|"
     # Teaching development for instructors.
     r"\b(syllabus|rubric|course-specific|student evaluations?)\b|\bin the classroom\b|"
     r"^\s*new faculty\b|^\s*teaching (for|in) an? \w+ (campus|classroom)\b|"
@@ -323,8 +328,9 @@ _BOOKING_CALENDARS = {
 # Calendars run for alumni rather than students: the IU Alumni Association's
 # ("Raclin Legends Honors Night", "IU McKinney Moot Court Finals & Reception").
 _ALUMNI_CALENDARS = {
+    # a regional alumni chapter's ("NEI Region | Silver Screens Alumni Movie Night"),
     # and Emeriti House's, for retired faculty ("Poetry Writing Group November 2026").
-    "events.iu.edu": re.compile(r"^(iu-alumni|emeriti)$", re.IGNORECASE),
+    "events.iu.edu": re.compile(r"^(iu-alumni|emeriti|[a-z]+-alumni)$", re.IGNORECASE),
 }
 
 

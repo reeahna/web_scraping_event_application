@@ -364,6 +364,8 @@ def test_town_team_away_game(title, town, away):
         ("PFW Blood Drive - NMDP SIG", True),
         ("Free Community Head & Neck Cancer Screening - Indianapolis", True),
         ("Indianapolis Colts Watch Party", False),
+        ("Global Jags GO: Indiana State Museum", True),
+        ("Jaguars vs Colts Watch Party", False),
     ],
 )
 def test_title_naming_another_campus(title, other):

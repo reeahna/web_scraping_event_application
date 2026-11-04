@@ -94,6 +94,8 @@ _OTHER_CAMPUS_TITLES_BY_TOWN = {
     "bloomington": re.compile(
         r"\b(IU|Indiana University) (Indy|Indianapolis|Southeast|South Bend|Kokomo|Northwest|"
         r"East(?! Asian)|Fort Wayne|Columbus|McKinney)\b|\b(IUPUI|IUPUC|IUK|IUSB|IUN|IUFW|PFW)\b|"
+        # IU Indianapolis's international-student programs: "Global Jags GO: ...".
+        r"\bGlobal Jags\b|"
         # Another city named as the place: "Free Community ... Screening - Indianapolis".
         r"[-–]\s*(Indianapolis|Indy|Fort Wayne|Evansville|South Bend|Gary)\s*$"
     ),
