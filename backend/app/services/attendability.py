@@ -129,7 +129,8 @@ _AUDIENCE_TITLE = _rx(
     # "Smith 2 & Ed 3: Lucky Charms" (two floors' joint social).
     r"floors? \d+|"
     r"senior u|seniors?['’] (academy|university)|intro to (email|computers|the internet)|"
-    r"computer basics|senior planet|(trunk|trick)[- ]or[- ]treats?|prospective (\w+ )?students?|"
+    r"computer basics|senior planet|mba campus visits?|family art labs?|"
+    r"(trunk|trick)[- ]or[- ]treats?|prospective (\w+ )?students?|"
     r"senior (expo|citizens?|center)|seniors (55|60|62|65)|older adults|retirees|"
     r"(50|55|60|62|65)\s*(\+|and (up|over|older))|teens?|tots?|emeriti|"
     r"ages? (2[5-9]|[3-9]\d)\s*(-|–|to|\+|and)|"
@@ -265,7 +266,7 @@ _INTERNAL_TITLE = _rx(
     # "GPSG Cabinet Meetings", "WAC Weekly Leadership Meeting".
     r"\b(executive|exec|e-?board|(?<!general )board|cabinet|leadership)"
     r"( weekly)?( board)? meetings?\b|"
-    r"\b(set[- ]?up|pre-event meeting)\s*$|\b(captains?|chairs?)['’]? meetings?\b|"
+    r"\b(set[- ]?up|pre-event meeting)\s*$|\b(captains?|chairs?|treasurers?)['’]? meetings?\b|"
     r"\(closed\)|\btest event\b|"
     r"\bjournal club\b|\bvisiting resident\b|\bfaculty candidate\b|\bjob talk\b|"
     r"\blimited submissions\b|^\s*faculty (and|&) staff\b|"
@@ -322,8 +323,11 @@ _ONLINE_ATTENDANCE_MODE = "OnlineEventAttendanceMode"
 _BOOKING_CALENDARS = {
     # Room bookings and the course schedule (also the Health Sciences Building's:
     # "Simucase Group 4", "Nate"), and IU Human Resources' calendar of employee
-    # programs ("Care Talks by Care.com", "Lean and AI 2.0").
-    "events.iu.edu": re.compile(r"^(campus-center|hsb|iuhumanrescal)$", re.IGNORECASE),
+    # programs ("Care Talks by Care.com", "Lean and AI 2.0"), Kelley's staff calendar
+    # and the faculty teaching academy's ("3 for 30 GenAI Series").
+    "events.iu.edu": re.compile(
+        r"^(campus-center|hsb|iuhumanrescal|kelley-staff|facet)$", re.IGNORECASE
+    ),
 }
 # Calendars run for alumni rather than students: the IU Alumni Association's
 # ("Raclin Legends Honors Night", "IU McKinney Moot Court Finals & Reception").
