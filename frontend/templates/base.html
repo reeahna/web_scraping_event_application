@@ -24,6 +24,7 @@
   <meta name="twitter:card" content="{% block twitter_card %}summary{% endblock %}" />
 
   <link rel="stylesheet" href="/static/style.css" />
+  {% if current_user %}<script src="/static/js/account-menu.js" defer></script>{% endif %}
   {% block head_extra %}{% endblock %}
 </head>
 <body>
@@ -33,14 +34,26 @@
       <a href="/" class="logo">{{ site_name }}</a>
       <nav class="site-nav" aria-label="Primary">
         {% block header_nav %}
-        <a href="/">Find a town</a>
+        {# The town chooser is the home page, so it needs no link to itself. #}
+        {% if request.url.path != "/" %}<a href="/">Find a town</a>{% endif %}
         {% if current_user %}
           {% if can_access_admin %}<a href="/admin">Admin</a>{% endif %}
-          <a href="/account/saved">Saved</a>
           {% set alert_unread = unread_alert_count(current_user.id) %}
-          <a href="/account/inbox" class="nav-alerts">Alerts{% if alert_unread %} <span class="nav-count" aria-hidden="true">{{ alert_unread if alert_unread < 100 else "99+" }}</span><span class="sr-only">({{ alert_unread }} unread)</span>{% endif %}</a>
           <a href="/suggest"{% if request.url.path == "/suggest" %} aria-current="page"{% endif %}>Suggest</a>
-          <a href="/account">My Account</a>
+          {#
+            A <details> menu opens and closes with no JavaScript, so it works
+            under the strict CSP; account-menu.js only adds closing on Escape
+            or a click elsewhere. The unread badge sits on the summary too, so
+            new alerts are visible without opening the menu.
+          #}
+          <details class="account-menu">
+            <summary class="account-menu-trigger">My Account{% if alert_unread %} <span class="nav-count" aria-hidden="true">{{ alert_unread if alert_unread < 100 else "99+" }}</span><span class="sr-only">({{ alert_unread }} unread alerts)</span>{% endif %}</summary>
+            <ul class="account-menu-list">
+              <li><a href="/account"{% if request.url.path == "/account" %} aria-current="page"{% endif %}>My Account</a></li>
+              <li><a href="/account/saved"{% if request.url.path == "/account/saved" %} aria-current="page"{% endif %}>Saved</a></li>
+              <li><a href="/account/inbox" class="nav-alerts"{% if request.url.path == "/account/inbox" %} aria-current="page"{% endif %}>Alerts{% if alert_unread %} <span class="nav-count" aria-hidden="true">{{ alert_unread if alert_unread < 100 else "99+" }}</span><span class="sr-only">({{ alert_unread }} unread)</span>{% endif %}</a></li>
+            </ul>
+          </details>
           <form method="post" action="/auth/logout" class="inline-form">
             <input type="hidden" name="csrf_token" value="{{ csrf_token }}" />
             <button type="submit" class="nav-button">Log Out</button>
