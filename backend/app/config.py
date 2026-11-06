@@ -35,7 +35,7 @@ class Settings(BaseSettings):
     database_url: str = f"sqlite:///{(BASE_DIR / 'app.db').as_posix()}"
     log_level: str = "INFO"
 
-    # Auth / sessions. Sign-in is only through Google, Microsoft, Facebook or Yahoo
+    # Auth / sessions. Sign-in is only through Google, Microsoft, Facebook, X or Yahoo
     # (app.services.oauth); the app stores no passwords.
     session_cookie_name: str = "session_token"
     session_ttl_seconds: int = 43200  # 12 hours
@@ -249,6 +249,8 @@ class Settings(BaseSettings):
     facebook_client_secret: str | None = None
     yahoo_client_id: str | None = None
     yahoo_client_secret: str | None = None
+    x_client_id: str | None = None
+    x_client_secret: str | None = None
 
     model_config = SettingsConfigDict(
         env_file=str(BASE_DIR / ".env"),

@@ -9,6 +9,7 @@ canned identity for tests without any network.
 
 from __future__ import annotations
 
+import hashlib
 from dataclasses import dataclass
 from typing import Protocol, runtime_checkable
 
@@ -40,6 +41,13 @@ class ProviderSpec:
     verified_field: str | None
     name_field: str
     avatar_field: str | None
+    # How the client secret is sent to the token endpoint. Most providers take
+    # it in the form body; X only accepts an HTTP Basic header.
+    token_auth_method: str = "client_secret_post"
+    # PKCE (S256). X requires it on every authorization-code request.
+    pkce: bool = False
+    # Some APIs wrap the profile in an envelope (X: {"data": {...}}).
+    userinfo_key: str | None = None
 
 
 _SPECS: dict[str, ProviderSpec] = {
@@ -86,6 +94,23 @@ _SPECS: dict[str, ProviderSpec] = {
         # email or claims SUPERADMIN_EMAIL. Only Google is trusted for that.
         subject_field="sub", email_field="email", verified_field=None,
         name_field="name", avatar_field="picture",
+    ),
+    "x": ProviderSpec(
+        name="x",
+        authorize_url="https://x.com/i/oauth2/authorize",
+        token_url="https://api.x.com/2/oauth2/token",
+        # users.email (with confirmed_email) gives the address; tweet.read is
+        # required alongside users.read to call /2/users/me.
+        userinfo_url="https://api.x.com/2/users/me?user.fields=confirmed_email,profile_image_url",
+        scopes="tweet.read users.read users.email",
+        is_oidc=False,
+        # X reports only a "confirmed" address, which like Facebook's is not
+        # trusted to link to an existing account or claim SUPERADMIN_EMAIL.
+        subject_field="id", email_field="confirmed_email", verified_field=None,
+        name_field="name", avatar_field="profile_image_url",
+        token_auth_method="client_secret_basic",
+        pkce=True,
+        userinfo_key="data",
     ),
 }
 
@@ -139,10 +164,11 @@ class AuthlibProvider:
             self._client_secret,
             scope=self._spec.scopes,
             redirect_uri=redirect_uri,
-            # Send the secret once, in the form body. Facebook only accepts it
-            # there, and Google rejects a request that carries it in both the
-            # body and a Basic header.
-            token_endpoint_auth_method="client_secret_post",
+            # Send the secret once, in one place. Facebook only accepts it in
+            # the form body, X only in a Basic header, and Google rejects a
+            # request that carries it in both.
+            token_endpoint_auth_method=self._spec.token_auth_method,
+            code_challenge_method="S256" if self._spec.pkce else None,
         )
 
     def authorization_url(self, *, state: str, nonce: str | None, redirect_uri: str) -> str:
@@ -150,6 +176,8 @@ class AuthlibProvider:
         kwargs = {"state": state}
         if self._spec.is_oidc and nonce:
             kwargs["nonce"] = nonce
+        if self._spec.pkce:
+            kwargs["code_verifier"] = _pkce_verifier(nonce)
         url, _ = session.create_authorization_url(self._spec.authorize_url, **kwargs)
         return url
 
@@ -158,7 +186,10 @@ class AuthlibProvider:
     ) -> ExternalIdentityInfo:
         session = self._session(redirect_uri)
         try:
-            session.fetch_token(self._spec.token_url, code=code, state=state)
+            token_kwargs = {"code": code, "state": state}
+            if self._spec.pkce:
+                token_kwargs["code_verifier"] = _pkce_verifier(nonce)
+            session.fetch_token(self._spec.token_url, **token_kwargs)
             resp = session.get(self._spec.userinfo_url)
             data = resp.json()
         except Exception as exc:  # noqa: BLE001 - surface as a provider error
@@ -166,7 +197,20 @@ class AuthlibProvider:
         return _info_from_userinfo(self._spec, data)
 
 
+def _pkce_verifier(nonce: str | None) -> str:
+    """The PKCE code verifier for one sign-in, derived from its nonce. The
+    nonce is random, stored server-side with the one-time state and never sent
+    to a non-OIDC provider, so the verifier needs no storage of its own and
+    is the same when the person comes back. 64 hex characters fits the
+    43-128 character rule."""
+    if not nonce:
+        raise ProviderError("PKCE sign-in needs a nonce")
+    return hashlib.sha256(nonce.encode()).hexdigest()
+
+
 def _info_from_userinfo(spec: ProviderSpec, data: dict) -> ExternalIdentityInfo:
+    if spec.userinfo_key:
+        data = data.get(spec.userinfo_key) or {}
     subject = data.get(spec.subject_field)
     if not subject:
         raise ProviderError(f"{spec.name} userinfo missing subject")
