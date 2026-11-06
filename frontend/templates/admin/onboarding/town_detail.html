@@ -1,0 +1,77 @@
+{% extends "admin_base.html" %}
+
+{% block title %}{{ town.town_name }} — onboard a town{% endblock %}
+
+{% macro source_table(sources) %}
+<table>
+  <thead><tr><th>Source</th><th>Page</th><th>What it lists</th></tr></thead>
+  <tbody>
+    {% for source in sources %}
+    <tr>
+      <td>{{ source.display_name }}</td>
+      <td><a href="{{ source.url }}" rel="noopener noreferrer" target="_blank">{{ source.url }}</a></td>
+      <td>{{ source.reason }}</td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% endmacro %}
+
+{% block admin_content %}
+<p><a href="/admin/onboarding/towns">← All towns</a></p>
+<h1>{{ town.town_name }}{% if town.state_or_region %}, {{ town.state_or_region }}{% endif %}</h1>
+
+<table>
+  <tr><th>Status</th><td>{{ town.status }}</td></tr>
+  <tr><th>Requested</th><td>{{ town.created_at }}{% if town.requested_by %} by {{ town.requested_by.email }}{% endif %}</td></tr>
+  {% if town.completed_at %}<tr><th>Finished</th><td>{{ town.completed_at }}</td></tr>{% endif %}
+  {% if town.universities %}<tr><th>Universities given</th><td>{{ town.universities | join("; ") }}</td></tr>{% endif %}
+  {% if town.city %}<tr><th>City</th><td><a href="/admin/cities/{{ town.city.id }}">{{ town.city.name }}</a> (<code>{{ town.city.slug }}</code>)</td></tr>{% endif %}
+  {% if town.batch_id %}<tr><th>Onboarding</th><td><a href="/admin/onboarding/batches/{{ town.batch_id }}">See how each source onboarded</a></td></tr>{% endif %}
+  {% if town.failure_reason %}<tr><th>Problem</th><td>{{ town.failure_reason }}</td></tr>{% endif %}
+</table>
+
+{% if town.status in ("queued", "running") %}
+<p class="audit-meta">Claude is still searching. Reload this page in a few minutes.</p>
+{% endif %}
+
+{% if can_retry %}
+<form method="post" action="/admin/onboarding/towns/{{ town.id }}/retry" class="admin-form">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token }}" />
+  <div class="form-actions"><button type="submit">Try again</button></div>
+</form>
+{% endif %}
+
+{% if proposal %}
+<h2>What Claude found</h2>
+<p class="audit-meta">
+  {{ proposal.city_name }}, {{ proposal.state_or_region }} (<code>{{ proposal.slug }}</code>),
+  {{ proposal.timezone }}.
+  {% if proposal.universities %}Universities: {{ proposal.universities | join("; ") }}.{% endif %}
+  <a href="/admin/onboarding/towns/{{ town.id }}/sources.csv">Download as CSV</a>
+</p>
+
+<h3>On campus ({{ campus | length }})</h3>
+{{ source_table(campus) }}
+
+<h3>In town ({{ in_town | length }})</h3>
+{{ source_table(in_town) }}
+
+{% if proposal.rejected %}
+<h3>Pages left out</h3>
+<ul>
+  {% for item in proposal.rejected %}
+  <li><code>{{ item.url }}</code>: {{ item.reason }}</li>
+  {% endfor %}
+</ul>
+{% endif %}
+
+{% if proposal.usage %}
+<p class="audit-meta">
+  Claude used {{ proposal.usage.get("web_search_requests", 0) }} searches,
+  {{ proposal.usage.get("web_fetch_requests", 0) }} page fetches,
+  {{ proposal.usage.get("input_tokens", 0) }} input and {{ proposal.usage.get("output_tokens", 0) }} output tokens.
+</p>
+{% endif %}
+{% endif %}
+{% endblock %}

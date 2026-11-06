@@ -151,6 +151,13 @@ class SchedulerRuntime:
                 self._categorization_tick, "interval", seconds=self._dispatch_interval,
                 id="categorization", max_instances=1, coalesce=True,
             )
+        # Onboarding a whole town with Claude: one queued town at a time, only
+        # with an Anthropic key, so the default install never calls the API.
+        if settings.anthropic_api_key:
+            self._scheduler.add_job(
+                self._town_onboarding_tick, "interval", seconds=self._dispatch_interval,
+                id="town_onboarding", max_instances=1, coalesce=True,
+            )
         # Placeholder photos for imageless events: refill the pool from
         # Unsplash when it is small. Only with an Access Key configured; checks
         # hourly, and a full pool is left alone.
@@ -354,6 +361,26 @@ class SchedulerRuntime:
                 logger.info("refilled category photo pool with %d photo(s)", stored)
         except Exception as exc:  # noqa: BLE001 - a tick must never kill the loop
             logger.warning("category photo refill failed: %s", exc)
+
+    async def _town_onboarding_tick(self) -> None:
+        if not self._is_leader:
+            return
+        from app.services.town_onboarding import process_next_request
+
+        def run() -> tuple[str, str] | None:
+            db = self._session_factory()
+            try:
+                row = process_next_request(db)
+                return (row.town_name, row.status) if row is not None else None
+            finally:
+                db.close()
+
+        try:
+            outcome = await asyncio.to_thread(run)
+            if outcome is not None:
+                logger.info("town onboarding for %s finished: %s", *outcome)
+        except Exception as exc:  # noqa: BLE001 - a tick must never kill the loop
+            logger.warning("town onboarding failed: %s", exc)
 
     async def _home_town_sweep_tick(self) -> None:
         if not self._is_leader:

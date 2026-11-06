@@ -38,6 +38,9 @@ dependencies = [
     # Shared production rate-limit backend. Imported lazily; only used when
     # RATE_LIMIT_BACKEND=redis. Dev/tests need no Redis server.
     "redis>=5",
+    # Claude API, for onboarding a whole college town (app.services.town_onboarding).
+    # Only called when ANTHROPIC_API_KEY is set.
+    "anthropic>=2.6",
 ]
 
 [project.optional-dependencies]

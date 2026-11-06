@@ -1,0 +1,70 @@
+{% extends "admin_base.html" %}
+{% from "admin/_macros.html" import field_error %}
+
+{% block title %}Onboard a town{% endblock %}
+
+{% block admin_content %}
+<h1>Onboard a town with Claude</h1>
+<p class="audit-meta">
+  Type a college town and Claude searches the web for its event calendars: at least
+  {{ min_sources }} pages, with at least {{ min_per_scope }} on campus and {{ min_per_scope }} in town.
+  It opens each page to check that it lists upcoming events. The town is then created (an existing
+  town is used as it is) and every page is queued under Onboarding, the same as an uploaded CSV.
+  Nothing is approved or activated; you review the results as usual.
+</p>
+
+{% if not configured %}
+<p class="field-error">
+  Claude is not set up. Add an <code>ANTHROPIC_API_KEY</code> environment variable to the web
+  service and the scheduler, then come back.
+</p>
+{% endif %}
+
+{% if can_create %}
+<form method="post" action="/admin/onboarding/towns" class="admin-form">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token }}" />
+
+  <label for="town_name">Town</label>
+  <input type="text" id="town_name" name="town_name" required maxlength="255"
+         placeholder="Ann Arbor" value="{{ form.town_name or '' }}" />
+  {{ field_error(errors, "town_name") }}
+
+  <label for="state_or_region">State (optional)</label>
+  <input type="text" id="state_or_region" name="state_or_region" maxlength="100"
+         placeholder="Michigan" value="{{ form.state_or_region or '' }}" />
+  {{ field_error(errors, "state_or_region") }}
+
+  <label for="universities">Universities (optional, one per line)</label>
+  <textarea id="universities" name="universities" rows="3"
+            placeholder="University of Michigan">{{ form.universities or '' }}</textarea>
+  <p class="audit-meta">Leave blank and Claude names the town's universities itself.</p>
+
+  <div class="form-actions">
+    <button type="submit" {% if not configured %}disabled{% endif %}>Find sources</button>
+  </div>
+</form>
+{% endif %}
+
+<h2>Towns</h2>
+{% if requests %}
+<table>
+  <thead>
+    <tr><th>Requested</th><th>Town</th><th>Status</th><th>Sources</th><th>City</th><th><span class="sr-only">Actions</span></th></tr>
+  </thead>
+  <tbody>
+    {% for town in requests %}
+    <tr>
+      <td>{{ town.created_at }}</td>
+      <td>{{ town.town_name }}{% if town.state_or_region %}, {{ town.state_or_region }}{% endif %}</td>
+      <td>{{ town.status }}</td>
+      <td>{{ (town.proposal.sources | length) if town.proposal else "—" }}</td>
+      <td>{% if town.city %}<a href="/admin/cities/{{ town.city.id }}">{{ town.city.name }}</a>{% else %}—{% endif %}</td>
+      <td><a href="/admin/onboarding/towns/{{ town.id }}">Details</a></td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% else %}
+<p class="audit-meta">No towns yet.</p>
+{% endif %}
+{% endblock %}

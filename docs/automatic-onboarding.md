@@ -53,3 +53,36 @@ then notify reviewers. The approved configuration is never silently replaced.
 Every decision records a compact, reproducible snapshot of the metrics and
 thresholds actually consulted. System actions are audited distinctly from human
 actions (`actor_type`). AI-origin configurations remain denied by default.
+
+## Onboarding a whole town with Claude
+
+Imports -> **Onboard a town** takes a college town's name (and optionally its
+state and universities) and does what the daily manual routine did: find the
+town's event listing pages, write the city record and the source CSV, create
+the city and queue the sources.
+
+1. The admin page saves a `town_onboarding_requests` row. The scheduler
+   process picks up one queued town per tick (`_town_onboarding_tick`), so the
+   few minutes of searching never happen inside a web request.
+2. `app.services.town_onboarding.discover_town` asks Claude
+   (`TOWN_ONBOARDING_MODEL`, with web search and web fetch) for at least
+   `TOWN_ONBOARDING_MIN_SOURCES` listing pages (default 8), with at least
+   `TOWN_ONBOARDING_MIN_PER_SCOPE` (default 3) on campus and 3 in town. Claude
+   opens each page to confirm it lists upcoming events, then answers through a
+   strict `submit_town` tool.
+3. `check_proposal` validates the answer: IANA timezone, two-letter state,
+   public http(s) URLs only, no social media, ticketing or nationwide
+   aggregator pages, no duplicates. Bad pages are dropped; if too few remain,
+   the problems go back to Claude and it searches again (up to three times).
+4. `apply_proposal` creates the city (slug `<town>-<state>`, e.g.
+   `ann-arbor-mi`; an existing city with that slug or name is used unchanged)
+   and queues the sources through `create_batch_from_submission`, with
+   `source_kind = "claude"`. From there it is the normal pipeline above:
+   detection, preview, policy, review. Nothing is approved or activated here.
+
+The request page shows the sources by campus and town, the pages that were
+left out and why, token and search usage, and a CSV download in the same
+format as the daily files. `scripts/onboard_town.py` runs the same search from
+the command line (`--csv` to save the file, `--apply` to create the town).
+
+Without `ANTHROPIC_API_KEY` the page says so and nothing calls the API.

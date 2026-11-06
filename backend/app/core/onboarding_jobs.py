@@ -81,8 +81,10 @@ BATCH_STATUSES: tuple[str, ...] = (BATCH_OPEN, BATCH_COMPLETED, BATCH_CANCELLED)
 SOURCE_SINGLE = "single"
 SOURCE_PASTE = "paste"
 SOURCE_CSV = "csv"
+# Sources Claude found for a whole town (app.services.town_onboarding).
+SOURCE_CLAUDE = "claude"
 
-SOURCE_KINDS: tuple[str, ...] = (SOURCE_SINGLE, SOURCE_PASTE, SOURCE_CSV)
+SOURCE_KINDS: tuple[str, ...] = (SOURCE_SINGLE, SOURCE_PASTE, SOURCE_CSV, SOURCE_CLAUDE)
 
 
 def is_terminal(status: str) -> bool:

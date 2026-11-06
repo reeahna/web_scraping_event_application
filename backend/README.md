@@ -156,6 +156,9 @@ without any of it.
 | `GROQ_MODEL` | `openai/gpt-oss-120b` | Groq model for categorization |
 | `GEMINI_API_KEY` | unset | AI categorization with Gemini, when no Groq key is set |
 | `GEMINI_FALLBACK_MODEL` | unset | Second Gemini model to try when the main one answers 503 "overloaded" |
+| `ANTHROPIC_API_KEY` | unset | Onboard a whole college town with Claude (Imports -> Onboard a town) |
+| `TOWN_ONBOARDING_MODEL` | `claude-opus-5-5` | Claude model that searches for a town's event sources |
+| `TOWN_ONBOARDING_MIN_SOURCES`, `TOWN_ONBOARDING_MIN_PER_SCOPE` | `8`, `3` | Fewest sources per town, and fewest on campus and in town |
 | `GEOCODING_ENABLED`, `GEOCODING_PROVIDER` | off | Fill in map coordinates from addresses |
 | `EMAIL_ENABLED`, `EMAIL_BACKEND` | off | Alert emails |
 | `CONTACT_EMAIL` | unset | Shown on the privacy policy and terms |

@@ -48,6 +48,7 @@ from app.routers import (
     reporting,
     scheduler,
     seo,
+    town_onboarding,
     unsupported_reports,
     websites,
 )
@@ -126,6 +127,7 @@ app.include_router(cities.router)
 # Registered before the websites router so /admin/websites/onboard is
 # matched by the onboarding route rather than by /admin/websites/{website_id}.
 app.include_router(onboarding.router)
+app.include_router(town_onboarding.router)
 app.include_router(websites.router)
 app.include_router(events.router)
 app.include_router(event_categories.router)

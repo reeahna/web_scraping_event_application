@@ -25,6 +25,7 @@ from app.models.permission import Permission
 from app.models.role import Role
 from app.models.role_permission import RolePermission
 from app.models.scheduler import SchedulerJobState, SchedulerLeader
+from app.models.town_onboarding import TownOnboardingRequest
 from app.models.unsupported_site_report import UnsupportedSiteReport
 from app.models.user import User
 from app.models.user_engagement import (
@@ -66,6 +67,7 @@ __all__ = [
     "RolePermission",
     "SchedulerJobState",
     "SchedulerLeader",
+    "TownOnboardingRequest",
     "UnsupportedSiteReport",
     "User",
     "UserRole",

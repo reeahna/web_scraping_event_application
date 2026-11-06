@@ -180,6 +180,24 @@ class Settings(BaseSettings):
     groq_batch_size: int = 25
     groq_min_interval_seconds: float = 60.0
 
+    # Onboarding a whole college town with Claude (app.services.town_onboarding).
+    # With ANTHROPIC_API_KEY set, an administrator types a town under
+    # Onboarding -> Towns and the scheduler asks Claude (with web search) for
+    # the town's event listing pages, on campus and in town, then creates the
+    # city and queues the pages like an uploaded CSV. Unset, the page explains
+    # how to turn it on and nothing calls the API.
+    anthropic_api_key: str | None = None
+    town_onboarding_model: str = "claude-opus-5-5"
+    # How hard Claude works on each town: low | medium | high | xhigh | max.
+    town_onboarding_effort: str = "high"
+    # The fewest sources a proposal must hold, and the fewest on each side
+    # (campus and town), before it is accepted.
+    town_onboarding_min_sources: int = 8
+    town_onboarding_min_per_scope: int = 3
+    # Web searches and page fetches Claude may make for one town.
+    town_onboarding_max_searches: int = 25
+    town_onboarding_max_fetches: int = 30
+
     # Asynchronous geocoding (app.services.geocoding). Disabled by default: the
     # application is fully functional without it and no live third-party
     # request is ever made unless an administrator turns it on. `geocoding_provider`
