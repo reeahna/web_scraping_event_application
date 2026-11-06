@@ -119,6 +119,44 @@ def _first_group_name(value: Any) -> Any:
     return None
 
 
+# LiveWhale fills `location` only for a free-text location. An event linked
+# to one of the calendar's Places carries it as `location_title` (with
+# `location_latitude`/`location_longitude`), and some installs nest it as a
+# `location` object instead. Without these the venue was dropped and the event
+# showed "Venue TBD".
+_PLACE_FALLBACKS: dict[str, tuple[str, ...]] = {
+    "venue": ("location_title", "location_name", "place_title", "place"),
+    "latitude": ("location_latitude", "location_lat"),
+    "longitude": ("location_longitude", "location_lng", "location_lon"),
+}
+
+
+def _fill_place_fallbacks(
+    event: dict[str, Any],
+    raw: dict[str, Any],
+    field_source_paths: dict[str, str],
+    index: int,
+) -> None:
+    venue = raw.get("venue")
+    if isinstance(venue, dict):
+        # A nested place object: its name is the venue.
+        name = venue.get("title") or venue.get("name")
+        raw["venue"] = name if isinstance(name, str) else None
+        field_source_paths["venue"] = _provenance_path(index, "location.title")
+    for field_name, keys in _PLACE_FALLBACKS.items():
+        current = raw.get(field_name)
+        if current is not None and not (isinstance(current, str) and not current.strip()):
+            continue
+        for key in keys:
+            value = event.get(key)
+            if isinstance(value, dict):
+                value = value.get("title") or value.get("name")
+            if value is not None and not (isinstance(value, str) and not value.strip()):
+                raw[field_name] = value
+                field_source_paths[field_name] = _provenance_path(index, key)
+                break
+
+
 def _events_from_payload(payload: Any) -> list[Any] | None:
     if isinstance(payload, dict):
         # LiveWhale exposes the event list under `events` on some installs and
@@ -163,6 +201,8 @@ class LiveWhalePattern:
                 result = resolve_json_path(event, path)
                 raw[field_name] = result.value
                 field_source_paths[field_name] = _provenance_path(index, path)
+
+            _fill_place_fallbacks(event, raw, field_source_paths, index)
 
             if raw.get("external_source_id") is None:
                 raw["external_source_id"] = raw.get("event_id")

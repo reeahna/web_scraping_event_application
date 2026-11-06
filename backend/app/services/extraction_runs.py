@@ -43,9 +43,9 @@ from app.extraction.browser import (
     BrowserStructuredResponseFetchStrategy,
 )
 from app.extraction.dedup import dedupe_within_run
-from app.extraction.description_fallback import fill_missing_descriptions
 from app.extraction.detail_pages import enrich_with_detail_pages
 from app.extraction.detection import run_detection as detect_patterns
+from app.extraction.event_page_fallback import fill_from_event_pages
 from app.extraction.feed_links import feed_links
 from app.extraction.fetch import (
     FetchStrategy,
@@ -74,6 +74,7 @@ from app.models.website import Website
 from app.repositories.event import (
     create_event_from_candidate,
     described_event_urls,
+    event_urls_with_venue,
     find_existing_event_for_candidate,
     update_event,
 )
@@ -711,10 +712,12 @@ async def _execute_pipeline(
     *,
     fallback_timezone: str | None,
     described_urls: frozenset[str] | None = None,
+    venue_urls: frozenset[str] = frozenset(),
 ) -> _PipelineOutcome:
-    """`described_urls` turns on the detail-page description lookup for events
-    whose listing has none, skipping URLs already stored with a description.
-    Left None (preview), no extra pages are fetched."""
+    """`described_urls` turns on the detail-page lookup for events whose
+    listing has no description or no venue, skipping URLs already stored with a
+    description (`described_urls`) or a venue (`venue_urls`). Left None
+    (preview), no extra pages are fetched."""
     registration = REGISTRY.get(pattern_name)
     pattern = registration.extractor
 
@@ -752,12 +755,13 @@ async def _execute_pipeline(
                 all_candidates, _detail_fetch_strategy(config, fetch), config
             )
         if described_urls is not None:
-            all_candidates, lookup_warnings = await fill_missing_descriptions(
+            all_candidates, lookup_warnings = await fill_from_event_pages(
                 all_candidates,
                 _detail_fetch_strategy(config, fetch),
                 config.fetch,
                 listing_html=first_response.text if first_response is not None else None,
                 known_described_urls=described_urls,
+                known_venue_urls=venue_urls,
             )
             warnings.extend(lookup_warnings)
 
@@ -1121,6 +1125,7 @@ async def run_extraction(
         fetch,
         fallback_timezone=_fallback_timezone(website),
         described_urls=described_event_urls(db, website.id),
+        venue_urls=event_urls_with_venue(db, website.id),
     )
     completed_at = datetime.now(UTC)
 

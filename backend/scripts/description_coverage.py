@@ -1,13 +1,15 @@
-"""Report which sources leave events without a description.
+"""Report which sources leave events without a description (or venue).
 
 Counts upcoming, active events per website and how many of them have no
 description, worst sources first, with the extraction pattern each source uses.
-Read-only.
+With `--field venue` it counts events shown as "Venue TBD" instead (no venue,
+or a placeholder like "TBA", and no administrator correction). Read-only.
 
 Usage (from backend/, venv active; on Render the working dir is /srv/backend):
 
-    python scripts/description_coverage.py            # sources missing any
-    python scripts/description_coverage.py --all      # every source
+    python scripts/description_coverage.py                # sources missing any
+    python scripts/description_coverage.py --all          # every source
+    python scripts/description_coverage.py --field venue  # venues instead
 """
 
 from __future__ import annotations
@@ -28,10 +30,15 @@ from app.models.website import Website  # noqa: E402
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
-    parser.add_argument("--all", action="store_true", help="include fully described sources")
+    parser.add_argument("--all", action="store_true", help="include fully covered sources")
+    parser.add_argument("--field", choices=("description", "venue"), default="description")
     args = parser.parse_args()
 
-    missing = or_(Event.description.is_(None), func.trim(Event.description) == "")
+    if args.field == "venue":
+        venue = func.lower(func.trim(func.coalesce(Event.corrected_venue, Event.venue, "")))
+        missing = or_(venue == "", venue.in_(("tba", "tbd", "tbc", "to be announced")))
+    else:
+        missing = or_(Event.description.is_(None), func.trim(Event.description) == "")
     with SessionLocal() as db:
         rows = (
             db.query(
@@ -59,7 +66,7 @@ def main() -> int:
         pct = 100 * n_missing / count if count else 0
         print(f"{n_missing:>7} {count:>6} {pct:>4.0f}%  {pattern:<24} {website.name}")
     pct = 100 * total_missing / total if total else 0
-    print(f"\n{total_missing} of {total} upcoming events ({pct:.0f}%) have no description.")
+    print(f"\n{total_missing} of {total} upcoming events ({pct:.0f}%) have no {args.field}.")
     return 0
 
 

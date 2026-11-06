@@ -177,3 +177,42 @@ def test_itemlist_bare_event_elements_unwrapped():
 def test_itemlist_non_event_yields_nothing():
     candidates = JsonLdEventPattern().extract(make_response(_BREADCRUMB_HTML), CONFIG)
     assert candidates == []
+
+
+def _location_page(location) -> str:
+    import json
+
+    event = {
+        "@type": "Event",
+        "name": "Talk",
+        "startDate": "2030-05-01T19:00",
+        "url": "https://example.com/e/1",
+        "location": location,
+    }
+    return f'<script type="application/ld+json">{json.dumps(event)}</script>'
+
+
+def _venue_and_address(location):
+    response = make_response(_location_page(location))
+    candidate = JsonLdEventPattern().extract(response, CONFIG)[0]
+    return candidate.raw["venue"], candidate.raw["address"]
+
+
+def test_location_as_plain_string_is_the_venue():
+    assert _venue_and_address("Zoellner Arts Center") == ("Zoellner Arts Center", None)
+
+
+def test_location_list_skips_virtual_location():
+    location = [
+        {"@type": "VirtualLocation", "url": "https://zoom.us/j/1"},
+        {
+            "@type": "Place",
+            "name": "Packard Lab 101",
+            "address": {"@type": "PostalAddress", "streetAddress": "19 Memorial Dr W"},
+        },
+    ]
+    assert _venue_and_address(location) == ("Packard Lab 101", "19 Memorial Dr W")
+
+
+def test_placeholder_location_string_is_not_a_venue():
+    assert _venue_and_address("TBA") == (None, None)
