@@ -213,12 +213,13 @@ _OVERFLOW_JS = """
 def test_pages_fit_every_screen(browser_name, live_server, layout_data, client, login):
     city, event = layout_data["city"], layout_data["event"]
     public = ["/", f"/city/{city.slug}", f"/events/{event.id}", "/auth/login",
-              "/privacy", "/terms", "/no-such-page"]
+              "/privacy", "/terms", "/suggest", "/no-such-page"]
     member_pages = ["/", f"/city/{city.slug}", f"/events/{event.id}", "/account",
-                    "/account/saved", "/account/inbox", "/account/alerts"]
+                    "/account/saved", "/account/inbox", "/account/alerts", "/suggest"]
     admin_pages = ["/admin", "/admin/cities", f"/admin/cities/{city.id}",
                    "/admin/websites", "/admin/events", f"/admin/events/{event.id}",
-                   "/admin/event-categories", "/admin/notifications", "/admin/scheduler"]
+                   "/admin/event-categories", "/admin/notifications", "/admin/scheduler",
+                   "/admin/suggestions"]
     visits = (
         [("guest", None, p) for p in public]
         + [("member", "member@example.com", p) for p in member_pages]

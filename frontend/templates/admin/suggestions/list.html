@@ -1,0 +1,70 @@
+{% extends "admin_base.html" %}
+{% from "admin/_macros.html" import pagination %}
+
+{% block title %}Suggestions{% endblock %}
+
+{% block admin_content %}
+<h1>Suggestions</h1>
+<p>Towns and features that signed-in visitors have asked for.</p>
+
+<form method="get" action="/admin/suggestions" class="filter-bar">
+  <select name="kind" aria-label="Type">
+    <option value="">Towns and features</option>
+    <option value="town" {% if kind == "town" %}selected{% endif %}>Towns</option>
+    <option value="feature" {% if kind == "feature" %}selected{% endif %}>Features</option>
+  </select>
+  <select name="status" aria-label="Status">
+    <option value="">All statuses</option>
+    {% for value, label in statuses.items() %}
+    <option value="{{ value }}" {% if status == value %}selected{% endif %}>{{ label }}</option>
+    {% endfor %}
+  </select>
+  <button type="submit">Filter</button>
+</form>
+
+{{ pagination(page, per_page, total, base_url) }}
+
+{% if not suggestions %}
+<p class="empty-state">No suggestions{% if kind or status %} match these filters{% else %} yet{% endif %}.</p>
+{% else %}
+<table>
+  <thead>
+    <tr><th>Sent</th><th>Type</th><th>Suggestion</th><th>From</th><th>Status</th></tr>
+  </thead>
+  <tbody>
+  {% for s in suggestions %}
+    <tr>
+      <td>{{ s.created_at.strftime("%Y-%m-%d") }}</td>
+      <td>{{ "Town" if s.kind == "town" else "Feature" }}</td>
+      <td>
+        <strong>{{ s.title }}{% if s.region %}, {{ s.region }}{% endif %}</strong>
+        {% if s.university %}<br />{{ s.university }}{% endif %}
+        {% if s.details %}<p class="suggestion-details">{{ s.details }}</p>{% endif %}
+      </td>
+      <td>{% if s.user %}{{ s.user.full_name or s.user.email }}{% else %}<em>Deleted account</em>{% endif %}</td>
+      <td>
+        {% if can_manage %}
+        <form method="post" action="/admin/suggestions/{{ s.id }}" class="suggestion-status-form">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token }}" />
+          <input type="hidden" name="back" value="{{ request.url.path }}{% if request.url.query %}?{{ request.url.query }}{% endif %}" />
+          <label for="status-{{ s.id }}" class="sr-only">Status</label>
+          <select id="status-{{ s.id }}" name="status">
+            {% for value, label in statuses.items() %}
+            <option value="{{ value }}" {% if s.status == value %}selected{% endif %}>{{ label }}</option>
+            {% endfor %}
+          </select>
+          <label for="notes-{{ s.id }}" class="sr-only">Notes</label>
+          <textarea id="notes-{{ s.id }}" name="admin_notes" rows="2" placeholder="Notes (only admins see these)">{{ s.admin_notes or "" }}</textarea>
+          <button type="submit">Save</button>
+        </form>
+        {% else %}
+        {{ statuses.get(s.status, s.status) }}
+        {% if s.admin_notes %}<p class="suggestion-details">{{ s.admin_notes }}</p>{% endif %}
+        {% endif %}
+      </td>
+    </tr>
+  {% endfor %}
+  </tbody>
+</table>
+{% endif %}
+{% endblock %}
