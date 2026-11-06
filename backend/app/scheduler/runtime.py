@@ -194,7 +194,11 @@ class SchedulerRuntime:
         db = self._session_factory()
         try:
             # Re-claim leadership if it was vacant/stale, then heartbeat.
+            was_leader = self._is_leader
             self._is_leader = try_become_leader(db, self.holder)
+            if self._is_leader and not was_leader:
+                logger.info("scheduler %s took over as leader", self.holder)
+                self._run_on_start_jobs_now()
             if self._is_leader:
                 leader_heartbeat(db, self.holder)
                 reclaim_stale_locks(db)
@@ -205,6 +209,23 @@ class SchedulerRuntime:
             logger.warning("heartbeat tick failed: %s", exc)
         finally:
             db.close()
+
+    # Jobs that run "once on start, then daily". On a deploy the new process
+    # starts while the old one still holds the leader row, so it starts as a
+    # standby and these first runs would see no leadership and wait a whole day.
+    # They run again as soon as this process takes over instead.
+    _ON_START_JOB_IDS = (
+        "category_photos",
+        "home_town_sweep",
+        "attendability_sweep",
+        "college_towns",
+    )
+
+    def _run_on_start_jobs_now(self) -> None:
+        now = datetime.now(UTC)
+        for job_id in self._ON_START_JOB_IDS:
+            if self._scheduler.get_job(job_id) is not None:
+                self._scheduler.modify_job(job_id, next_run_time=now)
 
     def _due_website_ids(self, now: datetime) -> list[int]:
         db = self._session_factory()
