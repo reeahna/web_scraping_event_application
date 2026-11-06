@@ -31,14 +31,21 @@ from app.services.notifications import SEVERITY_INFO, notify
 playwright_api = pytest.importorskip("playwright.sync_api")
 uvicorn = pytest.importorskip("uvicorn")
 
-# Narrowest common phone, a current phone, tablet portrait, small laptop,
-# desktop. Named so a failure and a screenshot say which one.
+# Phones (portrait and landscape), iPads (portrait and landscape, mini/Air
+# and Pro), laptops and a wide monitor. Named so a failure and a screenshot
+# say which one.
 VIEWPORTS = {
     "phone-320": (320, 640),
     "phone-390": (390, 844),
-    "tablet-768": (768, 1024),
-    "laptop-1024": (1024, 768),
+    "phone-landscape-844": (844, 390),
+    "ipad-portrait-768": (768, 1024),
+    "ipad-air-portrait-820": (820, 1180),
+    "ipad-landscape-1024": (1024, 768),
+    "ipad-pro-portrait-1024": (1024, 1366),
+    "ipad-air-landscape-1180": (1180, 820),
+    "laptop-1280": (1280, 800),
     "desktop-1440": (1440, 900),
+    "wide-1920": (1920, 1080),
 }
 
 BROWSERS = [
