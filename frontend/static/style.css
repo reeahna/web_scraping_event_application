@@ -216,6 +216,82 @@ input[type="checkbox"], input[type="radio"] {
   color: #fff;
 }
 
+/* "My Account" dropdown: Saved and Alerts live under it. */
+.account-menu {
+  position: relative;
+}
+
+.account-menu-trigger {
+  list-style: none;
+  cursor: pointer;
+  font-weight: 600;
+  color: var(--text);
+  padding: var(--space-2) 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.account-menu-trigger::-webkit-details-marker {
+  display: none;
+}
+
+.account-menu-trigger::after {
+  content: "";
+  width: 0.4em;
+  height: 0.4em;
+  margin-left: 4px;
+  border-right: 2px solid currentColor;
+  border-bottom: 2px solid currentColor;
+  transform: translateY(-2px) rotate(45deg);
+}
+
+.account-menu[open] > .account-menu-trigger::after {
+  transform: translateY(1px) rotate(-135deg);
+}
+
+.account-menu-trigger:hover {
+  color: var(--accent);
+}
+
+.account-menu-trigger:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+  border-radius: var(--radius-sm);
+}
+
+.account-menu-list {
+  position: absolute;
+  right: 0;
+  top: 100%;
+  margin: var(--space-2) 0 0;
+  padding: var(--space-2) 0;
+  list-style: none;
+  min-width: 11rem;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  box-shadow: var(--shadow-md);
+  z-index: 20;
+}
+
+.site-nav .account-menu-list a {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-4);
+}
+
+.site-nav .account-menu-list a:hover,
+.site-nav .account-menu-list a:focus-visible {
+  background: var(--bg);
+}
+
+.site-nav .account-menu-list a[aria-current="page"] {
+  color: var(--accent);
+}
+
 /* ==========================================================================
    5. Footer
    ========================================================================== */
