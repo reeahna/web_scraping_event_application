@@ -179,6 +179,15 @@ class SchedulerRuntime:
                 id="attendability_sweep", max_instances=1, coalesce=True,
                 next_run_time=datetime.now(UTC),
             )
+        # College towns and their sources committed under data/college_towns/:
+        # imported on start, so a deploy that adds a day's file onboards it,
+        # then daily. The onboarding tick processes the queued jobs.
+        if settings.college_town_import_enabled:
+            self._scheduler.add_job(
+                self._college_towns_tick, "interval", hours=24,
+                id="college_towns", max_instances=1, coalesce=True,
+                next_run_time=datetime.now(UTC),
+            )
         self._scheduler.start()
 
     async def _heartbeat_tick(self) -> None:
@@ -395,6 +404,29 @@ class SchedulerRuntime:
                 logger.info("took down %d event(s) that are not attendable", len(hidden))
         except Exception as exc:  # noqa: BLE001 - a tick must never kill the loop
             logger.warning("attendability sweep failed: %s", exc)
+
+    async def _college_towns_tick(self) -> None:
+        if not self._is_leader:
+            return
+        from app.services.college_towns import import_college_towns
+
+        def load():
+            db = self._session_factory()
+            try:
+                return import_college_towns(db)
+            finally:
+                db.close()
+
+        try:
+            summary = await asyncio.to_thread(load)
+            if summary.cities_created or summary.files_queued:
+                logger.info(
+                    "college towns: created %s, queued %s",
+                    ", ".join(summary.cities_created) or "no cities",
+                    ", ".join(summary.files_queued) or "no files",
+                )
+        except Exception as exc:  # noqa: BLE001 - a tick must never kill the loop
+            logger.warning("college town import failed: %s", exc)
 
     async def _run_one(self, website_id: int) -> None:
         async with self._semaphore:
