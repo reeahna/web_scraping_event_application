@@ -79,6 +79,9 @@ body {
   color: var(--text);
   min-height: 100vh;
   line-height: 1.5;
+  /* A long unbroken word (a URL, an email, a run-together venue name) wraps
+     instead of pushing the page wider than a phone screen. */
+  overflow-wrap: break-word;
   display: flex;
   flex-direction: column;
 }
@@ -911,6 +914,7 @@ button:hover {
 
 .admin-body th,
 .admin-body td {
+  overflow-wrap: normal;
   text-align: left;
   padding: var(--space-2) var(--space-3);
   border-bottom: 1px solid var(--border);
@@ -1621,6 +1625,12 @@ button:hover {
   flex: 1 1 160px;
 }
 
+/* Date boxes keep their natural width, so a date that wraps onto the next
+   line does not stretch across the whole panel. */
+.filter-field:has(> input[type="date"]) {
+  flex-grow: 0;
+}
+
 .filter-field label {
   font-size: var(--font-xs);
   font-weight: 700;
@@ -1630,7 +1640,8 @@ button:hover {
 }
 
 .filter-field select,
-.filter-field input[type="date"] {
+.filter-field input[type="date"],
+.filter-field input[type="search"] {
   padding: var(--space-2) var(--space-3);
   border: 1px solid var(--border-input);
   border-radius: var(--radius-sm);
@@ -2059,7 +2070,9 @@ button:hover {
   margin: 0 auto var(--space-5);
   border-radius: var(--radius-lg);
   overflow: hidden;
-  background: var(--bg);
+  /* background-color, not the shorthand: the shorthand came after the .ph-N
+     gradients and wiped them, leaving a blank box where the placeholder goes. */
+  background-color: var(--bg);
 }
 
 .event-detail-image img {
@@ -2117,6 +2130,13 @@ button:hover {
   color: var(--accent);
   font-weight: 600;
   margin-bottom: var(--space-6);
+}
+
+.event-detail-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  margin: calc(-1 * var(--space-4)) 0 var(--space-6);
 }
 
 /* Save/follow buttons that are already "on": show the current state, and
@@ -2283,7 +2303,8 @@ button.toggle-on:focus-visible .toggle-label-off { display: inline; }
   }
 
   .filter-field select,
-  .filter-field input[type="date"] {
+  .filter-field input[type="date"],
+  .filter-field input[type="search"] {
     width: 100%;
   }
 
@@ -2875,6 +2896,10 @@ a.wf-danger, button.wf-danger {
   gap: var(--space-2);
   font-size: var(--font-sm);
   color: var(--muted);
+  overflow-wrap: anywhere;
+}
+.saved-item-where > * {
+  min-width: 0;
 }
 .saved-item-status {
   display: flex;
@@ -3050,6 +3075,36 @@ a.wf-danger, button.wf-danger {
   background: var(--bg);
   box-shadow: none;
   border-style: dashed;
+}
+
+/* On a phone, admin tables scroll sideways inside their own box rather than
+   making the whole page wider than the screen. */
+@media (max-width: 640px) {
+  .admin-body table {
+    display: block;
+    overflow-x: auto;
+    max-width: 100%;
+    /* Holds screen-reader-only text (position: absolute) inside the box too. */
+    position: relative;
+  }
+}
+
+/* Alert preferences: the checkbox groups get a card, not the browser's
+   default grooved border with the legend jammed into it. */
+.pref-group {
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--surface);
+  padding: var(--space-3) var(--space-4) var(--space-4);
+  margin: 0 0 var(--space-4);
+  min-width: 0;
+}
+.pref-group legend {
+  padding: 0 var(--space-2);
+  margin-left: calc(-1 * var(--space-2));
+  font-weight: 700;
+  font-size: var(--font-sm);
+  color: var(--text);
 }
 
 /* ==========================================================================
