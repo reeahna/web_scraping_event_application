@@ -97,8 +97,11 @@ changes apply themselves.
   scheduler from importing events.
 - **Memory:** `starter` has 512 MB for the web server, the scheduler and
   headless Chromium together. One browser render takes roughly 300 MB, so
-  `BROWSER_MAX_CONCURRENT` (default 1) keeps renders one at a time. If Render
-  still reports the instance running out of memory, move to `standard` (2 GB).
+  `BROWSER_MAX_CONCURRENT` (default 1) keeps renders one at a time across the
+  whole instance: an admin's "Retry automatic recovery" waits for a scheduled
+  run's browser to finish rather than starting a second one. If Render still
+  reports the instance running out of memory (the service's **Events** tab
+  shows "Out of memory"), move to `standard` (2 GB).
 - **The database** lives at `/data/app.db` on the persistent disk and survives
   deploys and restarts. It is never baked into the image.
 - **Backups:** from the Render **Shell**, `cp /data/app.db /data/app.db.bak`

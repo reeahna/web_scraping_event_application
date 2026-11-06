@@ -58,6 +58,7 @@
         {{ nav_link("/admin/scheduler", "Scheduler") }}
         {{ nav_link("/admin/settings/onboarding-policies", "Auto policies") }}
         {{ nav_link("/admin/unsupported-reports", "Unsupported reports") }}
+        {{ nav_link("/admin/suggestions", "Suggestions") }}
       </ul>
     </li>
 
@@ -74,6 +75,7 @@
 
   <div class="admin-nav-end">
     <a href="/admin/notifications" {% if nav_path == "/admin/notifications" %}aria-current="page"{% endif %}>Notifications{% if current_user %} ({{ unread_notification_count(current_user.id) }}){% endif %}</a>
+    <a href="/suggest" {% if nav_path == "/suggest" %}aria-current="page"{% endif %}>Suggest</a>
     <a href="/account" {% if nav_path == "/account" %}aria-current="page"{% endif %}>My Account</a>
     <span class="admin-nav-user">{{ current_user.full_name or current_user.email }}</span>
     <form method="post" action="/auth/logout" class="inline-form">

@@ -1,0 +1,89 @@
+{% extends "base.html" %}
+
+{% block title %}Suggest a town or feature — {{ site_name }}{% endblock %}
+{% block meta_description %}Tell us which college town to add next, or what would make {{ site_name }} better.{% endblock %}
+{% block robots %}noindex, follow{% endblock %}
+
+{% macro field_error(name) %}
+{% if errors.get(name) %}<p class="suggest-error" id="{{ name }}-error">{{ errors[name] }}</p>{% endif %}
+{% endmacro %}
+
+{% macro invalid(name) %}{% if errors.get(name) %} aria-invalid="true" aria-describedby="{{ name }}-error"{% endif %}{% endmacro %}
+
+{% block content %}
+<div class="page-container suggest-page">
+  <h1>Make a suggestion</h1>
+  <p class="hero-subtext">Missing your town, or wish the site did something it doesn't? Tell us. Every suggestion is read.</p>
+
+  <nav class="suggest-tabs" aria-label="What would you like to suggest?">
+    <a href="/suggest?kind=town" class="suggest-tab"{% if form.kind == "town" %} aria-current="page"{% endif %}>A new town</a>
+    <a href="/suggest?kind=feature" class="suggest-tab"{% if form.kind == "feature" %} aria-current="page"{% endif %}>A new feature</a>
+  </nav>
+
+  {% if errors.get("form") %}
+  <div class="flash flash-error" role="alert">{{ errors["form"] }}</div>
+  {% elif errors %}
+  <div class="flash flash-error" role="alert">Please fix the highlighted fields.</div>
+  {% endif %}
+
+  <form method="post" action="/suggest" class="suggest-form">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}" />
+    <input type="hidden" name="kind" value="{{ form.kind }}" />
+
+    {% if form.kind == "town" %}
+    <div class="suggest-field">
+      <label for="title">Town or city <span class="suggest-required">(required)</span></label>
+      <input type="text" id="title" name="title" value="{{ form.title }}" maxlength="{{ limits.title }}" autocomplete="address-level2" required{{ invalid("title") }} />
+      {{ field_error("title") }}
+    </div>
+    <div class="suggest-field">
+      <label for="region">State or region</label>
+      <input type="text" id="region" name="region" value="{{ form.region }}" maxlength="{{ limits.region }}" autocomplete="address-level1"{{ invalid("region") }} />
+      {{ field_error("region") }}
+    </div>
+    <div class="suggest-field">
+      <label for="university">College or university <span class="suggest-required">(required)</span></label>
+      <input type="text" id="university" name="university" value="{{ form.university }}" maxlength="{{ limits.university }}" required{{ invalid("university") }} />
+      {{ field_error("university") }}
+    </div>
+    <div class="suggest-field">
+      <label for="details">Anything else?</label>
+      <p class="suggest-hint" id="details-hint">Links to event calendars in town or on campus help us add it sooner.</p>
+      <textarea id="details" name="details" rows="4" maxlength="{{ limits.details }}" aria-describedby="details-hint"{{ invalid("details") }}>{{ form.details }}</textarea>
+      {{ field_error("details") }}
+    </div>
+    <button type="submit">Suggest this town</button>
+    {% else %}
+    <div class="suggest-field">
+      <label for="title">Your idea in a few words <span class="suggest-required">(required)</span></label>
+      <input type="text" id="title" name="title" value="{{ form.title }}" maxlength="{{ limits.title }}" required{{ invalid("title") }} />
+      {{ field_error("title") }}
+    </div>
+    <div class="suggest-field">
+      <label for="details">How would it help you? <span class="suggest-required">(required)</span></label>
+      <textarea id="details" name="details" rows="5" maxlength="{{ limits.details }}" required{{ invalid("details") }}>{{ form.details }}</textarea>
+      {{ field_error("details") }}
+    </div>
+    <button type="submit">Send idea</button>
+    {% endif %}
+  </form>
+
+  {% if mine %}
+  <section class="suggest-mine" aria-labelledby="suggest-mine-heading">
+    <h2 id="suggest-mine-heading">Your suggestions</h2>
+    <ul class="suggest-list">
+      {% for s in mine %}
+      <li class="suggest-item">
+        <div class="suggest-item-main">
+          <span class="suggest-item-kind">{{ "Town" if s.kind == "town" else "Feature" }}</span>
+          <span class="suggest-item-title">{{ s.title }}{% if s.kind == "town" and s.region %}, {{ s.region }}{% endif %}</span>
+          {% if s.kind == "town" and s.university %}<span class="suggest-item-sub">{{ s.university }}</span>{% endif %}
+        </div>
+        <span class="suggest-status suggest-status-{{ s.status }}">{{ statuses.get(s.status, s.status) }}</span>
+      </li>
+      {% endfor %}
+    </ul>
+  </section>
+  {% endif %}
+</div>
+{% endblock %}

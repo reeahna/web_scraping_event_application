@@ -19,10 +19,13 @@ Safety, all enforced here rather than trusted to the caller:
   submitted to
 * the browser, context and pages are always closed in a finally block, even
   on error or timeout
-* at most ``BROWSER_MAX_CONCURRENT`` Chromium instances run at once per
-  process (default 1), launched with low-memory flags, because the production
-  box runs the web server, the scheduler and the browser in one small instance
-  and several concurrent Chromiums are enough to run it out of memory
+* at most ``BROWSER_MAX_CONCURRENT`` Chromium instances run at once across
+  every process on the machine (default 1), launched with low-memory flags,
+  because the production box runs the web server, the scheduler and the
+  browser in one small instance and two concurrent Chromiums are enough to run
+  it out of memory. The web server (an admin's "retry automatic recovery") and
+  the scheduler (site runs, bulk imports) each have their own event loop, so
+  the cap is a set of lock files, not only an in-process semaphore
 
 The SSRF host check is indirected through `_host_allowed` so tests can permit
 a local fixture server without weakening the production default.
@@ -34,8 +37,10 @@ import asyncio
 import contextlib
 import hashlib
 import json
+import os
 import re
 import sys
+import tempfile
 import weakref
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
@@ -134,8 +139,8 @@ class BrowserPagedResult:
     warnings: tuple[str, ...] = ()
 
 
-def _browser_slot() -> asyncio.Semaphore:
-    """The process-wide cap on concurrently running browsers. The scheduler's
+def _loop_slot() -> asyncio.Semaphore:
+    """The per-event-loop cap on concurrently running browsers. The scheduler's
     site runs, bulk imports and onboarding drain all render through here, so
     without it they could start a Chromium each at the same moment."""
     loop = asyncio.get_running_loop()
@@ -146,6 +151,64 @@ def _browser_slot() -> asyncio.Semaphore:
         slot = asyncio.Semaphore(max(1, get_settings().browser_max_concurrent))
         _launch_slots[loop] = slot
     return slot
+
+
+# Where the machine-wide browser lock files live. Every process in the
+# container shares the system temp directory; tests point it elsewhere.
+_LOCK_DIR = os.path.join(tempfile.gettempdir(), "city-events-browser-slots")
+_LOCK_POLL_SECONDS = 0.25
+
+
+def _try_lock(fd: int) -> bool:
+    import fcntl
+
+    try:
+        fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+    except BlockingIOError:
+        return False
+    return True
+
+
+@contextlib.asynccontextmanager
+async def _machine_slot():
+    """Hold one of ``BROWSER_MAX_CONCURRENT`` lock files for the duration of a
+    render, waiting (without blocking the event loop) until one is free. The
+    kernel drops a flock when its holder exits, so a crashed or OOM-killed
+    process never leaves a slot taken. Without ``fcntl`` (local Windows
+    development) there is no cross-process cap, only the per-loop one."""
+    try:
+        import fcntl  # noqa: F401
+    except ImportError:
+        yield
+        return
+    from app.config import get_settings
+
+    slots = max(1, get_settings().browser_max_concurrent)
+    os.makedirs(_LOCK_DIR, exist_ok=True)
+    fds = [
+        os.open(os.path.join(_LOCK_DIR, f"slot-{i}.lock"), os.O_RDWR | os.O_CREAT, 0o600)
+        for i in range(slots)
+    ]
+    held = None
+    try:
+        while held is None:
+            held = next((fd for fd in fds if _try_lock(fd)), None)
+            if held is None:
+                await asyncio.sleep(_LOCK_POLL_SECONDS)
+        yield
+    finally:
+        # Closing the descriptor releases its lock.
+        for fd in fds:
+            os.close(fd)
+
+
+@contextlib.asynccontextmanager
+async def _browser_slot():
+    """The cap every Chromium launch goes through: first this loop's own
+    semaphore (so one process queues fairly), then a machine-wide slot (so the
+    web server and the scheduler never run a browser each at the same time)."""
+    async with _loop_slot(), _machine_slot():
+        yield
 
 
 async def _host_allowed(url: str) -> bool:
