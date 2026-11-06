@@ -3,9 +3,12 @@
 {% block title %}{{ event.title }} — {{ site_name }}{% endblock %}
 {% block meta_description %}{{ meta_description }}{% endblock %}
 {% block og_type %}article{% endblock %}
-{% block twitter_card %}{{ "summary_large_image" if event.image_url else "summary" }}{% endblock %}
+{% block twitter_card %}{{ "summary_large_image" if (event.image_url or category_photo(event)) else "summary" }}{% endblock %}
 {% block og_extra %}
-  {% if event.image_url %}<meta property="og:image" content="{{ event.image_url }}" />{% endif %}
+  {# A shared link shows a picture: the event's own image, or else the same
+     category photo the page displays, so posts without a poster aren't bare. #}
+  {% if event.image_url %}<meta property="og:image" content="{{ event.image_url }}" />
+  {% else %}{% set og_ph = category_photo(event) %}{% if og_ph %}<meta property="og:image" content="{{ og_ph.image_url }}" />{% endif %}{% endif %}
 {% endblock %}
 
 {% block head_extra %}
@@ -93,6 +96,29 @@
       {% else %}
       <p class="event-detail-signin"><a href="/auth/login?next={{ request.url.path|urlencode }}">Log in</a> to save events and follow cities.</p>
       {% endif %}
+
+      {#
+        Sharing works for everyone, signed in or not. The platform buttons are
+        plain links (no third-party scripts). "Share…" (the phone's own share
+        sheet) and "Copy link" need JavaScript, so they start hidden and
+        static/js/event-share.js reveals them where the browser supports them.
+      #}
+      <div class="event-share" role="group" aria-labelledby="share-heading"
+           data-share-url="{{ canonical_url }}" data-share-title="{{ event.title }}" data-share-text="{{ share_text }}">
+        <span id="share-heading" class="event-share-label">Share</span>
+        <button type="button" class="share-pill share-native" hidden>
+          <svg aria-hidden="true" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 12v7a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-7"/><path d="M16 6l-4-4-4 4"/><path d="M12 2v13"/></svg>
+          Share&hellip;
+        </button>
+        <button type="button" class="share-pill share-copy" hidden>
+          <svg aria-hidden="true" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7.07 0l3-3a5 5 0 0 0-7.07-7.07l-1.5 1.5"/><path d="M14 11a5 5 0 0 0-7.07 0l-3 3a5 5 0 0 0 7.07 7.07l1.5-1.5"/></svg>
+          <span class="share-copy-label">Copy link</span>
+        </button>
+        {% for link in share_links %}
+        <a class="share-pill share-{{ link.key }}" href="{{ link.href }}"{% if link.key != 'email' %} target="_blank" rel="noopener noreferrer"{% endif %}>{{ link.label }}{% if link.key != 'email' %}<span class="sr-only"> (opens in a new tab)</span>{% endif %}</a>
+        {% endfor %}
+        <span class="share-status sr-only" role="status" aria-live="polite"></span>
+      </div>
     </header>
 
     <div class="event-detail-grid">
@@ -155,4 +181,8 @@
     {% endif %}
   </article>
 </div>
+{% endblock %}
+
+{% block scripts %}
+<script src="/static/js/event-share.js" defer></script>
 {% endblock %}

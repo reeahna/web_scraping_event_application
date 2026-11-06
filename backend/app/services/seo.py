@@ -10,9 +10,10 @@ from __future__ import annotations
 
 import json
 from datetime import date, time
-from urllib.parse import urljoin
+from urllib.parse import quote, urlencode, urljoin
 
 from app.config import get_settings
+from app.core.formatting import human_date_long
 from app.models.event import Event
 
 
@@ -177,3 +178,48 @@ def site_structured_data() -> str:
             },
         }
     )
+
+
+def event_share_text(event: Event) -> str:
+    """One line describing an event for a social post: its title, and the day
+    (and town) when known, so the post reads on its own before anyone opens
+    the link."""
+    parts = [event.title]
+    if event.start_date is not None:
+        parts.append(human_date_long(event.start_date))
+    if event.city is not None:
+        parts.append(event.city.name)
+    return " · ".join(parts)
+
+
+def event_share_links(event: Event) -> list[dict[str, str]]:
+    """Share links for an event's public page, one per platform.
+
+    Plain links to each platform's own share page, so they work without
+    JavaScript and load nothing from those platforms until someone clicks
+    (no tracking pixels, no third-party scripts under our CSP). The page URL
+    comes from configuration, never from the request, for the same reason as
+    the canonical link above.
+    """
+    url = absolute_url(f"/events/{event.id}")
+    text = event_share_text(event)
+
+    def q(params: dict[str, str]) -> str:
+        return urlencode(params, quote_via=quote)
+
+    return [
+        {"key": "x", "label": "X", "href": "https://x.com/intent/tweet?" + q(
+            {"text": text, "url": url})},
+        {"key": "facebook", "label": "Facebook",
+         "href": "https://www.facebook.com/sharer/sharer.php?" + q({"u": url})},
+        {"key": "bluesky", "label": "Bluesky",
+         "href": "https://bsky.app/intent/compose?" + q({"text": f"{text} {url}"})},
+        {"key": "linkedin", "label": "LinkedIn",
+         "href": "https://www.linkedin.com/sharing/share-offsite/?" + q({"url": url})},
+        {"key": "reddit", "label": "Reddit",
+         "href": "https://www.reddit.com/submit?" + q({"url": url, "title": event.title})},
+        {"key": "whatsapp", "label": "WhatsApp",
+         "href": "https://wa.me/?" + q({"text": f"{text} {url}"})},
+        {"key": "email", "label": "Email",
+         "href": "mailto:?" + q({"subject": event.title, "body": f"{text}\n\n{url}"})},
+    ]
