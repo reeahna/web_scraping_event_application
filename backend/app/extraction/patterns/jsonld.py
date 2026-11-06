@@ -22,6 +22,7 @@ from typing import Any
 
 from bs4 import BeautifulSoup
 
+from app.extraction.locations import venue_from_location
 from app.extraction.selectors import resolve_json_path
 from app.extraction.types import EventCandidate, FetchResponse
 from app.schemas.extraction import SiteConfiguration
@@ -149,6 +150,17 @@ class JsonLdEventPattern:
 
             raw["image"] = _extract_image(raw.get("image"))
             raw["address"] = _extract_address(raw.get("address"))
+            # `location.name` only reads a single named Place. A location given
+            # as a plain string, a list (hybrid Place + VirtualLocation), or a
+            # Place inside a list is read here instead of being dropped.
+            if not isinstance(raw.get("venue"), str) or not raw.get("address"):
+                venue, address = venue_from_location(node.get("location"))
+                if not isinstance(raw.get("venue"), str) and venue:
+                    raw["venue"] = venue
+                    field_source_paths["venue"] = "jsonpath:location"
+                if not raw.get("address") and address:
+                    raw["address"] = address
+                    field_source_paths["address"] = "jsonpath:location.address"
             # Kept so an online-only event can be told apart from one at a place
             # (app.services.attendability); a hybrid event declares "Mixed".
             raw["attendance_mode"] = node.get("eventAttendanceMode")

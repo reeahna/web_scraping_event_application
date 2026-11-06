@@ -1,9 +1,10 @@
 from datetime import UTC, datetime
 
-from sqlalchemy import or_
+from sqlalchemy import and_, or_
 from sqlalchemy.orm import Session
 
 from app.extraction.dedup import candidate_fingerprint
+from app.extraction.locations import has_venue
 from app.extraction.normalize import plain_text
 from app.extraction.types import EventCandidate
 from app.models.event import Event
@@ -46,6 +47,24 @@ def described_event_urls(db: Session, website_id: int) -> frozenset[str]:
         Event.description != "",
     )
     return frozenset(url for (url,) in rows)
+
+
+def event_urls_with_venue(db: Session, website_id: int) -> frozenset[str]:
+    """Canonical URLs of this website's events that already show a venue (the
+    source's own or an administrator's correction), so extraction doesn't
+    re-fetch their pages to find one. A placeholder ("TBA") doesn't count."""
+    rows = db.query(Event.canonical_url, Event.venue, Event.corrected_venue).filter(
+        Event.website_id == website_id,
+        or_(
+            and_(Event.venue.is_not(None), Event.venue != ""),
+            and_(Event.corrected_venue.is_not(None), Event.corrected_venue != ""),
+        ),
+    )
+    return frozenset(
+        url
+        for url, venue, corrected in rows
+        if url and has_venue({"venue": corrected if corrected else venue})
+    )
 
 
 def find_existing_event_for_candidate(
