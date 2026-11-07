@@ -179,13 +179,26 @@ class SchedulerRuntime:
                 id="attendability_sweep", max_instances=1, coalesce=True,
                 next_run_time=datetime.now(UTC),
             )
+        # College towns and their sources committed under data/college_towns/:
+        # imported on start, so a deploy that adds a day's file onboards it,
+        # then daily. The onboarding tick processes the queued jobs.
+        if settings.college_town_import_enabled:
+            self._scheduler.add_job(
+                self._college_towns_tick, "interval", hours=24,
+                id="college_towns", max_instances=1, coalesce=True,
+                next_run_time=datetime.now(UTC),
+            )
         self._scheduler.start()
 
     async def _heartbeat_tick(self) -> None:
         db = self._session_factory()
         try:
             # Re-claim leadership if it was vacant/stale, then heartbeat.
+            was_leader = self._is_leader
             self._is_leader = try_become_leader(db, self.holder)
+            if self._is_leader and not was_leader:
+                logger.info("scheduler %s took over as leader", self.holder)
+                self._run_on_start_jobs_now()
             if self._is_leader:
                 leader_heartbeat(db, self.holder)
                 reclaim_stale_locks(db)
@@ -196,6 +209,23 @@ class SchedulerRuntime:
             logger.warning("heartbeat tick failed: %s", exc)
         finally:
             db.close()
+
+    # Jobs that run "once on start, then daily". On a deploy the new process
+    # starts while the old one still holds the leader row, so it starts as a
+    # standby and these first runs would see no leadership and wait a whole day.
+    # They run again as soon as this process takes over instead.
+    _ON_START_JOB_IDS = (
+        "category_photos",
+        "home_town_sweep",
+        "attendability_sweep",
+        "college_towns",
+    )
+
+    def _run_on_start_jobs_now(self) -> None:
+        now = datetime.now(UTC)
+        for job_id in self._ON_START_JOB_IDS:
+            if self._scheduler.get_job(job_id) is not None:
+                self._scheduler.modify_job(job_id, next_run_time=now)
 
     def _due_website_ids(self, now: datetime) -> list[int]:
         db = self._session_factory()
@@ -395,6 +425,29 @@ class SchedulerRuntime:
                 logger.info("took down %d event(s) that are not attendable", len(hidden))
         except Exception as exc:  # noqa: BLE001 - a tick must never kill the loop
             logger.warning("attendability sweep failed: %s", exc)
+
+    async def _college_towns_tick(self) -> None:
+        if not self._is_leader:
+            return
+        from app.services.college_towns import import_college_towns
+
+        def load():
+            db = self._session_factory()
+            try:
+                return import_college_towns(db)
+            finally:
+                db.close()
+
+        try:
+            summary = await asyncio.to_thread(load)
+            if summary.cities_created or summary.files_queued:
+                logger.info(
+                    "college towns: created %s, queued %s",
+                    ", ".join(summary.cities_created) or "no cities",
+                    ", ".join(summary.files_queued) or "no files",
+                )
+        except Exception as exc:  # noqa: BLE001 - a tick must never kill the loop
+            logger.warning("college town import failed: %s", exc)
 
     async def _run_one(self, website_id: int) -> None:
         async with self._semaphore:

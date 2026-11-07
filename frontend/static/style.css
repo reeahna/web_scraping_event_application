@@ -79,6 +79,9 @@ body {
   color: var(--text);
   min-height: 100vh;
   line-height: 1.5;
+  /* A long unbroken word (a URL, an email, a run-together venue name) wraps
+     instead of pushing the page wider than a phone screen. */
+  overflow-wrap: break-word;
   display: flex;
   flex-direction: column;
 }
@@ -214,6 +217,82 @@ input[type="checkbox"], input[type="radio"] {
 .site-nav .nav-button-link:hover {
   background: var(--accent-hover);
   color: #fff;
+}
+
+/* "My Account" dropdown: Saved and Alerts live under it. */
+.account-menu {
+  position: relative;
+}
+
+.account-menu-trigger {
+  list-style: none;
+  cursor: pointer;
+  font-weight: 600;
+  color: var(--text);
+  padding: var(--space-2) 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.account-menu-trigger::-webkit-details-marker {
+  display: none;
+}
+
+.account-menu-trigger::after {
+  content: "";
+  width: 0.4em;
+  height: 0.4em;
+  margin-left: 4px;
+  border-right: 2px solid currentColor;
+  border-bottom: 2px solid currentColor;
+  transform: translateY(-2px) rotate(45deg);
+}
+
+.account-menu[open] > .account-menu-trigger::after {
+  transform: translateY(1px) rotate(-135deg);
+}
+
+.account-menu-trigger:hover {
+  color: var(--accent);
+}
+
+.account-menu-trigger:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+  border-radius: var(--radius-sm);
+}
+
+.account-menu-list {
+  position: absolute;
+  right: 0;
+  top: 100%;
+  margin: var(--space-2) 0 0;
+  padding: var(--space-2) 0;
+  list-style: none;
+  min-width: 11rem;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  box-shadow: var(--shadow-md);
+  z-index: 20;
+}
+
+.site-nav .account-menu-list a {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-4);
+}
+
+.site-nav .account-menu-list a:hover,
+.site-nav .account-menu-list a:focus-visible {
+  background: var(--bg);
+}
+
+.site-nav .account-menu-list a[aria-current="page"] {
+  color: var(--accent);
 }
 
 /* ==========================================================================
@@ -835,6 +914,7 @@ button:hover {
 
 .admin-body th,
 .admin-body td {
+  overflow-wrap: normal;
   text-align: left;
   padding: var(--space-2) var(--space-3);
   border-bottom: 1px solid var(--border);
@@ -1545,6 +1625,12 @@ button:hover {
   flex: 1 1 160px;
 }
 
+/* Date boxes keep their natural width, so a date that wraps onto the next
+   line does not stretch across the whole panel. */
+.filter-field:has(> input[type="date"]) {
+  flex-grow: 0;
+}
+
 .filter-field label {
   font-size: var(--font-xs);
   font-weight: 700;
@@ -1554,7 +1640,8 @@ button:hover {
 }
 
 .filter-field select,
-.filter-field input[type="date"] {
+.filter-field input[type="date"],
+.filter-field input[type="search"] {
   padding: var(--space-2) var(--space-3);
   border: 1px solid var(--border-input);
   border-radius: var(--radius-sm);
@@ -1983,7 +2070,9 @@ button:hover {
   margin: 0 auto var(--space-5);
   border-radius: var(--radius-lg);
   overflow: hidden;
-  background: var(--bg);
+  /* background-color, not the shorthand: the shorthand came after the .ph-N
+     gradients and wiped them, leaving a blank box where the placeholder goes. */
+  background-color: var(--bg);
 }
 
 .event-detail-image img {
@@ -2041,6 +2130,13 @@ button:hover {
   color: var(--accent);
   font-weight: 600;
   margin-bottom: var(--space-6);
+}
+
+.event-detail-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  margin: calc(-1 * var(--space-4)) 0 var(--space-6);
 }
 
 /* Save/follow buttons that are already "on": show the current state, and
@@ -2207,7 +2303,8 @@ button.toggle-on:focus-visible .toggle-label-off { display: inline; }
   }
 
   .filter-field select,
-  .filter-field input[type="date"] {
+  .filter-field input[type="date"],
+  .filter-field input[type="search"] {
     width: 100%;
   }
 
@@ -2799,6 +2896,10 @@ a.wf-danger, button.wf-danger {
   gap: var(--space-2);
   font-size: var(--font-sm);
   color: var(--muted);
+  overflow-wrap: anywhere;
+}
+.saved-item-where > * {
+  min-width: 0;
 }
 .saved-item-status {
   display: flex;
@@ -2974,4 +3075,304 @@ a.wf-danger, button.wf-danger {
   background: var(--bg);
   box-shadow: none;
   border-style: dashed;
+}
+
+/* On a phone, admin tables scroll sideways inside their own box rather than
+   making the whole page wider than the screen. */
+@media (max-width: 640px) {
+  .admin-body table {
+    display: block;
+    overflow-x: auto;
+    max-width: 100%;
+    /* Holds screen-reader-only text (position: absolute) inside the box too. */
+    position: relative;
+  }
+}
+
+/* Alert preferences: the checkbox groups get a card, not the browser's
+   default grooved border with the legend jammed into it. */
+.pref-group {
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--surface);
+  padding: var(--space-3) var(--space-4) var(--space-4);
+  margin: 0 0 var(--space-4);
+  min-width: 0;
+}
+.pref-group legend {
+  padding: 0 var(--space-2);
+  margin-left: calc(-1 * var(--space-2));
+  font-weight: 700;
+  font-size: var(--font-sm);
+  color: var(--text);
+}
+
+/* ==========================================================================
+   Suggest a town or feature (/suggest, /admin/suggestions)
+   ========================================================================== */
+.suggest-page {
+  max-width: var(--max-width-narrow);
+}
+
+.suggest-tabs {
+  display: flex;
+  gap: var(--space-2);
+  margin: var(--space-5) 0 var(--space-4);
+  flex-wrap: wrap;
+}
+
+.suggest-tab {
+  padding: var(--space-2) var(--space-4);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-pill);
+  color: var(--text);
+  text-decoration: none;
+  font-weight: 600;
+  min-height: 40px;
+  display: inline-flex;
+  align-items: center;
+  background: var(--surface);
+}
+
+.suggest-tab:hover {
+  border-color: var(--accent);
+}
+
+.suggest-tab[aria-current="page"] {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #fff;
+}
+
+.suggest-tab:focus-visible {
+  outline: 3px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.suggest-form {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  padding: var(--space-5);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-sm);
+}
+
+.suggest-form button {
+  align-self: flex-start;
+  min-height: 44px;
+  padding: var(--space-2) var(--space-5);
+  font-weight: 600;
+}
+
+.suggest-field {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+.suggest-field label {
+  font-weight: 600;
+}
+
+.suggest-required,
+.suggest-hint {
+  color: var(--muted);
+  font-size: var(--font-sm);
+  font-weight: 400;
+  margin: 0;
+}
+
+.suggest-field input,
+.suggest-field textarea {
+  width: 100%;
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--border-input);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+  min-height: 44px;
+  box-sizing: border-box;
+}
+
+.suggest-field textarea {
+  resize: vertical;
+}
+
+.suggest-field input:focus-visible,
+.suggest-field textarea:focus-visible {
+  outline: 3px solid var(--accent);
+  outline-offset: 1px;
+}
+
+.suggest-field [aria-invalid="true"] {
+  border-color: var(--danger);
+}
+
+.suggest-error {
+  color: var(--danger-text);
+  font-size: var(--font-sm);
+  margin: 0;
+}
+
+.suggest-mine {
+  margin-top: var(--space-6);
+}
+
+.suggest-list {
+  list-style: none;
+  padding: 0;
+  margin: var(--space-3) 0 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.suggest-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  padding: var(--space-3) var(--space-4);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+}
+
+.suggest-item-main {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.suggest-item-kind {
+  font-size: var(--font-xs);
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  color: var(--muted);
+}
+
+.suggest-item-title {
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+
+.suggest-item-sub {
+  color: var(--muted);
+  font-size: var(--font-sm);
+}
+
+.suggest-status {
+  flex: 0 0 auto;
+  padding: 2px var(--space-3);
+  border-radius: var(--radius-pill);
+  font-size: var(--font-sm);
+  font-weight: 600;
+  background: var(--accent-soft);
+  color: var(--accent-hover);
+}
+
+.suggest-status-done {
+  background: rgba(22, 163, 74, 0.1);
+  color: var(--success-text);
+}
+
+.suggest-status-declined {
+  background: var(--bg);
+  color: var(--muted);
+}
+
+.suggestion-details {
+  margin: var(--space-1) 0 0;
+  white-space: pre-line;
+  color: var(--muted);
+  font-size: var(--font-sm);
+  max-width: 48ch;
+}
+
+.suggestion-status-form {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  min-width: 200px;
+}
+
+.suggestion-status-form textarea {
+  padding: var(--space-2);
+  border: 1px solid var(--border-input);
+  border-radius: var(--radius-sm);
+}
+
+.suggestion-status-form button {
+  align-self: flex-start;
+}
+
+@media (max-width: 640px) {
+  .suggest-form {
+    padding: var(--space-4);
+  }
+
+  .suggest-form button {
+    align-self: stretch;
+  }
+}
+
+/* Share row on the event page: one wrapping row of quiet pills under the
+   save/follow actions. Links work without JS; the two buttons are revealed
+   by static/js/event-share.js where the browser supports them. */
+.event-share {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+  margin-top: var(--space-4);
+}
+
+.event-share-label {
+  font-size: 0.82rem;
+  font-weight: 600;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  margin-right: var(--space-1);
+}
+
+.event-share .share-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 36px;
+  padding: 0 var(--space-3);
+  border-radius: var(--radius-pill);
+  border: 1px solid var(--border-strong);
+  background: var(--surface);
+  color: var(--text);
+  font-size: 0.85rem;
+  font-weight: 500;
+  line-height: 1;
+  text-decoration: none;
+  cursor: pointer;
+  transition: border-color 0.15s ease, background-color 0.15s ease, color 0.15s ease;
+}
+
+.event-share .share-pill[hidden] { display: none; }
+
+.event-share .share-pill:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+  background: var(--accent-soft);
+}
+
+.event-share .share-pill:focus-visible {
+  outline: 3px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.event-share .share-native,
+.event-share .share-copy.is-done {
+  border-color: var(--accent);
+  color: var(--accent);
+  background: var(--accent-soft);
 }

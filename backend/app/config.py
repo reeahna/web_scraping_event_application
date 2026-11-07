@@ -35,7 +35,7 @@ class Settings(BaseSettings):
     database_url: str = f"sqlite:///{(BASE_DIR / 'app.db').as_posix()}"
     log_level: str = "INFO"
 
-    # Auth / sessions. Sign-in is only through Google, Microsoft, Facebook or Yahoo
+    # Auth / sessions. Sign-in is only through Google, Microsoft, Facebook, X or Yahoo
     # (app.services.oauth); the app stores no passwords.
     session_cookie_name: str = "session_token"
     session_ttl_seconds: int = 43200  # 12 hours
@@ -96,9 +96,10 @@ class Settings(BaseSettings):
     # and the recovery service refuses to launch a browser — so installing the
     # feature changes no source's behaviour until it is explicitly enabled.
     browser_extraction_enabled: bool = False
-    # How many headless Chromium instances one process may run at once. Each
-    # takes a few hundred MB; on a 512MB instance shared with the web server and
-    # the scheduler, more than one at a time is what runs it out of memory.
+    # How many headless Chromium instances may run at once on the machine,
+    # across the web server and the scheduler together. Each takes a few hundred
+    # MB; on a 512MB instance shared with both, more than one at a time is what
+    # runs it out of memory.
     browser_max_concurrent: int = 1
 
     # Bulk source onboarding (app.services.bulk_onboarding). Caps exist so a
@@ -210,6 +211,10 @@ class Settings(BaseSettings):
     # source with its own geographic filter is left to it. See
     # app/services/home_town.py. On by default.
     home_town_filter_enabled: bool = True
+    # Create the towns listed in data/college_towns/cities.csv and queue each
+    # source CSV in that folder for onboarding, once per file (see
+    # app/services/college_towns.py). Off by default.
+    college_town_import_enabled: bool = False
 
     # Public UI (Phase 12). A configurable fallback image shown on event cards
     # and detail pages that have no image; None uses the built-in inline icon.
@@ -248,6 +253,8 @@ class Settings(BaseSettings):
     facebook_client_secret: str | None = None
     yahoo_client_id: str | None = None
     yahoo_client_secret: str | None = None
+    x_client_id: str | None = None
+    x_client_secret: str | None = None
 
     model_config = SettingsConfigDict(
         env_file=str(BASE_DIR / ".env"),

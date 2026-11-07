@@ -535,3 +535,38 @@ def test_livewhale_detector_derives_json_feed_from_assets():
     result = LiveWhaleDetector().detect(make_response(html, final_url="https://events.iu.edu/"))
     assert result.pattern_name == "livewhale_json"
     assert "https://events.iu.edu/live/json/events" in result.discovered_endpoints
+
+
+def _single(event: dict):
+    import json
+
+    record = {"id": 1, "title": "T", "url": "https://x.edu/e/1", "date_ts": 1788235200}
+    body = json.dumps({"data": [{**record, **event}]})
+    config = SiteConfiguration(
+        pattern_name="livewhale_json", api_endpoint="https://x.edu/live/json/events"
+    )
+    response = make_response(body, content_type="application/json")
+    return LiveWhalePattern().extract(response, config)[0]
+
+
+def test_place_linked_event_reads_location_title():
+    """An event linked to a LiveWhale Place has no free-text `location`; its
+    venue is `location_title`, with the place's coordinates alongside."""
+    candidate = _single(
+        {
+            "location": "",
+            "location_title": "IU Auditorium",
+            "location_latitude": "39.168",
+            "location_longitude": "-86.519",
+        }
+    )
+    assert candidate.raw["venue"] == "IU Auditorium"
+    assert candidate.field_source_paths["venue"] == "livewhale.events[0].location_title"
+    assert (candidate.raw["latitude"], candidate.raw["longitude"]) == ("39.168", "-86.519")
+
+
+def test_free_text_location_still_wins_and_nested_place_is_read():
+    both = _single({"location": "Room 5", "location_title": "Ballantine Hall"})
+    assert both.raw["venue"] == "Room 5"
+    nested = _single({"location": {"id": 7, "title": "Musical Arts Center"}})
+    assert nested.raw["venue"] == "Musical Arts Center"

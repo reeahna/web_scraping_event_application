@@ -43,14 +43,23 @@ output).
   bounding-box/aliases with any/all mode. No fuzzy matching, no geocoding;
   inclusion is decided from the event's own geography, never its assigned city.
   Missing-geography policy: reject / keep_with_warning / needs_review.
-- **Descriptions** (`app/extraction/description_fallback.py`): a source's own
-  `summary`/`excerpt` stands in for a missing `description`. On approved runs
-  (not previews), an event still without one gets it from its own page: the
-  JSON-LD Event `description`, else `og:`/`twitter:`/`<meta>` description. At
-  most 15 pages per run, skipping events already stored with a description;
-  meta text repeated across pages or matching the listing's own is treated as
-  site boilerplate and dropped. `scripts/description_coverage.py` reports which
-  sources still lack descriptions.
+- **Descriptions and venues** (`app/extraction/event_page_fallback.py`): a
+  source's own `summary`/`excerpt` stands in for a missing `description`. On
+  approved runs (not previews), an event still without a description, or
+  without a venue (or with a placeholder such as "TBA"), gets it from its own
+  page with one fetch: the JSON-LD Event `description` (else `og:`/`twitter:`/
+  `<meta>` description) and the JSON-LD Event `location` (a Place, a string or a
+  list; a VirtualLocation is not a venue), else the page's single microdata
+  `itemprop="location"`. A missing address is filled from the same place. At
+  most 30 pages per run, skipping events already stored with the field (an
+  administrator's venue correction counts); meta text repeated across pages or
+  matching the listing's own is treated as site boilerplate and dropped.
+  `scripts/description_coverage.py [--field venue]` reports which sources still
+  lack descriptions or venues.
+- **Locations** (`app/extraction/locations.py`): reads a schema.org `location`
+  of any shape. The `json_ld_event` pattern uses it when `location.name` finds
+  nothing, and `livewhale_json` falls back to `location_title` (a Place-linked
+  event) when the free-text `location` is empty.
 
 ## Fetch strategies
 

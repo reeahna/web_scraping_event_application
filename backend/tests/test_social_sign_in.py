@@ -1,4 +1,4 @@
-"""Sign-in is only through Google, Microsoft or Facebook: the superadmin
+"""Sign-in is only through Google, Microsoft, Facebook, X or Yahoo: the superadmin
 setting, new-account switch, account-hijack guard and the sign-in page."""
 
 import pytest
@@ -223,3 +223,92 @@ def test_sign_in_page_shows_every_provider_button(client, monkeypatch):
     for name in providers:
         assert f'href="/auth/oauth/{name}"' in page
     assert "Continue with Yahoo" in page
+
+
+def test_the_real_x_client_builds_a_pkce_sign_in_link():
+    """X needs PKCE: the link carries an S256 challenge made from a verifier
+    that can be rebuilt from the stored nonce when the person comes back,
+    and the nonce itself is never sent to X."""
+    import base64
+    import hashlib
+    from types import SimpleNamespace
+    from urllib.parse import parse_qs, urlparse
+
+    from app.services.oauth import build_provider, enabled_provider_names
+    from app.services.oauth.providers import _pkce_verifier
+
+    settings = SimpleNamespace(x_client_id="xid", x_client_secret="xsecret")
+    assert enabled_provider_names(settings) == ["x"]
+    url = build_provider(settings, "x").authorization_url(
+        state="s1", nonce="n1", redirect_uri="https://example.test/auth/oauth/x/callback"
+    )
+    parsed = urlparse(url)
+    query = parse_qs(parsed.query)
+    assert parsed.netloc == "x.com" and parsed.path == "/i/oauth2/authorize"
+    assert query["client_id"] == ["xid"] and query["state"] == ["s1"]
+    assert query["scope"] == ["tweet.read users.read users.email"]
+    assert "nonce" not in query
+    verifier = _pkce_verifier("n1")
+    assert 43 <= len(verifier) <= 128
+    expected = base64.urlsafe_b64encode(hashlib.sha256(verifier.encode()).digest())
+    assert query["code_challenge"] == [expected.rstrip(b"=").decode()]
+    assert query["code_challenge_method"] == ["S256"]
+
+
+def test_the_x_token_exchange_sends_the_verifier_and_a_basic_header(monkeypatch):
+    from types import SimpleNamespace
+
+    from authlib.integrations.requests_client import OAuth2Session
+
+    from app.services.oauth import build_provider
+    from app.services.oauth.providers import _pkce_verifier
+
+    seen = {}
+
+    def fake_fetch_token(self, url, **kwargs):
+        seen["url"] = url
+        seen["kwargs"] = kwargs
+        seen["auth_method"] = self.token_endpoint_auth_method
+        return {"access_token": "t", "token_type": "bearer"}
+
+    def fake_get(self, url, **kwargs):
+        seen["userinfo"] = url
+        return SimpleNamespace(json=lambda: {"data": {
+            "id": "42", "name": "Ahna", "username": "ahna",
+            "confirmed_email": "ahna@example.com",
+            "profile_image_url": "https://pbs.twimg.com/a.jpg",
+        }})
+
+    monkeypatch.setattr(OAuth2Session, "fetch_token", fake_fetch_token)
+    monkeypatch.setattr(OAuth2Session, "get", fake_get)
+    settings = SimpleNamespace(x_client_id="xid", x_client_secret="xsecret")
+    info = build_provider(settings, "x").fetch_identity(
+        code="c1", state="s1", nonce="n1",
+        redirect_uri="https://example.test/auth/oauth/x/callback",
+    )
+    assert seen["url"] == "https://api.x.com/2/oauth2/token"
+    assert seen["kwargs"]["code_verifier"] == _pkce_verifier("n1")
+    assert seen["auth_method"] == "client_secret_basic"
+    assert seen["userinfo"].startswith("https://api.x.com/2/users/me")
+    assert info.provider == "x" and info.subject == "42"
+    assert info.email == "ahna@example.com" and info.display_name == "Ahna"
+    assert info.avatar_url == "https://pbs.twimg.com/a.jpg"
+    # X's "confirmed" address is not trusted to link accounts or claim admin.
+    assert info.email_verified is False
+
+
+def test_an_x_profile_without_an_email_reads_as_none():
+    # The sign-in then stops with "email_required", as for any provider.
+    from app.services.oauth.providers import _SPECS, _info_from_userinfo
+
+    info = _info_from_userinfo(_SPECS["x"], {"data": {"id": "7", "name": "No Mail"}})
+    assert info.email is None
+
+
+def test_sign_in_page_shows_the_x_button(client, monkeypatch):
+    import app.routers.auth as auth_router
+
+    monkeypatch.setattr(auth_router, "enabled_providers", lambda settings: ["x"])
+    page = client.get("/auth/login").text
+    assert 'href="/auth/oauth/x"' in page
+    assert "Continue with X" in page
