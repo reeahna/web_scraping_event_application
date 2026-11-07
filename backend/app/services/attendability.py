@@ -134,6 +134,8 @@ _AUDIENCE_TITLE = _rx(
     r"senior (expo|citizens?|center)|seniors (55|60|62|65)|older adults|retirees|"
     r"(50|55|60|62|65)\s*(\+|and (up|over|older))|teens?|tots?|emeriti|"
     r"ages? (2[5-9]|[3-9]\d)\s*(-|–|to|\+|and)|"
+    # An age range that tops out below 18: "Family Workshop, Ages 6-10".
+    r"ages? \d{1,2}\s*(-|–|to)\s*(1[0-7]|[1-9])\b|"
     r"(alumni|iuaa)\b.*\b(game watch|chapter|reception|happy hour|weekend|reunion)|"
     r"game watch\b.*\b(alumni|iuaa)|iuaa|"
     r"\balumni (association|chapter|club|reception|game watch|awards?|lunch(eon)?))\b|"
