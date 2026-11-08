@@ -129,7 +129,7 @@ _AUDIENCE_TITLE = _rx(
     # "Smith 2 & Ed 3: Lucky Charms" (two floors' joint social).
     r"floors? \d+|"
     r"senior u|seniors?['’] (academy|university)|intro to (email|computers|the internet)|"
-    r"computer basics|senior planet|mba campus visits?|family art labs?|"
+    r"computer basics|senior planet|mba campus visits?|family (art labs?|workshops?|series)|"
     r"(trunk|trick)[- ]or[- ]treats?|prospective (\w+ )?students?|"
     r"senior (expo|citizens?|center)|seniors (55|60|62|65)|older adults|retirees|"
     r"(50|55|60|62|65)\s*(\+|and (up|over|older))|teens?|tots?|emeriti|"
