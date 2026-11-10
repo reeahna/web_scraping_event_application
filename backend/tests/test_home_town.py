@@ -366,6 +366,8 @@ def test_town_team_away_game(title, town, away):
         ("Indianapolis Colts Watch Party", False),
         ("Global Jags GO: Indiana State Museum", True),
         ("IUI-THWS Transatlantic Student Dialogue", True),
+        ("The Indianapolis Common Read Community Conversation", True),
+        ("Campus Community Common Read Discussion: The Illustrated Man", False),
         ("Jaguars vs Colts Watch Party", False),
     ],
 )

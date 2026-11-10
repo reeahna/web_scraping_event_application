@@ -179,6 +179,8 @@ from tests.extraction_helpers import html_handler, patched_http_fetch
         ("Family Series: Pete the Cat", AUDIENCE),
         ("Meeting the Needs of Neurodiverse Students", INTERNAL),
         ("WeVideo (PlayPosit Basics)", INTERNAL),
+        ("The Essential Elements of High-Impact Practices: Creating Conditions for Deep "
+         "Learning", INTERNAL),
         ("Academic Leadership Series: Current Conversations with OVPFAA", INTERNAL),
         ("LehighLEAN Metrics (NEW!)", INTERNAL),
         ("IU Innovates Alumni Lunch: Food for Thought", AUDIENCE),
