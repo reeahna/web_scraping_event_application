@@ -281,7 +281,7 @@ _INTERNAL_TITLE = _rx(
     r"\bwhy students struggle\b|\bscholarly writing (program|retreat)\b|"
     r"\bacademy of teaching scholars\b|\bcommunity of practice\b|\bto engage students\b|"
     r"\bstudent[- ]centered learning\b|\bmeeting the needs of (\w+ )?students\b|\bplayposit\b|"
-    r"\bhigh-impact (teaching )?practices\b|"
+    r"\bhigh-impact (teaching )?practices\b|\bwevideo\b|\bmaking courses accessible\b|"
     r"\bscholarship of teaching and learning\b|"
     r"\bresearch refresher\b|"
     r"\b(system|educator|staff|volunteer|employee|g?ta) trainings?\b|"

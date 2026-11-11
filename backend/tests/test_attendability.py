@@ -179,6 +179,8 @@ from tests.extraction_helpers import html_handler, patched_http_fetch
         ("Family Series: Pete the Cat", AUDIENCE),
         ("Meeting the Needs of Neurodiverse Students", INTERNAL),
         ("WeVideo (PlayPosit Basics)", INTERNAL),
+        ("WeVideo: Increase Student Engagement with Branched Learning", INTERNAL),
+        ("Ally** Making Courses Accessible Demo", INTERNAL),
         ("The Essential Elements of High-Impact Practices: Creating Conditions for Deep "
          "Learning", INTERNAL),
         ("Academic Leadership Series: Current Conversations with OVPFAA", INTERNAL),
@@ -281,6 +283,7 @@ def test_not_attendable_titles(title, reason):
         "Treasure Hunt Meeting Spot",
         "Art Lab Open Studio",
         "Family Weekend Tailgate",
+        "Making Campus Accessible: Disability Advocacy Panel",
         "Neurodiverse Students Social Hour",
         "Open Volleyball Ages 18-25",
         "Bethlehem Speed Dating Ages 18-24",
