@@ -425,6 +425,8 @@ def test_away_regatta(title, away):
         ("Prince George's County Job Fair", "College Park", False),
         ("Daviess County Together", "Springfield", False),  # no home county known
         ("A Talk on Daviess County History", "Bloomington", False),
+        ("Hoosier Health Check- Scott County", "Bloomington", True),
+        ("Free Flu Shots - Monroe County", "Bloomington", False),
     ],
 )
 def test_title_naming_another_county(title, town, other):

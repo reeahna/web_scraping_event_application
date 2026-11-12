@@ -181,6 +181,9 @@ from tests.extraction_helpers import html_handler, patched_http_fetch
         ("WeVideo (PlayPosit Basics)", INTERNAL),
         ("WeVideo: Increase Student Engagement with Branched Learning", INTERNAL),
         ("Ally** Making Courses Accessible Demo", INTERNAL),
+        ("Setting up Canvas for Student Success: Accessibility and Usability", INTERNAL),
+        ("Community-Engaged Learning: Critical reflection to deepen student learning",
+         INTERNAL),
         ("The Essential Elements of High-Impact Practices: Creating Conditions for Deep "
          "Learning", INTERNAL),
         ("Academic Leadership Series: Current Conversations with OVPFAA", INTERNAL),

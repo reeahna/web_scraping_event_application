@@ -137,12 +137,14 @@ _HOME_COUNTIES = {
     "champaign": {"champaign"},
 }
 _LEADING_COUNTY = re.compile(r"^\s*([A-Z][\w'’.]*(?: [A-Z][\w'’.]*)?) County\b")
+# Or closes with one after a dash: "Hoosier Health Check- Scott County".
+_TRAILING_COUNTY = re.compile(r"[-–:]\s*([A-Z][\w'’.]*(?: [A-Z][\w'’.]*)?) County\s*$")
 
 
 def names_other_county(title: str | None, town: str | None) -> bool:
-    """True when the title opens with a county other than the home town's."""
+    """True when the title opens or ends with a county other than the home town's."""
     home = _HOME_COUNTIES.get((town or "").casefold())
-    match = _LEADING_COUNTY.search(title or "")
+    match = _LEADING_COUNTY.search(title or "") or _TRAILING_COUNTY.search(title or "")
     return bool(home and match and match.group(1).casefold() not in home)
 
 
