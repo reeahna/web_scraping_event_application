@@ -95,7 +95,7 @@ _OTHER_CAMPUS_TITLES_BY_TOWN = {
         r"\b(IU|Indiana University) (Indy|Indianapolis|Southeast|South Bend|Kokomo|Northwest|"
         r"East(?! Asian)|Fort Wayne|Columbus|McKinney)\b|\b(IUPUI|IUPUC|IUK|IUSB|IUN|IUFW|PFW)\b|"
         # IU Indianapolis's international-student programs: "Global Jags GO: ...".
-        r"\bGlobal Jags\b|\bIUI\b|\bIndianapolis Common Read\b|"
+        r"\bGlobal Jags\b|\bIUI\b|\bIndianapolis Common Read\b|\b(Ft\.|Fort) Wayne\b|"
         # Another city named as the place: "Free Community ... Screening - Indianapolis".
         r"[-–]\s*(Indianapolis|Indy|Fort Wayne|Evansville|South Bend|Gary)\s*$"
     ),
