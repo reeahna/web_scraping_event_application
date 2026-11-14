@@ -44,11 +44,28 @@ _STATES = {
     "WI": "wisconsin", "WY": "wyoming",
 }
 _STATE_NAMES = {name: abbr for abbr, name in _STATES.items()}
+# Newspaper-style abbreviations, as athletics calendars write venues:
+# "Terre Haute, Ind.". Matched only with their closing period.
+_AP_STATES = {
+    "ala": "AL", "ariz": "AZ", "ark": "AR", "calif": "CA", "colo": "CO", "conn": "CT",
+    "del": "DE", "fla": "FL", "ga": "GA", "ill": "IL", "ind": "IN", "kan": "KS",
+    "kans": "KS", "ky": "KY", "la": "LA", "md": "MD", "mass": "MA", "mich": "MI",
+    "minn": "MN", "miss": "MS", "mo": "MO", "mont": "MT", "neb": "NE", "nebr": "NE",
+    "nev": "NV", "n.h": "NH", "n.j": "NJ", "n.m": "NM", "n.y": "NY", "n.c": "NC",
+    "n.d": "ND", "okla": "OK", "ore": "OR", "pa": "PA", "r.i": "RI", "s.c": "SC",
+    "s.d": "SD", "tenn": "TN", "tex": "TX", "vt": "VT", "va": "VA", "wash": "WA",
+    "w.va": "WV", "wis": "WI", "wyo": "WY",
+}
 
 # "Town, ST", "Town, ST 47401", "Town, Indiana, 47401". The town is the last
 # comma-separated part before the state.
 _STATE_ALTERNATIVES = "|".join(
-    sorted([*_STATES, *(n.title() for n in _STATE_NAMES)], key=len, reverse=True)
+    [
+        *sorted(
+            (re.escape(a.title()) + r"\." for a in _AP_STATES), key=len, reverse=True
+        ),
+        *sorted([*_STATES, *(n.title() for n in _STATE_NAMES)], key=len, reverse=True),
+    ]
 )
 _TOWN_STATE = re.compile(
     rf"(?:^|,)\s*([^,]*?)\s*,\s*({_STATE_ALTERNATIVES})\.?"
@@ -280,7 +297,7 @@ def _state_code(value: str | None) -> str | None:
     value = value.strip().rstrip(".")
     if value.upper() in _STATES:
         return value.upper()
-    return _STATE_NAMES.get(value.casefold())
+    return _STATE_NAMES.get(value.casefold()) or _AP_STATES.get(value.casefold())
 
 
 def _simplify(town: str) -> str:

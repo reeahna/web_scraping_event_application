@@ -46,6 +46,11 @@ def _home_town_filter_on(monkeypatch):
         ("Waldron Arts Center, Rose Firebay", None),  # no street before it
         ("12 Main St, Kirkwood Ave", None),  # a street, not a town
         ("Assembly Hall", None),
+        # Newspaper-style state abbreviations, as athletics calendars write them.
+        ("Terre Haute, Ind.", ("Terre Haute", "IN")),
+        ("Bethlehem, Pa.", ("Bethlehem", "PA")),
+        ("Winston-Salem, N.C.", ("Winston-Salem", "NC")),
+        ("Main Hall, Mo", None),  # no period: not read as a state
         (None, None),
     ],
 )
@@ -87,6 +92,8 @@ def test_is_outside_home_town(address, outside):
     [
         ("120 N Dubuque St, Iowa City, IA, 52245", False),
         ("1100 3rd St SE, Cedar Rapids, IA, 52401", True),
+        ("Terre Haute, Ind.", True),
+        ("Iowa City, Iowa", False),
     ],
 )
 def test_is_outside_home_town_for_any_town(address, outside):

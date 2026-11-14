@@ -138,7 +138,7 @@ _AUDIENCE_TITLE = _rx(
     r"ages? \d{1,2}\s*(-|–|to)\s*(1[0-7]|[1-9])\b|"
     r"(alumni|iuaa)\b.*\b(game watch|chapter|reception|happy hour|weekend|reunion)|"
     r"game watch\b.*\b(alumni|iuaa)|iuaa|"
-    r"\balumni (association|chapter|club|reception|game watch|awards?|lunch(eon)?))\b|"
+    r"\balumni (association|chapter|club|reception|game watch|awards?|lunch(eon)?|network))\b|"
     # "Art Hive for 50+": the "+" ends the title, so no word boundary follows.
     r"\b(50|55|60|62|65)\s*\+"
 )
@@ -284,7 +284,7 @@ _INTERNAL_TITLE = _rx(
     r"\bstudent[- ]centered learning\b|\bmeeting the needs of (\w+ )?students\b|\bplayposit\b|"
     r"\bhigh-impact (teaching )?practices\b|\bwevideo\b|\bmaking courses accessible\b|"
     r"^\s*setting up canvas\b|\bfaculty learning communit(y|ies)\b|"
-    r"\b(deepen|improve|enhance) student learning\b|"
+    r"\b(deepen|improve|enhance) student learning\b|\binto your (course|curriculum|syllabus)\b|"
     r"\bscholarship of teaching and learning\b|"
     r"\bresearch refresher\b|"
     r"\b(system|educator|staff|volunteer|employee|g?ta) trainings?\b|"
