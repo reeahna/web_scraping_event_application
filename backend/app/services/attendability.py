@@ -129,14 +129,16 @@ _AUDIENCE_TITLE = _rx(
     # "Smith 2 & Ed 3: Lucky Charms" (two floors' joint social).
     r"floors? \d+|"
     r"senior u|seniors?['’] (academy|university)|intro to (email|computers|the internet)|"
-    r"computer basics|senior planet|mba campus visits?|family art labs?|"
+    r"computer basics|senior planet|mba campus visits?|family (art labs?|workshops?|series)|"
     r"(trunk|trick)[- ]or[- ]treats?|prospective (\w+ )?students?|"
     r"senior (expo|citizens?|center)|seniors (55|60|62|65)|older adults|retirees|"
     r"(50|55|60|62|65)\s*(\+|and (up|over|older))|teens?|tots?|emeriti|"
     r"ages? (2[5-9]|[3-9]\d)\s*(-|–|to|\+|and)|"
+    # An age range that tops out below 18: "Family Workshop, Ages 6-10".
+    r"ages? \d{1,2}\s*(-|–|to)\s*(1[0-7]|[1-9])\b|"
     r"(alumni|iuaa)\b.*\b(game watch|chapter|reception|happy hour|weekend|reunion)|"
     r"game watch\b.*\b(alumni|iuaa)|iuaa|"
-    r"\balumni (association|chapter|club|reception|game watch|awards?|lunch(eon)?))\b|"
+    r"\balumni (association|chapter|club|reception|game watch|awards?|lunch(eon)?|network))\b|"
     # "Art Hive for 50+": the "+" ends the title, so no word boundary follows.
     r"\b(50|55|60|62|65)\s*\+"
 )
@@ -266,7 +268,8 @@ _INTERNAL_TITLE = _rx(
     # "GPSG Cabinet Meetings", "WAC Weekly Leadership Meeting".
     r"\b(executive|exec|e-?board|(?<!general )board|cabinet|leadership)"
     r"( weekly)?( board)? meetings?\b|"
-    r"\b(set[- ]?up|pre-event meeting)\s*$|\b(captains?|chairs?|treasurers?)['’]? meetings?\b|"
+    r"\b(set[- ]?up|pre-event meeting)\s*$|"
+    r"\b(captains?|chairs?|treasurers?|event managers?)['’]? meetings?\b|"
     r"\(closed\)|\btest event\b|"
     r"\bjournal club\b|\bvisiting resident\b|\bfaculty candidate\b|\bjob talk\b|"
     r"\blimited submissions\b|^\s*faculty (and|&) staff\b|"
@@ -279,6 +282,9 @@ _INTERNAL_TITLE = _rx(
     r"\bwhy students struggle\b|\bscholarly writing (program|retreat)\b|"
     r"\bacademy of teaching scholars\b|\bcommunity of practice\b|\bto engage students\b|"
     r"\bstudent[- ]centered learning\b|\bmeeting the needs of (\w+ )?students\b|\bplayposit\b|"
+    r"\bhigh-impact (teaching )?practices\b|\bwevideo\b|\bmaking courses accessible\b|"
+    r"^\s*setting up canvas\b|\bfaculty learning communit(y|ies)\b|"
+    r"\b(deepen|improve|enhance) student learning\b|\binto your (course|curriculum|syllabus)\b|"
     r"\bscholarship of teaching and learning\b|"
     r"\bresearch refresher\b|"
     r"\b(system|educator|staff|volunteer|employee|g?ta) trainings?\b|"

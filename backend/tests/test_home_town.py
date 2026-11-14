@@ -46,6 +46,11 @@ def _home_town_filter_on(monkeypatch):
         ("Waldron Arts Center, Rose Firebay", None),  # no street before it
         ("12 Main St, Kirkwood Ave", None),  # a street, not a town
         ("Assembly Hall", None),
+        # Newspaper-style state abbreviations, as athletics calendars write them.
+        ("Terre Haute, Ind.", ("Terre Haute", "IN")),
+        ("Bethlehem, Pa.", ("Bethlehem", "PA")),
+        ("Winston-Salem, N.C.", ("Winston-Salem", "NC")),
+        ("Main Hall, Mo", None),  # no period: not read as a state
         (None, None),
     ],
 )
@@ -87,6 +92,8 @@ def test_is_outside_home_town(address, outside):
     [
         ("120 N Dubuque St, Iowa City, IA, 52245", False),
         ("1100 3rd St SE, Cedar Rapids, IA, 52401", True),
+        ("Terre Haute, Ind.", True),
+        ("Iowa City, Iowa", False),
     ],
 )
 def test_is_outside_home_town_for_any_town(address, outside):
@@ -366,6 +373,9 @@ def test_town_team_away_game(title, town, away):
         ("Indianapolis Colts Watch Party", False),
         ("Global Jags GO: Indiana State Museum", True),
         ("IUI-THWS Transatlantic Student Dialogue", True),
+        ("The Indianapolis Common Read Community Conversation", True),
+        ("Ft. Wayne Indoor Golf Outing", True),
+        ("Campus Community Common Read Discussion: The Illustrated Man", False),
         ("Jaguars vs Colts Watch Party", False),
     ],
 )
@@ -423,6 +433,8 @@ def test_away_regatta(title, away):
         ("Prince George's County Job Fair", "College Park", False),
         ("Daviess County Together", "Springfield", False),  # no home county known
         ("A Talk on Daviess County History", "Bloomington", False),
+        ("Hoosier Health Check- Scott County", "Bloomington", True),
+        ("Free Flu Shots - Monroe County", "Bloomington", False),
     ],
 )
 def test_title_naming_another_county(title, town, other):
