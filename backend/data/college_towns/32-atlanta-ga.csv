@@ -1,0 +1,9 @@
+url,name,source_display_name,city_slug,timezone
+https://calendar.gatech.edu/,Atlanta - GT Campus Calendar,Georgia Tech Events,atlanta-ga,America/New_York
+https://gatech.campuslabs.com/engage/events,Atlanta - GT Engage,Georgia Tech Student Org Events,atlanta-ga,America/New_York
+https://arts.gatech.edu/events,Atlanta - Georgia Tech Arts,Georgia Tech Arts Events,atlanta-ga,America/New_York
+https://studentcenter.gatech.edu/scpc,Atlanta - SCPC,Georgia Tech SCPC Events,atlanta-ga,America/New_York
+https://www.midtownatl.com/events,Atlanta - Midtown Alliance,Midtown Atlanta Events,atlanta-ga,America/New_York
+https://discoveratlanta.com/events/main,Atlanta - Discover Atlanta,Discover Atlanta Events,atlanta-ga,America/New_York
+https://foxtheatre.org/shows-and-events,Atlanta - Fox Theatre,Fox Theatre Events,atlanta-ga,America/New_York
+https://beltline.org/events/,Atlanta - Atlanta BeltLine,Atlanta BeltLine Events,atlanta-ga,America/New_York
