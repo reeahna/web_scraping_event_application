@@ -130,6 +130,8 @@ _AUDIENCE_TITLE = _rx(
     r"floors? \d+|"
     r"senior u|seniors?['’] (academy|university)|intro to (email|computers|the internet)|"
     r"computer basics|senior planet|mba campus visits?|family (art labs?|workshops?|series)|"
+    # Preschool cartoon characters: "Breakfast with Bluey and Bingo".
+    r"bluey|paw patrol|peppa pig|daniel tiger|cocomelon|"
     r"(trunk|trick)[- ]or[- ]treats?|prospective (\w+ )?students?|"
     r"senior (expo|citizens?|center)|seniors (55|60|62|65)|older adults|retirees|"
     r"(50|55|60|62|65)\s*(\+|and (up|over|older))|teens?|tots?|emeriti|"
@@ -305,6 +307,8 @@ _INTERNAL_CODES = re.compile(
     r"^\s*[A-Z]{2,5} [A-Z]?\d{3}[A-Z]?\s*:|"
     # A department's research talk series: "CCBB Seminar Guest Speaker: Dr. ...".
     r"^\s*[A-Z]{2,6} (Seminar|Colloquium)\b|"
+    # A department's thesis defense: "CSE Defense: ...", "CSE Dissertation: ...".
+    r"^\s*[A-Z]{2,6} (Defen[cs]e|Dissertation|Thesis)\s*[:-]|"
     # A booking held under two initials and nothing else: "MC", "VL".
     r"^\s*[A-Z]{2}\s*$"
 )
