@@ -193,6 +193,7 @@ from tests.extraction_helpers import html_handler, patched_http_fetch
         ("Curating Curiosity: Integrating IUB Museums into your Course Curriculum", INTERNAL),
         ("IU EXPAT Alumni Network", AUDIENCE),
         ("Breakfast with Bluey and Bingo", AUDIENCE),
+        ("Workshop: Pronunciation Brush-Up for International TAs", INTERNAL),
         ("CSE Defense: Designing Concurrent Data Structures with Workload, Hardware and "
          "Semantic Awareness", INTERNAL),
         ("CSE Dissertation: Reimagining Shared Memory over One-Sided RDMA", INTERNAL),
@@ -297,6 +298,8 @@ def test_not_attendable_titles(title, reason):
         "Making Campus Accessible: Disability Advocacy Panel",
         "Alumni Networking Night for Seniors and Recent Grads",
         "Self Defense: Intro Class for Women",
+        "Thank You Cards for Instructors and Staff",
+        "Instructors Showcase: Dance Faculty Concert",
         "Home Defense - Hockey Night at the Rink",
         "SWE Defense Industry Panel",
         "Put Your Course Curriculum to Work: Career Fair Prep",

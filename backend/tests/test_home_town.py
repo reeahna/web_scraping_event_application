@@ -1,6 +1,7 @@
 """Keeping each source to the town it was added for."""
 
 import json
+from types import SimpleNamespace
 
 import httpx
 import pytest
@@ -20,6 +21,7 @@ from app.services.home_town import (
     names_nearby_town,
     names_other_campus,
     names_other_county,
+    title_names_other_town,
     venue_at_other_school,
 )
 from app.services.website_configuration import approve_configuration
@@ -476,3 +478,19 @@ def test_venue_at_other_school(venue, away):
     )
     assert venue_at_other_school(venue, city) is away
     assert venue_at_other_school(venue, SimpleNamespace(name="Iowa City", universities=[])) is False
+
+
+@pytest.mark.parametrize(
+    "title,outside",
+    [
+        ("Mosaic Lamp Workshop in Allentown, Pennsylvania", True),
+        ("Holiday Market in Bethlehem, PA", False),
+        ("Life in Bethlehem, Pa.", False),
+        ("Made in America, Inc", False),  # not a state
+        ("Study Abroad in Paris, France", False),  # not a state
+        ("Mosaic Lamp Workshop", False),
+    ],
+)
+def test_title_names_other_town(title, outside):
+    city = SimpleNamespace(name="Bethlehem", state_or_region="PA")
+    assert title_names_other_town(title, city) is outside

@@ -451,6 +451,21 @@ def venue_at_other_school(venue: str | None, city) -> bool:
     return not (_words(match.group("of") or match.group("state")) & home)
 
 
+# A title that closes by naming where it is: "Mosaic Lamp Workshop in
+# Allentown, Pennsylvania".
+_TITLE_IN_TOWN = re.compile(rf"\bin ([A-Z][\w .'-]*, (?:{_STATE_ALTERNATIVES})\.?)\s*$")
+
+
+def title_names_other_town(title: str | None, city) -> bool:
+    """True when the title ends "in Town, State" and that is not the city."""
+    match = _TITLE_IN_TOWN.search(title or "")
+    if match is None or city is None:
+        return False
+    return is_outside_home_town(
+        address=match.group(1), venue=None, town=city.name, state=city.state_or_region
+    )
+
+
 def candidate_outside_home_town(candidate, city) -> bool:
     if is_away_game(candidate.title, city.name if city is not None else None):
         return True
@@ -470,6 +485,8 @@ def candidate_outside_home_town(candidate, city) -> bool:
         return True
     if city is None:
         return False
+    if title_names_other_town(candidate.title, city):
+        return True
     return is_outside_home_town(
         address=candidate.address,
         venue=candidate.venue,
@@ -496,6 +513,8 @@ def event_outside_home_town(event) -> bool:
         return True
     if city is None:
         return False
+    if title_names_other_town(event.title, city):
+        return True
     return is_outside_home_town(
         address=event.public_address,
         venue=event.public_venue,

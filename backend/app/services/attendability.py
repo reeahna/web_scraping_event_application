@@ -290,6 +290,8 @@ _INTERNAL_TITLE = _rx(
     r"\bscholarship of teaching and learning\b|"
     r"\bresearch refresher\b|"
     r"\b(system|educator|staff|volunteer|employee|g?ta) trainings?\b|"
+    # "Workshop: Pronunciation Brush-Up for International TAs".
+    r"\bfor (international |new )?(g?tas|teaching assistants|instructors)\s*$|"
     r"\btraining (meeting|weekend)\b|[-–]\s*trainings?\s*$|"
     # Notices rather than events.
     r"\bmove your car\b|\b(football|game ?day) parking\b|\bsurvey\s*$"
