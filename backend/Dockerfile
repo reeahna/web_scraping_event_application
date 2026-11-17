@@ -31,6 +31,8 @@ RUN playwright install --with-deps chromium
 # 3) Application code. The build context is the repository root.
 COPY backend/ ./
 COPY frontend/ /srv/frontend/
+# Release notes for the What's new and admin version history pages.
+COPY CHANGELOG.md /srv/CHANGELOG.md
 
 RUN chmod +x ./start.sh
 

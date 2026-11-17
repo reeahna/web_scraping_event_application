@@ -1,0 +1,27 @@
+{% extends "base.html" %}
+
+{% block title %}What's new — {{ site_name }}{% endblock %}
+{% block meta_description %}Every {{ site_name }} release: new features and fixes, newest first.{% endblock %}
+
+{% block content %}
+<article class="page-container legal-page release-notes">
+  <h1>What's new</h1>
+  <p class="audit-meta">You're using version {{ version }}.</p>
+
+  {% for release in releases %}
+  <section class="release" aria-labelledby="v{{ release.version | replace('.', '-') }}">
+    <h2 id="v{{ release.version | replace('.', '-') }}">
+      Version {{ release.version }}{% if release.name %}<span class="release-name"> · {{ release.name }}</span>{% endif %}
+    </h2>
+    <p class="release-date"><time datetime="{{ release.released_on.isoformat() }}">{{ release.released_on | human_date_long }}</time></p>
+    <ul>
+      {% for note in release.public_notes %}
+      <li>{{ note | release_note(public=True) }}</li>
+      {% endfor %}
+    </ul>
+  </section>
+  {% else %}
+  <p>No releases yet.</p>
+  {% endfor %}
+</article>
+{% endblock %}

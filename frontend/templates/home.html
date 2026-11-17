@@ -5,6 +5,8 @@
 {% block title %}Events in {{ selected_city.name }}{% if school_names %} — {{ school_names }}{% endif %}{% endblock %}
 {% block meta_description %}What is on in {{ selected_city.name }}{% if selected_city.state_or_region %}, {{ selected_city.state_or_region }}{% endif %}: concerts, theater, festivals and {% if school_names %}{{ school_names }} {% endif %}campus events, gathered from every local source.{% endblock %}
 
+{% block robots %}{{ "noindex, follow" if noindex else "index, follow" }}{% endblock %}
+
 {% block head_extra %}
 <script type="application/ld+json">{{ listing_structured_data | safe }}</script>
 <link rel="alternate" type="text/calendar" title="{{ selected_city.name }} events" href="{{ calendar_url }}" />
@@ -123,7 +125,7 @@
 
   {% if filters.view == "map" %}
   <section class="map-section" aria-label="Map of events">
-    <div id="event-map" class="event-map" data-map-url="/events/map?{{ query_string }}"
+    <div id="event-map" class="event-map" data-map-url="/events/map?city_id={{ selected_city.id }}{{ sep }}{{ query_string }}"
          data-tile-url="{{ map_tile_url }}" data-attribution="{{ map_attribution }}"
          {% if selected_city and selected_city.default_latitude is not none and selected_city.default_longitude is not none %}data-center-lat="{{ selected_city.default_latitude }}" data-center-lng="{{ selected_city.default_longitude }}"{% endif %}></div>
     <p class="map-note" id="event-map-note">Showing events with a known location. The full list below includes every matching event.</p>

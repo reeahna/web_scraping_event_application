@@ -7,13 +7,14 @@ disallows those prefixes so a crawler that finds a link does not follow it.
 """
 
 from fastapi import APIRouter, Request, Response
-from fastapi.responses import RedirectResponse
+from fastapi.responses import FileResponse, RedirectResponse
 from sqlalchemy import select
 
 from app.config import get_settings
 from app.core.exceptions import NotFoundError
 from app.dependencies import DbSession
 from app.models.city import City
+from app.paths import STATIC_DIR
 from app.repositories.city import get_city_by_slug, get_city_by_slug_ignoring_case
 from app.repositories.public_events import (
     current_public_date,
@@ -22,7 +23,7 @@ from app.repositories.public_events import (
     upcoming_counts_by_city,
 )
 from app.services.calendar_feed import town_calendar
-from app.services.seo import absolute_url
+from app.services.seo import absolute_url, town_is_indexable
 
 router = APIRouter(tags=["seo"])
 
@@ -70,13 +71,22 @@ def robots_txt() -> Response:
 @router.get("/sitemap.xml", include_in_schema=False)
 def sitemap_xml(db: DbSession) -> Response:
     today = current_public_date()
-    urls = [absolute_url("/"), absolute_url("/privacy"), absolute_url("/terms")]
+    urls = [
+        absolute_url("/"),
+        absolute_url("/whats-new"),
+        absolute_url("/privacy"),
+        absolute_url("/terms"),
+    ]
 
+    # Only towns with enough upcoming events: an empty town page is marked
+    # noindex, and a sitemap should list only pages meant for the index.
+    counts = upcoming_counts_by_city(db, today=today)
     urls += [
         absolute_url(f"/city/{slug}")
-        for slug in db.scalars(
-            select(City.slug).where(City.is_active.is_(True)).order_by(City.slug)
+        for city_id, slug in db.execute(
+            select(City.id, City.slug).where(City.is_active.is_(True)).order_by(City.slug)
         )
+        if town_is_indexable(counts.get(city_id, 0))
     ]
 
     # The same visibility rules as the public listing, so the sitemap can never
@@ -116,6 +126,18 @@ def town_calendar_feed(slug: str, request: Request, db: DbSession) -> Response:
         town_calendar(city, events),
         media_type="text/calendar; charset=utf-8",
         headers={"Content-Disposition": f'inline; filename="{city.slug}-events.ics"'},
+    )
+
+
+@router.get("/favicon.ico", include_in_schema=False)
+def favicon() -> FileResponse:
+    """Browsers and search engines ask for /favicon.ico whatever the page
+    links to; answer with the site icon instead of a 404. Served directly
+    rather than redirected, so it costs one request."""
+    return FileResponse(
+        STATIC_DIR / "favicon.svg",
+        media_type="image/svg+xml",
+        headers={"Cache-Control": "public, max-age=86400"},
     )
 
 

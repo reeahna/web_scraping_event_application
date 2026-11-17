@@ -67,6 +67,9 @@ class _Filters:
 
     def __init__(self, params: QueryParams, *, today: date, city_id: int | None = None):
         # city_id, when given, pins the town (the city page) over any query value.
+        # A pinned town is already in the path, so it stays out of the query
+        # string: /city/x?city_id=5&page=2 was a second URL for /city/x?page=2.
+        self.city_pinned = city_id is not None
         self.city_id = city_id if city_id is not None else _parse_int(params.get("city_id"))
         self.category_id = _parse_int(params.get("category_id"))
         self.source_id = _parse_int(params.get("source_id"))
@@ -111,7 +114,7 @@ class _Filters:
         in sync. A preset is emitted as ?preset=... rather than its expanded
         dates, keeping the URL tidy."""
         pairs: list[tuple[str, str]] = []
-        if self.city_id:
+        if self.city_id and not self.city_pinned:
             pairs.append(("city_id", str(self.city_id)))
         if self.category_id:
             pairs.append(("category_id", str(self.category_id)))
@@ -163,6 +166,7 @@ def _render_events(
     *,
     selected_city=None,
     base_path: str = "/",
+    noindex: bool = False,
 ):
     settings = get_settings()
     today = current_public_date()
@@ -189,7 +193,12 @@ def _render_events(
             "filters": filters.template_context(),
             "query_string": filters.query_string(),
             "base_path": base_path,
-            "canonical_url": seo.absolute_url(base_path),
+            # Each page of the listing is its own canonical page: pointing page
+            # 2 at page 1 told search engines the later pages were duplicates.
+            "canonical_url": seo.absolute_url(
+                base_path if page == 1 else f"{base_path}?page={page}"
+            ),
+            "noindex": noindex,
             "listing_structured_data": (
                 seo.city_listing_structured_data(
                     selected_city, events, page_url=seo.absolute_url(base_path)
@@ -265,7 +274,15 @@ def city_page(slug: str, request: Request, current_user: OptionalCurrentUser, db
     if city is None or not city.is_active:
         raise NotFoundError("City not found")
     # The city page pins the city filter.
-    filters = _Filters(request.query_params, today=current_public_date(), city_id=city.id)
+    today = current_public_date()
+    filters = _Filters(request.query_params, today=today, city_id=city.id)
+    upcoming = upcoming_counts_by_city(db, today=today).get(city.id, 0)
     return _render_events(
-        request, db, current_user, filters, selected_city=city, base_path=f"/city/{slug}"
+        request,
+        db,
+        current_user,
+        filters,
+        selected_city=city,
+        base_path=f"/city/{slug}",
+        noindex=not seo.town_is_indexable(upcoming),
     )

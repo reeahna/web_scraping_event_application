@@ -176,6 +176,7 @@ Run from `backend/` with the venv active.
 | `scripts/categorize_events_ai.py` | Label events with Gemini (`--only-other`, `--force`, `--limit N`) |
 | `scripts/fetch_category_photos.py` | Refill the placeholder photo pool now (the scheduler also does this when it is small) |
 | `scripts/check_links.py` | Crawl the whole site for broken links and dead form targets |
+| `scripts/release.py` | Cut a release: turn `CHANGELOG.md`'s Unreleased notes into the next version (`minor`, `patch` or `major`, optional `--name`) and bump `pyproject.toml` |
 
 ## Tests and checks
 

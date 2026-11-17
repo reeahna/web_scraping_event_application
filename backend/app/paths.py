@@ -12,3 +12,6 @@ BACKEND_DIR = Path(__file__).resolve().parent.parent
 FRONTEND_DIR = BACKEND_DIR.parent / "frontend"
 TEMPLATES_DIR = FRONTEND_DIR / "templates"
 STATIC_DIR = FRONTEND_DIR / "static"
+# The release notes the version history pages are built from. The Docker image
+# copies it to /srv/CHANGELOG.md, the same place relative to backend/.
+CHANGELOG_PATH = BACKEND_DIR.parent / "CHANGELOG.md"
