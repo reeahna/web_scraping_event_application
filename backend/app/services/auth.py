@@ -106,4 +106,6 @@ def resolve_current_user(request: Request, db: Session, cookie_name: str) -> Use
 
     session.last_seen_at = datetime.now(UTC)
     db.commit()
+    # Lets the visitor log (app.services.site_visits) show who was signed in.
+    request.state.visit_user_id = user.id
     return user

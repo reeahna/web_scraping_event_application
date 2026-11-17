@@ -273,6 +273,8 @@ def city_page(slug: str, request: Request, current_user: OptionalCurrentUser, db
             return RedirectResponse(f"/city/{canonical.slug}{query}", status_code=301)
     if city is None or not city.is_active:
         raise NotFoundError("City not found")
+    # For the visitor log: which town this visitor is looking at.
+    request.state.visit_town = city.slug
     # The city page pins the city filter.
     today = current_public_date()
     filters = _Filters(request.query_params, today=today, city_id=city.id)

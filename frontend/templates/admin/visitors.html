@@ -1,0 +1,143 @@
+{% extends "admin_base.html" %}
+
+{% block title %}Visitors · Admin{% endblock %}
+
+{% macro range_label(d) %}{% if d == 1 %}Today{% else %}Last {{ d }} days{% endif %}{% endmacro %}
+
+{% block admin_content %}
+<h1>Visitors</h1>
+<p class="audit-meta">Who is using the public site and which towns they look at. No cookies are set and no IP addresses are stored: each visitor is an anonymous code that changes every day, so the same person on two days counts twice. Bots and admin pages are not counted. Kept for {{ report.retention_days }} days.</p>
+
+<nav class="visitor-ranges" aria-label="Date range">
+  {% for d in ranges %}
+    <a href="/admin/visitors?days={{ d }}" {% if d == report.days %}aria-current="page" class="is-current"{% endif %}>{{ range_label(d) }}</a>
+  {% endfor %}
+</nav>
+
+<section aria-label="Totals">
+  <div class="metric-grid">
+    <div class="metric-card{{ ' is-zero' if not report.today.visitors }}">
+      <span class="metric-value">{{ report.today.visitors }}</span>
+      <span class="metric-label">Visitors today</span>
+    </div>
+    <div class="metric-card{{ ' is-zero' if not report.today.page_views }}">
+      <span class="metric-value">{{ report.today.page_views }}</span>
+      <span class="metric-label">Pages viewed today</span>
+    </div>
+    <div class="metric-card{{ ' is-zero' if not report.total_visits }}">
+      <span class="metric-value">{{ report.total_visits }}</span>
+      <span class="metric-label">Visits, {{ range_label(report.days) | lower }}</span>
+    </div>
+    <div class="metric-card{{ ' is-zero' if not report.total_page_views }}">
+      <span class="metric-value">{{ report.total_page_views }}</span>
+      <span class="metric-label">Pages viewed, {{ range_label(report.days) | lower }}</span>
+    </div>
+    <div class="metric-card{{ ' is-zero' if not report.signed_in_people }}">
+      <span class="metric-value">{{ report.signed_in_people }}</span>
+      <span class="metric-label">Signed-in people</span>
+    </div>
+  </div>
+</section>
+
+<section aria-label="Towns">
+  <h2>Towns people are looking at</h2>
+  {% if report.towns %}
+  <div class="table-scroll"><table>
+    <thead><tr><th>Town</th><th>Visitors</th><th>Pages viewed</th></tr></thead>
+    <tbody>
+      {% for t in report.towns %}
+      <tr><td><a href="/city/{{ t.slug }}">{{ t.name }}</a></td><td>{{ t.visitors }}</td><td>{{ t.views }}</td></tr>
+      {% endfor %}
+    </tbody>
+  </table></div>
+  {% else %}<p class="empty-inline">No town pages viewed yet in this range.</p>{% endif %}
+</section>
+
+<section aria-label="Visitor log">
+  <h2>Visitor log</h2>
+  {% if report.log %}
+  <div class="table-scroll"><table>
+    <thead><tr><th>Last seen</th><th>Who</th><th>Towns viewed</th><th>Pages</th><th>Device</th><th>Came from</th><th>Last page</th></tr></thead>
+    <tbody>
+      {% for v in report.log %}
+      <tr>
+        <td class="audit-meta">{{ v.last_seen_at | admin_datetime }}</td>
+        <td>{% if v.user %}{{ v.user.full_name or v.user.email }}{% if v.user.full_name %} <span class="audit-meta">{{ v.user.email }}</span>{% endif %}{% else %}<span class="audit-meta">Anonymous visitor</span>{% endif %}</td>
+        <td>{% for t in v.towns %}{{ t.name }}{% if not loop.last %}; {% endif %}{% else %}<span class="audit-meta">None</span>{% endfor %}</td>
+        <td>{{ v.page_views }}</td>
+        <td>{{ v.device | capitalize }}</td>
+        <td>{{ v.referrer_host or "Direct" }}</td>
+        <td><code>{{ v.last_path }}</code></td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table></div>
+  <nav class="pagination" aria-label="Visitor log pagination">
+    <span class="pagination-links">
+      {% if report.log_page > 1 %}<a href="/admin/visitors?days={{ report.days }}&amp;page={{ report.log_page - 1 }}">&larr; Newer</a>{% else %}<span class="pagination-disabled">&larr; Newer</span>{% endif %}
+      <span class="pagination-current">Page {{ report.log_page }}</span>
+      {% if report.log_has_next %}<a href="/admin/visitors?days={{ report.days }}&amp;page={{ report.log_page + 1 }}">Older &rarr;</a>{% else %}<span class="pagination-disabled">Older &rarr;</span>{% endif %}
+    </span>
+  </nav>
+  {% else %}<p class="empty-inline">No visitors yet in this range.</p>{% endif %}
+</section>
+
+<section aria-label="Recent sign-ins">
+  <h2>Recent sign-ins</h2>
+  {% if report.sign_ins %}
+  <div class="table-scroll"><table>
+    <thead><tr><th>When</th><th>Who</th><th>Result</th><th>Detail</th></tr></thead>
+    <tbody>
+      {% for s in report.sign_ins %}
+      <tr>
+        <td class="audit-meta">{{ s.at | admin_datetime }}</td>
+        <td>{% if s.user %}{{ s.user.full_name or s.user.email }}{% else %}<span class="audit-meta">Unknown</span>{% endif %}</td>
+        <td>{% if s.action == "login" %}<span class="badge badge-active">Signed in</span>{% else %}<span class="badge badge-danger">Failed</span>{% endif %}</td>
+        <td>{{ s.detail or "" }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table></div>
+  <p class="audit-meta">Every admin change is in the <a href="/admin/audit">audit log</a>.</p>
+  {% else %}<p class="empty-inline">No sign-ins yet.</p>{% endif %}
+</section>
+
+<section aria-label="Day by day">
+  <h2>Day by day</h2>
+  <div class="table-scroll"><table>
+    <thead><tr><th>Day</th><th>Visitors</th><th>Pages viewed</th><th>Signed in</th></tr></thead>
+    <tbody>
+      {% for d in report.daily %}
+      <tr><td>{{ d.day.strftime("%a %b") }} {{ d.day.day }}</td><td>{{ d.visitors }}</td><td>{{ d.page_views }}</td><td>{{ d.signed_in }}</td></tr>
+      {% endfor %}
+    </tbody>
+  </table></div>
+</section>
+
+<section aria-label="Top pages">
+  <h2>Top pages</h2>
+  {% if report.top_pages %}
+  <div class="table-scroll"><table>
+    <thead><tr><th>Page</th><th>Views</th></tr></thead>
+    <tbody>
+      {% for p in report.top_pages %}
+      <tr><td><a href="{{ p.path }}"><code>{{ p.path }}</code></a></td><td>{{ p.views }}</td></tr>
+      {% endfor %}
+    </tbody>
+  </table></div>
+  {% else %}<p class="empty-inline">No pages viewed yet in this range.</p>{% endif %}
+</section>
+
+<section aria-label="Where visitors come from">
+  <h2>Where visitors come from</h2>
+  {% if report.referrers %}
+  <div class="table-scroll"><table>
+    <thead><tr><th>Site</th><th>Visitors</th></tr></thead>
+    <tbody>
+      {% for r in report.referrers %}<tr><td>{{ r.host }}</td><td>{{ r.visitors }}</td></tr>{% endfor %}
+    </tbody>
+  </table></div>
+  {% else %}<p class="empty-inline">Everyone came directly (typed the address or used a bookmark).</p>{% endif %}
+  <p class="audit-meta">Devices: {{ report.devices.mobile }} mobile, {{ report.devices.desktop }} desktop, {{ report.devices.tablet }} tablet.</p>
+</section>
+{% endblock %}
