@@ -47,6 +47,7 @@ from app.schemas.extraction_config_forms import (
     ConfigFormInput,
     build_site_configuration,
     configuration_to_form,
+    shown_fields,
 )
 from app.schemas.schedule import parse_schedule_config
 from app.schemas.website import WebsiteCreate, WebsiteUpdate
@@ -1187,6 +1188,7 @@ def _configure_context(
         "form": form,
         "errors": errors,
         "required_field_choices": REQUIRED_FIELD_CHOICES,
+        "shown": shown_fields(form) if form is not None else frozenset(),
         "pattern_names": REGISTRY.names(),
     }
 
@@ -1283,7 +1285,13 @@ def configure_website_submit(
         query_params=query_params,
         raw_json=raw_json,
     )
-    result = build_site_configuration(form_input)
+    base = None
+    if website.configuration:
+        try:
+            base = SiteConfiguration.model_validate(website.configuration)
+        except ValidationError:
+            base = None
+    result = build_site_configuration(form_input, base)
     if result.configuration is None:
         return render(
             request,

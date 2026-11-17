@@ -23,7 +23,7 @@
 {% macro onboarding_badge(status) %}
   {% if status in ("active",) %}
     <span class="badge badge-active">{{ status | onboarding_label }}</span>
-  {% elif status in ("unsupported", "failing") %}
+  {% elif status in ("unsupported", "blocked", "failing") %}
     <span class="badge badge-danger">{{ status | onboarding_label }}</span>
   {% elif status in ("archived",) %}
     <span class="badge badge-archived">{{ status | onboarding_label }}</span>

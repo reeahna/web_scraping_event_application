@@ -9,7 +9,9 @@ sites share one implementation rather than drifting apart.
 import re
 
 UNSAFE_REGEX_RE = re.compile(
-    r"\(\?"  # lookaround, named, or non-capturing groups — "(?=", "(?:", "(?P<...>", etc.
+    r"\(\?(?!:)"  # lookarounds, named groups, inline flags: "(?=", "(?P<...>", "(?i)".
+    # A plain non-capturing group "(?:...)" is harmless on its own; quantifying
+    # one around + * or | is still caught by the nested-quantifier check below.
     r"|\\[1-9]"  # backreferences
     r"|\([^)]*[+*|][^)]*\)\s*[+*{]"  # a group containing +, *, or | that is itself
     # quantified, e.g. "(a+)+" or "(a|ab)+" — the classic nested-quantifier/

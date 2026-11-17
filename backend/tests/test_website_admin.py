@@ -545,3 +545,39 @@ def test_editor_can_detect_and_preview_but_not_approve(
         follow_redirects=False,
     )
     assert resp.status_code == 403
+
+
+def test_an_unsupported_source_can_be_set_aside_as_blocked(
+    client, make_super_admin, make_city, make_website, login, db_session
+):
+    """Sites that refuse our requests get their own status, so they can be
+    found together later when deciding whether a paid scraper is worth it."""
+    make_super_admin(email="root-blocked@example.com", password="root-pass-1234")
+    city = make_city(name="Blockville", slug="blockville")
+    website = make_website(city, name="Refusing Site")
+    website.onboarding_status = "unsupported"
+    db_session.commit()
+    login("root-blocked@example.com", "root-pass-1234")
+
+    client.get(f"/admin/websites/{website.id}")
+    resp = client.post(
+        f"/admin/websites/{website.id}/status",
+        data={"to_status": "blocked", "csrf_token": _csrf(client)},
+        follow_redirects=False,
+    )
+    assert resp.status_code == 303
+    db_session.refresh(website)
+    assert website.onboarding_status == "blocked"
+    assert website.is_active is False
+
+    listing = client.get("/admin/websites?onboarding_status=blocked").text
+    assert "Refusing Site" in listing
+    assert "Blocked by site" in listing
+
+    # It can go back into review once a way to fetch it exists.
+    resp = client.post(
+        f"/admin/websites/{website.id}/status",
+        data={"to_status": "needs_review", "csrf_token": _csrf(client)},
+        follow_redirects=False,
+    )
+    assert resp.status_code == 303

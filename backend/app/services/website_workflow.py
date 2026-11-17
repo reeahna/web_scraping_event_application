@@ -100,6 +100,10 @@ _LIFECYCLE_LABELS = {
     "detected": ("Move to detected", "Mark detection as complete."),
     "needs_review": ("Move to needs review", "Mark the source for administrator review."),
     "unsupported": ("Move to unsupported", "Mark the source as not currently supported."),
+    "blocked": (
+        "Move to blocked by site",
+        "The site refuses our requests. Keep it here until a paid scraping service is decided.",
+    ),
     "approved": (
         "Fast-track lifecycle to approved",
         "Advanced: sets the lifecycle status directly. The guided 'Approve "
