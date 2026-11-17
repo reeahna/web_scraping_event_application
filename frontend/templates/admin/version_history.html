@@ -1,0 +1,44 @@
+{% extends "admin_base.html" %}
+
+{% block title %}Version history{% endblock %}
+
+{% block admin_content %}
+<div class="release-notes release-notes-admin">
+<h1>Version history</h1>
+<p class="audit-meta">Running version {{ version }}. Built from <code>CHANGELOG.md</code>; visitors see only the
+  "For everyone" notes, on <a href="/whats-new">What's new</a>.</p>
+
+{% macro notes(release) %}
+  {% if release.public_notes %}
+  <h3>For everyone</h3>
+  <ul>
+    {% for note in release.public_notes %}<li>{{ note | release_note(public=False) }}</li>{% endfor %}
+  </ul>
+  {% endif %}
+  {% if release.admin_notes %}
+  <h3>Admin and behind the scenes</h3>
+  <ul>
+    {% for note in release.admin_notes %}<li>{{ note | release_note(public=False) }}</li>{% endfor %}
+  </ul>
+  {% endif %}
+{% endmacro %}
+
+{% if unreleased %}
+<section class="release release-unreleased" aria-labelledby="unreleased">
+  <h2 id="unreleased">Unreleased <span class="release-name">· in the next version</span></h2>
+  {{ notes(unreleased) }}
+</section>
+{% endif %}
+
+{% for release in releases %}
+<section class="release" aria-labelledby="v{{ release.version | replace('.', '-') }}">
+  <h2 id="v{{ release.version | replace('.', '-') }}">
+    {{ release.version }}{% if release.name %}<span class="release-name"> · {{ release.name }}</span>{% endif %}
+    {% if loop.first %}<span class="release-current">Current</span>{% endif %}
+  </h2>
+  <p class="release-date"><time datetime="{{ release.released_on.isoformat() }}">{{ release.released_on | human_date_long }}</time></p>
+  {{ notes(release) }}
+</section>
+{% endfor %}
+</div>
+{% endblock %}

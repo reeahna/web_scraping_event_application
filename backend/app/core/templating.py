@@ -19,6 +19,7 @@ from app.core.onboarding import onboarding_label
 from app.core.report_status import report_status_label
 from app.extraction.fetch import explain_block_reason
 from app.paths import TEMPLATES_DIR
+from app.services.changelog import APP_VERSION, render_note
 from app.services.quality_presentation import format_percent, quality_view
 from app.services.schedule_admin import format_admin_datetime
 from app.services.seo import absolute_url
@@ -105,6 +106,9 @@ templates.env.filters["admin_datetime"] = _admin_datetime
 templates.env.filters["report_status_label"] = report_status_label
 templates.env.globals["absolute_url"] = absolute_url
 templates.env.globals["site_name"] = get_settings().app_name
+# The running version (newest release in CHANGELOG.md), shown in the footer.
+templates.env.globals["app_version"] = APP_VERSION
+templates.env.filters["release_note"] = render_note
 
 
 def _category_photo(event: Any):

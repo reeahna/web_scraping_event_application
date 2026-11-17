@@ -2613,6 +2613,7 @@ a.wf-danger, button.wf-danger {
 /* Footer links to the privacy policy and terms */
 .site-footer-links {
   display: flex;
+  flex-wrap: wrap;
   justify-content: center;
   gap: var(--space-4);
   margin-bottom: var(--space-2);
@@ -3375,4 +3376,69 @@ a.wf-danger, button.wf-danger {
   border-color: var(--accent);
   color: var(--accent);
   background: var(--accent-soft);
+}
+
+/* ==========================================================================
+   Version history: What's new (public) and admin version history
+   ========================================================================== */
+.release {
+  border-top: 1px solid var(--border);
+  padding-top: var(--space-4);
+  margin-top: var(--space-5);
+}
+
+.release-notes h2 {
+  margin-top: 0;
+  margin-bottom: var(--space-1);
+}
+
+.release-name {
+  font-weight: 400;
+  color: var(--muted);
+}
+
+.release-date {
+  color: var(--muted);
+  font-size: var(--font-sm);
+  margin-bottom: var(--space-3);
+}
+
+.release-notes h3 {
+  font-size: var(--font-sm);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--muted);
+  margin: var(--space-3) 0 var(--space-2);
+}
+
+.release-notes ul {
+  padding-left: var(--space-5);
+  line-height: 1.6;
+}
+
+.release-notes li {
+  margin-bottom: var(--space-1);
+}
+
+.release-current {
+  display: inline-block;
+  margin-left: var(--space-2);
+  padding: 0 var(--space-2);
+  border-radius: 999px;
+  background: var(--accent-soft);
+  color: var(--accent);
+  font-size: var(--font-sm);
+  font-weight: 600;
+  vertical-align: middle;
+}
+
+.release-unreleased {
+  background: var(--accent-soft);
+  border: 1px dashed var(--border-strong);
+  border-radius: 8px;
+  padding: var(--space-4);
+}
+
+.site-footer-version {
+  color: inherit;
 }

@@ -17,6 +17,7 @@ from sqlalchemy import text
 from app.config import get_settings
 from app.core.production_checks import production_blockers
 from app.dependencies import DbSession
+from app.services.changelog import APP_VERSION
 
 router = APIRouter()
 
@@ -70,6 +71,6 @@ def readiness(db: DbSession) -> JSONResponse:
 
     ready = checks["database"] == "ok"
     return JSONResponse(
-        {"status": "ready" if ready else "not_ready", "checks": checks},
+        {"status": "ready" if ready else "not_ready", "version": APP_VERSION, "checks": checks},
         status_code=200 if ready else 503,
     )
