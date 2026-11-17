@@ -37,8 +37,10 @@ LEADER_ROW_ID = 1
 STRUCTURE_FAILURE_THRESHOLD = 3
 # The single source of truth for how many website imports run at once — shared
 # by the scheduler dispatch loop and the manual bulk-import runner so both
-# obey the same concurrency ceiling.
-MAX_CONCURRENT_RUNS = 4
+# obey the same concurrency ceiling. One at a time: a large calendar (1,000+
+# events) can use a few hundred MB while it imports, and the Render Starter
+# instance has 512 MB, so several big imports at once ran it out of memory.
+MAX_CONCURRENT_RUNS = 1
 
 
 @dataclass(frozen=True)

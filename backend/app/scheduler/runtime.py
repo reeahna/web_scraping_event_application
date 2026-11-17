@@ -65,6 +65,9 @@ class SchedulerRuntime:
         self._scheduler = AsyncIOScheduler(timezone="UTC")
         self._is_leader = False
         self._active_tasks: set[asyncio.Task] = set()
+        # Websites with a run task already created (running or waiting for a
+        # slot), so a slow import is not queued again on every dispatch tick.
+        self._queued_website_ids: set[int] = set()
         # Full reconcile runs every N heartbeats so eligibility changes (e.g. a
         # city deactivated through the web app) are picked up without a restart.
         self._heartbeats_between_reconciles = 10
@@ -257,6 +260,9 @@ class SchedulerRuntime:
             report_exception(exc, job="dispatch")
             return
         for website_id in due:
+            if website_id in self._queued_website_ids:
+                continue
+            self._queued_website_ids.add(website_id)
             task = asyncio.create_task(self._run_one(website_id))
             self._active_tasks.add(task)
             task.add_done_callback(self._active_tasks.discard)
@@ -465,15 +471,18 @@ class SchedulerRuntime:
             report_exception(exc, job="college_towns")
 
     async def _run_one(self, website_id: int) -> None:
-        async with self._semaphore:
-            try:
-                outcome = await run_scheduled_extraction(
-                    website_id, holder=self.holder, session_factory=self._session_factory
-                )
-                logger.info("scheduled run website %s: %s", website_id, outcome.status)
-            except Exception as exc:  # noqa: BLE001
-                logger.warning("scheduled run website %s crashed: %s", website_id, exc)
-                report_exception(exc, job="scheduled_run")
+        try:
+            async with self._semaphore:
+                try:
+                    outcome = await run_scheduled_extraction(
+                        website_id, holder=self.holder, session_factory=self._session_factory
+                    )
+                    logger.info("scheduled run website %s: %s", website_id, outcome.status)
+                except Exception as exc:  # noqa: BLE001
+                    logger.warning("scheduled run website %s crashed: %s", website_id, exc)
+                    report_exception(exc, job="scheduled_run")
+        finally:
+            self._queued_website_ids.discard(website_id)
 
     async def shutdown(self) -> None:
         """Graceful: stop scheduling new work, let in-flight runs finish."""
