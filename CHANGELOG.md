@@ -27,6 +27,9 @@ lines. Lines may use `**bold**`, `` `code` `` and `[links](https://...)`.
 
 ## [Unreleased]
 
+### Admin and behind the scenes
+- `CLAUDE.md` now forbids em dashes in anything written for the project. (#69)
+
 ## [1.9.0] - 2026-11-17 - Version history
 
 ### For everyone

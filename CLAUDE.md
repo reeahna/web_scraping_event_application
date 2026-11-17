@@ -1,4 +1,4 @@
-# Bulletin — guide for AI coding tools
+# Bulletin: guide for AI coding tools
 
 Bulletin is a college-town events site. It scrapes event listings from local
 sources on a schedule and shows them town by town, with an admin UI for
@@ -39,6 +39,9 @@ python -m pytest tests/test_public_ui.py -q   # one file
   `tests/test_csp_no_inline_scripts.py`, ...).
 - Changing a model means adding an Alembic migration and checking
   `upgrade head`, `downgrade -1`, `upgrade head`.
+- **Absolutely no em dashes (—).** Not in UI text, templates, docs, code
+  comments, commit messages or PR descriptions. Use a comma, colon, period or
+  parentheses instead. (Older files still have some; don't add new ones.)
 - Every pull request adds a line to `CHANGELOG.md` under `## [Unreleased]`:
   `### For everyone` for anything a visitor or signed-in user would notice
   (written for them, no jargon), `### Admin and behind the scenes` for the rest.
