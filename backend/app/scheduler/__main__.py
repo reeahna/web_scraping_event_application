@@ -13,6 +13,7 @@ import signal
 
 from app.config import get_settings
 from app.core.logging import configure_logging, get_logger
+from app.core.monitoring import init_monitoring
 from app.scheduler.runtime import SchedulerRuntime
 
 logger = get_logger("scheduler.main")
@@ -21,6 +22,7 @@ logger = get_logger("scheduler.main")
 async def _run() -> None:
     settings = get_settings()
     configure_logging(settings.log_level)
+    init_monitoring(settings, component="scheduler")
     runtime = SchedulerRuntime()
     stop = asyncio.Event()
 

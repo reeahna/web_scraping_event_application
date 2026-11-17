@@ -60,3 +60,7 @@ services:
         value: nominatim
       - key: GEOCODING_USER_AGENT
         value: "city-events/1.0 (+https://city-events-ryjd.onrender.com)"
+      # Error alerts (docs/deploy-render.md step 5). Set the value in the
+      # dashboard; sync: false keeps it out of this file and never overwrites it.
+      - key: SENTRY_DSN
+        sync: false

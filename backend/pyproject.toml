@@ -38,6 +38,9 @@ dependencies = [
     # Shared production rate-limit backend. Imported lazily; only used when
     # RATE_LIMIT_BACKEND=redis. Dev/tests need no Redis server.
     "redis>=5",
+    # Error monitoring (app.core.monitoring). Does nothing unless SENTRY_DSN is
+    # set; the fastapi extra brings the request integration.
+    "sentry-sdk[fastapi]>=2.20,<3",
 ]
 
 [project.optional-dependencies]
