@@ -64,3 +64,9 @@ services:
       # dashboard; sync: false keeps it out of this file and never overwrites it.
       - key: SENTRY_DSN
         sync: false
+      # Admin access key for automated admin jobs (docs/security.md). Set both
+      # in the dashboard; leaving them unset keeps the key off.
+      - key: ADMIN_API_KEY
+        sync: false
+      - key: ADMIN_API_KEY_USER_EMAIL
+        sync: false

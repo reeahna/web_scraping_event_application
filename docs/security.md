@@ -47,6 +47,23 @@ every subrequest. Challenge/login walls are reported blocked, never solved.
 - **Rotation**: change the value in the secret store and restart the affected
   processes; nothing caches secrets on disk.
 
+## Admin access key
+
+An automated job (the daily source-maintenance task) can use the admin pages
+without an OAuth sign-in by sending `Authorization: Bearer <ADMIN_API_KEY>`.
+
+- Off unless both `ADMIN_API_KEY` (at least 32 characters; a shorter value is
+  ignored) and `ADMIN_API_KEY_USER_EMAIL` are set.
+- The request acts as that existing, active account: its roles decide what is
+  allowed, and its audit trail records what was done. Use an account with only
+  the permissions the job needs.
+- It replaces only the session cookie. Forms still need the CSRF token, which
+  the job reads from the cookie a page load sets, like a browser.
+- The key is compared in constant time and never logged. A wrong key, or a
+  missing or disabled account, is refused like a signed-out request.
+- Keep it in Render's environment settings and the job's own secret store, never
+  in the repository or a chat. Rotate by changing it in both places.
+
 ## Redaction
 
 - Logs and the operational dashboard surface counts and safe fields only —
