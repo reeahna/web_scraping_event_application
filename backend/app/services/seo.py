@@ -16,6 +16,16 @@ from app.config import get_settings
 from app.core.formatting import human_date_long
 from app.models.event import Event
 
+# A town page with fewer upcoming events than this is kept out of search
+# results and the sitemap. An empty "0 events" page is what search engines call
+# thin content, and enough of them lowers how the whole site is ranked. The
+# page still works for visitors and joins the index once its sources fill in.
+MIN_INDEXABLE_TOWN_EVENTS = 5
+
+
+def town_is_indexable(upcoming_events: int) -> bool:
+    return upcoming_events >= MIN_INDEXABLE_TOWN_EVENTS
+
 
 def absolute_url(path: str) -> str:
     """Join a site-relative path onto the configured public base URL."""
@@ -106,6 +116,21 @@ def event_schema(event: Event) -> dict:
         data["sameAs"] = event.canonical_url
 
     return data
+
+
+def event_page_title(event: Event) -> str:
+    """The event's <title>: its name, then the town and day when known, so a
+    search result says where and when before anyone clicks.
+    "Jazz Night · Ann Arbor, Aug 18". The site name is added by the template."""
+    where_when = []
+    if event.city is not None:
+        where_when.append(event.city.name)
+    if event.start_date is not None:
+        day = event.start_date
+        # By hand rather than strftime("%-d"), which raises on Windows.
+        where_when.append(f"{day.strftime('%b')} {day.day}")
+    title = " ".join(event.title.split())
+    return f"{title} · {', '.join(where_when)}" if where_when else title
 
 
 def event_meta_description(event: Event) -> str:

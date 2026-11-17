@@ -69,6 +69,7 @@ def event_detail(event_id: int, request: Request, current_user: OptionalCurrentU
             "is_following_city": is_following_city,
             "structured_data": seo.event_structured_data(event),
             "meta_description": seo.event_meta_description(event),
+            "page_title": seo.event_page_title(event),
             "canonical_url": seo.absolute_url(f"/events/{event.id}"),
             "share_links": seo.event_share_links(event),
             "share_text": seo.event_share_text(event),

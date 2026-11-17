@@ -20,8 +20,15 @@
   <meta property="og:title" content="{{ self.title() | trim }}" />
   <meta property="og:description" content="{{ self.meta_description() | trim }}" />
   <meta property="og:url" content="{{ canonical_url or absolute_url(request.url.path) }}" />
+  {# A page with its own picture overrides og_image; every other page shares
+     the site card, so a shared link is never a bare text preview. #}
+  {% block og_image %}<meta property="og:image" content="{{ absolute_url('/static/og-default.png') }}" />
+  <meta property="og:image:width" content="1200" />
+  <meta property="og:image:height" content="630" />
+  <meta property="og:image:alt" content="{{ site_name }}: what's on in your college town" />{% endblock %}
   {% block og_extra %}{% endblock %}
-  <meta name="twitter:card" content="{% block twitter_card %}summary{% endblock %}" />
+  <meta name="twitter:card" content="{% block twitter_card %}summary_large_image{% endblock %}" />
+  <link rel="icon" href="/static/favicon.svg" type="image/svg+xml" />
 
   <link rel="stylesheet" href="/static/style.css" />
   {% if current_user %}<script src="/static/js/account-menu.js" defer></script>{% endif %}
@@ -86,7 +93,9 @@
       <p class="site-footer-name">{{ site_name }}</p>
       <p class="site-footer-tagline">Local events, gathered in one place.</p>
       <nav class="site-footer-links" aria-label="Site information">
-        <a href="/suggest">Suggest a town</a>
+        {# Suggestions need an account; signed out, go by the sign-in page
+           rather than linking every page to a 401. #}
+        <a href="{{ '/suggest' if current_user else '/auth/login?next=%2Fsuggest' }}">Suggest a town</a>
         <a href="/privacy">Privacy</a>
         <a href="/terms">Terms</a>
       </nav>
