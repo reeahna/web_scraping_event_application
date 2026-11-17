@@ -22,6 +22,7 @@ from app.models.user import User
 from app.models.user_role import UserRole
 from app.models.website import Website
 from app.repositories.notification import count_unread_for_user
+from app.services.ai_categorization import queue_counts, scheduled_categorization_enabled
 from app.services.audit import record_audit
 from app.services.rbac import (
     assert_not_last_super_admin,
@@ -144,6 +145,13 @@ def dashboard(request: Request, current_user: CurrentUser, db: DbSession):
             .count()
         )
 
+    # Only when AI labeling is switched on: otherwise every event would read
+    # as "waiting" for something that will never come.
+    ai_queue = None
+    if scheduled_categorization_enabled():
+        waiting_for_ai, ai_labeled = queue_counts(db)
+        ai_queue = {"waiting": waiting_for_ai, "labeled": ai_labeled}
+
     unread_notifications = count_unread_for_user(db, current_user.id)
 
     recent_audit = None
@@ -159,6 +167,7 @@ def dashboard(request: Request, current_user: CurrentUser, db: DbSession):
             "broken": broken,
             "waiting": waiting,
             "unresolved_reports": unresolved_reports,
+            "ai_queue": ai_queue,
             "unread_notifications": unread_notifications,
             "recent_audit": recent_audit,
         },

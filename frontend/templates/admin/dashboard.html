@@ -25,6 +25,13 @@
     <div class="metric-value">{{ metrics.events }}</div>
     <div class="metric-label">Events</div>
   </div>
+  {% if ai_queue is not none %}
+  <div class="metric-tile">
+    <div class="metric-value">{{ ai_queue.waiting }}</div>
+    <div class="metric-label">Waiting for AI labels</div>
+    <div class="metric-note">{{ ai_queue.labeled }} upcoming event{{ "s" if ai_queue.labeled != 1 }} labeled</div>
+  </div>
+  {% endif %}
 </div>
 
 {% if broken is not none or unresolved_reports is not none %}

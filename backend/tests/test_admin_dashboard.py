@@ -188,3 +188,50 @@ def test_audit_timestamps_are_formatted_not_raw(
         html = client.get(path).text
         assert raw.search(html) is None, path
         assert " at " in html, path
+
+
+def test_dashboard_shows_the_ai_label_queue(
+    client, make_super_admin, make_city, make_event, login, monkeypatch
+):
+    from datetime import date, timedelta
+
+    from app.config import get_settings
+    from app.services.ai_categorizer import PROMPT_VERSION
+
+    monkeypatch.setattr(get_settings(), "groq_api_key", "test-key")
+    make_super_admin(email="dash-ai@example.com", password="root-pass-1234")
+    city = make_city(name="AI Queue City", slug="ai-queue-city")
+    soon = date.today() + timedelta(days=3)
+    for n in range(2):
+        make_event(city, title=f"Waiting {n}", canonical_url=f"https://e.x/w{n}", start_date=soon)
+    make_event(
+        city,
+        title="Labeled",
+        canonical_url="https://e.x/l",
+        start_date=soon,
+        category_source="ai",
+        ai_prompt_version=PROMPT_VERSION,
+    )
+    # Past events are never sent to the AI, so they are not waiting.
+    make_event(
+        city, title="Past", canonical_url="https://e.x/p", start_date=date(2020, 1, 1)
+    )
+
+    login("dash-ai@example.com", "root-pass-1234")
+    resp = client.get("/admin")
+    assert '<div class="metric-value">2</div>' in resp.text
+    assert "Waiting for AI labels" in resp.text
+    assert "1 upcoming event labeled" in resp.text
+
+
+def test_dashboard_hides_the_ai_queue_when_ai_is_off(
+    client, make_super_admin, login, monkeypatch
+):
+    from app.config import get_settings
+
+    settings = get_settings()
+    monkeypatch.setattr(settings, "groq_api_key", None)
+    monkeypatch.setattr(settings, "gemini_api_key", None)
+    make_super_admin(email="dash-noai@example.com", password="root-pass-1234")
+    login("dash-noai@example.com", "root-pass-1234")
+    assert "Waiting for AI labels" not in client.get("/admin").text

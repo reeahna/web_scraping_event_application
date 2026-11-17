@@ -134,6 +134,15 @@ def pending_events(db: Session, *, today: date | None = None) -> Query:
     return categorizable_events(db, today=today).filter(outdated)
 
 
+def queue_counts(db: Session, *, today: date | None = None) -> tuple[int, int]:
+    """(waiting, labeled) among the events worth labeling: how many still wait
+    for the AI and how many already carry a current AI label. Two COUNT
+    queries with no rows loaded, so it is cheap enough for the admin page."""
+    waiting = pending_events(db, today=today).order_by(None).count()
+    total = categorizable_events(db, today=today).order_by(None).count()
+    return waiting, total - waiting
+
+
 def apply_labels(
     events: list[Event], labels: dict[int, EventLabel], by_slug: dict[str, EventCategory]
 ) -> tuple[int, int]:
