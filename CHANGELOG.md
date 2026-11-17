@@ -37,6 +37,7 @@ lines. Lines may use `**bold**`, `` `code` `` and `[links](https://...)`.
 - `CLAUDE.md` now forbids em dashes in anything written for the project. (#69)
 - Errors are reported to Sentry when `SENTRY_DSN` is set: crashes on any page, failing background jobs (scraping, AI labeling, geocoding and the rest) and a scheduler that stops running all raise an alert. Nothing is sent without it. (#71)
 - An admin access key (`ADMIN_API_KEY` and `ADMIN_API_KEY_USER_EMAIL`) lets an automated job such as the daily source-maintenance task use the admin pages without a browser sign-in. It acts as the named account, with that account's permissions, and is off unless both are set. (#75)
+- **Detect and configure** no longer fails with a server error on sites styled with utility CSS classes such as `md:tw-px-4`; those classes are left out of generated selectors. (#76)
 
 ## [1.9.0] - 2026-11-17 - Version history
 

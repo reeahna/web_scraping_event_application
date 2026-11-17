@@ -50,11 +50,18 @@ _ATTRIBUTE_CANDIDATES: dict[str, tuple[str, ...]] = {
 }
 
 _MAX_CLASSES_IN_SELECTOR = 3
+# A class usable as a bare `.name` selector. Utility-CSS classes such as
+# `md:tw-px-4`, `w-1/2` or `hover:underline` carry characters that are
+# selector syntax, so `.md:tw-px-4` reads as a pseudo-class and fails to
+# parse. They describe layout, not content, so they are left out.
+_PLAIN_CLASS_RE = re.compile(r"^-?[A-Za-z_][A-Za-z0-9_-]*$")
 
 
 def is_stable_class_token(token: str) -> bool:
     token = token.strip()
     if len(token) < 2 or len(token) > 40:
+        return False
+    if not _PLAIN_CLASS_RE.match(token):
         return False
     if _ALL_DIGITS_RE.match(token):
         return False
