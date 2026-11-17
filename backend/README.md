@@ -163,6 +163,9 @@ without any of it.
 | `OAUTH_REDIRECT_BASE_URL` | `PUBLIC_BASE_URL` | Base of the provider callback URLs, if different from the site's address |
 | `COOKIE_SECURE`, `BEHIND_HTTPS`, `TRUSTED_HOSTS` | off | Set in production (already in `render.yaml`) |
 | `RATE_LIMIT_BACKEND`, `REDIS_URL` | `memory` | Use `redis` to share rate limits across processes |
+| `SENTRY_DSN` | unset | Report errors (web, scheduler jobs, a stopped scheduler) to Sentry; nothing is sent when unset |
+| `SENTRY_TRACES_SAMPLE_RATE` | `0.02` | Share of web requests traced for performance; `0` turns tracing off |
+| `SENTRY_ENVIRONMENT` | `APP_ENV` | Environment name shown in Sentry |
 
 ## Scripts
 

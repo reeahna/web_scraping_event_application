@@ -256,6 +256,17 @@ class Settings(BaseSettings):
     x_client_id: str | None = None
     x_client_secret: str | None = None
 
+    # Error monitoring (app.core.monitoring). Off unless SENTRY_DSN is set, so
+    # development, tests and any deployment without it send nothing anywhere.
+    # When set, crashes in web requests, failures in the scheduler's background
+    # jobs and anything logged at ERROR are reported to Sentry. Performance
+    # tracing samples only a small share of requests so a free Sentry plan's
+    # monthly quota lasts; 0 turns tracing off.
+    sentry_dsn: str | None = None
+    sentry_traces_sample_rate: float = 0.02
+    # Defaults to APP_ENV; set to tell apart e.g. a staging service.
+    sentry_environment: str | None = None
+
     model_config = SettingsConfigDict(
         env_file=str(BASE_DIR / ".env"),
         env_file_encoding="utf-8",

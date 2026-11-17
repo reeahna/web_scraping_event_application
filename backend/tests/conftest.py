@@ -20,6 +20,9 @@ os.environ["TMP"] = str(TEST_TMP_PATH)
 # (Springfield, IL ...), not in the test city, so the own-town import filter is
 # off by default here; tests/test_home_town.py turns it on.
 os.environ["HOME_TOWN_FILTER_ENABLED"] = "false"
+# Never report test failures to a real Sentry project from a developer's .env;
+# tests/test_monitoring.py turns monitoring on against a capturing transport.
+os.environ["SENTRY_DSN"] = ""
 
 from urllib.parse import parse_qs, quote, urlparse  # noqa: E402
 

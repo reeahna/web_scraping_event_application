@@ -26,6 +26,7 @@ from app.core.middleware import (
     MaxBodySizeMiddleware,
     SecurityHeadersMiddleware,
 )
+from app.core.monitoring import init_monitoring
 from app.paths import STATIC_DIR
 from app.routers import (
     account,
@@ -57,6 +58,8 @@ from app.routers import (
 
 settings = get_settings()
 configure_logging(settings.log_level)
+# Before the app is built, so Sentry (when SENTRY_DSN is set) wraps it.
+init_monitoring(settings, component="web")
 logger = get_logger("main")
 
 
