@@ -194,6 +194,8 @@ from tests.extraction_helpers import html_handler, patched_http_fetch
         ("IU EXPAT Alumni Network", AUDIENCE),
         ("Breakfast with Bluey and Bingo", AUDIENCE),
         ("Workshop: Pronunciation Brush-Up for International TAs", INTERNAL),
+        ("Developing a Study Abroad Program", INTERNAL),
+        ("Kelley Dallas–Fort Worth: Coffee & Connections", PROFESSIONAL),
         ("CSE Defense: Designing Concurrent Data Structures with Workload, Hardware and "
          "Semantic Awareness", INTERNAL),
         ("CSE Dissertation: Reimagining Shared Memory over One-Sided RDMA", INTERNAL),
@@ -299,6 +301,8 @@ def test_not_attendable_titles(title, reason):
         "Alumni Networking Night for Seniors and Recent Grads",
         "Self Defense: Intro Class for Women",
         "Thank You Cards for Instructors and Staff",
+        "O’Neill International Study Abroad Fair",
+        "Coffee and Conversation: Meet the Kelley Women’s Council",
         "Instructors Showcase: Dance Faculty Concert",
         "Home Defense - Hockey Night at the Rink",
         "SWE Defense Industry Panel",
