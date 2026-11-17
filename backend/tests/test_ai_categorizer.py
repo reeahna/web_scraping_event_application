@@ -62,6 +62,29 @@ def test_parse_labels_tolerates_code_fence():
     assert _parse_labels(text) == {2: EventLabel("education")}
 
 
+def test_parse_labels_unwraps_json_object_mode():
+    assert _parse_labels('{"labels": [{"id": 1, "category": "music"}]}') == {
+        1: EventLabel("music")
+    }
+
+
+def test_parse_labels_accepts_a_lone_label_object():
+    # A one-event batch in JSON-object mode can come back as the label itself.
+    assert _parse_labels('{"id": 7, "category": "sports", "keep": false}') == {
+        7: EventLabel("sports", keep=False)
+    }
+
+
+def test_parse_labels_accepts_labels_keyed_by_event_id():
+    text = '{"labels": {"3": {"category": "music"}, "4": {"category": "other"}}}'
+    assert _parse_labels(text) == {3: EventLabel("music"), 4: EventLabel("other")}
+
+
+def test_parse_labels_error_shows_what_came_back():
+    with pytest.raises(GeminiError, match="nothing here"):
+        _parse_labels('{"note": "nothing here"}')
+
+
 def test_parse_labels_drops_malformed_entries():
     text = '[{"id": 1, "category": "music"}, {"no_id": true}, {"id": "x"}]'
     assert _parse_labels(text) == {1: EventLabel("music")}

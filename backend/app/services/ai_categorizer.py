@@ -190,6 +190,34 @@ def _extract_text(body: dict) -> str:
     return text
 
 
+def _as_label_list(data: object) -> list | None:
+    """The label array out of whatever JSON shape the model chose. JSON-object
+    mode (Groq) has to wrap the array, and models do it more than one way:
+    {"labels": [...]}, a lone label {"id": 5, ...} when the batch holds a
+    single event, or {"labels": {"5": {...}}} keyed by event id. None when no
+    labels can be found."""
+    if isinstance(data, list):
+        return data
+    if not isinstance(data, dict):
+        return None
+    if "id" in data:
+        return [data]
+    for value in data.values():
+        if isinstance(value, list):
+            return value
+    for value in data.values():
+        found = _as_label_list(value) if isinstance(value, dict) else None
+        if found:
+            return found
+    # Keyed by event id: {"5": {"category": ...}, "6": {...}}.
+    keyed = [
+        {"id": key, **value}
+        for key, value in data.items()
+        if isinstance(value, dict) and str(key).strip().isdigit()
+    ]
+    return keyed or None
+
+
 def _parse_labels(text: str) -> dict[int, EventLabel]:
     # responseMimeType=application/json makes the body a bare JSON array, but be
     # tolerant of a stray fence or surrounding prose just in case.
@@ -203,11 +231,9 @@ def _parse_labels(text: str) -> dict[int, EventLabel]:
         if not match:
             raise GeminiError(f"response was not JSON: {text[:200]!r}") from None
         data = json.loads(match.group(0))
-    if isinstance(data, dict):
-        # JSON-object mode (Groq) wraps the array: {"labels": [...]}.
-        data = next((value for value in data.values() if isinstance(value, list)), None)
-    if not isinstance(data, list):
-        raise GeminiError("response JSON was not a list")
+    data = _as_label_list(data)
+    if data is None:
+        raise GeminiError(f"response JSON was not a list: {snippet[:200]!r}")
     labels: dict[int, EventLabel] = {}
     for item in data:
         if not isinstance(item, dict):
