@@ -22,6 +22,7 @@ from app.core.logging import configure_logging, get_logger
 from app.core.middleware import (
     CorrelationIdMiddleware,
     HeadAsGetMiddleware,
+    HttpsSchemeMiddleware,
     MaxBodySizeMiddleware,
     SecurityHeadersMiddleware,
 )
@@ -102,6 +103,8 @@ if settings.trusted_hosts:
 
     app.add_middleware(TrustedHostMiddleware, allowed_hosts=settings.trusted_hosts)
 app.add_middleware(CorrelationIdMiddleware)
+if settings.behind_https:
+    app.add_middleware(HttpsSchemeMiddleware)
 # Outermost of all: everything inside sees a HEAD request as the GET it stands for.
 app.add_middleware(HeadAsGetMiddleware)
 

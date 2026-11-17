@@ -158,7 +158,8 @@ def test_robots_disallows_the_private_areas(client):
     assert "Sitemap: http" in body
 
 
-def test_sitemap_lists_public_pages(client, published_event):
+def test_sitemap_lists_public_pages(client, published_event, monkeypatch):
+    monkeypatch.setattr(seo, "MIN_INDEXABLE_TOWN_EVENTS", 1)
     body = client.get("/sitemap.xml").text
     assert body.startswith("<?xml")
     assert f"/events/{published_event.id}</loc>" in body
@@ -179,3 +180,70 @@ def test_sitemap_contains_nothing_private(client, published_event):
     body = client.get("/sitemap.xml").text
     for prefix in ("/admin", "/account", "/auth"):
         assert prefix not in body
+
+
+# --- thin town pages -----------------------------------------------------------
+
+
+def test_a_town_with_too_few_events_is_kept_out_of_search(client, published_event):
+    """One upcoming event is below the threshold: the page still works, but
+    says noindex and stays out of the sitemap."""
+    html = client.get("/city/bloomington").text
+    assert '<meta name="robots" content="noindex, follow" />' in html
+    assert "/city/bloomington</loc>" not in client.get("/sitemap.xml").text
+
+
+def test_a_town_with_enough_events_is_indexed(client, published_event, monkeypatch):
+    monkeypatch.setattr(seo, "MIN_INDEXABLE_TOWN_EVENTS", 1)
+    html = client.get("/city/bloomington").text
+    assert '<meta name="robots" content="index, follow" />' in html
+    assert "/city/bloomington</loc>" in client.get("/sitemap.xml").text
+
+
+# --- pagination ------------------------------------------------------------------
+
+
+def test_town_page_links_do_not_repeat_the_town_id(client, published_event):
+    """The town is in the path; ?city_id=N made a second URL for each page."""
+    html = client.get("/city/bloomington").text
+    assert "city_id=" not in re.sub(r'data-map-url="[^"]*"', "", html)
+    # The map still needs the town to fetch its points.
+    assert f"/events/map?city_id={published_event.city_id}" in client.get(
+        "/city/bloomington?view=map"
+    ).text
+
+
+def test_later_pages_are_their_own_canonical(client, published_event):
+    html = client.get("/city/bloomington?page=2").text
+    assert re.search(r'<link rel="canonical" href="[^"]*/city/bloomington\?page=2"', html)
+    html = client.get("/city/bloomington?q=jazz").text
+    assert re.search(r'<link rel="canonical" href="[^"]*/city/bloomington"', html)
+
+
+# --- titles, images, icons -----------------------------------------------------
+
+
+def test_event_title_names_the_town_and_day(client, published_event):
+    html = client.get(f"/events/{published_event.id}").text
+    day = published_event.start_date
+    expected = f"Jazz Night · Bloomington, {day.strftime('%b')} {day.day} — "
+    assert f"<title>{expected}" in html
+
+
+def test_pages_without_a_picture_share_the_site_card(client, published_event):
+    html = client.get("/").text
+    assert re.search(r'<meta property="og:image" content="http[^"]*/static/og-default.png"', html)
+    assert client.get("/static/og-default.png").status_code == 200
+
+
+def test_favicon_is_served(client):
+    response = client.get("/favicon.ico", follow_redirects=False)
+    assert response.status_code == 200
+    assert response.headers["content-type"].startswith("image/svg+xml")
+    assert client.get("/static/favicon.svg").status_code == 200
+    assert 'rel="icon" href="/static/favicon.svg"' in client.get("/").text
+
+
+def test_signed_out_suggest_link_goes_through_sign_in(client):
+    html = client.get("/").text
+    assert 'href="/auth/login?next=%2Fsuggest">Suggest a town' in html

@@ -74,6 +74,28 @@ class MaxBodySizeMiddleware(BaseHTTPMiddleware):
         return await call_next(request)
 
 
+class HttpsSchemeMiddleware:
+    """Marks every request as HTTPS when the deployment sits behind a proxy
+    that terminates TLS (Render does). Without it the app sees plain http, so
+    any absolute URL Starlette builds from the request, such as the redirect
+    from /city/x/ to /city/x, pointed at http:// and cost a second redirect.
+
+    Only the scheme is rewritten. X-Forwarded-For is deliberately not trusted
+    here: the client address feeds audit logs, and trusting that header from
+    anyone would let a visitor choose it.
+    """
+
+    def __init__(self, app: ASGIApp) -> None:
+        self.app = app
+
+    async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
+        if scope["type"] == "http" and scope.get("scheme") == "http":
+            scope = {**scope, "scheme": "https"}
+        elif scope["type"] == "websocket" and scope.get("scheme") == "ws":
+            scope = {**scope, "scheme": "wss"}
+        await self.app(scope, receive, send)
+
+
 class HeadAsGetMiddleware:
     """Answers HEAD on every GET route (uptime monitors and link checkers use
     it): the request is handled as a GET and the response goes out with the
