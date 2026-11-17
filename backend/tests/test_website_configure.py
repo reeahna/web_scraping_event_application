@@ -179,3 +179,110 @@ def test_configure_form_does_not_expose_generic_edit_form_for_configuration(
     assert resp.status_code == 303
     db_session.refresh(website)
     assert website.approved_pattern is None
+
+
+_ICS_CONFIG = {
+    "pattern_name": "ics_calendar",
+    "api_endpoint": "https://example.com/calendar.ics",
+    "fetch": {"allowed_content_types": ["text/calendar", "text/plain"]},
+    "required_fields": ["title", "start_date"],
+    "max_detail_fetches": 0,
+}
+
+
+def _ics_website(make_super_admin, make_city, make_website, login, db_session, slug):
+    make_super_admin(email=f"{slug}@example.com")
+    city = make_city(name=f"City {slug}", slug=slug)
+    website = make_website(city, name=f"Site {slug}")
+    website.configuration = dict(_ICS_CONFIG)
+    website.configuration_version = 1
+    db_session.commit()
+    login(f"{slug}@example.com")
+    return website
+
+
+def _as_form(fields: list[tuple[str, str]]) -> dict[str, list[str]]:
+    form: dict[str, list[str]] = {}
+    for name, value in fields:
+        form.setdefault(name, []).append(value)
+    return form
+
+
+def _form_as_shown(client, website_id: int) -> list[tuple[str, str]]:
+    """Every field the configure page renders, with its value, the way a
+    browser would submit it unchanged."""
+    import html
+    import re
+
+    page = client.get(f"/admin/websites/{website_id}/configure").text
+    form = page[page.index('action="/admin/websites/'):]
+    fields: list[tuple[str, str]] = []
+    for attrs in re.findall(r"<input([^>]*)>", form):
+        name = re.search(r'name="([^"]+)"', attrs)
+        if not name:
+            continue
+        value = re.search(r'value="([^"]*)"', attrs)
+        value = html.unescape(value.group(1)) if value else ""
+        if 'type="checkbox"' in attrs:
+            if re.search(r"\schecked", attrs):
+                fields.append((name.group(1), value or "on"))
+            continue
+        fields.append((name.group(1), value))
+    textarea = r'<textarea[^>]*name="([^"]+)"[^>]*>(.*?)</textarea>'
+    for name, value in re.findall(textarea, form, re.S):
+        fields.append((name, html.unescape(value)))
+    for name, options in re.findall(r'<select[^>]*name="([^"]+)"[^>]*>(.*?)</select>', form, re.S):
+        chosen = re.search(r'value="([^"]*)"\s*selected', options)
+        fields.append((name, chosen.group(1) if chosen else ""))
+    return fields
+
+
+def test_saving_the_form_unchanged_keeps_feed_settings(
+    client, make_super_admin, make_city, make_website, login, db_session
+):
+    """The page shows no fetch settings, and used to hide the API endpoint for
+    an iCalendar feed, so saving it reset both and every preview failed."""
+    website = _ics_website(make_super_admin, make_city, make_website, login, db_session, "ics1")
+    data = _form_as_shown(client, website.id)
+    assert ("api_endpoint", "https://example.com/calendar.ics") in data
+    resp = client.post(
+        f"/admin/websites/{website.id}/configure", data=_as_form(data), follow_redirects=False
+    )
+    assert resp.status_code == 303
+    db_session.refresh(website)
+    assert website.configuration["api_endpoint"] == "https://example.com/calendar.ics"
+    assert "text/calendar" in website.configuration["fetch"]["allowed_content_types"]
+
+
+def test_editing_a_shown_field_keeps_the_rest(
+    client, make_super_admin, make_city, make_website, login, db_session
+):
+    website = _ics_website(make_super_admin, make_city, make_website, login, db_session, "ics2")
+    rule = '[{"field": "title", "kind": "regex_extract_group", '
+    rule += '"params": {"pattern": "^(?:\\\\[[A-Z]\\\\]\\\\s*)?(.+)$", "group": 1}}]'
+    data = [(k, v) for k, v in _form_as_shown(client, website.id) if k != "transformations"]
+    data.append(("transformations", rule))
+    resp = client.post(
+        f"/admin/websites/{website.id}/configure", data=_as_form(data), follow_redirects=False
+    )
+    assert resp.status_code == 303
+    db_session.refresh(website)
+    assert website.configuration["transformations"][0]["kind"] == "regex_extract_group"
+    assert "text/calendar" in website.configuration["fetch"]["allowed_content_types"]
+
+
+def test_an_unsafe_transformation_regex_is_rejected_on_save(
+    client, make_super_admin, make_city, make_website, login, db_session
+):
+    website = _ics_website(make_super_admin, make_city, make_website, login, db_session, "ics3")
+    rule = '[{"field": "title", "kind": "regex_extract_group", '
+    rule += '"params": {"pattern": "(a+)+$", "group": 1}}]'
+    data = [(k, v) for k, v in _form_as_shown(client, website.id) if k != "transformations"]
+    data.append(("transformations", rule))
+    resp = client.post(
+        f"/admin/websites/{website.id}/configure", data=_as_form(data), follow_redirects=False
+    )
+    assert resp.status_code == 422
+    assert "high-risk" in resp.text
+    db_session.refresh(website)
+    assert website.configuration_version == 1

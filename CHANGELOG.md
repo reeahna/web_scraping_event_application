@@ -38,6 +38,9 @@ lines. Lines may use `**bold**`, `` `code` `` and `[links](https://...)`.
 - Errors are reported to Sentry when `SENTRY_DSN` is set: crashes on any page, failing background jobs (scraping, AI labeling, geocoding and the rest) and a scheduler that stops running all raise an alert. Nothing is sent without it. (#71)
 - An admin access key (`ADMIN_API_KEY` and `ADMIN_API_KEY_USER_EMAIL`) lets an automated job such as the daily source-maintenance task use the admin pages without a browser sign-in. It acts as the named account, with that account's permissions, and is off unless both are set. (#75)
 - **Detect and configure** no longer fails with a server error on sites styled with utility CSS classes such as `md:tw-px-4`; those classes are left out of generated selectors. (#76)
+- Previewing a source no longer fails with a server error when one of its transformation patterns is refused as risky: that rule is skipped and the preview says so. Plain `(?:...)` groups are now allowed, and a truly risky pattern is rejected with a clear message when the configuration is saved. (#77)
+- Saving the configure form without touching the hidden settings no longer drops a feed's API endpoint or its allowed content types, so iCalendar sources keep working after an edit. (#77)
+- New **Blocked by site** status, in the Problem group of the status filter, for sources whose site refuses our requests. It keeps them together for a later decision on a paid scraping service. (#77)
 
 ## [1.9.0] - 2026-11-17 - Version history
 
