@@ -1,14 +1,22 @@
+import hmac
+import logging
 from datetime import UTC, datetime, timedelta
 
 from fastapi import Request
 from sqlalchemy.orm import Session
 
 from app.config import get_settings
+from app.core.email import normalize_email
 from app.core.exceptions import NotAuthenticatedError
 from app.core.security import generate_session_token, hash_session_token
 from app.models.base import as_aware_utc
 from app.models.user import User
 from app.models.user_session import UserSession
+
+logger = logging.getLogger(__name__)
+
+# A shorter configured key is treated as unset rather than accepted.
+ADMIN_API_KEY_MIN_LENGTH = 32
 
 
 def create_session(db: Session, user: User, request: Request | None = None) -> str:
@@ -49,7 +57,38 @@ def delete_session(db: Session, raw_token: str) -> None:
         db.commit()
 
 
+def _bearer_token(request: Request) -> str | None:
+    scheme, _, value = request.headers.get("authorization", "").partition(" ")
+    if scheme.lower() != "bearer" or not value.strip():
+        return None
+    return value.strip()
+
+
+def _user_for_admin_api_key(db: Session, supplied: str) -> User:
+    """The account an admin access key acts as. Raises NotAuthenticatedError
+    for a wrong key, or when the key or its account is not configured."""
+    settings = get_settings()
+    key = settings.admin_api_key or ""
+    email = settings.admin_api_key_user_email or ""
+    if len(key) < ADMIN_API_KEY_MIN_LENGTH or not email:
+        raise NotAuthenticatedError("Not authenticated")
+    if not hmac.compare_digest(supplied.encode(), key.encode()):
+        logger.warning("admin access key rejected: wrong key")
+        raise NotAuthenticatedError("Not authenticated")
+    user = db.query(User).filter(User.email == normalize_email(email)).first()
+    if user is None or not user.is_active:
+        logger.warning("admin access key rejected: account missing or disabled")
+        raise NotAuthenticatedError("Not authenticated")
+    return user
+
+
 def resolve_current_user(request: Request, db: Session, cookie_name: str) -> User:
+    supplied = _bearer_token(request)
+    if supplied is not None:
+        user = _user_for_admin_api_key(db, supplied)
+        request.state.authenticated_by_api_key = True
+        return user
+
     token = request.cookies.get(cookie_name)
     if not token:
         raise NotAuthenticatedError("Not authenticated")

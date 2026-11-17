@@ -267,6 +267,15 @@ class Settings(BaseSettings):
     # Defaults to APP_ENV; set to tell apart e.g. a staging service.
     sentry_environment: str | None = None
 
+    # Admin access key (app.services.auth). Off unless both are set. Lets an
+    # automated job, such as the daily source-maintenance task, use the admin
+    # pages without a browser sign-in by sending "Authorization: Bearer <key>".
+    # Requests act as the named account, with its roles and in its audit
+    # trail, and still need the usual CSRF token on forms. A key shorter than
+    # 32 characters is ignored. Rotate by changing the value and redeploying.
+    admin_api_key: str | None = None
+    admin_api_key_user_email: str | None = None
+
     model_config = SettingsConfigDict(
         env_file=str(BASE_DIR / ".env"),
         env_file_encoding="utf-8",
