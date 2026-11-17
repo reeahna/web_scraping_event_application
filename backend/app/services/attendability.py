@@ -5,7 +5,7 @@ not an event in the sense this site means: online-only sessions, professional
 conferences, certification courses, internal staff and faculty business, and
 calendar entries that are really deadlines or reminders ("Last day to drop",
 "Registration closes"). The site is for college students, so it also leaves
-out what is aimed at someone else (business networking, real-estate
+out what is aimed at someone else (executive networking, real-estate
 masterclasses, toddler story times, class reunions) and listings the source
 itself marks as cancelled. This decides, from an event's own text, whether it
 is one of those, so the import can leave it out.
@@ -88,11 +88,11 @@ _CERTIFICATION_TITLE = _rx(
 
 # --- aimed at working professionals, or at money rather than fun --------------
 _PROFESSIONAL_TITLE = _rx(
-    r"\b((business|professionals?|executive|industry|chamber|b2b|realtors?|real estate|"
-    r"healthcare|finance|engineering|hospitality|fashion|blockchain|tech|women in business)"
-    r"(\s+and\s+business)?\s+networking|"
-    r"networking (breakfast|luncheon|lunch|happy hour|mixer) for|"
-    r"masterminds?|btaa|ncta short courses?|coffee (&|and) connections|"
+    # Networking open to anyone in town (a tech or business mixer) is fine for
+    # students and young adults; networking for executives, chambers of
+    # commerce and realtors is not.
+    r"\b((executive|chamber|b2b|realtors?|real estate)\s+networking|"
+    r"masterminds?|btaa|ncta short courses?|"
     r"real estate|realtors?|mortgage|landlords?|property management|"
     r"investors? (meetup|summit|forum)|"
     r"(for|with) (small )?business owners|entrepreneurs, hr|for (hr|human resources) professionals|"
@@ -140,7 +140,7 @@ _AUDIENCE_TITLE = _rx(
     r"ages? \d{1,2}\s*(-|–|to)\s*(1[0-7]|[1-9])\b|"
     r"(alumni|iuaa)\b.*\b(game watch|chapter|reception|happy hour|weekend|reunion)|"
     r"game watch\b.*\b(alumni|iuaa)|iuaa|"
-    r"\balumni (association|chapter|club|reception|game watch|awards?|lunch(eon)?|network))\b|"
+    r"\balumni (association|chapter|club|reception|game watch|awards?))\b|"
     # "Art Hive for 50+": the "+" ends the title, so no word boundary follows.
     r"\b(50|55|60|62|65)\s*\+"
 )
@@ -323,7 +323,7 @@ _SOURCE_CATEGORY = {
     CERTIFICATION: _rx(r"\b(certifications?|continuing education)\b"),
     DEADLINE: _rx(r"\b(deadlines?|academic calendar|important dates|reminders?)\b"),
     INTERNAL: _rx(r"\b(human resources|faculty and staff|staff only|internal)\b"),
-    PROFESSIONAL: _rx(r"\b(business|networking|professional development)\b"),
+    PROFESSIONAL: _rx(r"\b(business|professional development)\b"),
 }
 
 # schema.org: an online-only event declares this attendance mode; a hybrid one

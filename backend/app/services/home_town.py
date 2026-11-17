@@ -113,6 +113,10 @@ _OTHER_CAMPUS_TITLES_BY_TOWN = {
         r"East(?! Asian)|Fort Wayne|Columbus|McKinney)\b|\b(IUPUI|IUPUC|IUK|IUSB|IUN|IUFW|PFW)\b|"
         # IU Indianapolis's international-student programs: "Global Jags GO: ...".
         r"\bGlobal Jags\b|\bIUI\b|\bIndianapolis Common Read\b|\b(Ft\.|Fort) Wayne\b|"
+        # A Kelley alumni chapter's own city: "Kelley Dallas–Fort Worth: Coffee & Connections".
+        r"^\s*Kelley (Dallas|Chicago|New York|Atlanta|Denver|Seattle|Houston|Austin|Boston|"
+        r"Washington|San Francisco|Los Angeles|Charlotte|Nashville|Louisville|Cincinnati|"
+        r"Minneapolis|Phoenix|Detroit|Columbus|Cleveland|St\. Louis)\b|"
         # Another city named as the place: "Free Community ... Screening - Indianapolis".
         r"[-–]\s*(Indianapolis|Indy|Fort Wayne|Evansville|South Bend|Gary)\s*$"
     ),
