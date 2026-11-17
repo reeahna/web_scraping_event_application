@@ -5,7 +5,7 @@ not an event in the sense this site means: online-only sessions, professional
 conferences, certification courses, internal staff and faculty business, and
 calendar entries that are really deadlines or reminders ("Last day to drop",
 "Registration closes"). The site is for college students, so it also leaves
-out what is aimed at someone else (business networking, real-estate
+out what is aimed at someone else (executive networking, real-estate
 masterclasses, toddler story times, class reunions) and listings the source
 itself marks as cancelled. This decides, from an event's own text, whether it
 is one of those, so the import can leave it out.
@@ -88,10 +88,10 @@ _CERTIFICATION_TITLE = _rx(
 
 # --- aimed at working professionals, or at money rather than fun --------------
 _PROFESSIONAL_TITLE = _rx(
-    r"\b((business|professionals?|executive|industry|chamber|b2b|realtors?|real estate|"
-    r"healthcare|finance|engineering|hospitality|fashion|blockchain|tech|women in business)"
-    r"(\s+and\s+business)?\s+networking|"
-    r"networking (breakfast|luncheon|lunch|happy hour|mixer) for|"
+    # Networking open to anyone in town (a tech or business mixer) is fine for
+    # students and young adults; networking for executives, chambers of
+    # commerce and realtors is not.
+    r"\b((executive|chamber|b2b|realtors?|real estate)\s+networking|"
     r"masterminds?|btaa|ncta short courses?|"
     r"real estate|realtors?|mortgage|landlords?|property management|"
     r"investors? (meetup|summit|forum)|"
@@ -129,14 +129,18 @@ _AUDIENCE_TITLE = _rx(
     # "Smith 2 & Ed 3: Lucky Charms" (two floors' joint social).
     r"floors? \d+|"
     r"senior u|seniors?['’] (academy|university)|intro to (email|computers|the internet)|"
-    r"computer basics|senior planet|mba campus visits?|family art labs?|"
+    r"computer basics|senior planet|mba campus visits?|family (art labs?|workshops?|series)|"
+    # Preschool cartoon characters: "Breakfast with Bluey and Bingo".
+    r"bluey|paw patrol|peppa pig|daniel tiger|cocomelon|"
     r"(trunk|trick)[- ]or[- ]treats?|prospective (\w+ )?students?|"
     r"senior (expo|citizens?|center)|seniors (55|60|62|65)|older adults|retirees|"
     r"(50|55|60|62|65)\s*(\+|and (up|over|older))|teens?|tots?|emeriti|"
     r"ages? (2[5-9]|[3-9]\d)\s*(-|–|to|\+|and)|"
+    # An age range that tops out below 18: "Family Workshop, Ages 6-10".
+    r"ages? \d{1,2}\s*(-|–|to)\s*(1[0-7]|[1-9])\b|"
     r"(alumni|iuaa)\b.*\b(game watch|chapter|reception|happy hour|weekend|reunion)|"
     r"game watch\b.*\b(alumni|iuaa)|iuaa|"
-    r"\balumni (association|chapter|club|reception|game watch|awards?|lunch(eon)?))\b|"
+    r"\balumni (association|chapter|club|reception|game watch|awards?))\b|"
     # "Art Hive for 50+": the "+" ends the title, so no word boundary follows.
     r"\b(50|55|60|62|65)\s*\+"
 )
@@ -266,7 +270,8 @@ _INTERNAL_TITLE = _rx(
     # "GPSG Cabinet Meetings", "WAC Weekly Leadership Meeting".
     r"\b(executive|exec|e-?board|(?<!general )board|cabinet|leadership)"
     r"( weekly)?( board)? meetings?\b|"
-    r"\b(set[- ]?up|pre-event meeting)\s*$|\b(captains?|chairs?|treasurers?)['’]? meetings?\b|"
+    r"\b(set[- ]?up|pre-event meeting)\s*$|"
+    r"\b(captains?|chairs?|treasurers?|event managers?)['’]? meetings?\b|"
     r"\(closed\)|\btest event\b|"
     r"\bjournal club\b|\bvisiting resident\b|\bfaculty candidate\b|\bjob talk\b|"
     r"\blimited submissions\b|^\s*faculty (and|&) staff\b|"
@@ -279,9 +284,15 @@ _INTERNAL_TITLE = _rx(
     r"\bwhy students struggle\b|\bscholarly writing (program|retreat)\b|"
     r"\bacademy of teaching scholars\b|\bcommunity of practice\b|\bto engage students\b|"
     r"\bstudent[- ]centered learning\b|\bmeeting the needs of (\w+ )?students\b|\bplayposit\b|"
+    r"\bhigh-impact (teaching )?practices\b|\bwevideo\b|\bmaking courses accessible\b|"
+    r"^\s*setting up canvas\b|\bfaculty learning communit(y|ies)\b|"
+    r"\bdeveloping an? (study abroad|online|new) (program|course)\b|"
+    r"\b(deepen|improve|enhance) student learning\b|\binto your (course|curriculum|syllabus)\b|"
     r"\bscholarship of teaching and learning\b|"
     r"\bresearch refresher\b|"
     r"\b(system|educator|staff|volunteer|employee|g?ta) trainings?\b|"
+    # "Workshop: Pronunciation Brush-Up for International TAs".
+    r"\bfor (international |new )?(g?tas|teaching assistants|instructors)\s*$|"
     r"\btraining (meeting|weekend)\b|[-–]\s*trainings?\s*$|"
     # Notices rather than events.
     r"\bmove your car\b|\b(football|game ?day) parking\b|\bsurvey\s*$"
@@ -299,6 +310,8 @@ _INTERNAL_CODES = re.compile(
     r"^\s*[A-Z]{2,5} [A-Z]?\d{3}[A-Z]?\s*:|"
     # A department's research talk series: "CCBB Seminar Guest Speaker: Dr. ...".
     r"^\s*[A-Z]{2,6} (Seminar|Colloquium)\b|"
+    # A department's thesis defense: "CSE Defense: ...", "CSE Dissertation: ...".
+    r"^\s*[A-Z]{2,6} (Defen[cs]e|Dissertation|Thesis)\s*[:-]|"
     # A booking held under two initials and nothing else: "MC", "VL".
     r"^\s*[A-Z]{2}\s*$"
 )
@@ -310,7 +323,7 @@ _SOURCE_CATEGORY = {
     CERTIFICATION: _rx(r"\b(certifications?|continuing education)\b"),
     DEADLINE: _rx(r"\b(deadlines?|academic calendar|important dates|reminders?)\b"),
     INTERNAL: _rx(r"\b(human resources|faculty and staff|staff only|internal)\b"),
-    PROFESSIONAL: _rx(r"\b(business|networking|professional development)\b"),
+    PROFESSIONAL: _rx(r"\b(business|professional development)\b"),
 }
 
 # schema.org: an online-only event declares this attendance mode; a hybrid one

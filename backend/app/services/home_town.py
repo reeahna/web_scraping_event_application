@@ -44,11 +44,28 @@ _STATES = {
     "WI": "wisconsin", "WY": "wyoming",
 }
 _STATE_NAMES = {name: abbr for abbr, name in _STATES.items()}
+# Newspaper-style abbreviations, as athletics calendars write venues:
+# "Terre Haute, Ind.". Matched only with their closing period.
+_AP_STATES = {
+    "ala": "AL", "ariz": "AZ", "ark": "AR", "calif": "CA", "colo": "CO", "conn": "CT",
+    "del": "DE", "fla": "FL", "ga": "GA", "ill": "IL", "ind": "IN", "kan": "KS",
+    "kans": "KS", "ky": "KY", "la": "LA", "md": "MD", "mass": "MA", "mich": "MI",
+    "minn": "MN", "miss": "MS", "mo": "MO", "mont": "MT", "neb": "NE", "nebr": "NE",
+    "nev": "NV", "n.h": "NH", "n.j": "NJ", "n.m": "NM", "n.y": "NY", "n.c": "NC",
+    "n.d": "ND", "okla": "OK", "ore": "OR", "pa": "PA", "r.i": "RI", "s.c": "SC",
+    "s.d": "SD", "tenn": "TN", "tex": "TX", "vt": "VT", "va": "VA", "wash": "WA",
+    "w.va": "WV", "wis": "WI", "wyo": "WY",
+}
 
 # "Town, ST", "Town, ST 47401", "Town, Indiana, 47401". The town is the last
 # comma-separated part before the state.
 _STATE_ALTERNATIVES = "|".join(
-    sorted([*_STATES, *(n.title() for n in _STATE_NAMES)], key=len, reverse=True)
+    [
+        *sorted(
+            (re.escape(a.title()) + r"\." for a in _AP_STATES), key=len, reverse=True
+        ),
+        *sorted([*_STATES, *(n.title() for n in _STATE_NAMES)], key=len, reverse=True),
+    ]
 )
 _TOWN_STATE = re.compile(
     rf"(?:^|,)\s*([^,]*?)\s*,\s*({_STATE_ALTERNATIVES})\.?"
@@ -95,7 +112,11 @@ _OTHER_CAMPUS_TITLES_BY_TOWN = {
         r"\b(IU|Indiana University) (Indy|Indianapolis|Southeast|South Bend|Kokomo|Northwest|"
         r"East(?! Asian)|Fort Wayne|Columbus|McKinney)\b|\b(IUPUI|IUPUC|IUK|IUSB|IUN|IUFW|PFW)\b|"
         # IU Indianapolis's international-student programs: "Global Jags GO: ...".
-        r"\bGlobal Jags\b|\bIUI\b|"
+        r"\bGlobal Jags\b|\bIUI\b|\bIndianapolis Common Read\b|\b(Ft\.|Fort) Wayne\b|"
+        # A Kelley alumni chapter's own city: "Kelley Dallas–Fort Worth: Coffee & Connections".
+        r"^\s*Kelley (Dallas|Chicago|New York|Atlanta|Denver|Seattle|Houston|Austin|Boston|"
+        r"Washington|San Francisco|Los Angeles|Charlotte|Nashville|Louisville|Cincinnati|"
+        r"Minneapolis|Phoenix|Detroit|Columbus|Cleveland|St\. Louis)\b|"
         # Another city named as the place: "Free Community ... Screening - Indianapolis".
         r"[-–]\s*(Indianapolis|Indy|Fort Wayne|Evansville|South Bend|Gary)\s*$"
     ),
@@ -137,12 +158,14 @@ _HOME_COUNTIES = {
     "champaign": {"champaign"},
 }
 _LEADING_COUNTY = re.compile(r"^\s*([A-Z][\w'’.]*(?: [A-Z][\w'’.]*)?) County\b")
+# Or closes with one after a dash: "Hoosier Health Check- Scott County".
+_TRAILING_COUNTY = re.compile(r"[-–:]\s*([A-Z][\w'’.]*(?: [A-Z][\w'’.]*)?) County\s*$")
 
 
 def names_other_county(title: str | None, town: str | None) -> bool:
-    """True when the title opens with a county other than the home town's."""
+    """True when the title opens or ends with a county other than the home town's."""
     home = _HOME_COUNTIES.get((town or "").casefold())
-    match = _LEADING_COUNTY.search(title or "")
+    match = _LEADING_COUNTY.search(title or "") or _TRAILING_COUNTY.search(title or "")
     return bool(home and match and match.group(1).casefold() not in home)
 
 
@@ -278,7 +301,7 @@ def _state_code(value: str | None) -> str | None:
     value = value.strip().rstrip(".")
     if value.upper() in _STATES:
         return value.upper()
-    return _STATE_NAMES.get(value.casefold())
+    return _STATE_NAMES.get(value.casefold()) or _AP_STATES.get(value.casefold())
 
 
 def _simplify(town: str) -> str:
@@ -432,6 +455,21 @@ def venue_at_other_school(venue: str | None, city) -> bool:
     return not (_words(match.group("of") or match.group("state")) & home)
 
 
+# A title that closes by naming where it is: "Mosaic Lamp Workshop in
+# Allentown, Pennsylvania".
+_TITLE_IN_TOWN = re.compile(rf"\bin ([A-Z][\w .'-]*, (?:{_STATE_ALTERNATIVES})\.?)\s*$")
+
+
+def title_names_other_town(title: str | None, city) -> bool:
+    """True when the title ends "in Town, State" and that is not the city."""
+    match = _TITLE_IN_TOWN.search(title or "")
+    if match is None or city is None:
+        return False
+    return is_outside_home_town(
+        address=match.group(1), venue=None, town=city.name, state=city.state_or_region
+    )
+
+
 def candidate_outside_home_town(candidate, city) -> bool:
     if is_away_game(candidate.title, city.name if city is not None else None):
         return True
@@ -451,6 +489,8 @@ def candidate_outside_home_town(candidate, city) -> bool:
         return True
     if city is None:
         return False
+    if title_names_other_town(candidate.title, city):
+        return True
     return is_outside_home_town(
         address=candidate.address,
         venue=candidate.venue,
@@ -477,6 +517,8 @@ def event_outside_home_town(event) -> bool:
         return True
     if city is None:
         return False
+    if title_names_other_town(event.title, city):
+        return True
     return is_outside_home_town(
         address=event.public_address,
         venue=event.public_venue,
