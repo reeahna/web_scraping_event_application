@@ -98,8 +98,9 @@
         <a href="{{ '/suggest' if current_user else '/auth/login?next=%2Fsuggest' }}">Suggest a town</a>
         <a href="/privacy">Privacy</a>
         <a href="/terms">Terms</a>
+        <a href="/whats-new">What's new</a>
       </nav>
-      <p class="site-footer-copyright">&copy; {{ current_year() }} {{ site_name }}</p>
+      <p class="site-footer-copyright">&copy; {{ current_year() }} {{ site_name }} · <a href="/whats-new" class="site-footer-version">Version {{ app_version }}</a></p>
     </div>
   </footer>
   {% block scripts %}{% endblock %}
