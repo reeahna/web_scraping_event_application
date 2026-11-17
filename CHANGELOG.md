@@ -31,7 +31,7 @@ lines. Lines may use `**bold**`, `` `code` `` and `[links](https://...)`.
 - Fewer listings that aren't for students: kids' and family programs, faculty and TA workshops, thesis defenses, and events in other towns (like away meets and county health checks elsewhere) no longer show. Alumni groups and networking nights in town do show. (#65)
 
 ### Admin and behind the scenes
-- `/health/ready` reports the AI label queue (`checks.ai_categorization`: whether it is on, the provider, how many events are waiting and how many hours the oldest has waited), so outside monitoring can watch it. (#PR)
+- `/health/ready` reports the AI label queue (`checks.ai_categorization`: whether it is on, the provider, how many events are waiting and how many hours the oldest has waited), so outside monitoring can watch it. (#74)
 - The admin dashboard shows how many upcoming events are still waiting for an AI category, and how many already have one, when AI labeling is on. (#73)
 - AI labeling with Groq no longer stops when the model wraps its answer in an unexpected way, and a bad answer now shows in the logs. (#68)
 - `CLAUDE.md` now forbids em dashes in anything written for the project. (#69)
