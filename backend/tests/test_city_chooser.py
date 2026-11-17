@@ -117,7 +117,7 @@ def test_a_town_page_titles_itself_for_search(client, college_towns):
     def meta(html, name):
         return re.search(rf'<meta name="{name}" content="([^"]*)"', html).group(1)
 
-    assert "<title>Events in Bloomington — Indiana University</title>" in one
+    assert re.search(r"<title>Events in Bloomington(, [^:]+)?: things to do this week \| ", one)
     assert meta(one, "description") != meta(two, "description")
     assert "Indiana University" in meta(one, "description")
 
