@@ -1,0 +1,218 @@
+{% extends "admin_base.html" %}
+
+{% block title %}System health{% endblock %}
+
+{#
+  One page that answers "is Bulletin working right now?". The summary at the
+  top lists only what needs attention; every section below links to the page
+  where it can be fixed. Data comes from app.services.system_health.
+#}
+
+{% macro job_badge(state) %}
+  {% if state == "ok" %}<span class="badge badge-active">OK</span>
+  {% elif state == "failed" %}<span class="badge badge-danger">Failing</span>
+  {% elif state == "paused" %}<span class="badge badge-danger">Failing, retrying later</span>
+  {% elif state == "overdue" %}<span class="badge badge-archived">Overdue</span>
+  {% elif state == "off" %}<span class="badge badge-inactive">Off</span>
+  {% else %}<span class="badge badge-inactive">No runs yet</span>
+  {% endif %}
+{% endmacro %}
+
+{% block admin_content %}
+<h1>System health</h1>
+<p class="audit-meta">Checked {{ health.now | admin_datetime }}. Version {{ health.version }}.
+  Reload the page for the latest.</p>
+
+{% set problems = health.issues | selectattr("severity", "equalto", "problem") | list %}
+<section class="wf-card health-summary {{ 'health-summary-problem' if problems else ('health-summary-warning' if health.issues else 'health-summary-ok') }}" aria-labelledby="health-summary">
+  <h2 id="health-summary">
+    {% if problems %}{{ problems | length }} problem{{ "s" if problems | length != 1 }} need{{ "s" if problems | length == 1 }} fixing
+    {% elif health.issues %}Working, with {{ health.issues | length }} thing{{ "s" if health.issues | length != 1 }} to look at
+    {% else %}All systems normal
+    {% endif %}
+  </h2>
+  {% if health.issues %}
+  <ul class="health-issues">
+    {% for issue in health.issues %}
+    <li class="health-issue-{{ issue.severity }}">
+      <span class="badge {{ 'badge-danger' if issue.severity == 'problem' else 'badge-archived' }}">{{ "Problem" if issue.severity == "problem" else "Check" }}</span>
+      {% if issue.url %}<a href="{{ issue.url }}">{{ issue.text }}</a>{% else %}{{ issue.text }}{% endif %}
+    </li>
+    {% endfor %}
+  </ul>
+  {% else %}
+  <p>The scheduler is running, background jobs are succeeding, and every town has upcoming events.</p>
+  {% endif %}
+</section>
+
+<nav class="health-jump" aria-label="Sections on this page">
+  <a href="#scheduler">Scheduler</a>
+  <a href="#scraping">Scraping</a>
+  <a href="#ai">AI categorization</a>
+  <a href="#jobs">Recurring jobs</a>
+  <a href="#towns">Towns</a>
+  <a href="#approvals">Approvals</a>
+  <a href="#deploy">Deploy</a>
+</nav>
+
+{% set s = health.scheduler %}
+<section class="wf-card" id="scheduler" aria-labelledby="h-scheduler">
+  <h2 id="h-scheduler">Scheduler</h2>
+  <p>
+    {% if s.status == "Running" %}<span class="badge badge-active">Running</span>
+    {% elif s.status == "Stale" %}<span class="badge badge-danger">Stopped checking in</span>
+    {% else %}<span class="badge badge-inactive">Not detected</span>
+    {% endif %}
+    <span class="audit-meta">Last heartbeat {{ s.heartbeat_display }}.</span>
+  </p>
+  <div class="metrics-grid">
+    <div class="metric-tile"><div class="metric-value">{{ s.scheduled_count }}</div><div class="metric-label">Sources scheduled</div></div>
+    <div class="metric-tile"><div class="metric-value">{{ s.running_count }}</div><div class="metric-label">Running now</div></div>
+    <div class="metric-tile"><div class="metric-value">{{ s.paused_count }}</div><div class="metric-label">Paused</div></div>
+    <div class="metric-tile"><div class="metric-value">{{ health.overdue_scrapes }}</div><div class="metric-label">Over an hour late</div></div>
+  </div>
+  <p><a href="/admin/scheduler">Open the scheduler page</a></p>
+</section>
+
+<section class="wf-card" id="scraping" aria-labelledby="h-scraping">
+  <h2 id="h-scraping">Scraping</h2>
+  <div class="metrics-grid">
+    <div class="metric-tile"><div class="metric-value">{{ health.sources_ok }}</div><div class="metric-label">Live sources working</div></div>
+    <div class="metric-tile"><div class="metric-value">{{ health.sources_failing }}</div><div class="metric-label">Live sources failing</div></div>
+    <div class="metric-tile">
+      <div class="metric-value">{{ health.runs_24h_total }}</div>
+      <div class="metric-label">Runs, last 24 hours</div>
+      {% if health.runs_24h %}
+      <div class="metric-note">{% for status, count in health.runs_24h | dictsort %}{{ count }} {{ status | replace("_", " ") }}{% if not loop.last %}, {% endif %}{% endfor %}</div>
+      {% endif %}
+    </div>
+  </div>
+  {% if health.failing_sources %}
+  <h3>Failing sources</h3>
+  <div class="table-scroll">
+  <table>
+    <thead><tr><th>Source</th><th>Town</th><th>Failures in a row</th><th>Last worked</th><th>Latest error</th></tr></thead>
+    <tbody>
+    {% for row in health.failing_sources %}
+      <tr>
+        <td><a href="/admin/websites/{{ row.website_id }}">{{ row.name }}</a></td>
+        <td>{{ row.city or "" }}</td>
+        <td>{{ row.failures }}</td>
+        <td class="audit-meta">{{ ago(row.last_success_at) }}</td>
+        <td class="audit-meta">{{ row.error or "" }}</td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  </div>
+  {% if health.sources_failing > health.failing_sources | length %}
+  <p class="audit-meta">Showing the {{ health.failing_sources | length }} worst of {{ health.sources_failing }}.</p>
+  {% endif %}
+  {% else %}
+  <p class="audit-meta">No live source is failing.</p>
+  {% endif %}
+</section>
+
+{% set ai = health.ai %}
+<section class="wf-card" id="ai" aria-labelledby="h-ai">
+  <h2 id="h-ai">AI categorization</h2>
+  {% if not ai.enabled %}
+  <p><span class="badge badge-inactive">Off</span>
+    <span class="audit-meta">No Groq or Gemini key is set, or scheduled labeling is turned off. Events still get categories from keyword rules.</span></p>
+  {% else %}
+  {% set row = ai.status %}
+  <p>
+    {% if row is none %}<span class="badge badge-inactive">No runs yet</span>
+    {% elif row.last_status == "failed" %}<span class="badge badge-danger">Failing</span>
+    {% else %}<span class="badge badge-active">Working</span>
+    {% endif %}
+    <span class="audit-meta">{{ (ai.provider or "") | capitalize }}{% if ai.model %}, model {{ ai.model }}{% endif %}</span>
+  </p>
+  <table>
+    <tbody>
+      <tr><th>Last success</th><td>{{ ago(row.last_success_at if row else none) }}{% if row and row.last_result %} <span class="audit-meta">({{ row.last_result }})</span>{% endif %}</td></tr>
+      <tr><th>Last failure</th><td>{{ ago(row.last_failure_at if row else none) }}</td></tr>
+      {% if row and row.last_status == "failed" %}
+      <tr><th>Error</th><td class="audit-meta">{{ row.last_error }}</td></tr>
+      {% if row.paused_until %}<tr><th>Next try</th><td>{{ ago(row.paused_until) }}</td></tr>{% endif %}
+      {% endif %}
+      <tr><th>Events waiting for a label</th><td>{{ ai.pending }}{% if ai.oldest_waiting %} <span class="audit-meta">(oldest added {{ ago(ai.oldest_waiting) }})</span>{% endif %}</td></tr>
+      <tr><th>Events labeled by AI</th><td>{{ ai.labeled_total }}</td></tr>
+    </tbody>
+  </table>
+  {% endif %}
+</section>
+
+<section class="wf-card" id="jobs" aria-labelledby="h-jobs">
+  <h2 id="h-jobs">Recurring jobs</h2>
+  <p class="audit-meta">What the scheduler does on its own besides scraping each source.
+    Jobs that run only when there is work show the last time they had something to do.</p>
+  <div class="table-scroll">
+  <table>
+    <thead><tr><th>Job</th><th>Runs</th><th>Status</th><th>Last success</th><th>Result or error</th></tr></thead>
+    <tbody>
+    {% for job in health.jobs %}
+      <tr>
+        <td>{{ job.label }}</td>
+        <td class="audit-meta">{{ job.cadence }}</td>
+        <td>{{ job_badge(job.state) }}</td>
+        <td class="audit-meta">{{ ago(job.last_success_at) }}</td>
+        <td class="audit-meta">{% if job.state in ("failed", "paused") %}{{ job.last_error }}{% if job.consecutive_failures > 1 %} ({{ job.consecutive_failures }} times in a row){% endif %}{% else %}{{ job.last_result or "" }}{% endif %}</td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  </div>
+</section>
+
+<section class="wf-card" id="towns" aria-labelledby="h-towns">
+  <h2 id="h-towns">Towns</h2>
+  <p>{{ health.towns | length }} active towns, {{ health.towns_without_events }} with no upcoming events. Empty towns are listed first.</p>
+  {% if health.towns %}
+  <div class="table-scroll health-towns">
+  <table>
+    <thead><tr><th>Town</th><th>Upcoming events</th><th>Live sources</th></tr></thead>
+    <tbody>
+    {% for town in health.towns %}
+      <tr{% if town.upcoming_events == 0 %} class="health-row-empty"{% endif %}>
+        <td><a href="/admin/cities/{{ town.city_id }}">{{ town.name }}</a></td>
+        <td>{{ town.upcoming_events }}</td>
+        <td>{{ town.active_sources }}</td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  </div>
+  {% endif %}
+</section>
+
+<section class="wf-card" id="approvals" aria-labelledby="h-approvals">
+  <h2 id="h-approvals">Approvals and broken sources</h2>
+  {% if broken or waiting %}
+  <ul class="status-list">
+    {% for row in broken %}
+    <li><a href="{{ row.url }}"><strong>{{ row.count }}</strong> {{ row.label }}</a></li>
+    {% endfor %}
+    {% for row in waiting %}
+    <li><a href="{{ row.url }}"><strong>{{ row.count }}</strong> {{ row.label }}</a></li>
+    {% endfor %}
+  </ul>
+  {% else %}
+  <p class="audit-meta">Nothing is waiting on you.</p>
+  {% endif %}
+</section>
+
+<section class="wf-card" id="deploy" aria-labelledby="h-deploy">
+  <h2 id="h-deploy">Deploy</h2>
+  <p>Running version <strong>{{ health.version }}</strong>. <a href="/admin/version-history">Version history</a></p>
+  {% if health.blockers %}
+  <ul class="health-issues">
+    {% for b in health.blockers %}
+    <li><span class="badge {{ 'badge-danger' if b.severity == 'blocker' else 'badge-archived' }}">{{ "Blocker" if b.severity == "blocker" else "Warning" }}</span> {{ b.message }}</li>
+    {% endfor %}
+  </ul>
+  {% else %}
+  <p class="audit-meta">Production settings look complete.</p>
+  {% endif %}
+</section>
+{% endblock %}

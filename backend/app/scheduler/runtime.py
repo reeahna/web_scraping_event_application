@@ -25,6 +25,7 @@ from sqlalchemy import select
 from app.core.logging import get_logger
 from app.database import SessionLocal
 from app.models.scheduler import SchedulerJobState
+from app.services.job_status import record_job_failure, record_job_success
 from app.services.scheduler import (
     MAX_CONCURRENT_RUNS,
     leader_heartbeat,
@@ -190,6 +191,16 @@ class SchedulerRuntime:
             )
         self._scheduler.start()
 
+    # --- background job status (shown on the admin System health page) ------
+
+    def _job_ok(self, job: str, result: str | None = None) -> None:
+        record_job_success(self._session_factory, job, result)
+
+    def _job_failed(self, job: str, exc: Exception, paused_until: datetime | None = None) -> None:
+        record_job_failure(
+            self._session_factory, job, f"{type(exc).__name__}: {exc}", paused_until=paused_until
+        )
+
     async def _heartbeat_tick(self) -> None:
         db = self._session_factory()
         try:
@@ -265,8 +276,10 @@ class SchedulerRuntime:
             processed = await drain_onboarding_queue(db)
             if processed:
                 logger.info("drained %d onboarding job(s)", processed)
+                self._job_ok("onboarding", f"processed {processed} job(s)")
         except Exception as exc:  # noqa: BLE001
             logger.warning("onboarding drain failed: %s", exc)
+            self._job_failed("onboarding", exc)
         finally:
             db.close()
 
@@ -283,8 +296,10 @@ class SchedulerRuntime:
             )
             if processed:
                 logger.info("geocoded %d event(s)", processed)
+                self._job_ok("geocoding", f"located {processed} event(s)")
         except Exception as exc:  # noqa: BLE001
             logger.warning("geocoding drain failed: %s", exc)
+            self._job_failed("geocoding", exc)
         finally:
             db.close()
 
@@ -299,6 +314,9 @@ class SchedulerRuntime:
             send_pending_digests(db)
         except Exception as exc:  # noqa: BLE001
             logger.warning("alerts tick failed: %s", exc)
+            self._job_failed("alerts", exc)
+        else:
+            self._job_ok("alerts")
         finally:
             db.close()
 
@@ -311,8 +329,10 @@ class SchedulerRuntime:
             processed = await drain_bulk_import_queue(self._session_factory)
             if processed:
                 logger.info("executed %d bulk import operation(s)", processed)
+                self._job_ok("bulk_import", f"ran {processed} operation(s)")
         except Exception as exc:  # noqa: BLE001
             logger.warning("bulk import tick failed: %s", exc)
+            self._job_failed("bulk_import", exc)
 
     async def _categorization_tick(self) -> None:
         if not self._is_leader:
@@ -335,6 +355,15 @@ class SchedulerRuntime:
             self._categorization_failures = 0
             if labeled:
                 logger.info("AI-categorized %d event(s)", labeled)
+                self._job_ok("categorization", f"labeled {labeled} event(s)")
+            elif await asyncio.to_thread(self._categorization_pending):
+                # Events are waiting but none got a label: the AI answered in a
+                # shape we could not read, or no categories exist. This is how
+                # categorization failed silently before, so record it.
+                self._job_failed(
+                    "categorization",
+                    RuntimeError("events are waiting but this run labeled none of them"),
+                )
         except GeminiQuotaExceeded as exc:
             # Wait as long as Google says (until the daily reset for the daily
             # quota) rather than re-asking every hour and spending requests.
@@ -345,6 +374,9 @@ class SchedulerRuntime:
             logger.info(
                 "AI categorization quota reached; pausing until %s",
                 self._categorization_cooldown_until.isoformat(),
+            )
+            self._job_failed(
+                "categorization", exc, paused_until=self._categorization_cooldown_until
             )
         except Exception as exc:  # noqa: BLE001 - a tick must never kill the loop
             wait = min(
@@ -358,6 +390,20 @@ class SchedulerRuntime:
                 exc,
                 self._categorization_cooldown_until.isoformat(),
             )
+            self._job_failed(
+                "categorization", exc, paused_until=self._categorization_cooldown_until
+            )
+
+    def _categorization_pending(self) -> bool:
+        from app.services.ai_categorization import pending_events
+
+        db = self._session_factory()
+        try:
+            return pending_events(db).first() is not None
+        except Exception:  # noqa: BLE001 - a status check must never fail the tick
+            return False
+        finally:
+            db.close()
 
     async def _category_photos_tick(self) -> None:
         if not self._is_leader:
@@ -382,8 +428,10 @@ class SchedulerRuntime:
             stored = await asyncio.to_thread(refill)
             if stored:
                 logger.info("refilled category photo pool with %d photo(s)", stored)
+            self._job_ok("category_photos", f"added {stored} photo(s)" if stored else "pool full")
         except Exception as exc:  # noqa: BLE001 - a tick must never kill the loop
             logger.warning("category photo refill failed: %s", exc)
+            self._job_failed("category_photos", exc)
 
     async def _home_town_sweep_tick(self) -> None:
         if not self._is_leader:
@@ -401,8 +449,10 @@ class SchedulerRuntime:
             hidden = await asyncio.to_thread(sweep)
             if hidden:
                 logger.info("took down %d out-of-town event(s)", hidden)
+            self._job_ok("home_town_sweep", f"took down {hidden} event(s)")
         except Exception as exc:  # noqa: BLE001 - a tick must never kill the loop
             logger.warning("home-town sweep failed: %s", exc)
+            self._job_failed("home_town_sweep", exc)
 
     async def _attendability_sweep_tick(self) -> None:
         if not self._is_leader:
@@ -423,8 +473,10 @@ class SchedulerRuntime:
                 logger.info("took down %s event: %s", reason, title)
             if hidden:
                 logger.info("took down %d event(s) that are not attendable", len(hidden))
+            self._job_ok("attendability_sweep", f"took down {len(hidden)} event(s)")
         except Exception as exc:  # noqa: BLE001 - a tick must never kill the loop
             logger.warning("attendability sweep failed: %s", exc)
+            self._job_failed("attendability_sweep", exc)
 
     async def _college_towns_tick(self) -> None:
         if not self._is_leader:
@@ -446,8 +498,14 @@ class SchedulerRuntime:
                     ", ".join(summary.cities_created) or "no cities",
                     ", ".join(summary.files_queued) or "no files",
                 )
+            self._job_ok(
+                "college_towns",
+                f"{len(summary.cities_created)} new town(s), "
+                f"{len(summary.files_queued)} file(s) queued",
+            )
         except Exception as exc:  # noqa: BLE001 - a tick must never kill the loop
             logger.warning("college town import failed: %s", exc)
+            self._job_failed("college_towns", exc)
 
     async def _run_one(self, website_id: int) -> None:
         async with self._semaphore:

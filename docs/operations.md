@@ -29,6 +29,13 @@ and `docs/scheduler.md`. The scheduler is the single owner of all background wor
 
 - **Health**: `/health` (+ `/health/live`), **readiness**: `/health/ready`
   (DB, scheduler leader freshness, AI provider health, production blockers).
+- **System health**: `/admin/health` (`sites.view`): one page answering "is it
+  working?". A summary of problems at the top, then the scheduler, failing
+  sources, AI categorization (last success, last error, events waiting), the
+  scheduler's recurring background jobs, upcoming events per town, the approval
+  queue and production blockers. Background jobs record their latest outcome in
+  `background_job_status` (`app/services/job_status.py`), so a failure in the
+  scheduler process shows on this page instead of only in its logs.
 - **Operational dashboard**: `/admin/reports` (`reports.view`) — sources by
   status, onboarding queue, runs, validation errors, unsupported reports, drift
   proposals, geocoding failures, duplicate queue, recurrence truncations,

@@ -28,6 +28,7 @@ lines. Lines may use `**bold**`, `` `code` `` and `[links](https://...)`.
 ## [Unreleased]
 
 ### Admin and behind the scenes
+- A new **System health** page in admin shows at a glance whether Bulletin is working: scheduler, failing sources, AI categorization (last success, last error, events waiting), recurring background jobs with their last run and result, towns with no upcoming events, the approval queue and the running version. The admin dashboard links to it with a problem count. (#PRNUM)
 - `CLAUDE.md` now forbids em dashes in anything written for the project. (#69)
 
 ## [1.9.0] - 2026-11-17 - Version history

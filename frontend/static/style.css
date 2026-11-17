@@ -3442,3 +3442,24 @@ a.wf-danger, button.wf-danger {
 .site-footer-version {
   color: inherit;
 }
+
+/* ==========================================================================
+   Admin System health page (/admin/health)
+   ========================================================================== */
+.health-summary { border-left: 4px solid var(--success); }
+.health-summary-warning { border-left-color: var(--warning); }
+.health-summary-problem { border-left-color: var(--danger); }
+.health-issues { list-style: none; margin: 0; padding: 0; }
+.health-issues li {
+  padding: var(--space-2) 0; border-bottom: 1px solid var(--border);
+  display: grid; grid-template-columns: 6.5rem 1fr; gap: 0.6rem; align-items: baseline;
+}
+.health-issues .badge { justify-self: start; }
+.health-issues li:last-child { border-bottom: none; }
+.health-issues a { color: var(--text); }
+.health-issues a:hover { color: var(--accent); }
+.health-jump { display: flex; flex-wrap: wrap; gap: 0.4rem 1rem; margin: 0.5rem 0 0.25rem; }
+.health-jump a { font-size: var(--font-sm); }
+.health-towns { max-height: 28rem; overflow-y: auto; }
+.health-row-empty td { color: var(--danger-text); font-weight: 600; }
+.health-dashboard-link { display: flex; gap: 0.6rem; align-items: center; flex-wrap: wrap; }

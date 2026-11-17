@@ -133,8 +133,14 @@ def dashboard(request: Request, current_user: CurrentUser, db: DbSession):
 
     broken = None
     waiting = None
+    health_summary = None
     if user_has_permission(db, current_user, "sites.view"):
         broken, waiting = _onboarding_groups(db)
+        from app.services.system_health import collect_system_health
+
+        issues = collect_system_health(db, waiting_rows=waiting).issues
+        problems = sum(1 for i in issues if i.severity == "problem")
+        health_summary = {"problems": problems, "warnings": len(issues) - problems}
 
     unresolved_reports = None
     if user_has_permission(db, current_user, "reports.view"):
@@ -158,6 +164,7 @@ def dashboard(request: Request, current_user: CurrentUser, db: DbSession):
             "metrics": metrics,
             "broken": broken,
             "waiting": waiting,
+            "health_summary": health_summary,
             "unresolved_reports": unresolved_reports,
             "unread_notifications": unread_notifications,
             "recent_audit": recent_audit,

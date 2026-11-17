@@ -5,6 +5,16 @@
 {% block admin_content %}
 <h1>Welcome, {{ current_user.full_name or current_user.email }}</h1>
 
+{% if health_summary is not none %}
+<p class="health-dashboard-link">
+  {% if health_summary.problems %}<span class="badge badge-danger">{{ health_summary.problems }} problem{{ "s" if health_summary.problems != 1 }}</span>
+  {% elif health_summary.warnings %}<span class="badge badge-archived">{{ health_summary.warnings }} to check</span>
+  {% else %}<span class="badge badge-active">All systems normal</span>
+  {% endif %}
+  <a href="/admin/health">Open System health</a>
+</p>
+{% endif %}
+
 <div class="metrics-grid">
   <div class="metric-tile">
     <div class="metric-value">{{ metrics.active_cities }}</div>

@@ -6,6 +6,7 @@ from app.models.auto_onboarding_policy import (
     AutoOnboardingPolicyCity,
     AutoOnboardingPolicyRole,
 )
+from app.models.background_job import BackgroundJobStatus
 from app.models.bulk_import import BulkImportItem, BulkImportRun
 from app.models.categorization_rule import CategorizationRule
 from app.models.category_photo import CategoryPhoto
@@ -39,6 +40,7 @@ from app.models.user_session import UserSession
 from app.models.website import Website
 
 __all__ = [
+    "BackgroundJobStatus",
     "CityUniversity",
     "AuditLog",
     "BulkImportItem",

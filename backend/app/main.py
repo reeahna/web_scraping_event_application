@@ -50,6 +50,7 @@ from app.routers import (
     scheduler,
     seo,
     suggestions,
+    system_health,
     unsupported_reports,
     version_history,
     websites,
@@ -142,6 +143,7 @@ app.include_router(notifications.router)
 app.include_router(auto_onboarding_policies.router)
 app.include_router(auto_onboarding_policies.decisions_router)
 app.include_router(scheduler.router)
+app.include_router(system_health.router)
 app.include_router(geocoding.router)
 app.include_router(engagement.router)
 app.include_router(reporting.router)
