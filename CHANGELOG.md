@@ -32,6 +32,7 @@ lines. Lines may use `**bold**`, `` `code` `` and `[links](https://...)`.
 
 ### Admin and behind the scenes
 - `CLAUDE.md` now forbids em dashes in anything written for the project. (#69)
+- Errors are reported to Sentry when `SENTRY_DSN` is set: crashes on any page, failing background jobs (scraping, AI labeling, geocoding and the rest) and a scheduler that stops running all raise an alert. Nothing is sent without it. (#71)
 
 ## [1.9.0] - 2026-11-17 - Version history
 
