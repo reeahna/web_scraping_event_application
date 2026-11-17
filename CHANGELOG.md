@@ -31,7 +31,7 @@ lines. Lines may use `**bold**`, `` `code` `` and `[links](https://...)`.
 - Fewer listings that aren't for students: kids' and family programs, faculty and TA workshops, thesis defenses, and events in other towns (like away meets and county health checks elsewhere) no longer show. Alumni groups and networking nights in town do show. (#65)
 
 ### Admin and behind the scenes
-- The admin dashboard shows how many upcoming events are still waiting for an AI category, and how many already have one, when AI labeling is on. (#PR)
+- The admin dashboard shows how many upcoming events are still waiting for an AI category, and how many already have one, when AI labeling is on. (#73)
 - AI labeling with Groq no longer stops when the model wraps its answer in an unexpected way, and a bad answer now shows in the logs. (#68)
 - `CLAUDE.md` now forbids em dashes in anything written for the project. (#69)
 - Errors are reported to Sentry when `SENTRY_DSN` is set: crashes on any page, failing background jobs (scraping, AI labeling, geocoding and the rest) and a scheduler that stops running all raise an alert. Nothing is sent without it. (#71)
