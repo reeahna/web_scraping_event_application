@@ -1,0 +1,230 @@
+# Changelog
+
+Every release of Bulletin, newest first. The app reads this file to build two pages:
+
+- **What's new** (`/whats-new`), for everyone: only the **For everyone** sections.
+- **Version history** (`/admin/version-history`), for admins: everything,
+  including **Admin and behind the scenes** and anything still **Unreleased**.
+
+Version numbers follow [semantic versioning](https://semver.org): the first number
+goes up for a big change in how the site works, the second for new features, the
+third for fixes only. The newest released version below is the app's version and
+shows in the site footer.
+
+## How to keep it current
+
+1. In every pull request, add a line under **Unreleased**: under **For everyone** if
+   a visitor or signed-in user would notice it, under **Admin and behind the scenes**
+   if only admins or the scraping pipeline would. Write it for that reader, and end
+   it with the PR number, like `(#67)`. The public page hides PR numbers.
+2. To cut a release, run `python scripts/release.py minor` from `backend/` (or
+   `patch` for fixes only, `major` for a big change). It turns **Unreleased** into
+   the next version with today's date and bumps `pyproject.toml`. Commit that.
+
+Format: a release is `## [x.y.z] - YYYY-MM-DD - Optional name`, followed by
+`### For everyone` and/or `### Admin and behind the scenes`, each a list of `- `
+lines. Lines may use `**bold**`, `` `code` `` and `[links](https://...)`.
+
+## [Unreleased]
+
+### Admin and behind the scenes
+- `CLAUDE.md` now forbids em dashes in anything written for the project. (#69)
+
+## [1.9.0] - 2026-11-17 - Version history
+
+### For everyone
+- A **What's new** page lists every release, and the site footer shows the current version.
+- Eleven more college towns: Durham, Tallahassee, Atlanta, Louisville, Coral Gables, Raleigh, Chapel Hill, South Bend, Pittsburgh, Dallas and Stanford, each with 8 event sources.
+- Event page titles now include the town and day, like "Jazz Night · Ann Arbor, Aug 18". (#66)
+- A site icon in the browser tab, and a default picture when a page is shared on social media. (#66)
+- The footer's **Suggest a town** link goes through sign-in when you are signed out. (#66)
+
+### Admin and behind the scenes
+- **Version history** in the admin area (Administration menu) shows every release with all changes, including what is waiting in Unreleased.
+- Versions follow semantic versioning; `CHANGELOG.md` is the single source, and `scripts/release.py` cuts a release.
+- `/health/ready` reports the running version.
+- SEO audit fixes: town pages with fewer than 5 upcoming events are `noindex` and left out of the sitemap; HTTPS-aware redirects; cleaner canonical links for paged listings. (#66)
+
+## [1.8.0] - 2026-11-06 - Share, suggest and My Account
+
+### For everyone
+- Share an event to social platforms from its page. (#57)
+- Sign in with X. (#58)
+- Signed-in visitors can suggest new towns and features. (#59)
+- **Saved** and **Alerts** now live under a **My Account** menu in the header. (#63)
+- Pages checked at phone to desktop sizes in Chrome, Firefox and Safari's engine, and the layout bugs found were fixed. (#61)
+- Events missing a venue now take it from the event's own page. (#62)
+- Fewer events that aren't open to you: other campuses and counties, away games, room bookings, alumni and faculty-only events are left out. (#55)
+- 29 college towns added one a day since October 10, from Urbana-Champaign to Clemson, each topped up to about 8 event sources.
+
+### Admin and behind the scenes
+- Each day's college town and its sources are onboarded automatically from the repo on deploy. (#56)
+- The scheduler runs its startup jobs after a deploy hands over leadership. (#64)
+- The site no longer runs out of memory when two headless browsers start at once. (#54)
+- More location shapes are read when filling venues. (#62)
+
+## [1.7.0] - 2026-10-16 - Alerts inbox and safer, clearer pages
+
+### For everyone
+- An **Alerts** inbox for signed-in users. (#48)
+- The saved events page was reworked, and past events are greyed out. (#40)
+- The events map zooms to the town you chose. (#42)
+- Event times show the time zone, and cards name the town only once. (#44)
+- Sign in with Yahoo. (#41)
+- After signing in you land on the homepage. (#43)
+- The site meets WCAG 2.2 AA accessibility guidelines. (#46)
+- Class lectures and other non-events are left out, and live events are re-checked daily. (#47)
+- Bugs found by deliberately trying to break the app were fixed. (#45, #50)
+
+### Admin and behind the scenes
+- Events are categorized with Groq when `GROQ_API_KEY` is set (#49); the default model is `gpt-oss-120b` (#51), and every event was re-labeled by bumping the prompt version. (#52)
+- A test user for dev and staging, and a setup guide for each sign-in provider. (#41, #43)
+- CI now really runs the tests on PostgreSQL. (#50)
+- Paged JSON event lists next to a meta block are read. (#53)
+
+## [1.6.0] - 2026-10-14 - Smarter scraping
+
+### For everyone
+- Away golf tournaments and other out-of-town events are swept out automatically. (#33)
+
+### Admin and behind the scenes
+- AI categorization retries no longer burn the daily Gemini quota (#32), and repeated Gemini 503s back off longer with an optional fallback model. (#39)
+- At most one headless browser per process, and no more route-close tracebacks. (#34)
+- New extraction patterns: paged JSON and Campus Labs Engage, with fixes to detection and recovery. (#35)
+- Previewed drafts can be approved directly, and browser walks read any record root. (#36)
+- Faster card detection, clearer browser errors, and Laravel-style paged JSON. (#37)
+- Recovery handles self-navigating pages and combined date-time cards. (#38)
+
+## [1.5.0] - 2026-10-09 - Map, social sign-in and accessibility
+
+### For everyone
+- Sign in with Google, Microsoft or Facebook only. Bulletin no longer stores passwords. (#11, #12, #13)
+- A redesigned sign-in page with provider logos. (#18)
+- The events map shows events. (#14)
+- AI tools and calendar apps can read the site, including a calendar feed for each town. (#10)
+- The site meets WCAG 2.1 AA accessibility guidelines. (#17)
+- Event pages show **Saved** and **Following**, with **Unsave** and **Unfollow** on hover. (#24)
+- Event descriptions come from each event's own page when the listing has none. (#30)
+- Events for college students show once, in the school's own town. (#19)
+- Cards no longer repeat the town name. (#21)
+- Fewer non-events: away games, study and advising hours, info sessions, lab meetings, reading groups and more are left out. (#25, #27)
+
+### Admin and behind the scenes
+- The AI categorizer gets category descriptions and a keep/drop check, and spends the daily Gemini quota on upcoming, visible events first. (#15, #20)
+- Repeat listings across sources are flagged to admins as possible duplicates. (#20)
+- Out-of-town addresses with no state are caught. (#21)
+- Geocoding does upcoming events first, matches campus venues, and explains why events are skipped; the Map locations page is easier to read. (#16, #22, #26, #28, #31)
+- Only one admin menu opens at a time. (#29)
+- The repo was split into `backend/`, `frontend/` and `docs/`, with guides for AI coding tools. (#23)
+
+## [1.4.0] - 2026-10-06 - Bulletin
+
+### For everyone
+- The site is now called **Bulletin**, and a town can have several universities.
+- Hide the categories or sources you don't want to see.
+- A much larger pool of placeholder photos.
+- Friendly error pages, a privacy policy and terms of use. (#9)
+- Account deletion and sign-in limits. (#9)
+- Events nobody can actually go to are left out. (#8)
+
+### Admin and behind the scenes
+- A universities count on the admin dashboard.
+- Security fix: a scraped title could inject markup through the event's structured data. (#8)
+- The map endpoint no longer returns every city at once. (#8)
+- CI lint, PostgreSQL migrations and the test suite pass, and the suite runs in minutes instead of an hour. (#8)
+- Unused tables, columns and files removed. (#8)
+
+## [1.3.0] - 2026-09-24 - College-town chooser
+
+### For everyone
+- Pick a college town instead of scrolling one feed of every city, with suggestions as you type.
+- Pages carry search-engine metadata.
+
+### Admin and behind the scenes
+- A city's university can be set in the admin.
+- The API docs are no longer public, and production uses the public base URL.
+
+## [1.2.0] - 2026-09-17 - Cleaner admin
+
+### For everyone
+- The account page stops advertising features that already shipped as "coming soon".
+
+### Admin and behind the scenes
+- The admin UI was condensed and repaired, and its confirmation prompts work again under the security policy.
+- Policy, decision, report and dashboard pages were made readable.
+
+## [1.1.0] - 2026-09-11 - Photos and categories
+
+### For everyone
+- Events without a photo get a category-relevant picture.
+- Events are sorted into categories automatically.
+
+### Admin and behind the scenes
+- Categorization runs from the scheduler: starter keyword rules, then Gemini AI, stopping gracefully at the daily quota.
+- A whole-site link and button checker runs in the test suite.
+
+## [1.0.0] - 2026-09-03 - Live on Render
+
+### For everyone
+- Bulletin's first production release.
+
+### Admin and behind the scenes
+- Render deploy kit (Docker, persistent disk), and the old app was removed.
+- The web server stays up if the scheduler crashes.
+
+## [0.7.0] - 2026-09-02 - Better extraction
+
+### For everyone
+- Event dates show the year, and recurring events are marked.
+
+### Admin and behind the scenes
+- Onboarding falls back to a browser for protected sites, and reads modern LiveWhale calendars, schema.org ItemLists, inline JavaScript events and nested fields.
+- Recurring events are expanded, day-first and year-less dates are understood, and more pagination styles are followed.
+
+## [0.6.0] - 2026-08-07 - Admin import tools
+
+### Admin and behind the scenes
+- A clearer website workflow in the admin.
+- Captured request recipes and browser-backed event imports, with pagination.
+- Import scheduling controls.
+
+## [0.5.0] - 2026-07-30 - Feature complete
+
+### For everyone
+- Full public event pages, saved events and alerts.
+- Sign in with an outside account.
+
+### Admin and behind the scenes
+- Automatic onboarding controlled by policies, with an optional AI fallback.
+- JSON-in-script, ICS, RSS/Atom, Algolia, Simpleview and browser extraction.
+- A durable background scheduler, geocoding and operational reports.
+- Production preparation: Redis rate limiting and PostgreSQL in CI.
+
+## [0.4.0] - 2026-07-21 - Extraction engine
+
+### For everyone
+- Public event pages that work on phones.
+
+### Admin and behind the scenes
+- A deterministic extraction engine, configuration inference and a bulk onboarding queue.
+
+## [0.3.0] - 2026-07-13 - The new app
+
+### For everyone
+- Create an account and manage it.
+
+### Admin and behind the scenes
+- Rebuilt from scratch on FastAPI: database schema, permissions, and admin pages for cities, websites and events, with event review, categories and duplicate detection.
+
+## [0.2.0] - 2026-06-15 - First scrapers
+
+### For everyone
+- A home page with events from Bloomington and Bethlehem, filterable by category.
+
+### Admin and behind the scenes
+- The first scrapers, with end dates and purging of internal events.
+
+## [0.1.0] - 2026-05-24 - First commit
+
+### Admin and behind the scenes
+- The project started.

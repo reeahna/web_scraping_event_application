@@ -51,6 +51,7 @@ from app.routers import (
     seo,
     suggestions,
     unsupported_reports,
+    version_history,
     websites,
 )
 
@@ -119,6 +120,7 @@ app.add_exception_handler(Exception, unhandled_exception_handler)
 app.include_router(home.router)
 app.include_router(seo.router)
 app.include_router(pages.router)
+app.include_router(version_history.router)
 app.include_router(public_events.router)
 app.include_router(health.router)
 app.include_router(auth.router)

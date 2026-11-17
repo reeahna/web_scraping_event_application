@@ -29,6 +29,7 @@ ADMIN_DESTINATIONS = [
     "/admin/roles",
     "/admin/reports",
     "/admin/audit",
+    "/admin/version-history",
     "/admin/notifications",
     "/account",
 ]
