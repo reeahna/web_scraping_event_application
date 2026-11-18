@@ -25,6 +25,13 @@ jobs:
           python -m playwright install --with-deps chromium
       - name: Ruff
         run: ruff check .
+      # Fails the build when an installed package has a published security
+      # advisory. Fix by raising that package's minimum version in
+      # pyproject.toml and requirements.txt.
+      - name: Dependency audit
+        run: |
+          pip install pip-audit
+          pip-audit --skip-editable
       - name: Migrations round-trip (scratch DB)
         run: |
           DATABASE_URL="sqlite:///$RUNNER_TEMP/ci.db" python -m alembic upgrade head
