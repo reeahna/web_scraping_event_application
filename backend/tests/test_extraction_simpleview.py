@@ -506,3 +506,56 @@ def test_non_recurring_record_keeps_its_end_date():
     assert candidate.raw["recurrence"] is None
     assert candidate.raw.get("detail_link") is None
     assert candidate.raw["end_datetime"] == "2026-09-11T03:00:00.000Z"
+
+
+# --- a bare record array ------------------------------------------------------
+
+_ARRAY_URL = "https://library.example.org/eeventcaldata"
+_ARRAY_CONFIG = SiteConfiguration(
+    pattern_name=NAME,
+    api_endpoint=_ARRAY_URL,
+    timezone=TZ,
+    json_paths={
+        "events_root": "",
+        "start_datetime": "event_start",
+        "end_datetime": "event_end",
+        "venue": "location",
+    },
+    transformations=[
+        {"field": field, "kind": "literal_replace", "params": {"find": " ", "replace": "T"}}
+        for field in ("start_datetime", "end_datetime")
+    ],
+)
+_ARRAY_BODY = [
+    {
+        "id": "17144892",
+        "title": "Drop in and Knit",
+        "event_start": "2026-11-18 10:00:00",
+        "event_end": "2026-11-18 12:00:00",
+        "location": "Main Library",
+        "url": "https://library.example.org/event/17144892",
+    }
+]
+
+
+def test_an_empty_events_root_reads_a_bare_record_array():
+    """Some event APIs answer with the record array itself rather than an
+    object wrapping it. An empty events_root says so."""
+    response = make_response(
+        json.dumps(_ARRAY_BODY), final_url=_ARRAY_URL, content_type="application/json"
+    )
+    candidates = SimpleviewEventsPattern().extract(response, _ARRAY_CONFIG)
+    assert len(candidates) == 1
+    event = normalize_candidate(candidates[0], _ARRAY_CONFIG, fallback_timezone=TZ)
+    assert event.title == "Drop in and Knit"
+    assert str(event.start_date) == "2026-11-18"
+    assert str(event.start_time) == "10:00:00"
+    assert event.canonical_url == "https://library.example.org/event/17144892"
+    assert event.external_source_id == "17144892"
+
+
+def test_a_bare_array_is_ignored_without_an_empty_events_root():
+    response = make_response(
+        json.dumps(_ARRAY_BODY), final_url=_ARRAY_URL, content_type="application/json"
+    )
+    assert SimpleviewEventsPattern().extract(response, CONFIG) == []
