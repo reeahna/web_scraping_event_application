@@ -177,10 +177,13 @@ def test_whats_new_shows_public_notes_only(client):
     assert str(render_note(first_admin_only, public=True)) not in page
 
 
-def test_footer_shows_version_and_links_whats_new(client):
+def test_footer_links_whats_new_without_a_public_version_number(client):
+    """The version is for What's new and the admin, not every page's footer."""
     page = client.get("/privacy").text
-    assert f">Version {APP_VERSION}</a>" in page
-    assert '<a href="/whats-new">What\'s new</a>' in page
+    footer = page[page.index('<footer class="site-footer">'):]
+    assert '<a href="/whats-new">What\'s new</a>' in footer
+    assert f"Version {APP_VERSION}" not in footer
+    assert f"version {APP_VERSION}" in client.get("/whats-new").text
 
 
 def test_admin_version_history_shows_everything(client, make_user, login):

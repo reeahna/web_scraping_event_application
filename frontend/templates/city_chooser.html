@@ -13,9 +13,9 @@
 <section class="chooser-hero" aria-labelledby="chooser-heading">
   <div class="chooser-inner">
     <div class="chooser-intro">
-      <h1 id="chooser-heading">Your town. Your next good story.</h1>
+      <h1 id="chooser-heading">Find something worth going to.</h1>
       <p class="chooser-subtext">
-        Everything happening in town and on campus, gathered from every local source.
+        Concerts, talks, games and festivals in college towns, gathered from every local source.
       </p>
     </div>
 
@@ -59,18 +59,38 @@
       <h2 id="town-directory-heading">{% if query %}Towns matching “{{ query }}”{% else %}Every town we cover{% endif %}</h2>
       <p class="town-directory-count">{{ cities | length }} town{{ "s" if cities | length != 1 }}{% if query %}. <a href="/">Show every town</a>{% endif %}</p>
     </div>
+    {#
+      With a long list, a row of initial letters jumps down the directory. It
+      only appears past 60 towns, so today's shorter list stays uncluttered.
+    #}
+    {% set long_list = cities | length > 60 and not query %}
+    {% if long_list %}
+    {% set letters = cities | map(attribute="name") | map("first") | map("upper") | unique | list %}
+    <nav class="town-letters" aria-label="Jump to towns by first letter">
+      {% for letter in letters %}<a href="#towns-{{ letter }}">{{ letter }}</a>{% endfor %}
+    </nav>
+    {% endif %}
+    {% set seen = namespace(letter="") %}
     <ul class="city-grid">
       {% for city in cities %}
       {% set count = event_counts.get(city.id, 0) %}
-      <li{% if not count %} class="city-quiet"{% endif %}>
+      {% set letter = city.name[:1] | upper %}
+      {#
+        Town, state and count only. The schools stay in the search (typed here
+        or in the suggestions) and on the town page itself, so a directory of
+        hundreds of towns still scans as one column of names.
+      #}
+      <li{% if not count %} class="city-quiet"{% endif %}{% if long_list and letter != seen.letter %} id="towns-{{ letter }}"{% endif %}>{% set seen.letter = letter %}
         <a class="city-card" href="/city/{{ city.slug }}">
-          <span class="city-card-name">{{ city.name }}{% if city.state_or_region %}<span class="city-card-state">, {{ city.state_or_region }}</span>{% endif %}</span>
-          {% if city.universities %}
-          <span class="city-card-school">{{ city.universities | map(attribute="name") | join(", ") }}</span>
+          <span class="city-card-name">{{ city.name }}{% if city.state_or_region %}<span class="city-card-state">, <abbr title="{{ city.state_or_region }}">{{ city.state_or_region | state_abbr }}</abbr></span>{% endif %}</span>
+          <span class="city-card-count"><span class="city-card-number">{{ count }}</span> upcoming event{{ "s" if count != 1 }}</span>
+          {# A search that found the town by its school says which school, so
+             "lehigh" finding Bethlehem does not look like a wrong answer. #}
+          {% if query and query | lower not in city.name | lower %}
+          {% set matched = [] %}
+          {% for university in city.universities %}{% if query | lower in university.name | lower %}{% if matched.append(university.name) %}{% endif %}{% endif %}{% endfor %}
+          {% if matched %}<span class="city-card-match">{{ matched | join(", ") }}</span>{% endif %}
           {% endif %}
-          <span class="city-card-count">
-            <span class="city-card-number">{{ count }}</span> upcoming event{{ "s" if count != 1 }}
-          </span>
         </a>
       </li>
       {% endfor %}

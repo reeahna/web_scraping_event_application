@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>{% block title %}{{ site_name }}{% endblock %}</title>
+  <title>{% block title %}{{ site_name }}{% endblock %}{% block title_suffix %}{% endblock %}</title>
   {#
     Per-page metadata. Pages override meta_description and canonical_path;
     anything that does not gets the site defaults, which is still better than
@@ -28,7 +28,15 @@
   <meta property="og:image:alt" content="{{ site_name }}: what's on in your college town" />{% endblock %}
   {% block og_extra %}{% endblock %}
   <meta name="twitter:card" content="{% block twitter_card %}summary_large_image{% endblock %}" />
+  {# The serif B from the wordmark. SVG for browsers that take it, PNGs for
+     the rest, and a full-bleed version for iOS home screens. #}
+  <link rel="icon" href="/favicon.ico" sizes="48x48" />
   <link rel="icon" href="/static/favicon.svg" type="image/svg+xml" />
+  <link rel="icon" href="/static/favicon-32x32.png" type="image/png" sizes="32x32" />
+  <link rel="icon" href="/static/favicon-16x16.png" type="image/png" sizes="16x16" />
+  <link rel="apple-touch-icon" href="/static/apple-touch-icon.png" />
+  <link rel="manifest" href="/static/site.webmanifest" />
+  <meta name="theme-color" content="#f8f6f1" />
 
   <link rel="stylesheet" href="/static/style.css" />
   {% if current_user %}<script src="/static/js/account-menu.js" defer></script>{% endif %}
@@ -90,19 +98,15 @@
 
   <footer class="site-footer">
     <div class="site-footer-inner">
-      <div class="site-footer-brand">
-        <p class="site-footer-name">{{ site_name }}</p>
-        <p class="site-footer-tagline">Local events, gathered in one place.</p>
-      </div>
+      <p class="site-footer-copyright">&copy; {{ current_year() }} {{ site_name }}</p>
       <nav class="site-footer-links" aria-label="Site information">
         {# Suggestions need an account; signed out, go by the sign-in page
            rather than linking every page to a 401. #}
         <a href="{{ '/suggest' if current_user else '/auth/login?next=%2Fsuggest' }}">Suggest a town</a>
+        <a href="/whats-new">What's new</a>
         <a href="/privacy">Privacy</a>
         <a href="/terms">Terms</a>
-        <a href="/whats-new">What's new</a>
       </nav>
-      <p class="site-footer-copyright"><span>&copy; {{ current_year() }} {{ site_name }}</span> <a href="/whats-new" class="site-footer-version">Version {{ app_version }}</a></p>
     </div>
   </footer>
   {% block scripts %}{% endblock %}

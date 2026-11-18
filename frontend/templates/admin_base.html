@@ -3,6 +3,9 @@
 {% block header_class %} admin-header{% endblock %}
 
 {% block body_class %}site-admin{% endblock %}
+{# Every admin tab reads "Page | Bulletin admin", so it is never mistaken
+   for a public page or for another site. #}
+{% block title_suffix %} | {{ site_name }} admin{% endblock %}
 
 {# The public primary nav is intentionally empty on admin pages; the admin
    navigation renders as a second header row below the brand. #}

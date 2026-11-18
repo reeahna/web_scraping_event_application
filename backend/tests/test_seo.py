@@ -226,7 +226,7 @@ def test_later_pages_are_their_own_canonical(client, published_event):
 def test_event_title_names_the_town_and_day(client, published_event):
     html = client.get(f"/events/{published_event.id}").text
     day = published_event.start_date
-    expected = f"Jazz Night · Bloomington, {day.strftime('%b')} {day.day} | "
+    expected = f"Jazz Night: Bloomington, {day.strftime('%b')} {day.day} | "
     assert f"<title>{expected}" in html
 
 
@@ -239,9 +239,23 @@ def test_pages_without_a_picture_share_the_site_card(client, published_event):
 def test_favicon_is_served(client):
     response = client.get("/favicon.ico", follow_redirects=False)
     assert response.status_code == 200
-    assert response.headers["content-type"].startswith("image/svg+xml")
-    assert client.get("/static/favicon.svg").status_code == 200
-    assert 'rel="icon" href="/static/favicon.svg"' in client.get("/").text
+    assert response.headers["content-type"].startswith("image/x-icon")
+    html = client.get("/").text
+    for path in (
+        "/static/favicon.svg",
+        "/static/favicon-32x32.png",
+        "/static/favicon-16x16.png",
+        "/static/apple-touch-icon.png",
+        "/static/site.webmanifest",
+    ):
+        assert client.get(path).status_code == 200, path
+        assert f'href="{path}"' in html, path
+
+
+def test_the_favicon_is_the_serif_b_not_the_old_purple_one(client):
+    svg = client.get("/static/favicon.svg").text
+    assert "#4f46e5" not in svg.lower()
+    assert "#394a35" in svg and "#f8f6f1" in svg
 
 
 def test_signed_out_suggest_link_goes_through_sign_in(client):
