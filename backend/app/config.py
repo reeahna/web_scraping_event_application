@@ -89,6 +89,14 @@ class Settings(BaseSettings):
     # semantics inconsistently across events from different cities.
     app_timezone: str = "UTC"
 
+    # Visitor log (app.services.site_visits, admin page /admin/visitors).
+    # Counts public page views without cookies or stored IP addresses. Counts
+    # are written in a batch every `visit_flush_seconds` and deleted after
+    # `visit_retention_days`.
+    visit_tracking_enabled: bool = True
+    visit_flush_seconds: int = 60
+    visit_retention_days: int = 180
+
     # Restricted browser-assisted recovery (app.services.browser_recovery).
     # Off by default: the restricted Playwright fetch strategy exists but is
     # never invoked unless an administrator turns this on for the deployment.

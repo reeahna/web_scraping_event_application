@@ -63,6 +63,8 @@ and `docs/scheduler.md`. The scheduler is the single owner of all background wor
 - **Audit log**: retain for the compliance-required period; audits are
   append-only and never rewritten. Prune only by explicit, documented policy.
 - **Geocode cache / alert deliveries**: retain; both are deduplication ledgers.
+- **Visitor log** (`site_visitor_days`, `site_page_days`): deleted automatically
+  after `VISIT_RETENTION_DAYS` (default 180) by the web process itself, once a day.
 
 ## Privacy & deletion
 
@@ -71,6 +73,15 @@ and `docs/scheduler.md`. The scheduler is the single owner of all background wor
 - **User deletion**: deleting a `users` row cascades to sessions, saved events,
   follows, alert preferences, and external identities (FK `ON DELETE CASCADE`).
 - **Email unsubscribe**: token-based, no login required (`/alerts/unsubscribe`).
+- **Visitor log** (`/admin/visitors`, needs `reports.view`): counts public page
+  views and which towns are looked at. It sets no cookie and stores no IP
+  address. A visitor is a hash of (that day's random salt, IP, user agent); the
+  salt is deleted when the day ends, so a hash can't be traced back to an IP and
+  the same person can't be followed from day to day. A signed-in visitor's row
+  names their account (`user_id`, set to null if the account is deleted). Bots,
+  scripts, prefetches, HEAD requests, `/static`, `/health` and `/admin` are not
+  counted. Counts are batched in memory and written every `VISIT_FLUSH_SECONDS`
+  (default 60). Turn it off with `VISIT_TRACKING_ENABLED=false`.
 
 ## Secret rotation & incident recovery
 

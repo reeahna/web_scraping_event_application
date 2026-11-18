@@ -39,6 +39,9 @@ def event_detail(event_id: int, request: Request, current_user: OptionalCurrentU
     event = get_public_event(db, event_id, today=current_public_date())
     if event is None:
         raise NotFoundError("Event not found")
+    if event.city is not None:
+        # For the visitor log: an event page counts toward its town.
+        request.state.visit_town = event.city.slug
 
     admin_access = can_access_admin(db, current_user) if current_user else False
     latest_run = None

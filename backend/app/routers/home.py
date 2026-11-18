@@ -304,6 +304,8 @@ def _town_page(
             return RedirectResponse(f"/city/{canonical.slug}{suffix}{query}", status_code=301)
     if city is None or not city.is_active:
         raise NotFoundError("City not found")
+    # For the visitor log: which town this visitor is looking at.
+    request.state.visit_town = city.slug
     # The city page pins the city filter, and a window page pins its dates.
     today = current_public_date()
     preset = seo.TOWN_WINDOWS[window][0] if window else None
