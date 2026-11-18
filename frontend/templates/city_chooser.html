@@ -10,12 +10,14 @@
 {% endblock %}
 
 {% block content %}
-<section class="chooser-hero">
+<section class="chooser-hero" aria-labelledby="chooser-heading">
   <div class="chooser-inner">
-    <h1>What college town?</h1>
-    <p class="chooser-subtext">
-      Everything happening in town and on campus, gathered from every local source.
-    </p>
+    <div class="chooser-intro">
+      <h1 id="chooser-heading">Your town. Your next good story.</h1>
+      <p class="chooser-subtext">
+        Everything happening in town and on campus, gathered from every local source.
+      </p>
+    </div>
 
     {#
       A plain GET form, so choosing a town works with no JavaScript and the
@@ -23,48 +25,57 @@
       is deliberately no view that mixes every city's events together.
     #}
     <form method="get" action="/" class="chooser-form" role="search">
-      <label for="city-search" class="visually-hidden">Search for a college town or school</label>
-      {#
-        A combobox over the form's own input. Submitting still works with no
-        JavaScript, so the suggestions are an enhancement rather than the only
-        way through. The ARIA attributes start in their no-script state and the
-        script turns them on, so a reader is never told about a listbox that is
-        not there.
-      #}
-      <div class="chooser-field">
-        <input type="search" id="city-search" name="q" value="{{ query }}"
-               placeholder="Search by town or school"
-               autocomplete="off" autofocus
-               role="combobox" aria-expanded="false" aria-autocomplete="list"
-               aria-controls="city-suggestions" />
-        <ul id="city-suggestions" class="suggestions" role="listbox"
-            aria-label="Matching towns" hidden></ul>
-        {# Filled by city-search.js so a screen reader hears how many towns
-           match as the reader types (WCAG 4.1.3). #}
-        <p id="city-suggestions-status" class="visually-hidden" role="status" aria-live="polite"></p>
+      <label for="city-search" class="chooser-label">What college town?</label>
+      <div class="chooser-row">
+        {#
+          A combobox over the form's own input. Submitting still works with no
+          JavaScript, so the suggestions are an enhancement rather than the only
+          way through. The ARIA attributes start in their no-script state and the
+          script turns them on, so a reader is never told about a listbox that is
+          not there.
+        #}
+        <div class="chooser-field">
+          <input type="search" id="city-search" name="q" value="{{ query }}"
+                 placeholder="Town or school"
+                 autocomplete="off" autofocus
+                 role="combobox" aria-expanded="false" aria-autocomplete="list"
+                 aria-controls="city-suggestions" />
+          <ul id="city-suggestions" class="suggestions" role="listbox"
+              aria-label="Matching towns" hidden></ul>
+          {# Filled by city-search.js so a screen reader hears how many towns
+             match as the reader types (WCAG 4.1.3). #}
+          <p id="city-suggestions-status" class="visually-hidden" role="status" aria-live="polite"></p>
+        </div>
+        <button type="submit">Search</button>
       </div>
-      <button type="submit">Search</button>
     </form>
   </div>
 </section>
 
 <div class="page-container">
   {% if cities %}
-  <ul class="city-grid">
-    {% for city in cities %}
-    <li>
-      <a class="city-card" href="/city/{{ city.slug }}">
-        <span class="city-card-name">{{ city.name }}{% if city.state_or_region %}, {{ city.state_or_region }}{% endif %}</span>
-        {% if city.universities %}
-        <span class="city-card-school">{{ city.universities | map(attribute="name") | join(" · ") }}</span>
-        {% endif %}
-        <span class="city-card-count">
-          {{ event_counts.get(city.id, 0) }} upcoming event{{ "s" if event_counts.get(city.id, 0) != 1 }}
-        </span>
-      </a>
-    </li>
-    {% endfor %}
-  </ul>
+  <section class="town-directory" aria-labelledby="town-directory-heading">
+    <div class="town-directory-head">
+      <h2 id="town-directory-heading">{% if query %}Towns matching “{{ query }}”{% else %}Every town we cover{% endif %}</h2>
+      <p class="town-directory-count">{{ cities | length }} town{{ "s" if cities | length != 1 }}{% if query %}. <a href="/">Show every town</a>{% endif %}</p>
+    </div>
+    <ul class="city-grid">
+      {% for city in cities %}
+      {% set count = event_counts.get(city.id, 0) %}
+      <li{% if not count %} class="city-quiet"{% endif %}>
+        <a class="city-card" href="/city/{{ city.slug }}">
+          <span class="city-card-name">{{ city.name }}{% if city.state_or_region %}<span class="city-card-state">, {{ city.state_or_region }}</span>{% endif %}</span>
+          {% if city.universities %}
+          <span class="city-card-school">{{ city.universities | map(attribute="name") | join(", ") }}</span>
+          {% endif %}
+          <span class="city-card-count">
+            <span class="city-card-number">{{ count }}</span> upcoming event{{ "s" if count != 1 }}
+          </span>
+        </a>
+      </li>
+      {% endfor %}
+    </ul>
+  </section>
   {% elif query %}
   <div class="empty-state">
     <h2>No college town matches “{{ query }}”</h2>

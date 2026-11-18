@@ -226,7 +226,7 @@ def test_later_pages_are_their_own_canonical(client, published_event):
 def test_event_title_names_the_town_and_day(client, published_event):
     html = client.get(f"/events/{published_event.id}").text
     day = published_event.start_date
-    expected = f"Jazz Night · Bloomington, {day.strftime('%b')} {day.day} — "
+    expected = f"Jazz Night · Bloomington, {day.strftime('%b')} {day.day} | "
     assert f"<title>{expected}" in html
 
 

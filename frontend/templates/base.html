@@ -34,7 +34,7 @@
   {% if current_user %}<script src="/static/js/account-menu.js" defer></script>{% endif %}
   {% block head_extra %}{% endblock %}
 </head>
-<body>
+<body class="{% block body_class %}site-public{% endblock %}">
   <a class="skip-link" href="#main-content">Skip to content</a>
   <header class="site-header{% block header_class %}{% endblock %}">
     <div class="site-header-inner">
@@ -90,8 +90,10 @@
 
   <footer class="site-footer">
     <div class="site-footer-inner">
-      <p class="site-footer-name">{{ site_name }}</p>
-      <p class="site-footer-tagline">Local events, gathered in one place.</p>
+      <div class="site-footer-brand">
+        <p class="site-footer-name">{{ site_name }}</p>
+        <p class="site-footer-tagline">Local events, gathered in one place.</p>
+      </div>
       <nav class="site-footer-links" aria-label="Site information">
         {# Suggestions need an account; signed out, go by the sign-in page
            rather than linking every page to a 401. #}
@@ -100,7 +102,7 @@
         <a href="/terms">Terms</a>
         <a href="/whats-new">What's new</a>
       </nav>
-      <p class="site-footer-copyright">&copy; {{ current_year() }} {{ site_name }} · <a href="/whats-new" class="site-footer-version">Version {{ app_version }}</a></p>
+      <p class="site-footer-copyright"><span>&copy; {{ current_year() }} {{ site_name }}</span> <a href="/whats-new" class="site-footer-version">Version {{ app_version }}</a></p>
     </div>
   </footer>
   {% block scripts %}{% endblock %}

@@ -1,6 +1,6 @@
 {% extends "base.html" %}
 
-{% block title %}What's new — {{ site_name }}{% endblock %}
+{% block title %}What's new | {{ site_name }}{% endblock %}
 {% block meta_description %}Every {{ site_name }} release: new features and fixes, newest first.{% endblock %}
 
 {% block content %}
@@ -11,7 +11,7 @@
   {% for release in releases %}
   <section class="release" aria-labelledby="v{{ release.version | replace('.', '-') }}">
     <h2 id="v{{ release.version | replace('.', '-') }}">
-      Version {{ release.version }}{% if release.name %}<span class="release-name"> · {{ release.name }}</span>{% endif %}
+      Version {{ release.version }}{% if release.name %}<span class="release-name">: {{ release.name }}</span>{% endif %}
     </h2>
     <p class="release-date"><time datetime="{{ release.released_on.isoformat() }}">{{ release.released_on | human_date_long }}</time></p>
     <ul>

@@ -28,12 +28,18 @@ lines. Lines may use `**bold**`, `` `code` `` and `[links](https://...)`.
 ## [Unreleased]
 
 ### For everyone
+- A new look for Bulletin: warm paper colours, serif headlines and calmer pages. The home page shows the towns right away as a directory, with each town's schools and how many events are coming up. (#85)
+- Town pages show events on the first screen. All upcoming, Today and This weekend sit at the top as tabs, search is always there, and the other filters fold behind a **Filters** button that shows how many are on. Events are a dated list with the day set large, the time, the venue and a photo. (#85)
+- Event pages lead with what you need: the title, when, where and a button to the original listing, then the photo, the description, the details (now including the category) and sharing. The photo loads first. (#85)
+- Easier to use with a keyboard and on phones: every link, button and field shows a clear focus outline, animation stops when your device asks for less motion, buttons are bigger to tap, and nothing scrolls sideways on small screens. (#85)
+- `/login` now takes you to the sign-in page. (#85)
 - Pages no longer fail with an error now and then while new events are being collected in the background. (#82)
 - Fewer listings that aren't events: building open hours, team practices, class sections, study days, "no seminar today" notices, baby and kids' programs, and away games no longer show. (#82)
 - Every town now has its own **This weekend** and **Today** pages, and each town page links to other college towns nearby, so it is easier to find something to do (and easier for search engines to send people to the right town). (#78)
 - Fewer listings that aren't for students: kids' and family programs, faculty and TA workshops, thesis defenses, and events in other towns (like away meets and county health checks elsewhere) no longer show. Alumni groups and networking nights in town do show. (#65)
 
 ### Admin and behind the scenes
+- The stylesheet's colours all go through named tokens, the fonts (DM Serif Display and DM Sans) are served from the site itself so the content security policy needs no font host, and admin pages share the new colours and focus outlines while keeping their layout. (#85)
 - New **BiblioCommons library events** pattern: public library calendars on BiblioCommons are read from the platform's events API, 100 events per page, with each event's branch or other venue, address, type and image. Library pages on the platform are recognised automatically. (#84)
 - Security check: every package the app uses was confirmed genuine, the minimum versions of Jinja2, python-multipart, Authlib, requests and Starlette were raised past releases with known security problems, the map's Leaflet files from unpkg are now checked against fixed fingerprints so a tampered copy is refused, and CI runs `pip-audit` on every change. No keys or passwords were found in the code or its history. (#83)
 - The Simpleview events pattern can read an API that answers with a bare list of events (set `events_root` to an empty string). Library calendars that work this way can now be set up by hand. (#81)
