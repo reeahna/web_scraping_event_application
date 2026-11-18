@@ -432,29 +432,24 @@ textarea:focus-visible,
    5. Footer
    ========================================================================== */
 .site-footer {
-  border-top: 1px solid var(--text);
+  border-top: 1px solid var(--border-strong);
   background: var(--bg);
   margin-top: var(--space-8);
 }
 
+/* One quiet row: the header already carries the name, so the footer only
+   needs the small print and the four links. */
 .site-footer-inner {
   max-width: var(--max-width);
   margin: 0 auto;
-  padding: var(--space-6) clamp(var(--space-4), 4vw, var(--space-7)) var(--space-7);
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  gap: var(--space-4) var(--space-6);
-  align-items: end;
+  padding: var(--space-3) clamp(var(--space-4), 4vw, var(--space-7));
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0 var(--space-6);
   color: var(--muted);
   font-size: var(--font-sm);
-}
-
-.site-footer-name {
-  font-family: var(--font-display);
-  font-size: 2rem;
-  line-height: 1;
-  color: var(--text);
-  margin-bottom: var(--space-2);
 }
 
 .site-footer-links {
@@ -475,23 +470,12 @@ textarea:focus-visible,
   color: var(--accent);
 }
 
-.site-footer-copyright {
-  grid-column: 1 / -1;
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0 var(--space-4);
-  padding-top: var(--space-4);
-  border-top: 1px solid var(--border);
-}
-
-.site-footer-copyright a {
-  color: var(--muted);
-}
-
 @media (max-width: 640px) {
   .site-footer-inner {
-    grid-template-columns: minmax(0, 1fr);
-    align-items: start;
+    flex-direction: column-reverse;
+    align-items: flex-start;
+    padding-top: var(--space-2);
+    padding-bottom: var(--space-5);
   }
 }
 
@@ -507,17 +491,17 @@ textarea:focus-visible,
 .chooser-inner {
   max-width: var(--max-width);
   margin: 0 auto;
-  padding: var(--space-7) clamp(var(--space-4), 4vw, var(--space-7)) var(--space-6);
+  padding: var(--space-6) clamp(var(--space-4), 4vw, var(--space-7)) var(--space-5);
   display: grid;
-  grid-template-columns: minmax(0, 7fr) minmax(0, 5fr);
-  gap: var(--space-5) var(--space-7);
+  grid-template-columns: minmax(0, 6fr) minmax(0, 6fr);
+  gap: var(--space-4) var(--space-7);
   align-items: end;
 }
 
 .chooser-intro h1 {
-  font-size: var(--text-display);
-  max-width: 14ch;
-  margin-bottom: var(--space-4);
+  font-size: var(--text-headline);
+  max-width: 16ch;
+  margin-bottom: var(--space-3);
 }
 
 .chooser-subtext {
@@ -541,7 +525,7 @@ textarea:focus-visible,
 .chooser-form input {
   width: 100%;
   min-width: 0;
-  min-height: 52px;
+  min-height: 56px;
   padding: 0 var(--space-4);
   background: var(--surface);
   border: 1px solid var(--border-input);
@@ -554,7 +538,7 @@ textarea:focus-visible,
 }
 
 .chooser-form button {
-  min-height: 52px;
+  min-height: 56px;
   padding: 0 var(--space-5);
   font-size: var(--font-base);
 }
@@ -622,7 +606,7 @@ textarea:focus-visible,
    hairline rule; the name is set large in the serif, the count is the
    number a reader scans for. */
 .town-directory {
-  margin-top: var(--space-5);
+  margin-top: var(--space-4);
 }
 
 .town-directory-head {
@@ -646,39 +630,87 @@ textarea:focus-visible,
   color: var(--accent);
 }
 
+.town-letters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0 var(--space-1);
+  margin-bottom: var(--space-3);
+}
+
+.town-letters a {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: var(--control-height);
+  min-height: var(--control-height);
+  font-family: var(--font-display);
+  font-size: 1.15rem;
+  color: var(--accent);
+  text-decoration: none;
+}
+
+.town-letters a:hover {
+  text-decoration: underline;
+}
+
+.city-grid > li[id] {
+  scroll-margin-top: var(--space-4);
+}
+
+/* Town, state and count on one line each, under a hairline. Narrow columns
+   so a few hundred towns still read as an index rather than a long scroll of
+   cards; the search above is the quick way to one of them. */
 .city-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(min(100%, 260px), 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 230px), 1fr));
   gap: 0 var(--space-6);
   list-style: none;
   padding: 0;
 }
 
 .city-grid > li {
-  border-top: 1px solid var(--border-strong);
+  border-top: 1px solid var(--border);
   min-width: 0;
 }
 
+/* Every entry has the same shape: the town on one line, the count under it.
+   On a phone, where the list is a single column, the count moves to the
+   right edge so the names line up as one scannable column. */
 .city-card {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-1);
-  height: 100%;
-  padding: var(--space-4) 0 var(--space-5);
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 2px;
+  min-height: var(--control-height);
+  padding: var(--space-3) 0;
   text-decoration: none;
   color: var(--text);
 }
 
+@media (max-width: 559px) {
+  .city-card {
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: baseline;
+    gap: 2px var(--space-3);
+  }
+  .city-card-match {
+    grid-column: 1 / -1;
+  }
+}
+
 .city-card-name {
   font-family: var(--font-display);
-  font-size: 1.625rem;
-  line-height: 1.12;
-  text-wrap: balance;
+  font-size: 1.3rem;
+  line-height: 1.2;
+  min-width: 0;
 }
 
 .city-card-state {
   color: var(--muted);
   white-space: nowrap;
+}
+
+.city-card-state abbr {
+  text-decoration: none;
 }
 
 .city-card:hover .city-card-name {
@@ -692,29 +724,22 @@ textarea:focus-visible,
   color: var(--accent-hover);
 }
 
-/* The school is how a reader recognises a college town, so it reads as a
-   subtitle rather than as incidental metadata. */
-.city-card-school {
-  color: var(--muted);
-  font-size: var(--font-sm);
-  line-height: 1.45;
-}
-
 .city-card-count {
-  display: flex;
-  align-items: baseline;
-  gap: var(--space-2);
-  margin-top: var(--space-2);
   color: var(--muted);
   font-size: var(--font-sm);
+  white-space: nowrap;
 }
 
 .city-card-number {
   font-variant-numeric: tabular-nums;
-  font-family: var(--font-display);
-  font-size: 1.5rem;
-  line-height: 1;
+  font-weight: var(--weight-medium);
   color: var(--accent);
+}
+
+/* Only in search results, when the school is why a town matched. */
+.city-card-match {
+  color: var(--muted);
+  font-size: var(--font-sm);
 }
 
 /* A town with nothing on yet stays listed, but recedes. */
@@ -1482,8 +1507,9 @@ button[aria-disabled="true"] {
    ========================================================================== */
 .metrics-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
   gap: var(--space-3);
+  max-width: 920px;
   margin-bottom: var(--space-6);
 }
 
@@ -1491,22 +1517,44 @@ button[aria-disabled="true"] {
   background: var(--surface);
   border: 1px solid var(--border);
   border-radius: var(--radius-md);
-  padding: var(--space-4);
+  padding: var(--space-3) var(--space-4);
 }
 
 .metric-value {
-  font-size: 1.6rem;
+  font-size: 1.5rem;
   font-weight: 700;
+  line-height: 1.15;
+  font-variant-numeric: tabular-nums;
 }
 
 .metric-label {
-  font-size: 0.78rem;
+  font-size: 0.85rem;
   color: var(--muted);
 }
 
 .metric-note {
   margin-top: var(--space-1);
   font-size: 0.78rem;
+  color: var(--muted);
+}
+
+.dashboard-title {
+  margin-bottom: var(--space-4);
+}
+
+.site-admin main h2 + .status-list,
+.site-admin main h2 + .dashboard-empty {
+  margin-top: var(--space-2);
+}
+
+/* An all-clear reads as a calm line on the same rule as the list it stands
+   in for, not as stray small print. */
+.dashboard-empty {
+  max-width: 920px;
+  margin-bottom: var(--space-6);
+  padding: var(--space-3) var(--space-4);
+  border: 1px dashed var(--border-strong);
+  border-radius: var(--radius-md);
   color: var(--muted);
 }
 
@@ -3970,9 +4018,6 @@ a.wf-danger, button.wf-danger {
   padding: var(--space-4);
 }
 
-.site-footer-version {
-  color: inherit;
-}
 
 /* Admin visitor log: date range switcher */
 .visitor-ranges {

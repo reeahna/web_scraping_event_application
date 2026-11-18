@@ -20,6 +20,7 @@ from app.core.report_status import report_status_label
 from app.extraction.fetch import explain_block_reason
 from app.paths import TEMPLATES_DIR
 from app.services.changelog import APP_VERSION, render_note
+from app.services.home_town import state_abbreviation
 from app.services.quality_presentation import format_percent, quality_view
 from app.services.schedule_admin import format_admin_datetime
 from app.services.seo import absolute_url
@@ -27,6 +28,9 @@ from app.services.seo import absolute_url
 templates = Jinja2Templates(directory=str(TEMPLATES_DIR))
 
 templates.env.filters["human_date"] = human_date
+templates.env.filters["state_abbr"] = state_abbreviation
+# 12345 -> "12,345" for admin counts.
+templates.env.filters["thousands"] = lambda value: f"{value or 0:,}"
 templates.env.filters["human_date_long"] = human_date_long
 templates.env.filters["human_time"] = human_time
 templates.env.filters["event_tz"] = event_time_zone

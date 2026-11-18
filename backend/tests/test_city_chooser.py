@@ -44,6 +44,7 @@ def college_towns(db_session, make_city, make_website, make_event):
 
 def test_the_home_page_asks_for_a_town(client, college_towns):
     html = client.get("/").text
+    assert "Find something worth going to." in html
     assert "What college town?" in html
     assert 'name="q"' in html
 
@@ -55,10 +56,36 @@ def test_the_home_page_is_not_an_events_listing(client, college_towns):
     assert "Lehigh Lecture" not in html
 
 
-def test_both_towns_are_offered_with_their_school(client, college_towns):
+def _directory(html):
+    found = re.search(r'<ul class="city-grid">(.*?)</ul>', html, re.S)
+    assert found, "no results list rendered"
+    return found.group(1)
+
+
+def test_the_directory_lists_town_state_and_count_but_not_schools(client, college_towns):
+    """Schools made the directory cluttered; they live in search and on the
+    town page instead."""
+    directory = _directory(client.get("/").text)
+    assert "Bloomington" in directory and ">IN</abbr>" in directory
+    assert "Bethlehem" in directory and ">PA</abbr>" in directory
+    assert "Indiana University" not in directory
+    assert "Lehigh University" not in directory
+
+
+def test_schools_are_still_searchable_and_shown_on_the_town_page(client, college_towns):
+    bloomington, _ = college_towns
     html = client.get("/").text
-    assert "Indiana University" in html
-    assert "Lehigh University" in html
+    # The typeahead's data still carries every school.
+    index = re.search(r'<script type="application/json" id="city-index">(.*?)</script>', html, re.S)
+    assert "Indiana University" in index.group(1)
+    assert "Lehigh University" in index.group(1)
+    assert "Indiana University" in client.get(f"/city/{bloomington.slug}").text
+
+
+def test_a_search_by_school_names_the_school_it_matched(client, college_towns):
+    directory = _directory(client.get("/?q=lehigh").text)
+    assert "Bethlehem" in directory
+    assert '<span class="city-card-match">Lehigh University</span>' in directory
 
 
 def test_a_town_shows_only_its_own_events(client, college_towns):
@@ -81,10 +108,9 @@ def test_search_matches_town_school_and_state(client, college_towns, term, expec
     html = client.get(f"/?q={term}").text
     # Scoped to the results: the search box echoes the term, so matching the
     # whole page would pass on the input's own value.
-    results = re.search(r'<ul class="city-grid">(.*?)</ul>', html, re.S)
-    assert results, "no results list rendered"
-    assert expected in results.group(1)
-    assert absent not in results.group(1)
+    results = _directory(html)
+    assert expected in results
+    assert absent not in results
 
 
 def test_an_unmatched_search_says_so_and_offers_a_way_back(client, college_towns):

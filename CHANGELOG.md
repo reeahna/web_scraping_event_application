@@ -28,7 +28,10 @@ lines. Lines may use `**bold**`, `` `code` `` and `[links](https://...)`.
 ## [Unreleased]
 
 ### For everyone
-- A new look for Bulletin: warm paper colours, serif headlines and calmer pages. The home page shows the towns right away as a directory, with each town's schools and how many events are coming up. (#85)
+- A simpler home page: "Find something worth going to." above a bigger town and school search, then a cleaner directory that lists each town with its state and upcoming event count. Schools still work in the search, and a search by school says which school matched. Once the list grows long, a row of letters jumps to towns by their first letter. (#86)
+- A smaller footer on one line with Suggest a town, What's new, Privacy and Terms. The version number now lives on What's new. (#86)
+- A new browser icon: the serif B from the Bulletin name, dark green on cream, with sharper sizes for tabs, phones and home screens. Shared links show a matching card. (#86)
+- A new look for Bulletin: warm paper colours, serif headlines and calmer pages. The home page shows the towns right away as a directory, with how many events are coming up in each. (#85)
 - Town pages show events on the first screen. All upcoming, Today and This weekend sit at the top as tabs, search is always there, and the other filters fold behind a **Filters** button that shows how many are on. Events are a dated list with the day set large, the time, the venue and a photo. (#85)
 - Event pages lead with what you need: the title, when, where and a button to the original listing, then the photo, the description, the details (now including the category) and sharing. The photo loads first. (#85)
 - Easier to use with a keyboard and on phones: every link, button and field shows a clear focus outline, animation stops when your device asks for less motion, buttons are bigger to tap, and nothing scrolls sideways on small screens. (#85)
@@ -39,6 +42,8 @@ lines. Lines may use `**bold**`, `` `code` `` and `[links](https://...)`.
 - Fewer listings that aren't for students: kids' and family programs, faculty and TA workshops, thesis defenses, and events in other towns (like away meets and county health checks elsewhere) no longer show. Alumni groups and networking nights in town do show. (#65)
 
 ### Admin and behind the scenes
+- After signing in, administrators land on the Dashboard. If sign-in started from a particular admin page, they go back to that page instead (only pages on this site are accepted). The Dashboard shows big numbers with thousands separators, tighter tiles and clearer "nothing here" notes. (#86)
+- Admin browser tabs read "Page | Bulletin admin", and event page titles use a colon instead of a middle dot. (#86)
 - The stylesheet's colours all go through named tokens, the fonts (DM Serif Display and DM Sans) are served from the site itself so the content security policy needs no font host, and admin pages share the new colours and focus outlines while keeping their layout. (#85)
 - New **BiblioCommons library events** pattern: public library calendars on BiblioCommons are read from the platform's events API, 100 events per page, with each event's branch or other venue, address, type and image. Library pages on the platform are recognised automatically. (#84)
 - Security check: every package the app uses was confirmed genuine, the minimum versions of Jinja2, python-multipart, Authlib, requests and Starlette were raised past releases with known security problems, the map's Leaflet files from unpkg are now checked against fixed fingerprints so a tampered copy is refused, and CI runs `pip-audit` on every change. No keys or passwords were found in the code or its history. (#83)

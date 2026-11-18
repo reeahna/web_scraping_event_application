@@ -235,3 +235,12 @@ def test_dashboard_hides_the_ai_queue_when_ai_is_off(
     make_super_admin(email="dash-noai@example.com", password="root-pass-1234")
     login("dash-noai@example.com", "root-pass-1234")
     assert "Waiting for AI labels" not in client.get("/admin").text
+
+
+def test_dashboard_counts_use_thousands_separators():
+    from app.core.templating import templates
+
+    thousands = templates.env.filters["thousands"]
+    assert thousands(12345) == "12,345"
+    assert thousands(0) == "0"
+    assert thousands(None) == "0"

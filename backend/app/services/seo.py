@@ -122,7 +122,7 @@ def event_schema(event: Event) -> dict:
 def event_page_title(event: Event) -> str:
     """The event's <title>: its name, then the town and day when known, so a
     search result says where and when before anyone clicks.
-    "Jazz Night · Ann Arbor, Aug 18". The site name is added by the template."""
+    "Jazz Night: Ann Arbor, Aug 18". The site name is added by the template."""
     where_when = []
     if event.city is not None:
         where_when.append(event.city.name)
@@ -131,7 +131,7 @@ def event_page_title(event: Event) -> str:
         # By hand rather than strftime("%-d"), which raises on Windows.
         where_when.append(f"{day.strftime('%b')} {day.day}")
     title = " ".join(event.title.split())
-    return f"{title} · {', '.join(where_when)}" if where_when else title
+    return f"{title}: {', '.join(where_when)}" if where_when else title
 
 
 def event_meta_description(event: Event) -> str:
