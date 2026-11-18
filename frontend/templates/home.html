@@ -21,120 +21,150 @@
 {% block content %}
 {% set sep = "&" if query_string else "" %}
 {% set map_sep = "&" if map_query_string else "" %}
+{% set view_suffix = "?view=map" if filters.view == "map" else "" %}
 <section class="hero">
   <div class="hero-inner">
-    <h1>{{ town.heading }}</h1>
-    <p class="hero-subtext">
-      {% if school_names %}{{ school_names }} · {% endif %}
-      Everything on in town and on campus.
-    </p>
-    {#
-      One plain sentence saying what this page covers. It is written for
-      readers, and it is also the text search engines match "events in
-      <town>" against, so it names the town, its state and its schools.
-    #}
-    <p class="hero-summary">
-      {% if town.upcoming %}{{ town.upcoming }} upcoming event{{ "s" if town.upcoming != 1 }} in {{ town.place }}{% if sources %}, gathered from {{ sources | length }} local source{{ "s" if sources | length != 1 }}{% endif %}{% if town.weekend_count %}, with {{ town.weekend_count }} this weekend{% endif %}.{% else %}Upcoming events in {{ town.place }} appear here as soon as local venues and campus calendars list them.{% endif %}
-    </p>
+    <p class="hero-back"><a href="/">All towns</a></p>
+    <div class="hero-text">
+      <h1>{{ town.heading }}</h1>
+      {% if school_names %}<p class="hero-subtext">{{ school_names }}</p>{% endif %}
+      {#
+        One plain sentence saying what this page covers. It is written for
+        readers, and it is also the text search engines match "events in
+        <town>" against, so it names the town, its state and its schools.
+      #}
+      <p class="hero-summary">
+        {% if town.upcoming %}{{ town.upcoming }} upcoming event{{ "s" if town.upcoming != 1 }} in {{ town.place }}{% if sources %}, gathered from {{ sources | length }} local source{{ "s" if sources | length != 1 }}{% endif %}{% if town.weekend_count %}, with {{ town.weekend_count }} this weekend{% endif %}.{% else %}Upcoming events in {{ town.place }} appear here as soon as local venues and campus calendars list them.{% endif %}
+      </p>
+    </div>
     <p class="hero-switch">
-      <a href="/">Choose a different town</a>
-      · <a href="{{ calendar_url }}" title="Add this town's events to Google Calendar, Apple Calendar or Outlook">Subscribe in your calendar</a>
+      <a href="{{ calendar_url }}" title="Add this town's events to Google Calendar, Apple Calendar or Outlook">Subscribe in your calendar</a>
     </p>
   </div>
 </section>
 
-<div class="page-container">
-  <section class="filter-panel" aria-label="Filter events">
+<div class="page-container town-page">
+  {#
+    Dates first: they are what most readers came to pick. Real paths rather
+    than ?preset=, so "this weekend" is a page search engines can list on its
+    own. ?preset= still works for old links.
+  #}
+  <div class="town-toolbar">
+    <nav class="date-tabs" aria-label="Choose dates">
+      <a class="filter-preset{% if not town.window and not filters.preset %} filter-preset-active{% endif %}" href="{{ town.path }}{{ view_suffix }}"{% if not town.window %} aria-current="page"{% endif %}>All upcoming</a>
+      <a class="filter-preset{% if filters.preset == 'today' %} filter-preset-active{% endif %}" href="{{ town.path }}/today{{ view_suffix }}"{% if town.window == 'today' %} aria-current="page"{% endif %}>Today</a>
+      <a class="filter-preset{% if filters.preset == 'weekend' %} filter-preset-active{% endif %}" href="{{ town.path }}/this-weekend{{ view_suffix }}"{% if town.window == 'this-weekend' %} aria-current="page"{% endif %}>This weekend</a>
+    </nav>
+    <div class="view-toggle" role="group" aria-label="Choose list or map view">
+      <a class="view-toggle-option{% if filters.view != 'map' %} view-toggle-active{% endif %}" href="{{ base_path }}?{{ query_string }}{{ sep }}view=list"{% if filters.view != 'map' %} aria-current="true"{% endif %}>List</a>
+      <a class="view-toggle-option{% if filters.view == 'map' %} view-toggle-active{% endif %}" href="{{ base_path }}?{{ query_string }}{{ sep }}view=map"{% if filters.view == 'map' %} aria-current="true"{% endif %}>Map</a>
+    </div>
+  </div>
+
+  {# How many filters beyond the date tabs are narrowing the list. A window
+     page pins its own dates, so those do not count as the reader's. #}
+  {% set hidden_count = filters.exclude_category_ids | length + filters.exclude_source_ids | length %}
+  {% set active_filters = [
+       filters.q, filters.category_id, filters.source_id, filters.recurrence,
+       (filters.date_from if not town.window else ""),
+       (filters.date_to if not town.window else ""),
+       filters.upcoming_only
+     ] | select | list | length + hidden_count %}
+  <section class="filter-panel" aria-label="Search and filter events">
     <form method="get" action="{{ town.path }}" class="filter-form" role="search">
-      <div class="filter-field filter-field-search">
-        <label for="q">Search</label>
-        <input type="search" id="q" name="q" value="{{ filters.q }}" placeholder="Title or venue" />
+      <div class="town-search">
+        <div class="filter-field filter-field-search">
+          <label for="q" class="sr-only">Search events</label>
+          <input type="search" id="q" name="q" value="{{ filters.q }}" placeholder="Search by title or venue" />
+        </div>
+        <button type="submit" class="filter-submit">Search</button>
+        {#
+          Every other filter, folded away until asked for. A <details> opens
+          with no JavaScript, and it opens on its own when a filter beyond the
+          search is in use, so nothing applied is ever out of sight.
+        #}
       </div>
-      <div class="filter-field">
-        <label for="category_id">Category</label>
-        <select id="category_id" name="category_id">
-          <option value="">All categories</option>
-          {% for category in categories %}
-          <option value="{{ category.id }}"{% if filters.category_id == category.id %} selected{% endif %}>{{ category.name }}</option>
-          {% endfor %}
-        </select>
-      </div>
-      <div class="filter-field">
-        <label for="source_id">Source</label>
-        <select id="source_id" name="source_id">
-          <option value="">All sources</option>
-          {% for source in sources %}
-          <option value="{{ source.id }}"{% if filters.source_id == source.id %} selected{% endif %}>{{ source.source_display_name or source.name }}</option>
-          {% endfor %}
-        </select>
-      </div>
-      <div class="filter-field">
-        <label for="recurrence">Type</label>
-        <select id="recurrence" name="recurrence">
-          <option value="">All events</option>
-          <option value="single"{% if filters.recurrence == "single" %} selected{% endif %}>One-time</option>
-          <option value="recurring"{% if filters.recurrence == "recurring" %} selected{% endif %}>Recurring</option>
-        </select>
-      </div>
-      <div class="filter-field">
-        <label for="date_from">From</label>
-        <input type="date" id="date_from" name="date_from" value="{{ filters.date_from }}" />
-      </div>
-      <div class="filter-field">
-        <label for="date_to">To</label>
-        <input type="date" id="date_to" name="date_to" value="{{ filters.date_to }}" />
-      </div>
-      <div class="filter-field filter-field-checkbox">
-        <label class="checkbox-label" for="upcoming_only">
-          <input type="checkbox" id="upcoming_only" name="upcoming_only" value="1"{% if filters.upcoming_only %} checked{% endif %} />
-          Upcoming only
-        </label>
-      </div>
-      {% set hidden_count = filters.exclude_category_ids | length + filters.exclude_source_ids | length %}
-      <details class="filter-exclude"{% if hidden_count %} open{% endif %}>
-        <summary>Hide categories or sources{% if hidden_count %} <span class="badge badge-muted">{{ hidden_count }} hidden</span>{% endif %}</summary>
-        <div class="filter-exclude-groups">
-          <fieldset class="filter-exclude-group">
-            <legend>Hide these categories</legend>
-            {% for category in categories %}
-            <label class="checkbox-label">
-              <input type="checkbox" name="exclude_category" value="{{ category.id }}"{% if category.id in filters.exclude_category_ids %} checked{% endif %} />
-              {{ category.name }}
-            </label>
-            {% endfor %}
-          </fieldset>
-          {% if sources %}
-          <fieldset class="filter-exclude-group">
-            <legend>Hide these sources</legend>
-            {% for source in sources %}
-            <label class="checkbox-label">
-              <input type="checkbox" name="exclude_source" value="{{ source.id }}"{% if source.id in filters.exclude_source_ids %} checked{% endif %} />
-              {{ source.source_display_name or source.name }}
-            </label>
-            {% endfor %}
-          </fieldset>
-          {% endif %}
+      <details class="filter-more"{% if active_filters - (1 if filters.q else 0) > 0 %} open{% endif %}>
+        <summary class="filter-more-toggle">
+          Filters{% if active_filters %} <span class="filter-count">{{ active_filters }}<span class="sr-only"> active</span></span>{% endif %}
+        </summary>
+        <div class="filter-more-body">
+          <div class="filter-fields">
+            <div class="filter-field">
+              <label for="category_id">Category</label>
+              <select id="category_id" name="category_id">
+                <option value="">All categories</option>
+                {% for category in categories %}
+                <option value="{{ category.id }}"{% if filters.category_id == category.id %} selected{% endif %}>{{ category.name }}</option>
+                {% endfor %}
+              </select>
+            </div>
+            <div class="filter-field">
+              <label for="source_id">Source</label>
+              <select id="source_id" name="source_id">
+                <option value="">All sources</option>
+                {% for source in sources %}
+                <option value="{{ source.id }}"{% if filters.source_id == source.id %} selected{% endif %}>{{ source.source_display_name or source.name }}</option>
+                {% endfor %}
+              </select>
+            </div>
+            <div class="filter-field">
+              <label for="recurrence">Type</label>
+              <select id="recurrence" name="recurrence">
+                <option value="">All events</option>
+                <option value="single"{% if filters.recurrence == "single" %} selected{% endif %}>One-time</option>
+                <option value="recurring"{% if filters.recurrence == "recurring" %} selected{% endif %}>Recurring</option>
+              </select>
+            </div>
+            <div class="filter-field">
+              <label for="date_from">From</label>
+              <input type="date" id="date_from" name="date_from" value="{{ filters.date_from }}" />
+            </div>
+            <div class="filter-field">
+              <label for="date_to">To</label>
+              <input type="date" id="date_to" name="date_to" value="{{ filters.date_to }}" />
+            </div>
+            <div class="filter-field filter-field-checkbox">
+              <label class="checkbox-label" for="upcoming_only">
+                <input type="checkbox" id="upcoming_only" name="upcoming_only" value="1"{% if filters.upcoming_only %} checked{% endif %} />
+                Upcoming only
+              </label>
+            </div>
+          </div>
+          <details class="filter-exclude"{% if hidden_count %} open{% endif %}>
+            <summary>Hide categories or sources{% if hidden_count %} <span class="badge badge-muted">{{ hidden_count }} hidden</span>{% endif %}</summary>
+            <div class="filter-exclude-groups">
+              <fieldset class="filter-exclude-group">
+                <legend>Hide these categories</legend>
+                {% for category in categories %}
+                <label class="checkbox-label">
+                  <input type="checkbox" name="exclude_category" value="{{ category.id }}"{% if category.id in filters.exclude_category_ids %} checked{% endif %} />
+                  {{ category.name }}
+                </label>
+                {% endfor %}
+              </fieldset>
+              {% if sources %}
+              <fieldset class="filter-exclude-group">
+                <legend>Hide these sources</legend>
+                {% for source in sources %}
+                <label class="checkbox-label">
+                  <input type="checkbox" name="exclude_source" value="{{ source.id }}"{% if source.id in filters.exclude_source_ids %} checked{% endif %} />
+                  {{ source.source_display_name or source.name }}
+                </label>
+                {% endfor %}
+              </fieldset>
+              {% endif %}
+            </div>
+          </details>
+          <div class="filter-actions">
+            <button type="submit">Apply filters</button>
+            <a href="{{ town.path }}" class="filter-clear-link">Clear filters</a>
+          </div>
         </div>
       </details>
       {% if filters.view == "map" %}<input type="hidden" name="view" value="map" />{% endif %}
-      <div class="filter-actions">
-        <button type="submit">Filter</button>
-        <a href="{{ town.path }}" class="filter-clear-link">Clear filters</a>
-      </div>
     </form>
-    {# Real paths rather than ?preset=, so "this weekend" is a page search
-       engines can list on its own. ?preset= still works for old links. #}
-    <div class="filter-presets" role="group" aria-label="Quick date filters">
-      <a class="filter-preset{% if filters.preset == 'today' %} filter-preset-active{% endif %}" href="{{ town.path }}/today{% if filters.view == 'map' %}?view=map{% endif %}"{% if town.window == 'today' %} aria-current="page"{% endif %}>Today</a>
-      <a class="filter-preset{% if filters.preset == 'weekend' %} filter-preset-active{% endif %}" href="{{ town.path }}/this-weekend{% if filters.view == 'map' %}?view=map{% endif %}"{% if town.window == 'this-weekend' %} aria-current="page"{% endif %}>This weekend</a>
-      {% if town.window %}<a class="filter-preset" href="{{ town.path }}{% if filters.view == 'map' %}?view=map{% endif %}">All upcoming</a>{% endif %}
-    </div>
   </section>
-
-  <div class="view-toggle" role="group" aria-label="Choose list or map view">
-    <a class="view-toggle-option{% if filters.view != 'map' %} view-toggle-active{% endif %}" href="{{ base_path }}?{{ query_string }}{{ sep }}view=list"{% if filters.view != 'map' %} aria-current="true"{% endif %}>List</a>
-    <a class="view-toggle-option{% if filters.view == 'map' %} view-toggle-active{% endif %}" href="{{ base_path }}?{{ query_string }}{{ sep }}view=map"{% if filters.view == 'map' %} aria-current="true"{% endif %}>Map</a>
-  </div>
 
   {% if filters.view == "map" %}
   <section class="map-section" aria-label="Map of events">
@@ -145,53 +175,73 @@
   </section>
   {% endif %}
 
-  <h2 class="results-heading" id="results">{{ total }} event{{ 's' if total != 1 else '' }}</h2>
+  <div class="results-head">
+    <h2 class="results-heading" id="results">{{ total }} event{{ 's' if total != 1 else '' }}</h2>
+    {% if active_filters %}<a href="{{ town.path }}" class="filter-clear-link">Clear filters</a>{% endif %}
+  </div>
   {% if events %}
-  <div class="event-grid">
+  <ol class="event-grid" aria-labelledby="results">
     {% for event in events %}
+    {% set ongoing = event.start_date and event.end_date and event.start_date < today and event.end_date >= today %}
+    {% set shown_date = event.end_date if ongoing else event.start_date %}
+    <li class="event-row">
     <a class="event-card" href="/events/{{ event.id }}">
+      {# The date, set like a newspaper listing so a column of events scans by
+         day. A long-running event is shown by when it ends instead of a start
+         date years ago. #}
+      <span class="event-card-when" aria-hidden="true">
+        {% if shown_date %}
+        <span class="event-card-day">{{ "Until" if ongoing else shown_date.strftime("%a") }}</span>
+        <span class="event-card-num">{{ shown_date.day }}</span>
+        <span class="event-card-month">{{ shown_date.strftime("%b") }}{% if shown_date.year != today.year %} {{ shown_date.year }}{% endif %}</span>
+        {% else %}
+        <span class="event-card-day">Date</span>
+        <span class="event-card-num">TBD</span>
+        {% endif %}
+      </span>
+      <span class="event-card-body">
+        <h3>{{ event.title }}</h3>
+        <span class="event-card-meta">
+          <span class="event-card-date"><span class="sr-only">{{ event.start_date | human_date }}{% if event.end_date and event.end_date != event.start_date %} to {{ event.end_date | human_date }}{% endif %}{% if event.start_time %}, {% endif %}</span>{% if event.start_time %}{{ event.start_time | human_time }}{% set tz = event | event_tz %}{% if tz %} <span class="event-tz">{{ tz }}</span>{% endif %}{% elif ongoing %}Through {{ event.end_date | human_date }}{% else %}Time TBD{% endif %}{% if ongoing and event.start_time %}, through {{ event.end_date | human_date }}{% elif event.end_date and event.end_date != event.start_date and not ongoing %}, until {{ event.end_date | human_date }}{% endif %}</span>
+          <span class="event-card-place"><span>{{ event.public_venue or 'Venue TBD' }}</span>
+          {#- The town is named once: here, unless the venue already names it. -#}
+          {% if event.city and event.city.name not in (event.public_venue or '') %}<span>{{ event.city.name }}</span>{% endif %}</span>
+        </span>
+        <span class="event-card-footer">
+          {% if event.effective_category %}<span class="event-card-category">{{ event.effective_category.name }}</span>{% endif %}
+          {% if event.recurrence_parent_id %}<span class="event-card-recurring">Repeats</span>{% endif %}
+          <span class="event-card-source">From {{ event.source }}</span>
+        </span>
+      </span>
       {% if event.image_url %}
-      <div class="event-card-image">
-        <img src="{{ event.image_url }}" alt="" loading="lazy" />
-      </div>
+      <span class="event-card-image">
+        <img src="{{ event.image_url }}" alt="" loading="lazy" width="240" height="180" />
+      </span>
       {% else %}
       {% set ph = category_photo(event) %}
       {% if ph %}
-      <div class="event-card-image event-card-image-photo">
-        <img src="{{ ph.thumb_url or ph.image_url }}" alt="" loading="lazy" />
+      <span class="event-card-image event-card-image-photo">
+        <img src="{{ ph.thumb_url or ph.image_url }}" alt="" loading="lazy" width="240" height="180" />
         <span class="photo-credit">{{ ph.photographer }} / Unsplash</span>
-      </div>
+      </span>
       {% elif fallback_image_url %}
-      <div class="event-card-image">
-        <img src="{{ fallback_image_url }}" alt="" loading="lazy" />
-      </div>
+      <span class="event-card-image">
+        <img src="{{ fallback_image_url }}" alt="" loading="lazy" width="240" height="180" />
+      </span>
       {% else %}
-      <div class="event-card-image event-card-image-fallback ph-{{ event.id % 8 }}" aria-hidden="true">
-        <svg viewBox="0 0 24 24" width="36" height="36" fill="none" stroke="currentColor" stroke-width="1.5">
-          <rect x="3" y="5" width="18" height="16" rx="2" />
+      <span class="event-card-image event-card-image-fallback" aria-hidden="true">
+        <svg viewBox="0 0 24 24" width="28" height="28" fill="none" stroke="currentColor" stroke-width="1.25">
+          <rect x="3" y="5" width="18" height="16" rx="1" />
           <path d="M3 9h18" />
           <path d="M8 3v4M16 3v4" />
         </svg>
-      </div>
+      </span>
       {% endif %}
       {% endif %}
-      <div class="event-card-body">
-        {% if event.effective_category %}<span class="badge badge-pending">{{ event.effective_category.name }}</span>{% endif %}
-        <h3>{{ event.title }}</h3>
-        <div class="event-card-meta">
-          <span class="event-card-date">{{ event.start_date | human_date }}{% if event.start_time %} · {{ event.start_time | human_time }}{% set tz = event | event_tz %}{% if tz %} <span class="event-tz">{{ tz }}</span>{% endif %}{% endif %}{% if event.end_date and event.end_date != event.start_date %} – {{ event.end_date | human_date }}{% endif %}{% if event.recurrence_parent_id %} <span class="badge badge-muted event-card-recurring">recurring</span>{% endif %}</span>
-          <span>{{ event.public_venue or 'Venue TBD' }}</span>
-          {# The town is named once: here, unless the venue already names it. #}
-          {% if event.city and event.city.name not in (event.public_venue or '') %}<span>{{ event.city.name }}</span>{% endif %}
-        </div>
-        <div class="event-card-footer">
-          <span class="event-card-source">{{ event.source }}</span>
-          <span class="event-card-cta" aria-hidden="true">View event &rarr;</span>
-        </div>
-      </div>
     </a>
+    </li>
     {% endfor %}
-  </div>
+  </ol>
 
   {{ paginate(
        page, per_page, total,
@@ -200,11 +250,6 @@
      ) }}
   {% else %}
   <div class="empty-state">
-    <svg viewBox="0 0 24 24" width="48" height="48" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true">
-      <rect x="3" y="5" width="18" height="16" rx="2" />
-      <path d="M3 9h18" />
-      <path d="M8 3v4M16 3v4" />
-    </svg>
     <h3>No events match these filters</h3>
     <p>Try widening your date range or clearing filters to see everything upcoming.</p>
     {% if town.window %}
@@ -222,7 +267,7 @@
       {% for near in town.nearby %}
       <li>
         <a href="/city/{{ near.city.slug }}">{{ near.city.name }}{% if near.city.state_or_region %}, {{ near.city.state_or_region }}{% endif %}</a>
-        <span class="nearby-towns-meta">{{ near.miles }} mi · {{ near.count }} upcoming</span>
+        <span class="nearby-towns-meta">{{ near.miles }} miles away, {{ near.count }} upcoming</span>
       </li>
       {% endfor %}
     </ul>

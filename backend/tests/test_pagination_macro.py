@@ -35,7 +35,8 @@ def _control_text(html: str) -> str:
     nav = re.search(r'<nav class="pagination".*?</nav>', html, re.S).group(0)
     controls = re.search(r'<div class="pagination-controls">.*?</div>', nav, re.S).group(0)
     stripped = re.sub(r"<[^>]+>", " ", controls)
-    return " ".join(stripped.split()).replace("&larr;", "<").replace("&rarr;", ">")
+    text = " ".join(stripped.split())
+    return text.replace("Previous page", "<").replace("Next page", ">")
 
 
 @pytest.mark.parametrize(
@@ -61,7 +62,7 @@ def test_range_readout_counts_items_not_pages(paged_events, page, first, last):
 
 
 def test_arrows_are_disabled_not_removed_at_the_ends(paged_events):
-    """If the arrows vanished at the ends, the numbers would shift sideways
+    """If Previous and Next vanished at the ends, the numbers would shift sideways
     exactly when the reader lands on the first or last page."""
     for page in (1, 8):
         html = paged_events.get(f"/admin/events?page={page}").text

@@ -1,6 +1,6 @@
 {% extends "base.html" %}
 
-{% block title %}{{ page_title }} — {{ site_name }}{% endblock %}
+{% block title %}{{ page_title }} | {{ site_name }}{% endblock %}
 {% block meta_description %}{{ meta_description }}{% endblock %}
 {% block og_type %}article{% endblock %}
 {% block og_image %}
@@ -28,45 +28,27 @@
   {# Back to the town this event belongs to: the site root is the town chooser,
      so "Back to events" pointing there sent readers somewhere else. #}
   {% if event.city %}
-  <p class="breadcrumb"><a href="/city/{{ event.city.slug }}"><span aria-hidden="true">&laquo;</span> Back to {{ event.city.name }} events</a></p>
+  <p class="breadcrumb"><a href="/city/{{ event.city.slug }}">Back to {{ event.city.name }} events</a></p>
   {% else %}
-  <p class="breadcrumb"><a href="/"><span aria-hidden="true">&laquo;</span> Find a town</a></p>
+  <p class="breadcrumb"><a href="/">Find a town</a></p>
   {% endif %}
 
-  <article>
-    {% if event.image_url %}
-    <div class="event-detail-image">
-      <img src="{{ event.image_url }}" alt="" loading="lazy" />
-    </div>
-    {% else %}
-    {% set ph = category_photo(event) %}
-    {% if ph %}
-    <div class="event-detail-image event-detail-image-photo">
-      <img src="{{ ph.image_url }}" alt="" loading="lazy" />
-      <span class="photo-credit">Photo by
-        <a href="{{ ph.photographer_url }}" target="_blank" rel="noopener nofollow">{{ ph.photographer }}</a>
-        on <a href="{{ ph.source_url }}" target="_blank" rel="noopener nofollow">Unsplash</a></span>
-    </div>
-    {% else %}
-    <div class="event-detail-image event-detail-image-fallback ph-{{ event.id % 8 }}" aria-hidden="true">
-      <svg viewBox="0 0 24 24" width="56" height="56" fill="none" stroke="currentColor" stroke-width="1.5">
-        <rect x="3" y="5" width="18" height="16" rx="2" />
-        <path d="M3 9h18" />
-        <path d="M8 3v4M16 3v4" />
-      </svg>
-    </div>
-    {% endif %}
-    {% endif %}
-
+  <article class="event-feature">
     <header class="event-detail-header">
-      {% if event.effective_category %}<span class="badge badge-pending">{{ event.effective_category.name }}</span>{% endif %}
       <h1>{{ event.title }}</h1>
       <p class="event-detail-datetime">
-        {{ event.start_date | human_date_long }}{% if event.end_date and event.end_date != event.start_date %} &ndash; {{ event.end_date | human_date_long }}{% endif %}
-        {% if event.start_time %}<br />{{ event.start_time | human_time }}{% if event.end_time %} &ndash; {{ event.end_time | human_time }}{% endif %}{% set tz = event | event_tz %}{% if tz %} <span class="event-tz">{{ tz }}</span>{% endif %}{% endif %}
+        <span class="event-detail-date">{{ event.start_date | human_date_long }}{% if event.end_date and event.end_date != event.start_date %} to {{ event.end_date | human_date_long }}{% endif %}</span>
+        {% if event.start_time %}<span class="event-detail-time">{{ event.start_time | human_time }}{% if event.end_time %} to {{ event.end_time | human_time }}{% endif %}{% set tz = event | event_tz %}{% if tz %} <span class="event-tz">{{ tz }}</span>{% endif %}</span>{% endif %}
       </p>
-      {% if current_user %}
+      <p class="event-detail-venue">
+        <span>{{ event.public_venue or 'Venue TBD' }}</span>{% if event.public_address %}<span class="event-detail-address">{{ event.public_address }}</span>{% endif %}
+      </p>
+
       <div class="event-detail-actions">
+        <a href="{{ event.canonical_url }}" rel="noopener noreferrer" target="_blank" class="button-primary external-link">
+          View original listing<span class="sr-only"> (opens in a new tab)</span>
+        </a>
+        {% if current_user %}
         {% if is_saved %}
         <form method="post" action="/account/unsave/{{ event.id }}" class="inline-form">
           <input type="hidden" name="csrf_token" value="{{ csrf_token }}" />
@@ -94,34 +76,38 @@
           {% endif %}
         </form>
         {% endif %}
+        {% endif %}
       </div>
-      {% else %}
+      {% if not current_user %}
       <p class="event-detail-signin"><a href="/auth/login?next={{ request.url.path|urlencode }}">Log in</a> to save events and follow cities.</p>
       {% endif %}
-
-      {#
-        Sharing works for everyone, signed in or not. The platform buttons are
-        plain links (no third-party scripts). "Share…" (the phone's own share
-        sheet) and "Copy link" need JavaScript, so they start hidden and
-        static/js/event-share.js reveals them where the browser supports them.
-      #}
-      <div class="event-share" role="group" aria-labelledby="share-heading"
-           data-share-url="{{ canonical_url }}" data-share-title="{{ event.title }}" data-share-text="{{ share_text }}">
-        <span id="share-heading" class="event-share-label">Share</span>
-        <button type="button" class="share-pill share-native" hidden>
-          <svg aria-hidden="true" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 12v7a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-7"/><path d="M16 6l-4-4-4 4"/><path d="M12 2v13"/></svg>
-          Share&hellip;
-        </button>
-        <button type="button" class="share-pill share-copy" hidden>
-          <svg aria-hidden="true" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7.07 0l3-3a5 5 0 0 0-7.07-7.07l-1.5 1.5"/><path d="M14 11a5 5 0 0 0-7.07 0l-3 3a5 5 0 0 0 7.07 7.07l1.5-1.5"/></svg>
-          <span class="share-copy-label">Copy link</span>
-        </button>
-        {% for link in share_links %}
-        <a class="share-pill share-{{ link.key }}" href="{{ link.href }}"{% if link.key != 'email' %} target="_blank" rel="noopener noreferrer"{% endif %}>{{ link.label }}{% if link.key != 'email' %}<span class="sr-only"> (opens in a new tab)</span>{% endif %}</a>
-        {% endfor %}
-        <span class="share-status sr-only" role="status" aria-live="polite"></span>
-      </div>
     </header>
+
+    {# The main picture is the largest thing on the first screen, so it loads
+       first rather than lazily, and its box is sized before it arrives. #}
+    {% if event.image_url %}
+    <div class="event-detail-image">
+      <img src="{{ event.image_url }}" alt="" fetchpriority="high" decoding="async" width="1200" height="800" />
+    </div>
+    {% else %}
+    {% set ph = category_photo(event) %}
+    {% if ph %}
+    <div class="event-detail-image event-detail-image-photo">
+      <img src="{{ ph.image_url }}" alt="" fetchpriority="high" decoding="async" width="1200" height="800" />
+      <span class="photo-credit">Photo by
+        <a href="{{ ph.photographer_url }}" target="_blank" rel="noopener nofollow">{{ ph.photographer }}</a>
+        on <a href="{{ ph.source_url }}" target="_blank" rel="noopener nofollow">Unsplash</a></span>
+    </div>
+    {% else %}
+    <div class="event-detail-image event-detail-image-fallback" aria-hidden="true">
+      <svg viewBox="0 0 24 24" width="48" height="48" fill="none" stroke="currentColor" stroke-width="1.25">
+        <rect x="3" y="5" width="18" height="16" rx="1" />
+        <path d="M3 9h18" />
+        <path d="M8 3v4M16 3v4" />
+      </svg>
+    </div>
+    {% endif %}
+    {% endif %}
 
     <div class="event-detail-grid">
       <div class="event-detail-main">
@@ -130,15 +116,32 @@
           <h2 id="about-heading">About this event</h2>
           <p class="event-detail-description">{{ event.description }}</p>
         </section>
+        {% else %}
+        <p class="event-detail-description event-detail-nodescription">The source did not include a description. The original listing has the full details.</p>
         {% endif %}
 
-        <p>
-          <a href="{{ event.canonical_url }}" rel="noopener noreferrer" target="_blank" class="external-link">
-            View original listing
-            <span aria-hidden="true">&#8599;</span>
-            <span class="sr-only">(opens in a new tab)</span>
-          </a>
-        </p>
+        {#
+          Sharing works for everyone, signed in or not. The platform buttons are
+          plain links (no third-party scripts). "Share…" (the phone's own share
+          sheet) and "Copy link" need JavaScript, so they start hidden and
+          static/js/event-share.js reveals them where the browser supports them.
+        #}
+        <div class="event-share" role="group" aria-labelledby="share-heading"
+             data-share-url="{{ canonical_url }}" data-share-title="{{ event.title }}" data-share-text="{{ share_text }}">
+          <span id="share-heading" class="event-share-label">Share this event</span>
+          <button type="button" class="share-pill share-native" hidden>
+            <svg aria-hidden="true" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 12v7a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-7"/><path d="M16 6l-4-4-4 4"/><path d="M12 2v13"/></svg>
+            Share&hellip;
+          </button>
+          <button type="button" class="share-pill share-copy" hidden>
+            <svg aria-hidden="true" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7.07 0l3-3a5 5 0 0 0-7.07-7.07l-1.5 1.5"/><path d="M14 11a5 5 0 0 0-7.07 0l-3 3a5 5 0 0 0 7.07 7.07l1.5-1.5"/></svg>
+            <span class="share-copy-label">Copy link</span>
+          </button>
+          {% for link in share_links %}
+          <a class="share-pill share-{{ link.key }}" href="{{ link.href }}"{% if link.key != 'email' %} target="_blank" rel="noopener noreferrer"{% endif %}>{{ link.label }}{% if link.key != 'email' %}<span class="sr-only"> (opens in a new tab)</span>{% endif %}</a>
+          {% endfor %}
+          <span class="share-status sr-only" role="status" aria-live="polite"></span>
+        </div>
       </div>
 
       <section class="event-detail-side" aria-labelledby="details-heading">
@@ -156,8 +159,20 @@
           {% endif %}
           <div>
             <dt>City</dt>
-            <dd>{{ event.city.name if event.city else '—' }}</dd>
+            <dd>{{ event.city.name if event.city else 'Not listed' }}</dd>
           </div>
+          {% if event.effective_category %}
+          <div>
+            <dt>Category</dt>
+            <dd>{{ event.effective_category.name }}</dd>
+          </div>
+          {% endif %}
+          {% if event.recurrence_parent_id %}
+          <div>
+            <dt>Schedule</dt>
+            <dd>Repeats</dd>
+          </div>
+          {% endif %}
           <div>
             <dt>Source</dt>
             <dd>{{ event.source }}</dd>

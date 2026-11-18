@@ -137,6 +137,6 @@ def test_counts_match_what_the_town_page_would_show(client, college_towns):
     bloomington, _ = college_towns
     chooser = client.get("/").text
     card = re.search(
-        r"Bloomington.*?(\d+) upcoming event", chooser, re.S
+        r"Bloomington.*?(\d+)(?:</span>)? upcoming event", chooser, re.S
     ).group(1)
     assert card == "1"

@@ -9,7 +9,7 @@
     <h2 id="display-name-heading">Display name</h2>
 
     <div id="display-name-readonly" class="display-name-readonly"{% if edit_mode %} hidden{% endif %}>
-      <span id="display-name-text">{{ current_user.full_name or "—" }}</span>
+      <span id="display-name-text">{{ current_user.full_name or "Not set" }}</span>
       <form method="get" action="/account" class="inline-form" id="display-name-edit-request">
         <button type="submit" name="edit" value="1" class="edit-icon-button"
                 aria-label="Edit display name" title="Edit display name">
@@ -43,7 +43,7 @@
       <tr><th>Email</th><td>{{ current_user.email }}</td></tr>
       <tr>
         <th>Signs in with</th>
-        <td>{{ sign_in_providers | join(", ") if sign_in_providers else "—" }}</td>
+        <td>{{ sign_in_providers | join(", ") if sign_in_providers else "None" }}</td>
       </tr>
       <tr>
         <th>Role</th>

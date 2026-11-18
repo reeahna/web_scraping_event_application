@@ -2,7 +2,7 @@
   Windowed numbered pagination, shared by the admin lists and the public event
   list.
 
-  `base_url` must be a string that `page=N` can be appended to directly — it
+  `base_url` must be a string that `page=N` can be appended to directly: it
   already carries the current filters and ends in "?" or "&", so paging never
   drops what the reader filtered down to. `suffix` is appended after the page
   number for anything that must stay last (e.g. "&view=map").
@@ -10,8 +10,8 @@
   Only a window of pages is printed: always the first and last, plus `window`
   either side of the current page, with an ellipsis across any gap. That caps
   the control at nine slots, so it is the same width on page 1 as on page 137
-  and nothing shifts under the pointer as you click through. The arrows are
-  always rendered — disabled at the ends rather than removed, for the same
+  and nothing shifts under the pointer as you click through. Previous and Next are
+  always rendered, disabled at the ends rather than removed, for the same
   reason.
 #}
 {% macro paginate(page, per_page, total, base_url, suffix="", window=2) %}
@@ -36,9 +36,9 @@
   </p>
   <div class="pagination-controls">
     {% if page > 1 %}
-    <a class="pagination-step" href="{{ base_url }}page={{ page - 1 }}{{ suffix }}" rel="prev" aria-label="Previous page">&larr;</a>
+    <a class="pagination-step" href="{{ base_url }}page={{ page - 1 }}{{ suffix }}" rel="prev">Previous<span class="sr-only"> page</span></a>
     {% else %}
-    <span class="pagination-step is-disabled" aria-disabled="true" aria-label="Previous page">&larr;</span>
+    <span class="pagination-step is-disabled" aria-disabled="true">Previous<span class="sr-only"> page</span></span>
     {% endif %}
 
     {% for slot in slots %}
@@ -52,9 +52,9 @@
     {% endfor %}
 
     {% if page < total_pages %}
-    <a class="pagination-step" href="{{ base_url }}page={{ page + 1 }}{{ suffix }}" rel="next" aria-label="Next page">&rarr;</a>
+    <a class="pagination-step" href="{{ base_url }}page={{ page + 1 }}{{ suffix }}" rel="next">Next<span class="sr-only"> page</span></a>
     {% else %}
-    <span class="pagination-step is-disabled" aria-disabled="true" aria-label="Next page">&rarr;</span>
+    <span class="pagination-step is-disabled" aria-disabled="true">Next<span class="sr-only"> page</span></span>
     {% endif %}
   </div>
 </nav>
