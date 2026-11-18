@@ -11,11 +11,12 @@ not as one generic message.
 from __future__ import annotations
 
 import json
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from typing import Any
 
 from pydantic import ValidationError
 
+from app.core.safe_regex import validate_safe_regex
 from app.schemas.extraction import SiteConfiguration
 
 # Fields commonly required across patterns; rendered as checkboxes rather
@@ -37,6 +38,47 @@ _SCOPED_JSON_FIELDS: tuple[str, ...] = (
     "category_mappings",
     "exclusion_rules",
     "geographic_filters",
+    "query_params",
+)
+
+
+# Patterns whose source is an API endpoint rather than a listing page.
+API_ENDPOINT_PATTERNS: tuple[str, ...] = ("wordpress_rest", "the_events_calendar", "livewhale_json")
+
+
+def shown_fields(form: ConfigFormInput) -> frozenset[str]:
+    """The optional form fields the configure page renders for `form`. The
+    template and the save path both use this, so a field the page did not show
+    keeps its saved value instead of being cleared by its blank default."""
+    pattern = form.pattern_name
+    shown = set()
+    if pattern in API_ENDPOINT_PATTERNS or form.api_endpoint:
+        shown.add("api_endpoint")
+    if pattern not in API_ENDPOINT_PATTERNS or form.listing_url:
+        shown.add("listing_url")
+    if pattern == "generic_html_cards":
+        shown |= {"event_container_selector", "detail_page_selector", "max_detail_fetches"}
+    if pattern == "json_ld_event":
+        shown |= {"allow_page_url_as_canonical_fallback", "allow_offers_url_as_event_url"}
+    if pattern != "wordpress_rest":
+        shown.add("field_selectors")
+    if pattern in ("json_ld_event", "wordpress_rest", "the_events_calendar", "livewhale_json"):
+        shown.add("json_paths")
+    if pattern in ("the_events_calendar", "livewhale_json"):
+        shown.add("query_params")
+    return frozenset(shown)
+
+
+OPTIONAL_FORM_FIELDS: tuple[str, ...] = (
+    "api_endpoint",
+    "listing_url",
+    "event_container_selector",
+    "detail_page_selector",
+    "max_detail_fetches",
+    "allow_page_url_as_canonical_fallback",
+    "allow_offers_url_as_event_url",
+    "field_selectors",
+    "json_paths",
     "query_params",
 )
 
@@ -91,19 +133,59 @@ def _parse_lines(raw: str) -> list[str]:
     return [line.strip() for line in raw.splitlines() if line.strip()]
 
 
-def build_site_configuration(form: ConfigFormInput) -> ConfigFormResult:
+def _regex_errors(config: SiteConfiguration) -> dict[str, str]:
+    """Transformation regexes are only run during extraction, so check them
+    here: an unsafe pattern is reported on the form rather than saved."""
+    errors: dict[str, str] = {}
+    for section in ("transformations", "exclusion_rules"):
+        for rule in getattr(config, section):
+            if rule.kind != "regex_extract_group":
+                continue
+            pattern = rule.params.get("pattern")
+            try:
+                if not isinstance(pattern, str) or not pattern:
+                    raise ValueError("regex_extract_group needs a non-empty 'pattern' param")
+                validate_safe_regex(pattern)
+            except ValueError as exc:
+                errors[section] = f"{rule.field}: {exc}"
+                break
+    return errors
+
+
+def build_site_configuration(
+    form: ConfigFormInput, base: SiteConfiguration | None = None
+) -> ConfigFormResult:
     """Returns either a validated SiteConfiguration or a dict of
     section-scoped error messages — never both, and never a partially
-    valid configuration."""
+    valid configuration.
+
+    `base` is the configuration being edited. When the pattern is unchanged,
+    everything the form does not show (the fetch settings, recurrence, a
+    request recipe, fields hidden for this pattern) is kept from it rather
+    than reset to defaults."""
     if form.raw_json.strip():
         try:
             payload = json.loads(form.raw_json)
         except json.JSONDecodeError as exc:
             return ConfigFormResult(None, {"raw_json": f"Must be valid JSON: {exc}"})
         try:
-            return ConfigFormResult(SiteConfiguration.model_validate(payload), {})
+            config = SiteConfiguration.model_validate(payload)
         except ValidationError as exc:
             return ConfigFormResult(None, {"raw_json": str(exc)})
+        regex_errors = _regex_errors(config)
+        if regex_errors:
+            return ConfigFormResult(None, {"raw_json": next(iter(regex_errors.values()))})
+        return ConfigFormResult(config, {})
+
+    if base is not None and base.pattern_name != form.pattern_name:
+        base = None
+    if base is not None:
+        saved = configuration_to_form(base)
+        shown = shown_fields(saved)
+        form = replace(
+            form,
+            **{name: getattr(saved, name) for name in OPTIONAL_FORM_FIELDS if name not in shown},
+        )
 
     errors: dict[str, str] = {}
     scoped_defaults: dict[str, Any] = {
@@ -160,8 +242,15 @@ def build_site_configuration(form: ConfigFormInput) -> ConfigFormResult:
         **parsed_scoped,
     }
 
+    if base is not None:
+        merged = base.model_dump(mode="json")
+        fetch = {**merged.get("fetch", {}), **kwargs.pop("fetch")}
+        merged.update(kwargs)
+        merged["fetch"] = fetch
+        kwargs = merged
+
     try:
-        return ConfigFormResult(SiteConfiguration.model_validate(kwargs), {})
+        config = SiteConfiguration.model_validate(kwargs)
     except ValidationError as exc:
         for err in exc.errors():
             # `fetch.query_params` is the only nested-fetch field this form
@@ -173,6 +262,10 @@ def build_site_configuration(form: ConfigFormInput) -> ConfigFormResult:
                 field_name = str(err["loc"][0]) if err["loc"] else "configuration"
             errors[field_name] = err["msg"]
         return ConfigFormResult(None, errors)
+    regex_errors = _regex_errors(config)
+    if regex_errors:
+        return ConfigFormResult(None, regex_errors)
+    return ConfigFormResult(config, {})
 
 
 def configuration_to_form(config: SiteConfiguration) -> ConfigFormInput:

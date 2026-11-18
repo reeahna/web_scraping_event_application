@@ -254,10 +254,13 @@ class SimpleviewEventsPattern:
             payload = json.loads(response.text)
         except (json.JSONDecodeError, ValueError):
             return []
-        if not isinstance(payload, dict):
+        events_root = config.json_paths.get("events_root", EVENTS_ROOT_DEFAULT)
+        # An empty `events_root` means the response itself is the record array
+        # (some event APIs return a bare `[{...}, ...]`); otherwise the payload
+        # must be the usual object wrapping it.
+        if not isinstance(payload, dict) and not (events_root == "" and isinstance(payload, list)):
             return []
 
-        events_root = config.json_paths.get("events_root", EVENTS_ROOT_DEFAULT)
         resolved = resolve_json_path(payload, events_root).value
         records = [r for r in resolved if isinstance(r, dict)] if isinstance(resolved, list) else []
 

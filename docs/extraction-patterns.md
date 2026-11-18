@@ -94,6 +94,10 @@ never treated as an event source. Request replay is single-response by default
 replayed only through the closed `FetchConfig` schema, and an observed query
 token is never persisted. No hostname/domain/institution literal appears in the
 pattern — it is generic across Simpleview deployments.
+An empty `events_root` (`""`) reads a response that is itself the record
+array (`[{...}, ...]`), which lets the same mapping serve other event APIs of
+that shape, such as library calendars that answer with a bare list. Pair it with
+a `request_recipe` when the API needs a date window in its query.
 
 **`paged_json_events`.** First-party event APIs shaped like a Spring Data
 page: records in a top-level `content` array (or `items`/`results`/`records`/

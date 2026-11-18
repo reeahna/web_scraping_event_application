@@ -23,6 +23,7 @@ from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from sqlalchemy import select
 
 from app.core.logging import get_logger
+from app.core.monitoring import report_exception, scheduler_checkin
 from app.database import SessionLocal
 from app.models.scheduler import SchedulerJobState
 from app.services.scheduler import (
@@ -64,6 +65,9 @@ class SchedulerRuntime:
         self._scheduler = AsyncIOScheduler(timezone="UTC")
         self._is_leader = False
         self._active_tasks: set[asyncio.Task] = set()
+        # Websites with a run task already created (running or waiting for a
+        # slot), so a slow import is not queued again on every dispatch tick.
+        self._queued_website_ids: set[int] = set()
         # Full reconcile runs every N heartbeats so eligibility changes (e.g. a
         # city deactivated through the web app) are picked up without a restart.
         self._heartbeats_between_reconciles = 10
@@ -201,12 +205,16 @@ class SchedulerRuntime:
                 self._run_on_start_jobs_now()
             if self._is_leader:
                 leader_heartbeat(db, self.holder)
+                # Sentry's cron monitor alerts when these stop arriving, which
+                # is the only sign of a scheduler that has died outright.
+                scheduler_checkin()
                 reclaim_stale_locks(db)
                 self._heartbeat_count += 1
                 if self._heartbeat_count % self._heartbeats_between_reconciles == 0:
                     reconcile(db)
         except Exception as exc:  # noqa: BLE001 - a tick must never kill the loop
             logger.warning("heartbeat tick failed: %s", exc)
+            report_exception(exc, job="heartbeat")
         finally:
             db.close()
 
@@ -249,8 +257,12 @@ class SchedulerRuntime:
             due = self._due_website_ids(datetime.now(UTC))
         except Exception as exc:  # noqa: BLE001
             logger.warning("dispatch query failed: %s", exc)
+            report_exception(exc, job="dispatch")
             return
         for website_id in due:
+            if website_id in self._queued_website_ids:
+                continue
+            self._queued_website_ids.add(website_id)
             task = asyncio.create_task(self._run_one(website_id))
             self._active_tasks.add(task)
             task.add_done_callback(self._active_tasks.discard)
@@ -267,6 +279,7 @@ class SchedulerRuntime:
                 logger.info("drained %d onboarding job(s)", processed)
         except Exception as exc:  # noqa: BLE001
             logger.warning("onboarding drain failed: %s", exc)
+            report_exception(exc, job="onboarding")
         finally:
             db.close()
 
@@ -285,6 +298,7 @@ class SchedulerRuntime:
                 logger.info("geocoded %d event(s)", processed)
         except Exception as exc:  # noqa: BLE001
             logger.warning("geocoding drain failed: %s", exc)
+            report_exception(exc, job="geocoding")
         finally:
             db.close()
 
@@ -299,6 +313,7 @@ class SchedulerRuntime:
             send_pending_digests(db)
         except Exception as exc:  # noqa: BLE001
             logger.warning("alerts tick failed: %s", exc)
+            report_exception(exc, job="alerts")
         finally:
             db.close()
 
@@ -313,6 +328,7 @@ class SchedulerRuntime:
                 logger.info("executed %d bulk import operation(s)", processed)
         except Exception as exc:  # noqa: BLE001
             logger.warning("bulk import tick failed: %s", exc)
+            report_exception(exc, job="bulk_import")
 
     async def _categorization_tick(self) -> None:
         if not self._is_leader:
@@ -358,6 +374,7 @@ class SchedulerRuntime:
                 exc,
                 self._categorization_cooldown_until.isoformat(),
             )
+            report_exception(exc, job="categorization")
 
     async def _category_photos_tick(self) -> None:
         if not self._is_leader:
@@ -384,6 +401,7 @@ class SchedulerRuntime:
                 logger.info("refilled category photo pool with %d photo(s)", stored)
         except Exception as exc:  # noqa: BLE001 - a tick must never kill the loop
             logger.warning("category photo refill failed: %s", exc)
+            report_exception(exc, job="category_photos")
 
     async def _home_town_sweep_tick(self) -> None:
         if not self._is_leader:
@@ -403,6 +421,7 @@ class SchedulerRuntime:
                 logger.info("took down %d out-of-town event(s)", hidden)
         except Exception as exc:  # noqa: BLE001 - a tick must never kill the loop
             logger.warning("home-town sweep failed: %s", exc)
+            report_exception(exc, job="home_town_sweep")
 
     async def _attendability_sweep_tick(self) -> None:
         if not self._is_leader:
@@ -425,6 +444,7 @@ class SchedulerRuntime:
                 logger.info("took down %d event(s) that are not attendable", len(hidden))
         except Exception as exc:  # noqa: BLE001 - a tick must never kill the loop
             logger.warning("attendability sweep failed: %s", exc)
+            report_exception(exc, job="attendability_sweep")
 
     async def _college_towns_tick(self) -> None:
         if not self._is_leader:
@@ -448,16 +468,21 @@ class SchedulerRuntime:
                 )
         except Exception as exc:  # noqa: BLE001 - a tick must never kill the loop
             logger.warning("college town import failed: %s", exc)
+            report_exception(exc, job="college_towns")
 
     async def _run_one(self, website_id: int) -> None:
-        async with self._semaphore:
-            try:
-                outcome = await run_scheduled_extraction(
-                    website_id, holder=self.holder, session_factory=self._session_factory
-                )
-                logger.info("scheduled run website %s: %s", website_id, outcome.status)
-            except Exception as exc:  # noqa: BLE001
-                logger.warning("scheduled run website %s crashed: %s", website_id, exc)
+        try:
+            async with self._semaphore:
+                try:
+                    outcome = await run_scheduled_extraction(
+                        website_id, holder=self.holder, session_factory=self._session_factory
+                    )
+                    logger.info("scheduled run website %s: %s", website_id, outcome.status)
+                except Exception as exc:  # noqa: BLE001
+                    logger.warning("scheduled run website %s crashed: %s", website_id, exc)
+                    report_exception(exc, job="scheduled_run")
+        finally:
+            self._queued_website_ids.discard(website_id)
 
     async def shutdown(self) -> None:
         """Graceful: stop scheduling new work, let in-flight runs finish."""

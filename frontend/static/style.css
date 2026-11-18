@@ -516,6 +516,44 @@ input[type="checkbox"], input[type="radio"] {
   font-size: var(--font-md);
 }
 
+/* One sentence saying what the town page covers, under the subtitle. */
+.hero-summary {
+  margin-top: var(--space-2);
+  color: var(--muted);
+  font-size: var(--font-sm);
+}
+
+/* Links to neighbouring towns, below the event list. */
+.nearby-towns {
+  margin-top: var(--space-6);
+  padding-top: var(--space-5);
+  border-top: 1px solid var(--border);
+}
+
+.nearby-towns h2 {
+  font-size: var(--font-md);
+  margin-bottom: var(--space-3);
+}
+
+.nearby-towns-list {
+  list-style: none;
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2) var(--space-5);
+  padding: 0;
+}
+
+.nearby-towns-list a {
+  color: var(--accent);
+  font-weight: 600;
+}
+
+.nearby-towns-meta {
+  margin-left: var(--space-2);
+  color: var(--muted);
+  font-size: 0.82rem;
+}
+
 /* Legacy hero (auth-adjacent placeholder pages, if any remain) */
 .hero p {
   color: var(--muted);
@@ -1073,6 +1111,59 @@ button:hover {
   border: 1px solid var(--border-input);
   border-radius: var(--radius-sm);
   font-size: 0.88rem;
+}
+
+/* Admin Websites: a multi-status filter in a plain <details>. Closed, it is
+   one control in the bar; open, it takes its own full-width row below. */
+.status-filter {
+  border: 1px solid var(--border-input);
+  border-radius: var(--radius-sm);
+  font-size: 0.88rem;
+  background: var(--surface);
+  max-width: 100%;
+}
+
+.status-filter summary {
+  cursor: pointer;
+  padding: 7px 10px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 320px;
+}
+
+.status-filter[open] {
+  flex: 1 1 100%;
+  order: 10;
+}
+
+.status-filter[open] summary {
+  max-width: none;
+  border-bottom: 1px solid var(--border);
+}
+
+.status-filter-panel {
+  padding: var(--space-3);
+}
+
+.status-filter-mode {
+  border: 0;
+  margin: 0 0 var(--space-2);
+  padding: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1) var(--space-4);
+  align-items: center;
+}
+
+.status-filter-mode legend {
+  float: left;
+  font-weight: 600;
+  margin-right: var(--space-2);
+}
+
+.status-filter-mode .checkbox-label {
+  margin: 0;
 }
 
 /* ==========================================================================
@@ -3441,4 +3532,25 @@ a.wf-danger, button.wf-danger {
 
 .site-footer-version {
   color: inherit;
+}
+
+/* Admin visitor log: date range switcher */
+.visitor-ranges {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin: 0.75rem 0 1rem;
+}
+
+.visitor-ranges a {
+  padding: 0.3rem 0.75rem;
+  border: 1px solid currentColor;
+  border-radius: 999px;
+  text-decoration: none;
+  font-size: 0.9rem;
+}
+
+.visitor-ranges a.is-current {
+  font-weight: 600;
+  text-decoration: underline;
 }

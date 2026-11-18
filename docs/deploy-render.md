@@ -77,6 +77,22 @@ labeled yet. Use `--only-other` to relabel just the "Other" pile, or `--force`
 to redo everything. New events keep getting the instant keyword category on
 import; run this again whenever you want to upgrade the backlog to AI labels.
 
+### 5. (Optional) Error alerts with Sentry
+Sentry emails you when something breaks: a page crashing, the database running
+out of connections, or a background job (scraping, AI labeling, geocoding)
+failing over and over, and also when the scheduler stops running at all. The
+free plan is enough.
+
+1. Sign up at https://sentry.io/signup/ and create a project, choosing
+   **FastAPI** as the platform.
+2. Copy the project's **DSN** (Settings, Projects, your project, Client Keys
+   (DSN)). It looks like `https://abc123@o123.ingest.us.sentry.io/456`.
+3. In the Render dashboard, open the service's **Environment**, add `SENTRY_DSN`
+   with that value, and save. Render redeploys on its own.
+
+Without `SENTRY_DSN` the app sends nothing. See `docs/operations.md` for what is
+reported.
+
 ---
 
 ## Updating the app later

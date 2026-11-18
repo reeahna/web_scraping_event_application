@@ -139,6 +139,28 @@ def test_generated_hash_and_numeric_class_tokens_are_rejected():
     assert not is_stable_class_token("a")
 
 
+def test_utility_classes_with_selector_characters_are_rejected():
+    """`.md:tw-px-4` parses as a pseudo-class and used to crash detection."""
+    assert is_stable_class_token("tw-px-4")
+    assert is_stable_class_token("event_card")
+    for token in ("md:tw-px-4", "w-1/2", "hover:underline", "[&>p]:mt-2", "mt-0.5", "lg:grid"):
+        assert not is_stable_class_token(token), token
+
+
+def test_cards_whose_classes_include_utility_classes_still_infer():
+    cards = "".join(
+        f'<div class="event-card md:tw-px-4 w-1/2"><h3 class="event-title lg:text-xl">'
+        f'<a href="/e/{i}">Concert {i}</a></h3><time datetime="2026-12-0{i}">Dec {i}</time>'
+        "</div>"
+        for i in range(1, 6)
+    )
+    soup = BeautifulSoup(f"<html><body><main>{cards}</main></body></html>", "html.parser")
+    container = infer_container(soup, DEFAULT_POLICY)
+    assert container is not None
+    assert container.selector == "div.event-card"
+    soup.select(container.selector)  # parses
+
+
 def test_a_selector_matching_only_one_card_is_never_proposed():
     """Coverage is measured across every sampled card, so a selector present
     on a single card cannot clear the coverage gate."""

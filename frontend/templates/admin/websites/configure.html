@@ -19,7 +19,7 @@
 
   <h2>Pattern: {{ form.pattern_name }}</h2>
 
-  {% if form.pattern_name in ("wordpress_rest", "the_events_calendar", "livewhale_json") %}
+  {% if "api_endpoint" in shown %}
   <label for="api_endpoint">API endpoint</label>
   <input type="text" id="api_endpoint" name="api_endpoint" value="{{ form.api_endpoint }}" />
   {{ field_error(errors, "api_endpoint") }}
@@ -35,7 +35,8 @@
     use the pagination "Page parameter" field below as the offset parameter name.
   </p>
   {% endif %}
-  {% else %}
+  {% endif %}
+  {% if "listing_url" in shown %}
   <label for="listing_url">Listing URL</label>
   <input type="text" id="listing_url" name="listing_url" value="{{ form.listing_url }}" />
   {{ field_error(errors, "listing_url") }}
@@ -45,7 +46,7 @@
   <input type="text" id="timezone" name="timezone" value="{{ form.timezone }}" placeholder="Defaults to the assigned city's timezone" />
   {{ field_error(errors, "timezone") }}
 
-  {% if form.pattern_name == "generic_html_cards" %}
+  {% if "event_container_selector" in shown %}
   <label for="event_container_selector">Event container selector</label>
   <input type="text" id="event_container_selector" name="event_container_selector" value="{{ form.event_container_selector }}" />
   {{ field_error(errors, "event_container_selector") }}
@@ -92,7 +93,7 @@
   </label>
   {% endfor %}
 
-  {% if form.pattern_name == "json_ld_event" %}
+  {% if "allow_page_url_as_canonical_fallback" in shown %}
   <label class="checkbox-label">
     <input type="checkbox" name="allow_page_url_as_canonical_fallback" {% if form.allow_page_url_as_canonical_fallback %}checked{% endif %} />
     Allow the listing page URL as a canonical-URL fallback
@@ -106,13 +107,13 @@
   <h3>Field selectors, mappings, and transformations (JSON)</h3>
   <p class="audit-meta">Each section below is validated independently — leave blank for the default.</p>
 
-  {% if form.pattern_name != "wordpress_rest" %}
+  {% if "field_selectors" in shown %}
   <label for="field_selectors">Field selectors ({"field": {"kind": "css"|"json_path"|"attribute", "selector": "...", "attribute": "..."}})</label>
   <textarea id="field_selectors" name="field_selectors" rows="6">{{ form.field_selectors }}</textarea>
   {{ field_error(errors, "field_selectors") }}
   {% endif %}
 
-  {% if form.pattern_name in ("json_ld_event", "wordpress_rest", "the_events_calendar", "livewhale_json") %}
+  {% if "json_paths" in shown %}
   <label for="json_paths">JSON paths ({"field": "dot.path"})</label>
   <textarea id="json_paths" name="json_paths" rows="4">{{ form.json_paths }}</textarea>
   {{ field_error(errors, "json_paths") }}

@@ -178,3 +178,23 @@ def test_html_entities_in_text_fields_are_decoded():
     )
     assert candidate.title == "Smith 2 & Ed 3: Rock & Roll"
     assert candidate.venue == "Bear’s Place"
+
+
+def test_a_transformation_that_cannot_run_is_skipped_with_a_warning():
+    # A config saved before regex rules were checked can still hold a pattern
+    # the safe-regex guard refuses. The value is kept as extracted and the
+    # candidate carries a warning instead of the whole preview crashing.
+    config = SiteConfiguration(
+        pattern_name="json_ld_event",
+        listing_url="https://example.com/events",
+        transformations=[
+            TransformationRuleConfig(
+                field="title",
+                kind="regex_extract_group",
+                params={"pattern": "(a+)+$", "group": 1},
+            )
+        ],
+    )
+    result = normalize_candidate(_raw_candidate(title="A Title"), config)
+    assert result.title == "A Title"
+    assert any(w.startswith("transformation_skipped:title:") for w in result.warnings)

@@ -135,7 +135,8 @@ def test_town_page_describes_its_events_as_an_item_list(
     make_event(town, website=site, title="Craft Fair", start_date=TOMORROW,
                canonical_url="https://x/fair")
 
-    (data,) = _ld_blocks(client.get("/city/bloomington").text)
+    data, crumbs = _ld_blocks(client.get("/city/bloomington").text)
+    assert crumbs["@type"] == "BreadcrumbList"
     assert data["@type"] == "ItemList"
     assert data["about"]["name"] == "Bloomington"
     assert data["keywords"] == ["Indiana University"]
@@ -152,7 +153,7 @@ def test_a_scraped_title_cannot_break_out_of_the_listing_data(
                start_date=TOMORROW)
     html = client.get("/city/bloomington").text
     assert "<img src=x id=pwned>" not in html
-    (data,) = _ld_blocks(html)
+    data, _crumbs = _ld_blocks(html)
     assert data["itemListElement"][0]["item"]["name"] == "Evil </script><img src=x id=pwned>"
 
 

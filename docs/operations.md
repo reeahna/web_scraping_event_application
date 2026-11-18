@@ -37,8 +37,18 @@ and `docs/scheduler.md`. The scheduler is the single owner of all background wor
 - **Structured logging + correlation IDs**: every request carries an
   `X-Correlation-ID`; audit rows and logs reference it. Configure log shipping
   at the platform level.
-- **Error reporting**: unhandled exceptions return a redacted response and log
-  with the correlation id; wire a platform error reporter to the logger.
+- **Error reporting (Sentry)**: unhandled exceptions return a redacted response
+  and log with the correlation id. When `SENTRY_DSN` is set
+  (`app/core/monitoring.py`), both processes also report to Sentry: crashes in
+  web requests, anything logged at ERROR, and every failure a scheduler job
+  catches (tagged `job`, e.g. `categorization`, `scheduled_run`, `heartbeat`).
+  The scheduler leader checks in to the `bulletin-scheduler` cron monitor about
+  once a minute, so Sentry alerts when the scheduler stops altogether. To stay
+  in the free plan, tracing samples 2% of requests (`SENTRY_TRACES_SAMPLE_RATE`,
+  never health checks or static files) and the same error from the same place is
+  sent at most once every 30 minutes per process. No IP addresses, cookies or
+  user details are sent. Unset `SENTRY_DSN` and nothing is sent anywhere. Setup
+  steps are in `docs/deploy-render.md`.
 - **Metrics**: derive from `/admin/reports` counts and `/health/ready`; none
   expose secrets.
 
@@ -53,6 +63,8 @@ and `docs/scheduler.md`. The scheduler is the single owner of all background wor
 - **Audit log**: retain for the compliance-required period; audits are
   append-only and never rewritten. Prune only by explicit, documented policy.
 - **Geocode cache / alert deliveries**: retain; both are deduplication ledgers.
+- **Visitor log** (`site_visitor_days`, `site_page_days`): deleted automatically
+  after `VISIT_RETENTION_DAYS` (default 180) by the web process itself, once a day.
 
 ## Privacy & deletion
 
@@ -61,6 +73,15 @@ and `docs/scheduler.md`. The scheduler is the single owner of all background wor
 - **User deletion**: deleting a `users` row cascades to sessions, saved events,
   follows, alert preferences, and external identities (FK `ON DELETE CASCADE`).
 - **Email unsubscribe**: token-based, no login required (`/alerts/unsubscribe`).
+- **Visitor log** (`/admin/visitors`, needs `reports.view`): counts public page
+  views and which towns are looked at. It sets no cookie and stores no IP
+  address. A visitor is a hash of (that day's random salt, IP, user agent); the
+  salt is deleted when the day ends, so a hash can't be traced back to an IP and
+  the same person can't be followed from day to day. A signed-in visitor's row
+  names their account (`user_id`, set to null if the account is deleted). Bots,
+  scripts, prefetches, HEAD requests, `/static`, `/health` and `/admin` are not
+  counted. Counts are batched in memory and written every `VISIT_FLUSH_SECONDS`
+  (default 60). Turn it off with `VISIT_TRACKING_ENABLED=false`.
 
 ## Secret rotation & incident recovery
 

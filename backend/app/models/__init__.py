@@ -25,6 +25,7 @@ from app.models.permission import Permission
 from app.models.role import Role
 from app.models.role_permission import RolePermission
 from app.models.scheduler import SchedulerJobState, SchedulerLeader
+from app.models.site_visit import SitePageDay, SiteVisitorDay, VisitSalt
 from app.models.suggestion import Suggestion
 from app.models.unsupported_site_report import UnsupportedSiteReport
 from app.models.user import User
@@ -67,6 +68,9 @@ __all__ = [
     "RolePermission",
     "SchedulerJobState",
     "SchedulerLeader",
+    "SitePageDay",
+    "SiteVisitorDay",
+    "VisitSalt",
     "Suggestion",
     "UnsupportedSiteReport",
     "User",

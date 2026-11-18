@@ -20,6 +20,12 @@ os.environ["TMP"] = str(TEST_TMP_PATH)
 # (Springfield, IL ...), not in the test city, so the own-town import filter is
 # off by default here; tests/test_home_town.py turns it on.
 os.environ["HOME_TOWN_FILTER_ENABLED"] = "false"
+# Never report test failures to a real Sentry project from a developer's .env;
+# tests/test_monitoring.py turns monitoring on against a capturing transport.
+os.environ["SENTRY_DSN"] = ""
+# The visitor log keeps counts in memory between requests; tests that check it
+# turn it on (tests/test_visitor_log.py) so other tests' requests don't land in it.
+os.environ["VISIT_TRACKING_ENABLED"] = "false"
 
 from urllib.parse import parse_qs, quote, urlparse  # noqa: E402
 
@@ -40,7 +46,7 @@ from app.models.role import Role  # noqa: E402
 from app.models.user import User  # noqa: E402
 from app.models.user_role import UserRole  # noqa: E402
 from app.models.website import Website  # noqa: E402
-from app.services import oauth_login  # noqa: E402
+from app.services import oauth_login, site_visits  # noqa: E402
 from app.services.oauth import ExternalIdentityInfo, MockProvider  # noqa: E402
 from app.services.rate_limit import _attempts_by_ip  # noqa: E402
 
@@ -67,6 +73,7 @@ def _schema():
 @pytest.fixture(autouse=True)
 def _reset_db(_schema):
     _attempts_by_ip.clear()
+    site_visits.reset_for_tests()
     _empty_all_tables()
     seed_session = SessionLocal()
     try:

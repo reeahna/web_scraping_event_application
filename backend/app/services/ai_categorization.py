@@ -14,9 +14,9 @@ two keys is configured and gemini_scheduled_enabled is on.
 from __future__ import annotations
 
 from collections.abc import Callable
-from datetime import date
+from datetime import UTC, date, datetime
 
-from sqlalchemy import and_, or_
+from sqlalchemy import and_, func, or_
 from sqlalchemy.orm import Query, Session
 
 from app.config import get_settings
@@ -132,6 +132,36 @@ def pending_events(db: Session, *, today: date | None = None) -> Query:
         Event.ai_prompt_version != PROMPT_VERSION,
     )
     return categorizable_events(db, today=today).filter(outdated)
+
+
+def queue_counts(db: Session, *, today: date | None = None) -> tuple[int, int]:
+    """(waiting, labeled) among the events worth labeling: how many still wait
+    for the AI and how many already carry a current AI label. Two COUNT
+    queries with no rows loaded, so it is cheap enough for the admin page."""
+    waiting = pending_events(db, today=today).order_by(None).count()
+    total = categorizable_events(db, today=today).order_by(None).count()
+    return waiting, total - waiting
+
+
+def queue_status(db: Session, *, now: datetime | None = None) -> dict:
+    """The AI label queue for monitoring: whether labeling is on, which
+    provider, how many events wait, and how long the oldest has waited (by
+    when it was first stored), in hours. Aggregates only, no rows loaded."""
+    enabled = scheduled_categorization_enabled()
+    status: dict = {"enabled": enabled, "provider": provider_name()}
+    if not enabled:
+        return status
+    pending = pending_events(db).order_by(None)
+    status["waiting"] = pending.count()
+    oldest = pending.with_entities(func.min(Event.created_at)).scalar()
+    if oldest is not None:
+        if oldest.tzinfo is None:  # SQLite hands back naive UTC
+            oldest = oldest.replace(tzinfo=UTC)
+        hours = ((now or datetime.now(UTC)) - oldest).total_seconds() / 3600
+        status["oldest_waiting_hours"] = round(max(hours, 0.0), 1)
+    else:
+        status["oldest_waiting_hours"] = None
+    return status
 
 
 def apply_labels(

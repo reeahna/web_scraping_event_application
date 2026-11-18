@@ -2,13 +2,14 @@
 {% from "_pagination.html" import paginate %}
 
 {% set school_names = selected_city.universities | map(attribute="name") | join(", ") %}
-{% block title %}Events in {{ selected_city.name }}{% if school_names %} — {{ school_names }}{% endif %}{% endblock %}
-{% block meta_description %}What is on in {{ selected_city.name }}{% if selected_city.state_or_region %}, {{ selected_city.state_or_region }}{% endif %}: concerts, theater, festivals and {% if school_names %}{{ school_names }} {% endif %}campus events, gathered from every local source.{% endblock %}
+{% block title %}{{ town.title }} | {{ site_name }}{% endblock %}
+{% block meta_description %}{{ town.description }}{% endblock %}
 
 {% block robots %}{{ "noindex, follow" if noindex else "index, follow" }}{% endblock %}
 
 {% block head_extra %}
 <script type="application/ld+json">{{ listing_structured_data | safe }}</script>
+<script type="application/ld+json">{{ town.breadcrumb_structured_data | safe }}</script>
 <link rel="alternate" type="text/calendar" title="{{ selected_city.name }} events" href="{{ calendar_url }}" />
 {% if filters.view == "map" %}
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
@@ -19,12 +20,21 @@
 
 {% block content %}
 {% set sep = "&" if query_string else "" %}
+{% set map_sep = "&" if map_query_string else "" %}
 <section class="hero">
   <div class="hero-inner">
-    <h1>{{ selected_city.name }}</h1>
+    <h1>{{ town.heading }}</h1>
     <p class="hero-subtext">
       {% if school_names %}{{ school_names }} · {% endif %}
       Everything on in town and on campus.
+    </p>
+    {#
+      One plain sentence saying what this page covers. It is written for
+      readers, and it is also the text search engines match "events in
+      <town>" against, so it names the town, its state and its schools.
+    #}
+    <p class="hero-summary">
+      {% if town.upcoming %}{{ town.upcoming }} upcoming event{{ "s" if town.upcoming != 1 }} in {{ town.place }}{% if sources %}, gathered from {{ sources | length }} local source{{ "s" if sources | length != 1 }}{% endif %}{% if town.weekend_count %}, with {{ town.weekend_count }} this weekend{% endif %}.{% else %}Upcoming events in {{ town.place }} appear here as soon as local venues and campus calendars list them.{% endif %}
     </p>
     <p class="hero-switch">
       <a href="/">Choose a different town</a>
@@ -35,7 +45,7 @@
 
 <div class="page-container">
   <section class="filter-panel" aria-label="Filter events">
-    <form method="get" action="{{ base_path }}" class="filter-form" role="search">
+    <form method="get" action="{{ town.path }}" class="filter-form" role="search">
       <div class="filter-field filter-field-search">
         <label for="q">Search</label>
         <input type="search" id="q" name="q" value="{{ filters.q }}" placeholder="Title or venue" />
@@ -109,12 +119,15 @@
       {% if filters.view == "map" %}<input type="hidden" name="view" value="map" />{% endif %}
       <div class="filter-actions">
         <button type="submit">Filter</button>
-        <a href="{{ base_path }}" class="filter-clear-link">Clear filters</a>
+        <a href="{{ town.path }}" class="filter-clear-link">Clear filters</a>
       </div>
     </form>
+    {# Real paths rather than ?preset=, so "this weekend" is a page search
+       engines can list on its own. ?preset= still works for old links. #}
     <div class="filter-presets" role="group" aria-label="Quick date filters">
-      <a class="filter-preset{% if filters.preset == 'today' %} filter-preset-active{% endif %}" href="{{ base_path }}?preset=today{% if filters.view == 'map' %}&view=map{% endif %}">Today</a>
-      <a class="filter-preset{% if filters.preset == 'weekend' %} filter-preset-active{% endif %}" href="{{ base_path }}?preset=weekend{% if filters.view == 'map' %}&view=map{% endif %}">This weekend</a>
+      <a class="filter-preset{% if filters.preset == 'today' %} filter-preset-active{% endif %}" href="{{ town.path }}/today{% if filters.view == 'map' %}?view=map{% endif %}"{% if town.window == 'today' %} aria-current="page"{% endif %}>Today</a>
+      <a class="filter-preset{% if filters.preset == 'weekend' %} filter-preset-active{% endif %}" href="{{ town.path }}/this-weekend{% if filters.view == 'map' %}?view=map{% endif %}"{% if town.window == 'this-weekend' %} aria-current="page"{% endif %}>This weekend</a>
+      {% if town.window %}<a class="filter-preset" href="{{ town.path }}{% if filters.view == 'map' %}?view=map{% endif %}">All upcoming</a>{% endif %}
     </div>
   </section>
 
@@ -125,7 +138,7 @@
 
   {% if filters.view == "map" %}
   <section class="map-section" aria-label="Map of events">
-    <div id="event-map" class="event-map" data-map-url="/events/map?city_id={{ selected_city.id }}{{ sep }}{{ query_string }}"
+    <div id="event-map" class="event-map" data-map-url="/events/map?city_id={{ selected_city.id }}{{ map_sep }}{{ map_query_string }}"
          data-tile-url="{{ map_tile_url }}" data-attribution="{{ map_attribution }}"
          {% if selected_city and selected_city.default_latitude is not none and selected_city.default_longitude is not none %}data-center-lat="{{ selected_city.default_latitude }}" data-center-lng="{{ selected_city.default_longitude }}"{% endif %}></div>
     <p class="map-note" id="event-map-note">Showing events with a known location. The full list below includes every matching event.</p>
@@ -194,8 +207,26 @@
     </svg>
     <h3>No events match these filters</h3>
     <p>Try widening your date range or clearing filters to see everything upcoming.</p>
+    {% if town.window %}
+    <a href="{{ town.path }}" class="filter-clear-link">See everything coming up in {{ selected_city.name }}</a>
+    {% else %}
     <a href="{{ base_path }}" class="filter-clear-link">Clear filters</a>
+    {% endif %}
   </div>
+  {% endif %}
+
+  {% if town.nearby %}
+  <section class="nearby-towns" aria-labelledby="nearby-towns-heading">
+    <h2 id="nearby-towns-heading">Events near {{ selected_city.name }}</h2>
+    <ul class="nearby-towns-list">
+      {% for near in town.nearby %}
+      <li>
+        <a href="/city/{{ near.city.slug }}">{{ near.city.name }}{% if near.city.state_or_region %}, {{ near.city.state_or_region }}{% endif %}</a>
+        <span class="nearby-towns-meta">{{ near.miles }} mi · {{ near.count }} upcoming</span>
+      </li>
+      {% endfor %}
+    </ul>
+  </section>
   {% endif %}
 </div>
 {% endblock %}

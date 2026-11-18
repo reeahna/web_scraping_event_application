@@ -497,3 +497,14 @@ def test_unknown_rule_edit_id_renders_the_list_read_only(client, make_user, logi
     response = client.get("/admin/categorization-rules?edit=999999")
     assert response.status_code == 200
     assert "rule-editor-row" not in response.text
+
+
+@pytest.mark.parametrize("pattern", [r"^(?:\[[A-Z]\]\s*)?(.+)$", r"(?:Doors|Show) (\d+)"])
+def test_plain_non_capturing_groups_are_accepted(pattern):
+    assert validate_rule_pattern(pattern, is_regex=True) == pattern
+
+
+@pytest.mark.parametrize("pattern", ["(?:a+)+", "(?:a|ab)*", "(?i)x", "(?P<n>x)"])
+def test_risky_shapes_with_non_capturing_groups_still_rejected(pattern):
+    with pytest.raises(ValueError):
+        validate_rule_pattern(pattern, is_regex=True)

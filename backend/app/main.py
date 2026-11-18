@@ -26,6 +26,7 @@ from app.core.middleware import (
     MaxBodySizeMiddleware,
     SecurityHeadersMiddleware,
 )
+from app.core.monitoring import init_monitoring
 from app.paths import STATIC_DIR
 from app.routers import (
     account,
@@ -52,11 +53,15 @@ from app.routers import (
     suggestions,
     unsupported_reports,
     version_history,
+    visitors,
     websites,
 )
+from app.services import site_visits
 
 settings = get_settings()
 configure_logging(settings.log_level)
+# Before the app is built, so Sentry (when SENTRY_DSN is set) wraps it.
+init_monitoring(settings, component="web")
 logger = get_logger("main")
 
 
@@ -68,6 +73,8 @@ async def lifespan(app: FastAPI):
     # app.scheduler and docs/scheduler.md.
     logger.info("New app starting up (env=%s, port=%s)", settings.app_env, settings.app_port)
     yield
+    # Save the last minute of visitor counts rather than losing them.
+    site_visits.flush()
     logger.info("New app shutting down")
 
 
@@ -108,6 +115,8 @@ if settings.behind_https:
     app.add_middleware(HttpsSchemeMiddleware)
 # Outermost of all: everything inside sees a HEAD request as the GET it stands for.
 app.add_middleware(HeadAsGetMiddleware)
+# Outside the HEAD handling so uptime checks (HEAD) are never counted as visits.
+app.add_middleware(site_visits.VisitTrackingMiddleware)
 
 app.add_exception_handler(AppError, app_error_handler)
 app.add_exception_handler(NotAuthenticatedError, not_authenticated_handler)
@@ -145,3 +154,4 @@ app.include_router(scheduler.router)
 app.include_router(geocoding.router)
 app.include_router(engagement.router)
 app.include_router(reporting.router)
+app.include_router(visitors.router)

@@ -65,3 +65,30 @@ def test_liveness_and_readiness(client):
     body = ready.json()
     assert body["checks"]["database"] == "ok"
     assert isinstance(body["checks"]["production_blockers"], list)
+
+
+def test_readiness_reports_the_ai_label_queue(client, make_city, make_event, monkeypatch):
+    from datetime import date, timedelta
+
+    from app.config import get_settings
+
+    monkeypatch.setattr(get_settings(), "groq_api_key", "test-key")
+    city = make_city(name="Ready Queue City", slug="ready-queue-city")
+    soon = date.today() + timedelta(days=2)
+    make_event(city, title="Waiting", canonical_url="https://e.x/rq1", start_date=soon)
+
+    queue = client.get("/health/ready").json()["checks"]["ai_categorization"]
+    assert queue["enabled"] is True
+    assert queue["provider"] == "groq"
+    assert queue["waiting"] == 1
+    assert 0 <= queue["oldest_waiting_hours"] < 1
+
+
+def test_readiness_ai_queue_when_ai_is_off(client, monkeypatch):
+    from app.config import get_settings
+
+    settings = get_settings()
+    monkeypatch.setattr(settings, "groq_api_key", None)
+    monkeypatch.setattr(settings, "gemini_api_key", None)
+    queue = client.get("/health/ready").json()["checks"]["ai_categorization"]
+    assert queue == {"enabled": False, "provider": None}

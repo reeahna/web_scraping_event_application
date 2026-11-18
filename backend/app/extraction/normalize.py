@@ -105,7 +105,14 @@ def normalize_candidate(
         rules = _rules_for_field(config.transformations, field_name)
         if not rules:
             return value
-        result, applied = apply_transformations(value, rules)
+        try:
+            result, applied = apply_transformations(value, rules)
+        except ValueError as exc:
+            # A rule that cannot run (an unsafe or invalid regex saved before
+            # it was checked) leaves the value as extracted and says why,
+            # rather than failing the whole preview or import.
+            warnings.append(f"transformation_skipped:{field_name}:{exc}")
+            return value
         history.extend(applied)
         return result
 

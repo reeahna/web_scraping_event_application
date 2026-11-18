@@ -89,6 +89,14 @@ class Settings(BaseSettings):
     # semantics inconsistently across events from different cities.
     app_timezone: str = "UTC"
 
+    # Visitor log (app.services.site_visits, admin page /admin/visitors).
+    # Counts public page views without cookies or stored IP addresses. Counts
+    # are written in a batch every `visit_flush_seconds` and deleted after
+    # `visit_retention_days`.
+    visit_tracking_enabled: bool = True
+    visit_flush_seconds: int = 60
+    visit_retention_days: int = 180
+
     # Restricted browser-assisted recovery (app.services.browser_recovery).
     # Off by default: the restricted Playwright fetch strategy exists but is
     # never invoked unless an administrator turns this on for the deployment.
@@ -255,6 +263,26 @@ class Settings(BaseSettings):
     yahoo_client_secret: str | None = None
     x_client_id: str | None = None
     x_client_secret: str | None = None
+
+    # Error monitoring (app.core.monitoring). Off unless SENTRY_DSN is set, so
+    # development, tests and any deployment without it send nothing anywhere.
+    # When set, crashes in web requests, failures in the scheduler's background
+    # jobs and anything logged at ERROR are reported to Sentry. Performance
+    # tracing samples only a small share of requests so a free Sentry plan's
+    # monthly quota lasts; 0 turns tracing off.
+    sentry_dsn: str | None = None
+    sentry_traces_sample_rate: float = 0.02
+    # Defaults to APP_ENV; set to tell apart e.g. a staging service.
+    sentry_environment: str | None = None
+
+    # Admin access key (app.services.auth). Off unless both are set. Lets an
+    # automated job, such as the daily source-maintenance task, use the admin
+    # pages without a browser sign-in by sending "Authorization: Bearer <key>".
+    # Requests act as the named account, with its roles and in its audit
+    # trail, and still need the usual CSRF token on forms. A key shorter than
+    # 32 characters is ignored. Rotate by changing the value and redeploying.
+    admin_api_key: str | None = None
+    admin_api_key_user_email: str | None = None
 
     model_config = SettingsConfigDict(
         env_file=str(BASE_DIR / ".env"),

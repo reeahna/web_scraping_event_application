@@ -64,6 +64,14 @@ def readiness(db: DbSession) -> JSONResponse:
     except Exception as exc:  # noqa: BLE001
         checks["ai_provider"] = f"error: {type(exc).__name__}"
 
+    try:
+        from app.services.ai_categorization import queue_status
+
+        # Counts only: how far behind AI labeling is, for outside monitoring.
+        checks["ai_categorization"] = queue_status(db)
+    except Exception as exc:  # noqa: BLE001
+        checks["ai_categorization"] = f"error: {type(exc).__name__}"
+
     blockers = production_blockers(settings)
     checks["production_blockers"] = [
         {"code": b.code, "severity": b.severity, "message": b.message} for b in blockers
