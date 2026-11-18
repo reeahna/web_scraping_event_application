@@ -197,7 +197,11 @@ _SPORTS = (
     r"lacrosse|gymnastics|water polo"
 )
 _AWAY_GAME = re.compile(
-    rf"\b(university|college|IU|state)\b.*?\b({_SPORTS})\s+(at|@)\s",
+    rf"\b(university|college|IU|state)\b.*?\b({_SPORTS})\s+(at|@)\s|"
+    # Or a school named only by its state or nickname: "California Men's Soccer
+    # at Portland". "at the ..." or "at home" names a place, not an opponent.
+    rf"\b(men|women)['\u2019]?s\s+({_SPORTS})(\s*&\s*({_SPORTS}))?\s+(at|@)\s+"
+    r"(?!the\b|home\b)[A-Z]",
     re.IGNORECASE,
 )
 # A tailgate held at the other team's stadium: "IU vs Michigan Away Game Tailgate".
