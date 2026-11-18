@@ -28,6 +28,7 @@ lines. Lines may use `**bold**`, `` `code` `` and `[links](https://...)`.
 ## [Unreleased]
 
 ### For everyone
+- Pages no longer fail with an error now and then while new events are being collected in the background. (#82)
 - Fewer listings that aren't events: building open hours, team practices, class sections, study days, "no seminar today" notices, baby and kids' programs, and away games no longer show. (#82)
 - Every town now has its own **This weekend** and **Today** pages, and each town page links to other college towns nearby, so it is easier to find something to do (and easier for search engines to send people to the right town). (#78)
 - Fewer listings that aren't for students: kids' and family programs, faculty and TA workshops, thesis defenses, and events in other towns (like away meets and county health checks elsewhere) no longer show. Alumni groups and networking nights in town do show. (#65)
