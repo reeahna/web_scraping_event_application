@@ -14,20 +14,40 @@
     <option value="{{ city.id }}" {% if city_id == city.id %}selected{% endif %}>{{ city.name }}</option>
     {% endfor %}
   </select>
-  {# Grouped rather than a flat list of ten near-identical words, and labelled
-     in English rather than the stored identifier. The count makes an empty
-     state visible without having to run the search. #}
-  <select name="onboarding_status" aria-label="Onboarding status">
-    <option value="">All statuses</option>
-    {% for group in status_groups %}
-    <optgroup label="{{ group.label }}">
-      {% for option in group.options %}
-      <option value="{{ option.value }}" {% if onboarding_status == option.value %}selected{% endif %}>{{ option.label }} ({{ option.count }})</option>
-      {% endfor %}
-    </optgroup>
-    {% endfor %}
-  </select>
+  {# A checkbox per status, grouped and labelled in English rather than the
+     stored identifier, so several can be picked at once. The radio decides
+     whether the checked ones are the only ones shown or the ones hidden. A
+     plain <details>, so it needs no script under the CSP. The count makes an
+     empty state visible without having to run the search. #}
+  <details class="status-filter">
+    <summary>
+      {%- if not statuses %}All statuses
+      {%- elif status_mode == "hide" %}Hiding: {{ status_labels | join(", ") }}
+      {%- else %}Status: {{ status_labels | join(", ") }}{% endif -%}
+    </summary>
+    <div class="status-filter-panel">
+      <fieldset class="status-filter-mode">
+        <legend>Checked statuses are</legend>
+        <label class="checkbox-label"><input type="radio" name="status_mode" value="only"{% if status_mode != "hide" %} checked{% endif %} /> the only ones shown</label>
+        <label class="checkbox-label"><input type="radio" name="status_mode" value="hide"{% if status_mode == "hide" %} checked{% endif %} /> hidden</label>
+      </fieldset>
+      <div class="filter-exclude-groups">
+        {% for group in status_groups %}
+        <fieldset class="filter-exclude-group">
+          <legend>{{ group.label }}</legend>
+          {% for option in group.options %}
+          <label class="checkbox-label">
+            <input type="checkbox" name="onboarding_status" value="{{ option.value }}"{% if option.checked %} checked{% endif %} />
+            {{ option.label }} ({{ option.count }})
+          </label>
+          {% endfor %}
+        </fieldset>
+        {% endfor %}
+      </div>
+    </div>
+  </details>
   <button type="submit">Search</button>
+  {% if q or city_id or statuses %}<a href="/admin/websites" class="filter-clear-link">Clear filters</a>{% endif %}
   <a href="/admin/websites/new">+ New website</a>
 </form>
 

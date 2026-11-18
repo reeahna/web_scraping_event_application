@@ -2,7 +2,7 @@ import json
 from typing import Annotated
 from urllib.parse import urlencode
 
-from fastapi import APIRouter, Depends, Form, Request
+from fastapi import APIRouter, Depends, Form, Query, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
 from pydantic import ValidationError
 
@@ -205,8 +205,8 @@ def _duplicate_message(match: WebsiteMatch) -> str:
 
 
 
-def _status_filter_groups(db) -> list[dict]:
-    """The status dropdown, grouped and labelled, with a count per state.
+def _status_filter_groups(db, selected: frozenset[str] = frozenset()) -> list[dict]:
+    """The status checkboxes, grouped and labelled, with a count per state.
 
     The counts come from one GROUP BY. Showing zeroes rather than hiding empty
     states keeps the option list stable between visits and lets the reader
@@ -217,12 +217,36 @@ def _status_filter_groups(db) -> list[dict]:
         {
             "label": group_label,
             "options": [
-                {"value": state, "label": onboarding_label(state), "count": counts.get(state, 0)}
+                {
+                    "value": state,
+                    "label": onboarding_label(state),
+                    "count": counts.get(state, 0),
+                    "checked": state in selected,
+                }
                 for state in states
             ],
         }
         for group_label, states in ONBOARDING_STATE_GROUPS
     ]
+
+
+# How the checked statuses apply: keep only those sites, or hide them.
+STATUS_MODE_ONLY = "only"
+STATUS_MODE_HIDE = "hide"
+
+
+def _clean_statuses(values: list[str] | None) -> list[str]:
+    """Blank entries dropped, duplicates removed, first-seen order kept.
+
+    A blank `onboarding_status=` is what an older bookmark or the "All
+    statuses" option sent, and it has always meant "no status filter".
+    """
+    seen: dict[str, None] = {}
+    for value in values or ():
+        value = value.strip()
+        if value:
+            seen.setdefault(value, None)
+    return list(seen)
 
 
 @router.get("", response_class=HTMLResponse)
@@ -232,25 +256,32 @@ def list_websites_view(
     db: DbSession,
     q: OptionalText = None,
     city_id: OptionalId = None,
-    onboarding_status: OptionalText = None,
+    onboarding_status: Annotated[list[str] | None, Query()] = None,
+    status_mode: OptionalText = None,
     page: int = 1,
 ):
+    # `onboarding_status` may repeat (?onboarding_status=a&onboarding_status=b),
+    # so a single-status link from before multi-select still means the same.
+    statuses = _clean_statuses(onboarding_status)
+    hiding = status_mode == STATUS_MODE_HIDE and bool(statuses)
     websites, total = search_websites(
         db,
         query=q,
         city_id=city_id,
-        onboarding_status=onboarding_status,
+        onboarding_status=None if hiding else statuses,
+        exclude_statuses=statuses if hiding else (),
         page=page,
         per_page=PER_PAGE,
     )
     cities = list_cities(db, active_only=False)
-    base_url = "/admin/websites?" + urlencode(
-        {
-            "q": q or "",
-            "city_id": city_id or "",
-            "onboarding_status": onboarding_status or "",
-        }
-    )
+    params: list[tuple[str, str]] = [("q", q or ""), ("city_id", str(city_id or ""))]
+    if statuses:
+        params += [("onboarding_status", status) for status in statuses]
+        if hiding:
+            params.append(("status_mode", STATUS_MODE_HIDE))
+    else:
+        params.append(("onboarding_status", ""))
+    base_url = "/admin/websites?" + urlencode(params)
     return render(
         request,
         "admin/websites/list.html",
@@ -262,9 +293,11 @@ def list_websites_view(
             "per_page": PER_PAGE,
             "q": q or "",
             "city_id": city_id,
-            "onboarding_status": onboarding_status or "",
+            "statuses": statuses,
+            "status_labels": [onboarding_label(status) for status in statuses],
+            "status_mode": STATUS_MODE_HIDE if hiding else STATUS_MODE_ONLY,
             "cities": cities,
-            "status_groups": _status_filter_groups(db),
+            "status_groups": _status_filter_groups(db, frozenset(statuses)),
             "base_url": base_url,
         },
     )

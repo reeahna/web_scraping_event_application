@@ -1113,6 +1113,59 @@ button:hover {
   font-size: 0.88rem;
 }
 
+/* Admin Websites: a multi-status filter in a plain <details>. Closed, it is
+   one control in the bar; open, it takes its own full-width row below. */
+.status-filter {
+  border: 1px solid var(--border-input);
+  border-radius: var(--radius-sm);
+  font-size: 0.88rem;
+  background: var(--surface);
+  max-width: 100%;
+}
+
+.status-filter summary {
+  cursor: pointer;
+  padding: 7px 10px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 320px;
+}
+
+.status-filter[open] {
+  flex: 1 1 100%;
+  order: 10;
+}
+
+.status-filter[open] summary {
+  max-width: none;
+  border-bottom: 1px solid var(--border);
+}
+
+.status-filter-panel {
+  padding: var(--space-3);
+}
+
+.status-filter-mode {
+  border: 0;
+  margin: 0 0 var(--space-2);
+  padding: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1) var(--space-4);
+  align-items: center;
+}
+
+.status-filter-mode legend {
+  float: left;
+  font-weight: 600;
+  margin-right: var(--space-2);
+}
+
+.status-filter-mode .checkbox-label {
+  margin: 0;
+}
+
 /* ==========================================================================
    13. Metrics / dashboard
    ========================================================================== */
