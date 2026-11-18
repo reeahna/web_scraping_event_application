@@ -7,7 +7,7 @@ executable content). The pipeline is: fetch → detect → extract → normalize
 validate → dedup, and it is deterministic (identical input + config → identical
 output).
 
-## Registered patterns (14)
+## Registered patterns (15)
 
 | Pattern | Source shape |
 |---------|--------------|
@@ -25,6 +25,7 @@ output).
 | `algolia_search` | Algolia search response (key via secret reference) |
 | `campus_labs_engage` | Campus Labs Engage discovery API (`value` records; recipe with `endsAfter`/`skip`/`take`) |
 | `paged_json_events` | Paged JSON API (`content` + page metadata, Spring-style); fields inferred |
+| `bibliocommons_events` | BiblioCommons library events gateway (`events.items` ids looked up in `entities`) |
 
 ## Shared capabilities (Phase 8G)
 
@@ -79,6 +80,18 @@ and structural signals, minus penalties for telemetry/aggregate/empty shapes.
 This lets recovery prefer a first-party event API in an unknown format over a
 zero-result rendered-HTML proposal, and surface "a reusable pattern is needed"
 instead of forcing `generic_html_cards` onto JSON.
+
+**`bibliocommons_events`.** Public libraries on BiblioCommons build their
+events page in the browser from a public gateway API
+(`gateway.bibliocommons.com/v2/libraries/<library>/events`). A page of that API
+lists event ids in `events.items`; each event, its branch (`entities.locations`)
+or other place (`entities.places`), its type and its image are looked up by id
+in `entities`. Start and end are already local wall-clock times. The detector
+matches that response shape, or a library page on `<library>.bibliocommons.com`
+that mentions the platform in its markup, and the proposer stores the gateway
+URL with `limit=100` and walks it with `path_page` pagination
+(`...&page={page}`). Event links follow the platform's `/events/<id>` route.
+Cancelled events are skipped.
 
 **`simpleview_events`.** Simpleview DMO sites expose a first-party event API
 (e.g. `…/includes/rest_v2/plugins_events_events_by_date/find/`) returning a

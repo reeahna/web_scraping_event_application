@@ -34,6 +34,7 @@ lines. Lines may use `**bold**`, `` `code` `` and `[links](https://...)`.
 - Fewer listings that aren't for students: kids' and family programs, faculty and TA workshops, thesis defenses, and events in other towns (like away meets and county health checks elsewhere) no longer show. Alumni groups and networking nights in town do show. (#65)
 
 ### Admin and behind the scenes
+- New **BiblioCommons library events** pattern: public library calendars on BiblioCommons are read from the platform's events API, 100 events per page, with each event's branch or other venue, address, type and image. Library pages on the platform are recognised automatically. (#84)
 - Security check: every package the app uses was confirmed genuine, the minimum versions of Jinja2, python-multipart, Authlib, requests and Starlette were raised past releases with known security problems, the map's Leaflet files from unpkg are now checked against fixed fingerprints so a tampered copy is refused, and CI runs `pip-audit` on every change. No keys or passwords were found in the code or its history. (#83)
 - The Simpleview events pattern can read an API that answers with a bare list of events (set `events_root` to an empty string). Library calendars that work this way can now be set up by hand. (#81)
 - The admin Websites page can filter by several statuses at once: tick the ones you want to see, or switch to hiding them (for example, everything except Active and Blocked by site). The choice stays in the link, so it can be bookmarked or shared, and older single-status links still work. (#80)
