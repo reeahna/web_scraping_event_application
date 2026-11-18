@@ -1,3 +1,5 @@
+from collections.abc import Sequence
+
 from sqlalchemy import func, or_
 from sqlalchemy.orm import Session
 
@@ -45,10 +47,16 @@ def search_websites(
     *,
     query: str | None = None,
     city_id: int | None = None,
-    onboarding_status: str | None = None,
+    onboarding_status: str | Sequence[str] | None = None,
+    exclude_statuses: Sequence[str] = (),
     page: int = 1,
     per_page: int = 20,
 ) -> tuple[list[Website], int]:
+    """Search sites by text, city and status.
+
+    `onboarding_status` keeps only sites in the given state (or any of several
+    states); `exclude_statuses` drops sites in those states. Both may be given.
+    """
     q = db.query(Website)
     if query:
         like = contains_pattern(query)
@@ -60,8 +68,12 @@ def search_websites(
         )
     if city_id is not None:
         q = q.filter(Website.city_id == city_id)
+    if isinstance(onboarding_status, str):
+        onboarding_status = [onboarding_status]
     if onboarding_status:
-        q = q.filter(Website.onboarding_status == onboarding_status)
+        q = q.filter(Website.onboarding_status.in_(list(onboarding_status)))
+    if exclude_statuses:
+        q = q.filter(Website.onboarding_status.not_in(list(exclude_statuses)))
 
     total = q.count()
     page = max(page, 1)

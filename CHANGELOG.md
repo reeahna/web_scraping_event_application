@@ -32,6 +32,7 @@ lines. Lines may use `**bold**`, `` `code` `` and `[links](https://...)`.
 - Fewer listings that aren't for students: kids' and family programs, faculty and TA workshops, thesis defenses, and events in other towns (like away meets and county health checks elsewhere) no longer show. Alumni groups and networking nights in town do show. (#65)
 
 ### Admin and behind the scenes
+- The admin Websites page can filter by several statuses at once: tick the ones you want to see, or switch to hiding them (for example, everything except Active and Blocked by site). The choice stays in the link, so it can be bookmarked or shared, and older single-status links still work. (#80)
 - Town pages are titled and described the way people search ("Things to do in Ann Arbor, Michigan this weekend"), carry breadcrumb and town location data for search engines, and the sitemap lists each town's weekend and today pages. `docs/seo.md` explains what the code does and the steps only the owner can take (custom domain, Search Console, local links). (#78)
 - `/health/ready` reports the AI label queue (`checks.ai_categorization`: whether it is on, the provider, how many events are waiting and how many hours the oldest has waited), so outside monitoring can watch it. (#74)
 - The admin dashboard shows how many upcoming events are still waiting for an AI category, and how many already have one, when AI labeling is on. (#73)
