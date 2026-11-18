@@ -151,6 +151,11 @@ def test_other_campus_title_on_a_shared_calendar(title, other):
     "title,away",
     [
         ("10/9 Indiana University Women’s Rowing at Iowa (Scrimmage)", True),
+        # A school named by its state or nickname alone.
+        ("California Men’s Soccer at Portland", True),
+        ("California Women’s Swimming & Diving at UGA Midseason Invitational", True),
+        ("California Men’s Basketball at the Haas Pavilion", False),
+        ("California Women’s Basketball vs Gonzaga", False),
         ("9/6 1:00 PM Indiana University Women's Soccer at Ohio", True),
         ("Lehigh University Football at Georgetown", True),
         ("Lehigh University Women's Golf at Charge At Quail Valley", True),

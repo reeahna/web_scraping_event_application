@@ -132,6 +132,10 @@ _AUDIENCE_TITLE = _rx(
     r"computer basics|senior planet|mba campus visits?|family (art labs?|workshops?|series)|"
     # Preschool cartoon characters: "Breakfast with Bluey and Bingo".
     r"bluey|paw patrol|peppa pig|daniel tiger|cocomelon|"
+    # Library programs for little ones and older adults: "Baby Time", "Kids
+    # Chess Club", "Little Play Date!", "Chair-Based Exercise Class".
+    r"baby (time|playgroups?)|playgroups?|play ?dates?|kids \w+ club|youth thea(ter|tre)|"
+    r"chair[- ]based exercise|"
     r"(trunk|trick)[- ]or[- ]treats?|prospective (\w+ )?students?|"
     r"senior (expo|citizens?|center)|seniors (55|60|62|65)|older adults|retirees|"
     r"(50|55|60|62|65)\s*(\+|and (up|over|older))|teens?|tots?|emeriti|"
@@ -151,10 +155,14 @@ _FLOOR_PAIR_TITLE = _rx(r"^\s*[a-z]+ \d\s*(&|and)\s*[a-z]+ \d\s*:")
 # A campus service's open hours or a study space listed as if it were an event:
 # "Drop-In Career Coaching", "Learning Lab", "Study".
 _SERVICE_TITLE = _rx(
-    r"\bdrop[- ]in (career|advising|tutoring|coaching|hours|help|consultations?|writing)\b|"
+    r"\bdrop[- ]in (career|advising|tutoring|coaching|hours?|help|consultations?|writing)\b|"
+    # A building's open hours: "Building Hours - RSF".
+    r"^\s*building hours\b|"
     r"\b(career coaching|study tables?|tutoring hours|writing (center|tutor)|advising hours)\b|"
     # A study group's own booking: "Motor Speech Study Session", "LGSA Study Hour".
-    r"\bstudy (sesh\w*|sessions?|hours?|nights?)\b|^\s*study groups?\b|"
+    r"\bstudy (sesh\w*|sessions?|hours?|nights?|days?)\b|^\s*study groups?\b|"
+    # A course's exam review: "Introduction to IP Review Session: Patents".
+    r"\breview sessions?\b|"
     # "Study hall event", "Study w/ the SIAs".
     r"^\s*study hall\b|^\s*study (w/|with)\s|\bexam \d\b|"
     # A campus tool's open hours: "Stellic Drop-ins".
@@ -295,7 +303,12 @@ _INTERNAL_TITLE = _rx(
     r"\bfor (international |new )?(g?tas|teaching assistants|instructors)\s*$|"
     r"\btraining (meeting|weekend)\b|[-–]\s*trainings?\s*$|"
     # Notices rather than events.
-    r"\bmove your car\b|\b(football|game ?day) parking\b|\bsurvey\s*$"
+    r"\bmove your car\b|\b(football|game ?day) parking\b|\bsurvey\s*$|"
+    # "No Bioengineering Seminar Today", "No PAWS today - Fall Break",
+    # "Join SOCHI Email List!".
+    r"^\s*no [\w ]{1,40}\btoday\b|^\s*join (our |the )?[\w ]{0,30}(email|mailing) list\b|"
+    # Team and staff bookings: "VB Visiting Team Practice", "Staff Garden Volunteer Day".
+    r"\bvisiting team practice\b|^\s*staff (garden|appreciation|holiday party|potluck)\b"
 )
 # Case-sensitive: a course section ("SWK-S 502 0001", "NURS-B 444", "ANAT-D502")
 # or a room code ("Rm IB 317") at the front of a title is a class or a booking.
@@ -310,6 +323,9 @@ _INTERNAL_CODES = re.compile(
     r"^\s*[A-Z]{2,5} [A-Z]?\d{3}[A-Z]?\s*:|"
     # A department's research talk series: "CCBB Seminar Guest Speaker: Dr. ...".
     r"^\s*[A-Z]{2,6} (Seminar|Colloquium)\b|"
+    # A class section's booking: "PHYSED 3 017 24692 2268"; an athletics
+    # team's practice: "IA VB Practice".
+    r"^\s*[A-Z]{3,10} \d+[A-Z]? \d{3} \d{5}\b|^\s*IA [A-Z]{2,3} Practice\s*$|"
     # A department's thesis defense: "CSE Defense: ...", "CSE Dissertation: ...".
     r"^\s*[A-Z]{2,6} (Defen[cs]e|Dissertation|Thesis)\s*[:-]|"
     # A booking held under two initials and nothing else: "MC", "VL".
