@@ -18,6 +18,10 @@ ACTIVE = "active"
 INACTIVE = "inactive"
 UNSUPPORTED = "unsupported"
 FAILING = "failing"
+# The site refuses our requests (403 or a bot wall). Kept apart from
+# UNSUPPORTED so an administrator can later decide whether a paid scraping
+# service is worth it for these sources. Only ever set by hand.
+BLOCKED = "blocked"
 ARCHIVED = "archived"
 
 ONBOARDING_STATES: tuple[str, ...] = (
@@ -29,6 +33,7 @@ ONBOARDING_STATES: tuple[str, ...] = (
     ACTIVE,
     INACTIVE,
     UNSUPPORTED,
+    BLOCKED,
     FAILING,
     ARCHIVED,
 )
@@ -41,15 +46,16 @@ ONBOARDING_STATES: tuple[str, ...] = (
 # automatic detection result, the third possible detection outcome alongside
 # DETECTED and UNSUPPORTED).
 ALLOWED_TRANSITIONS: dict[str, frozenset[str]] = {
-    DRAFT: frozenset({DETECTING, NEEDS_REVIEW, APPROVED, ARCHIVED}),
+    DRAFT: frozenset({DETECTING, NEEDS_REVIEW, APPROVED, BLOCKED, ARCHIVED}),
     DETECTING: frozenset({DETECTED, NEEDS_REVIEW, UNSUPPORTED, APPROVED, ARCHIVED}),
-    DETECTED: frozenset({NEEDS_REVIEW, UNSUPPORTED, APPROVED, ARCHIVED}),
-    NEEDS_REVIEW: frozenset({APPROVED, UNSUPPORTED, ARCHIVED}),
+    DETECTED: frozenset({NEEDS_REVIEW, UNSUPPORTED, APPROVED, BLOCKED, ARCHIVED}),
+    NEEDS_REVIEW: frozenset({APPROVED, UNSUPPORTED, BLOCKED, ARCHIVED}),
     APPROVED: frozenset({ACTIVE, ARCHIVED}),
     ACTIVE: frozenset({INACTIVE, FAILING, ARCHIVED}),
-    INACTIVE: frozenset({ACTIVE, ARCHIVED}),
-    UNSUPPORTED: frozenset({DRAFT, NEEDS_REVIEW, ARCHIVED}),
-    FAILING: frozenset({ACTIVE, INACTIVE, ARCHIVED}),
+    INACTIVE: frozenset({ACTIVE, BLOCKED, ARCHIVED}),
+    UNSUPPORTED: frozenset({DRAFT, NEEDS_REVIEW, BLOCKED, ARCHIVED}),
+    BLOCKED: frozenset({DRAFT, NEEDS_REVIEW, ARCHIVED}),
+    FAILING: frozenset({ACTIVE, INACTIVE, BLOCKED, ARCHIVED}),
     ARCHIVED: frozenset(),
 }
 
@@ -63,6 +69,7 @@ TRANSITION_PERMISSIONS: dict[str, str] = {
     ACTIVE: "sites.activate",
     INACTIVE: "sites.activate",
     UNSUPPORTED: "sites.update",
+    BLOCKED: "sites.update",
     FAILING: "sites.update",
     ARCHIVED: "sites.archive",
 }
@@ -84,18 +91,19 @@ ONBOARDING_LABELS: dict[str, str] = {
     ACTIVE: "Active",
     INACTIVE: "Inactive",
     UNSUPPORTED: "Unsupported",
+    BLOCKED: "Blocked by site",
     FAILING: "Failing",
     ARCHIVED: "Archived",
 }
 
-# Grouped for the status filter. All ten stay selectable — each is a real state
-# a site can be in, and dropping one would make those sites unfindable — but a
-# flat list of ten similar words is hard to scan, so the dropdown groups them by
+# Grouped for the status filter. Every state stays selectable (each is a real state
+# a site can be in, and dropping one would make those sites unfindable), but a
+# flat list of similar words is hard to scan, so the dropdown groups them by
 # what they mean for the reader. Order matches the lifecycle.
 ONBOARDING_STATE_GROUPS: tuple[tuple[str, tuple[str, ...]], ...] = (
     ("Live", (ACTIVE,)),
     ("Waiting on you", (DRAFT, DETECTING, DETECTED, NEEDS_REVIEW, APPROVED)),
-    ("Problem", (UNSUPPORTED, FAILING)),
+    ("Problem", (UNSUPPORTED, BLOCKED, FAILING)),
     ("Retired", (INACTIVE, ARCHIVED)),
 )
 

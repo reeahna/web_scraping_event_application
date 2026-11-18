@@ -28,9 +28,11 @@ lines. Lines may use `**bold**`, `` `code` `` and `[links](https://...)`.
 ## [Unreleased]
 
 ### For everyone
+- Every town now has its own **This weekend** and **Today** pages, and each town page links to other college towns nearby, so it is easier to find something to do (and easier for search engines to send people to the right town). (#78)
 - Fewer listings that aren't for students: kids' and family programs, faculty and TA workshops, thesis defenses, and events in other towns (like away meets and county health checks elsewhere) no longer show. Alumni groups and networking nights in town do show. (#65)
 
 ### Admin and behind the scenes
+- Town pages are titled and described the way people search ("Things to do in Ann Arbor, Michigan this weekend"), carry breadcrumb and town location data for search engines, and the sitemap lists each town's weekend and today pages. `docs/seo.md` explains what the code does and the steps only the owner can take (custom domain, Search Console, local links). (#78)
 - `/health/ready` reports the AI label queue (`checks.ai_categorization`: whether it is on, the provider, how many events are waiting and how many hours the oldest has waited), so outside monitoring can watch it. (#74)
 - The admin dashboard shows how many upcoming events are still waiting for an AI category, and how many already have one, when AI labeling is on. (#73)
 - AI labeling with Groq no longer stops when the model wraps its answer in an unexpected way, and a bad answer now shows in the logs. (#68)
@@ -39,6 +41,9 @@ lines. Lines may use `**bold**`, `` `code` `` and `[links](https://...)`.
 - An admin access key (`ADMIN_API_KEY` and `ADMIN_API_KEY_USER_EMAIL`) lets an automated job such as the daily source-maintenance task use the admin pages without a browser sign-in. It acts as the named account, with that account's permissions, and is off unless both are set. (#75)
 - A new **Visitors** page (Administration, then Visitors) shows who uses the site: visitors and pages viewed per day, which towns people are looking at, a visitor log (anonymous or the signed-in person's name, towns viewed, device, the site they came from) and recent sign-ins. It sets no cookie, stores no IP address and skips bots. Rows are kept for 180 days (`VISIT_RETENTION_DAYS`). (#79)
 - **Detect and configure** no longer fails with a server error on sites styled with utility CSS classes such as `md:tw-px-4`; those classes are left out of generated selectors. (#76)
+- Previewing a source no longer fails with a server error when one of its transformation patterns is refused as risky: that rule is skipped and the preview says so. Plain `(?:...)` groups are now allowed, and a truly risky pattern is rejected with a clear message when the configuration is saved. (#77)
+- Saving the configure form without touching the hidden settings no longer drops a feed's API endpoint or its allowed content types, so iCalendar sources keep working after an edit. (#77)
+- New **Blocked by site** status, in the Problem group of the status filter, for sources whose site refuses our requests. It keeps them together for a later decision on a paid scraping service. (#77)
 
 ## [1.9.0] - 2026-11-17 - Version history
 

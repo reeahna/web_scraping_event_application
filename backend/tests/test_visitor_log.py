@@ -89,6 +89,15 @@ class TestCounting:
         (row,) = _visitors(db_session)
         assert row.towns == "ithaca"
 
+    def test_weekend_and_today_pages_count_toward_the_town(self, tracking, client,
+                                                          make_city, db_session):
+        make_city(name="Ithaca", slug="ithaca")
+        assert _visit(client, "/city/ithaca/this-weekend").status_code == 200
+        assert _visit(client, "/city/ithaca/today").status_code == 200
+        site_visits.flush()
+        (row,) = _visitors(db_session)
+        assert row.towns == "ithaca" and row.page_views == 2
+
     @pytest.mark.parametrize(
         "ua",
         ["Googlebot/2.1 (+http://www.google.com/bot.html)", "curl/8.4.0",

@@ -71,6 +71,11 @@ def event_detail(event_id: int, request: Request, current_user: OptionalCurrentU
             "is_saved": is_saved,
             "is_following_city": is_following_city,
             "structured_data": seo.event_structured_data(event),
+            "breadcrumb_structured_data": seo.breadcrumb_structured_data(
+                [("Towns", "/")]
+                + ([(event.city.name, seo.town_path(event.city))] if event.city else [])
+                + [(event.title, f"/events/{event.id}")]
+            ),
             "meta_description": seo.event_meta_description(event),
             "page_title": seo.event_page_title(event),
             "canonical_url": seo.absolute_url(f"/events/{event.id}"),

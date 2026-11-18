@@ -41,4 +41,4 @@ FastAPI app in `app/`, run from this folder. Read the root `CLAUDE.md` first.
 
 `../docs/architecture.md`, `../docs/extraction-patterns.md`,
 `../docs/automatic-onboarding.md`, `../docs/scheduler.md`, `../docs/security.md`,
-`../docs/operations.md`, `../docs/deploy-render.md`.
+`../docs/operations.md`, `../docs/deploy-render.md`, `../docs/seo.md`.

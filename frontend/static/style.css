@@ -516,6 +516,44 @@ input[type="checkbox"], input[type="radio"] {
   font-size: var(--font-md);
 }
 
+/* One sentence saying what the town page covers, under the subtitle. */
+.hero-summary {
+  margin-top: var(--space-2);
+  color: var(--muted);
+  font-size: var(--font-sm);
+}
+
+/* Links to neighbouring towns, below the event list. */
+.nearby-towns {
+  margin-top: var(--space-6);
+  padding-top: var(--space-5);
+  border-top: 1px solid var(--border);
+}
+
+.nearby-towns h2 {
+  font-size: var(--font-md);
+  margin-bottom: var(--space-3);
+}
+
+.nearby-towns-list {
+  list-style: none;
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2) var(--space-5);
+  padding: 0;
+}
+
+.nearby-towns-list a {
+  color: var(--accent);
+  font-weight: 600;
+}
+
+.nearby-towns-meta {
+  margin-left: var(--space-2);
+  color: var(--muted);
+  font-size: 0.82rem;
+}
+
 /* Legacy hero (auth-adjacent placeholder pages, if any remain) */
 .hero p {
   color: var(--muted);

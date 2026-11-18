@@ -65,7 +65,14 @@ class _Filters:
     to. Kept in one place so the list route, the city route, and the map
     endpoint all interpret the query string identically."""
 
-    def __init__(self, params: QueryParams, *, today: date, city_id: int | None = None):
+    def __init__(
+        self,
+        params: QueryParams,
+        *,
+        today: date,
+        city_id: int | None = None,
+        preset: str | None = None,
+    ):
         # city_id, when given, pins the town (the city page) over any query value.
         # A pinned town is already in the path, so it stays out of the query
         # string: /city/x?city_id=5&page=2 was a second URL for /city/x?page=2.
@@ -82,7 +89,13 @@ class _Filters:
         self.recurrence = recurrence if recurrence in ("single", "recurring") else None
         self.upcoming_only = params.get("upcoming_only") == "1"
         self.view = "map" if params.get("view") == "map" else "list"
-        self.preset = params.get("preset") if params.get("preset") in ("today", "weekend") else None
+        # preset, when given, pins the date window (a town's /today or
+        # /this-weekend page). Like a pinned town it is in the path, so it stays
+        # out of the query string that pagination and the view toggle reuse.
+        self.preset_pinned = preset is not None
+        if preset is None:
+            preset = params.get("preset")
+        self.preset = preset if preset in ("today", "weekend") else None
 
         # A preset overrides explicit from/to so a shareable ?preset=today URL
         # is self-contained.
@@ -108,7 +121,7 @@ class _Filters:
             "exclude_source_ids": self.exclude_source_ids,
         }
 
-    def query_string(self) -> str:
+    def query_string(self, *, include_pinned: bool = False) -> str:
         """The current filters as a URL query string (without page/view), so
         pagination, the view toggle, and the map fetch all stay shareable and
         in sync. A preset is emitted as ?preset=... rather than its expanded
@@ -128,7 +141,7 @@ class _Filters:
             pairs.append(("recurrence", self.recurrence))
         if self.upcoming_only:
             pairs.append(("upcoming_only", "1"))
-        if self.preset:
+        if self.preset and (include_pinned or not self.preset_pinned):
             pairs.append(("preset", self.preset))
         else:
             if self.date_from:
@@ -167,6 +180,7 @@ def _render_events(
     selected_city=None,
     base_path: str = "/",
     noindex: bool = False,
+    town: dict | None = None,
 ):
     settings = get_settings()
     today = current_public_date()
@@ -174,6 +188,7 @@ def _render_events(
     events, total, has_next = list_public_events(
         db, today=today, page=page, **filters.as_query_kwargs()
     )
+    town = town or {}
     return render(
         request,
         "home.html",
@@ -192,6 +207,9 @@ def _render_events(
             "sources": list_public_sources(db, today=today, city_id=filters.city_id),
             "filters": filters.template_context(),
             "query_string": filters.query_string(),
+            # The map fetches by query string alone, so it needs a pinned window too.
+            "map_query_string": filters.query_string(include_pinned=True),
+            "town": town,
             "base_path": base_path,
             # Each page of the listing is its own canonical page: pointing page
             # 2 at page 1 told search engines the later pages were duplicates.
@@ -201,7 +219,10 @@ def _render_events(
             "noindex": noindex,
             "listing_structured_data": (
                 seo.city_listing_structured_data(
-                    selected_city, events, page_url=seo.absolute_url(base_path)
+                    selected_city,
+                    events,
+                    page_url=seo.absolute_url(base_path),
+                    name=town.get("heading"),
                 )
                 if selected_city
                 else None
@@ -261,8 +282,18 @@ def home(request: Request, current_user: OptionalCurrentUser, db: DbSession):
     )
 
 
-@router.get("/city/{slug}", response_class=HTMLResponse)
-def city_page(slug: str, request: Request, current_user: OptionalCurrentUser, db: DbSession):
+def _town_page(
+    slug: str,
+    request: Request,
+    current_user,
+    db,
+    *,
+    window: str | None = None,
+):
+    """A town's events: all upcoming, or one window of them (/today,
+    /this-weekend). Each is a page of its own for search engines, titled after
+    the search it answers ("things to do in Ann Arbor this weekend")."""
+    suffix = f"/{window}" if window else ""
     city = get_city_by_slug(db, slug)
     if city is None:
         canonical = get_city_by_slug_ignoring_case(db, slug)
@@ -270,21 +301,79 @@ def city_page(slug: str, request: Request, current_user: OptionalCurrentUser, db
             # /city/BLOOMINGTON -> /city/bloomington, keeping the filters.
             # A relative Location, so the redirect never echoes the Host header.
             query = f"?{request.url.query}" if request.url.query else ""
-            return RedirectResponse(f"/city/{canonical.slug}{query}", status_code=301)
+            return RedirectResponse(f"/city/{canonical.slug}{suffix}{query}", status_code=301)
     if city is None or not city.is_active:
         raise NotFoundError("City not found")
     # For the visitor log: which town this visitor is looking at.
     request.state.visit_town = city.slug
-    # The city page pins the city filter.
+    # The city page pins the city filter, and a window page pins its dates.
     today = current_public_date()
-    filters = _Filters(request.query_params, today=today, city_id=city.id)
-    upcoming = upcoming_counts_by_city(db, today=today).get(city.id, 0)
+    preset = seo.TOWN_WINDOWS[window][0] if window else None
+    filters = _Filters(request.query_params, today=today, city_id=city.id, preset=preset)
+    counts = upcoming_counts_by_city(db, today=today)
+    upcoming = counts.get(city.id, 0)
+    weekend_from, weekend_to = this_weekend(today)
+    _, weekend_count, _ = list_public_events(
+        db, today=today, city_id=city.id, date_from=weekend_from, date_to=weekend_to,
+        per_page=1,
+    )
+    window_count = None
+    if window == "this-weekend":
+        window_count = weekend_count
+    elif window == "today":
+        _, window_count, _ = list_public_events(
+            db, today=today, city_id=city.id, date_from=today, date_to=today, per_page=1
+        )
+    nearby = [
+        {"city": other, "miles": round(miles), "count": counts.get(other.id, 0)}
+        for other, miles in seo.nearby_towns(city, list_cities(db))
+    ]
+    base_path = seo.town_path(city, window)
+    crumbs = [("Towns", "/"), (city.name, seo.town_path(city))]
+    if window:
+        crumbs.append((seo.TOWN_WINDOWS[window][1].capitalize(), base_path))
+    town = {
+        "window": window or "",
+        "path": seo.town_path(city),
+        "heading": seo.town_heading(city, window),
+        "title": seo.town_page_title(city, window),
+        "description": seo.town_meta_description(
+            city, upcoming=upcoming, window=window, window_count=window_count
+        ),
+        "place": seo.town_place(city),
+        "upcoming": upcoming,
+        "weekend_count": weekend_count,
+        "nearby": nearby,
+        "breadcrumb_structured_data": seo.breadcrumb_structured_data(crumbs),
+    }
     return _render_events(
         request,
         db,
         current_user,
         filters,
         selected_city=city,
-        base_path=f"/city/{slug}",
+        base_path=base_path,
+        # A window page is indexed exactly when its town is, so the town's
+        # three pages join and leave search results together.
         noindex=not seo.town_is_indexable(upcoming),
+        town=town,
     )
+
+
+@router.get("/city/{slug}", response_class=HTMLResponse)
+def city_page(slug: str, request: Request, current_user: OptionalCurrentUser, db: DbSession):
+    return _town_page(slug, request, current_user, db)
+
+
+@router.get("/city/{slug}/this-weekend", response_class=HTMLResponse)
+def city_weekend_page(
+    slug: str, request: Request, current_user: OptionalCurrentUser, db: DbSession
+):
+    return _town_page(slug, request, current_user, db, window="this-weekend")
+
+
+@router.get("/city/{slug}/today", response_class=HTMLResponse)
+def city_today_page(
+    slug: str, request: Request, current_user: OptionalCurrentUser, db: DbSession
+):
+    return _town_page(slug, request, current_user, db, window="today")
