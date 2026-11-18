@@ -9,6 +9,7 @@ decide what address search engines and social previews record.
 from __future__ import annotations
 
 import json
+import math
 from datetime import date, time
 from urllib.parse import quote, urlencode, urljoin
 
@@ -153,7 +154,147 @@ def event_meta_description(event: Event) -> str:
     return summary[:157].rstrip() + "…" if len(summary) > 158 else summary
 
 
-def city_listing_structured_data(city, events: list[Event], *, page_url: str) -> str:
+# --- town pages and "things to do" searches ------------------------------------
+#
+# People rarely search for "Bulletin". They search for "things to do in Ann
+# Arbor", "events in Ann Arbor this weekend", or "events near me" (which Google
+# answers with pages about the town it thinks they are in). Each town therefore
+# has three landing pages, each named after the search it answers: all upcoming
+# events, this weekend, and today. The windows are real paths rather than
+# ?preset= query strings, because a query string variant is canonicalised to
+# the town page and so can never rank on its own.
+
+# Path segment -> (filter preset, words used in titles and headings).
+TOWN_WINDOWS: dict[str, tuple[str, str]] = {
+    "this-weekend": ("weekend", "this weekend"),
+    "today": ("today", "today"),
+}
+
+# How far away another college town can be and still be listed as nearby.
+NEARBY_TOWN_MAX_MILES = 250
+NEARBY_TOWN_LIMIT = 4
+
+
+def town_place(city) -> str:
+    """ "Ann Arbor, Michigan", or just the name when no state is recorded."""
+    return f"{city.name}, {city.state_or_region}" if city.state_or_region else city.name
+
+
+def town_path(city, window: str | None = None) -> str:
+    return f"/city/{city.slug}/{window}" if window else f"/city/{city.slug}"
+
+
+def town_heading(city, window: str | None = None) -> str:
+    """The page's <h1>, worded the way people search for it."""
+    if window:
+        return f"Things to do in {city.name} {TOWN_WINDOWS[window][1]}"
+    return f"Things to do in {city.name}"
+
+
+def town_page_title(city, window: str | None = None) -> str:
+    """The town page's <title>, without the site name (the template adds it).
+
+    Leads with the town and its state so the result matches both "events in
+    Ann Arbor" and "things to do in Ann Arbor, MI", and so a reader in another
+    Bloomington can tell which one it is before clicking."""
+    place = town_place(city)
+    if window:
+        return f"Things to do in {place} {TOWN_WINDOWS[window][1]}"
+    return f"Events in {place}: things to do this week"
+
+
+def town_meta_description(
+    city, *, upcoming: int, window: str | None = None, window_count: int | None = None
+) -> str:
+    schools = ", ".join(u.name for u in city.universities)
+    place = town_place(city)
+    if window:
+        when = TOWN_WINDOWS[window][1]
+        count = window_count or 0
+        lead = (
+            f"{count} event{'s' if count != 1 else ''} in {place} {when}"
+            if count
+            else f"What is on in {place} {when}"
+        )
+    else:
+        lead = (
+            f"{upcoming} upcoming event{'s' if upcoming != 1 else ''} in {place}"
+            if upcoming
+            else f"What is on in {place}"
+        )
+    near = f" in town and around {schools}" if schools else " in town and on campus"
+    return (
+        f"{lead}: concerts, theater, festivals, talks and campus events{near}, "
+        "gathered from every local source and updated daily."
+    )
+
+
+def _miles_between(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
+    """Great-circle distance (haversine). Good to well under a mile, which is
+    all "nearby town" needs."""
+    r = 3958.8
+    p1, p2 = math.radians(lat1), math.radians(lat2)
+    dp, dl = p2 - p1, math.radians(lon2 - lon1)
+    a = math.sin(dp / 2) ** 2 + math.cos(p1) * math.cos(p2) * math.sin(dl / 2) ** 2
+    return 2 * r * math.asin(math.sqrt(a))
+
+
+def nearby_towns(city, candidates, *, limit: int = NEARBY_TOWN_LIMIT) -> list[tuple]:
+    """Other active towns within NEARBY_TOWN_MAX_MILES, nearest first, as
+    (city, miles). Links between neighbouring towns help a reader near a town
+    line and tell search engines which towns belong to the same area."""
+    if city.default_latitude is None or city.default_longitude is None:
+        return []
+    found = []
+    for other in candidates:
+        if other.id == city.id or not other.is_active:
+            continue
+        if other.default_latitude is None or other.default_longitude is None:
+            continue
+        miles = _miles_between(
+            city.default_latitude,
+            city.default_longitude,
+            other.default_latitude,
+            other.default_longitude,
+        )
+        if miles <= NEARBY_TOWN_MAX_MILES:
+            found.append((other, miles))
+    found.sort(key=lambda pair: pair[1])
+    return found[:limit]
+
+
+def _city_schema(city) -> dict:
+    data: dict = {"@type": "City", "name": city.name}
+    if city.state_or_region:
+        data["containedInPlace"] = {"@type": "State", "name": city.state_or_region}
+    if city.default_latitude is not None and city.default_longitude is not None:
+        data["geo"] = {
+            "@type": "GeoCoordinates",
+            "latitude": city.default_latitude,
+            "longitude": city.default_longitude,
+        }
+    return data
+
+
+def breadcrumb_structured_data(crumbs: list[tuple[str, str]]) -> str:
+    """A schema.org BreadcrumbList from (name, site-relative path) pairs. Search
+    results show it in place of the bare URL ("Bulletin > Ann Arbor > ..."),
+    which says where an event is before anyone clicks."""
+    return script_safe_json(
+        {
+            "@context": "https://schema.org",
+            "@type": "BreadcrumbList",
+            "itemListElement": [
+                {"@type": "ListItem", "position": i, "name": name, "item": absolute_url(path)}
+                for i, (name, path) in enumerate(crumbs, start=1)
+            ],
+        }
+    )
+
+
+def city_listing_structured_data(
+    city, events: list[Event], *, page_url: str, name: str | None = None
+) -> str:
     """A town page as a schema.org ItemList of the events it shows, so a crawler
     (a search engine or an AI tool) gets every event's details from the one
     listing page without opening each event."""
@@ -162,17 +303,9 @@ def city_listing_structured_data(city, events: list[Event], *, page_url: str) ->
         {
             "@context": "https://schema.org",
             "@type": "ItemList",
-            "name": f"Events in {city.name}",
+            "name": name or f"Events in {city.name}",
             "url": page_url,
-            "about": {
-                "@type": "City",
-                "name": city.name,
-                **(
-                    {"containedInPlace": {"@type": "State", "name": city.state_or_region}}
-                    if city.state_or_region
-                    else {}
-                ),
-            },
+            "about": _city_schema(city),
             **({"keywords": schools} if schools else {}),
             "numberOfItems": len(events),
             "itemListElement": [

@@ -23,7 +23,7 @@ from app.repositories.public_events import (
     upcoming_counts_by_city,
 )
 from app.services.calendar_feed import town_calendar
-from app.services.seo import absolute_url, town_is_indexable
+from app.services.seo import TOWN_WINDOWS, absolute_url, town_is_indexable
 
 router = APIRouter(tags=["seo"])
 
@@ -80,14 +80,17 @@ def sitemap_xml(db: DbSession) -> Response:
 
     # Only towns with enough upcoming events: an empty town page is marked
     # noindex, and a sitemap should list only pages meant for the index.
+    # Each indexable town also has a page for this weekend and one for today,
+    # the windows people search for ("things to do in Ann Arbor this weekend").
     counts = upcoming_counts_by_city(db, today=today)
-    urls += [
-        absolute_url(f"/city/{slug}")
-        for city_id, slug in db.execute(
-            select(City.id, City.slug).where(City.is_active.is_(True)).order_by(City.slug)
-        )
-        if town_is_indexable(counts.get(city_id, 0))
-    ]
+    for city_id, slug in db.execute(
+        select(City.id, City.slug).where(City.is_active.is_(True)).order_by(City.slug)
+    ):
+        if town_is_indexable(counts.get(city_id, 0)):
+            urls += [
+                absolute_url(f"/city/{slug}{suffix}")
+                for suffix in ("", *(f"/{window}" for window in TOWN_WINDOWS))
+            ]
 
     # The same visibility rules as the public listing, so the sitemap can never
     # advertise an event the site would not show.
@@ -157,9 +160,9 @@ def llms_txt(db: DbSession) -> Response:
         "gathered from local venues, universities and tourism sites. Every event links to "
         "its original source.",
         "",
-        "Each town has a page of upcoming events, and the same events as an iCalendar "
-        "feed. Each event page carries schema.org Event data (JSON-LD). Listings change "
-        "daily; always confirm details with the organizer.",
+        "Each town has a page of upcoming events (plus /this-weekend and /today pages), "
+        "and the same events as an iCalendar feed. Each event page carries schema.org "
+        "Event data (JSON-LD). Listings change daily; always confirm details with the organizer.",
         "",
         "## Towns",
         "",
