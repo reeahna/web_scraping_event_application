@@ -28,6 +28,7 @@ lines. Lines may use `**bold**`, `` `code` `` and `[links](https://...)`.
 ## [Unreleased]
 
 ### For everyone
+- Browsers that kept showing the old purple tab icon now pick up the new serif B. (#87)
 - A simpler home page: "Find something worth going to." above a bigger town and school search, then a cleaner directory that lists each town with its state and upcoming event count. Schools still work in the search, and a search by school says which school matched. Once the list grows long, a row of letters jumps to towns by their first letter. (#86)
 - A smaller footer on one line with Suggest a town, What's new, Privacy and Terms. The version number now lives on What's new. (#86)
 - A new browser icon: the serif B from the Bulletin name, dark green on cream, with sharper sizes for tabs, phones and home screens. Shared links show a matching card. (#86)
@@ -42,6 +43,7 @@ lines. Lines may use `**bold**`, `` `code` `` and `[links](https://...)`.
 - Fewer listings that aren't for students: kids' and family programs, faculty and TA workshops, thesis defenses, and events in other towns (like away meets and county health checks elsewhere) no longer show. Alumni groups and networking nights in town do show. (#65)
 
 ### Admin and behind the scenes
+- The Active cities, Websites and Events tiles on the admin Dashboard open the Cities (active only), Websites and Events pages. A tile is only a link for someone allowed to open that page. (#87)
 - After signing in, administrators land on the Dashboard. If sign-in started from a particular admin page, they go back to that page instead (only pages on this site are accepted). The Dashboard shows big numbers with thousands separators, tighter tiles and clearer "nothing here" notes. (#86)
 - Admin browser tabs read "Page | Bulletin admin", and event page titles use a colon instead of a middle dot. (#86)
 - The stylesheet's colours all go through named tokens, the fonts (DM Serif Display and DM Sans) are served from the site itself so the content security policy needs no font host, and admin pages share the new colours and focus outlines while keeping their layout. (#85)

@@ -154,6 +154,18 @@ def dashboard(request: Request, current_user: CurrentUser, db: DbSession):
 
     unread_notifications = count_unread_for_user(db, current_user.id)
 
+    # A tile links to its admin page only for someone allowed to open it, so
+    # nobody is handed a link that ends in "Forbidden".
+    tile_links = {
+        key: url
+        for key, permission, url in (
+            ("active_cities", "cities.view", "/admin/cities?status=active"),
+            ("websites", "sites.view", "/admin/websites"),
+            ("events", "events.view", "/admin/events"),
+        )
+        if user_has_permission(db, current_user, permission)
+    }
+
     recent_audit = None
     if user_has_permission(db, current_user, "roles.manage"):
         recent_audit = db.query(AuditLog).order_by(AuditLog.created_at.desc()).limit(10).all()
@@ -164,6 +176,7 @@ def dashboard(request: Request, current_user: CurrentUser, db: DbSession):
         {
             "current_user": current_user,
             "metrics": metrics,
+            "tile_links": tile_links,
             "broken": broken,
             "waiting": waiting,
             "unresolved_reports": unresolved_reports,
