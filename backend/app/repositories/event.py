@@ -91,7 +91,11 @@ def create_event_from_candidate(
     website_id: int,
     city_id: int | None,
     source: str,
+    commit: bool = True,
 ) -> Event:
+    """With ``commit=False`` the new row is only flushed (it has its id), and
+    the caller commits: the import loop commits once per batch of events
+    instead of three times per event (see app.services.extraction_runs)."""
     event = Event(
         title=candidate.title,
         canonical_url=candidate.canonical_url,
@@ -124,6 +128,10 @@ def create_event_from_candidate(
     # Categorize from the active rules as part of this same transaction (a no-op
     # when no rules are configured).
     assign_category(db, event)
+    if not commit:
+        db.flush()
+        update_fingerprint_and_duplicates(db, event, commit=False)
+        return event
     db.commit()
     db.refresh(event)
     update_fingerprint_and_duplicates(db, event)
@@ -131,7 +139,9 @@ def create_event_from_candidate(
     return event
 
 
-def update_event(db: Session, event: Event, candidate: EventCandidate) -> Event:
+def update_event(
+    db: Session, event: Event, candidate: EventCandidate, *, commit: bool = True
+) -> Event:
     """Overwrites source-controlled fields from a fresh extraction, but only
     where the candidate actually has a value — a transient extraction gap
     never nulls out a previously-good field. Every administrative decision
@@ -182,6 +192,10 @@ def update_event(db: Session, event: Event, candidate: EventCandidate) -> Event:
     # category only; an administrator's category override is a separate field and
     # is left untouched.
     assign_category(db, event)
+    if not commit:
+        # The caller commits (once per batch in the import loop).
+        update_fingerprint_and_duplicates(db, event, commit=False)
+        return event
     db.commit()
     db.refresh(event)
     update_fingerprint_and_duplicates(db, event)

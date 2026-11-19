@@ -92,7 +92,11 @@ def same_listing_events(db: Session, event: Event) -> list[Event]:
     return query.order_by(Event.id).all()
 
 
-def update_fingerprint_and_duplicates(db: Session, event: Event) -> list[Event]:
+def update_fingerprint_and_duplicates(
+    db: Session, event: Event, *, commit: bool = True
+) -> list[Event]:
+    """Recompute the event's duplicate keys and flag what it duplicates. With
+    ``commit=False`` the changes are flushed but the caller commits."""
     event.normalized_title = title_key(event.title)
     event.fingerprint = event_fingerprint(event)
     db.flush()
@@ -116,5 +120,8 @@ def update_fingerprint_and_duplicates(db: Session, event: Event) -> list[Event]:
         for match in matches:
             if match.duplicate_status == "not_reviewed":
                 match.duplicate_status = "possible_duplicate"
-    db.commit()
+    if commit:
+        db.commit()
+    else:
+        db.flush()
     return matches

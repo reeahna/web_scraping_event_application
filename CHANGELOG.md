@@ -49,6 +49,7 @@ lines. Lines may use `**bold**`, `` `code` `` and `[links](https://...)`.
 - Fewer listings that aren't for students: kids' and family programs, faculty and TA workshops, thesis defenses, and events in other towns (like away meets and county health checks elsewhere) no longer show. Alumni groups and networking nights in town do show. (#65)
 
 ### Admin and behind the scenes
+- Imports save events in batches instead of committing several times per event, so a source with 500 events imports in about 2.5 seconds of database work instead of 6 to 15, and the site stays responsive while it runs. Imports still run one at a time to stay within the server's memory. (#90)
 - Version history updates itself: every night at 10:30 PM Indianapolis time (11:30 PM in summer) a GitHub Actions job turns the notes under Unreleased into a new version, minor if anything is listed for everyone and patch if only admin notes changed, and commits it to `main` so the site redeploys with it. Nights with no new notes do nothing. It can also be run by hand from the Actions tab. (#88)
 - The Active cities, Websites and Events tiles on the admin Dashboard open the Cities (active only), Websites and Events pages. A tile is only a link for someone allowed to open that page. (#87)
 - After signing in, administrators land on the Dashboard. If sign-in started from a particular admin page, they go back to that page instead (only pages on this site are accepted). The Dashboard shows big numbers with thousands separators, tighter tiles and clearer "nothing here" notes. (#86)
