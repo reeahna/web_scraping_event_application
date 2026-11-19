@@ -28,6 +28,7 @@ lines. Lines may use `**bold**`, `` `code` `` and `[links](https://...)`.
 ## [Unreleased]
 
 ### For everyone
+- The home page drops the line under the headline, so the search and the towns sit higher. (#88)
 - Browsers that kept showing the old purple tab icon now pick up the new serif B. (#87)
 - A simpler home page: "Find something worth going to." above a bigger town and school search, then a cleaner directory that lists each town with its state and upcoming event count. Schools still work in the search, and a search by school says which school matched. Once the list grows long, a row of letters jumps to towns by their first letter. (#86)
 - A smaller footer on one line with Suggest a town, What's new, Privacy and Terms. The version number now lives on What's new. (#86)
