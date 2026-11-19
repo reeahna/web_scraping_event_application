@@ -92,13 +92,16 @@ def create_event_from_candidate(
     city_id: int | None,
     source: str,
     commit: bool = True,
+    fallback_url: str | None = None,
 ) -> Event:
-    """With ``commit=False`` the new row is only flushed (it has its id), and
+    """``fallback_url`` stands in for an event with no link of its own (an ICS
+    feed identifies events by UID and may leave URL out), since every event
+    row needs one. With ``commit=False`` the new row is only flushed (it has its id), and
     the caller commits: the import loop commits once per batch of events
     instead of three times per event (see app.services.extraction_runs)."""
     event = Event(
         title=candidate.title,
-        canonical_url=candidate.canonical_url,
+        canonical_url=candidate.canonical_url or fallback_url,
         source=source,
         external_source_id=candidate.external_source_id,
         description=candidate.description,
@@ -150,7 +153,8 @@ def update_event(
     silently reactivate an administratively deactivated or archived event,
     or erase a curator's override."""
     event.title = candidate.title
-    event.canonical_url = candidate.canonical_url
+    if candidate.canonical_url:
+        event.canonical_url = candidate.canonical_url
     if candidate.description is not None:
         event.description = candidate.description
     if candidate.source_category is not None:

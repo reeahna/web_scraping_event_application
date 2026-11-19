@@ -1250,6 +1250,7 @@ async def run_extraction(
                     city_id=website.city_id,
                     source=website.source_display_name or website.name,
                     commit=False,
+                    fallback_url=website.base_url,
                 )
                 events_inserted += 1
                 _fire_alerts(db, event, new=True, cancelled=candidate.is_cancelled)
