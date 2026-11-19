@@ -40,6 +40,12 @@ def validate_candidate(candidate: EventCandidate, config: SiteConfiguration) -> 
         if check is not None and not check(candidate):
             errors.append(f"required field missing: {field_name}")
 
+    # Every saved event needs a link. One without its own (allowed for ICS
+    # feeds, which identify events by UID) is saved with the source's address,
+    # but only when its source ID can tell it apart from the source's others.
+    if not candidate.canonical_url and not candidate.external_source_id:
+        errors.append("an event link or a source ID is required")
+
     if candidate.canonical_url:
         try:
             validate_public_url(candidate.canonical_url)
