@@ -501,13 +501,7 @@ textarea:focus-visible,
 .chooser-intro h1 {
   font-size: var(--text-headline);
   max-width: 16ch;
-  margin-bottom: var(--space-3);
-}
-
-.chooser-subtext {
-  color: var(--muted);
-  font-size: var(--font-md);
-  max-width: 44ch;
+  margin-bottom: 0;
 }
 
 .chooser-label {
