@@ -33,6 +33,7 @@ lines. Lines may use `**bold**`, `` `code` `` and `[links](https://...)`.
 ## [Unreleased]
 
 ### For everyone
+- On a town's page, events already underway (the ones marked "Until") now sit under a small **Multi-day events** heading, with a thin line and a **Single-day events** heading where the dated events begin. (#94)
 - Fewer listings meant for young children or teachers: children's art programs, "Kids Eat Free" nights and teaching-tool demos no longer show. (#91)
 
 ### Admin and behind the scenes

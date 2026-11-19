@@ -2451,6 +2451,44 @@ a.metric-tile-link:hover .metric-label {
   .event-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
 
+/* Running ("Until") events and dated ones, when a page has both: a small
+   heading in the body face on a hairline, so the second group reads as a new
+   section without boxing either one. */
+.event-group-heading {
+  margin: 0;
+  padding: var(--space-4) 0 0;
+  font-family: var(--font-body);
+  font-size: var(--font-sm);
+  font-weight: var(--weight-medium);
+  line-height: 1.4;
+  color: var(--muted);
+}
+
+.event-grid-grouped {
+  margin-bottom: 0;
+}
+
+.event-grid-grouped + .event-group-heading {
+  margin-top: var(--space-2);
+  border-top: 1px solid var(--border-strong);
+}
+
+/* The divider takes the place of the first group's last hairline, so the
+   two never sit one above the other. */
+.event-grid-grouped:has(+ .event-group-heading) > .event-row:last-child {
+  border-bottom: 0;
+}
+
+@media (min-width: 1024px) {
+  .event-grid-grouped:has(+ .event-group-heading) > .event-row:nth-last-child(2):nth-child(odd) {
+    border-bottom: 0;
+  }
+}
+
+.event-grid-grouped:last-of-type {
+  margin-bottom: var(--space-6);
+}
+
 .event-row {
   border-bottom: 1px solid var(--border);
   min-width: 0;
