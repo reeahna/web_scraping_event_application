@@ -7,11 +7,13 @@ from app.core.flash import set_flash
 from app.core.templating import render
 from app.dependencies import ClientIp, CorrelationId, CurrentUser, DbSession
 from app.repositories.notification import (
-    dismiss as dismiss_notification,
-)
-from app.repositories.notification import (
+    count_unread_for_user,
     get_notification,
     list_notifications_for_user,
+    mark_all_read_for_user,
+)
+from app.repositories.notification import (
+    dismiss as dismiss_notification,
 )
 from app.repositories.notification import (
     mark_read as mark_notification_read,
@@ -46,8 +48,43 @@ def list_notifications_view(
             "current_user": current_user,
             "notifications": notifications,
             "unread_only": unread_only,
+            "unread_total": count_unread_for_user(db, current_user.id),
         },
     )
+
+
+@router.post("/read-all")
+def mark_all_read_view(
+    request: Request,
+    db: DbSession,
+    correlation_id: CorrelationId,
+    ip_address: ClientIp,
+    current_user: CurrentUser,
+    csrf_token: str = Form(...),
+    unread_only: bool = Form(False),
+):
+    verify_csrf(request, csrf_token)
+    if not can_access_admin(db, current_user):
+        raise AppError("Forbidden: no admin access", status_code=403)
+    changed = mark_all_read_for_user(db, current_user.id)
+    if changed:
+        record_audit(
+            db,
+            actor_id=current_user.id,
+            action="notifications_marked_all_read",
+            entity_type="notification",
+            after={"count": changed},
+            correlation_id=correlation_id,
+            ip_address=ip_address,
+        )
+    url = "/admin/notifications?unread_only=true" if unread_only else "/admin/notifications"
+    response = RedirectResponse(url=url, status_code=303)
+    if changed:
+        noun = "notification" if changed == 1 else "notifications"
+        set_flash(response, f"Marked {changed} {noun} as read.")
+    else:
+        set_flash(response, "No unread notifications.")
+    return response
 
 
 @router.post("/{notification_id}/read")

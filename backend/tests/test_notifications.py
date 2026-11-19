@@ -193,3 +193,77 @@ def test_registered_user_denied_notifications_page(client, make_user, login):
     login("notif-denied@example.com", "denied-pass-123")
 
     assert client.get("/admin/notifications").status_code == 403
+
+
+def test_mark_all_read_only_affects_own_unread_notifications(
+    client, make_super_admin, make_user, db_session, login
+):
+    admin = make_super_admin(email="notif-bulk@example.com", password="root-pass-1234")
+    other = make_user(email="notif-bulk-other@example.com")
+    for i in range(3):
+        notify(
+            db_session,
+            notification_type="test_event",
+            severity="info",
+            title=f"Bulk {i}",
+            message="msg",
+            recipients=[admin],
+            dedup_fingerprint=build_dedup_fingerprint("test_event", "bulk", str(i)),
+        )
+    notify(
+        db_session,
+        notification_type="test_event",
+        severity="info",
+        title="Someone else's",
+        message="msg",
+        recipients=[other],
+        dedup_fingerprint=build_dedup_fingerprint("test_event", "bulk-other"),
+    )
+
+    login("notif-bulk@example.com", "root-pass-1234")
+    page = client.get("/admin/notifications")
+    assert "3 unread" in page.text
+    assert 'action="/admin/notifications/read-all"' in page.text
+
+    resp = client.post(
+        "/admin/notifications/read-all",
+        data={"csrf_token": _csrf(client)},
+        follow_redirects=False,
+    )
+    assert resp.status_code == 303
+    assert resp.headers["location"] == "/admin/notifications"
+
+    assert count_unread_for_user(db_session, admin.id) == 0
+    assert count_unread_for_user(db_session, other.id) == 1
+
+    page = client.get("/admin/notifications")
+    assert "All caught up" in page.text
+    assert 'action="/admin/notifications/read-all"' not in page.text
+
+
+def test_mark_all_read_keeps_unread_only_filter(client, make_super_admin, db_session, login):
+    make_super_admin(email="notif-bulk-filter@example.com", password="root-pass-1234")
+    login("notif-bulk-filter@example.com", "root-pass-1234")
+    client.get("/admin/notifications")
+    resp = client.post(
+        "/admin/notifications/read-all",
+        data={"csrf_token": _csrf(client), "unread_only": "true"},
+        follow_redirects=False,
+    )
+    assert resp.status_code == 303
+    assert resp.headers["location"] == "/admin/notifications?unread_only=true"
+
+
+def test_mark_all_read_requires_csrf_and_admin(client, make_user, login):
+    make_user(
+        email="notif-bulk-denied@example.com",
+        password="denied-pass-123",
+        role_name=REGISTERED_USER,
+    )
+    login("notif-bulk-denied@example.com", "denied-pass-123")
+    resp = client.post(
+        "/admin/notifications/read-all",
+        data={"csrf_token": _csrf(client)},
+        follow_redirects=False,
+    )
+    assert resp.status_code == 403
