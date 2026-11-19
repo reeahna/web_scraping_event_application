@@ -88,6 +88,7 @@ from app.repositories.unsupported_site_report import (
 from app.schemas.browser import BrowserPlan, NetworkIdleAction, WaitForSelectorAction
 from app.schemas.extraction import FetchConfig, SiteConfiguration
 from app.services.attendability import candidate_not_attendable_reason
+from app.services.categorization import active_rules_cached, reload_cached_rules
 from app.services.geographic_filter import (
     annotate_candidate_geography,
     geo_needs_review,
@@ -105,6 +106,13 @@ from app.services.rbac import users_with_permission
 from app.services.websites import transition_website
 
 CONSECUTIVE_FAILURE_THRESHOLD = 3
+# Saving an import commits once per this many events, rather than three times
+# per event (event, duplicate keys, provenance) as it used to. Every commit is
+# a disk sync, so this is most of the speedup. A batch stays small so the
+# write lock is held only briefly: pages keep reading during an import (WAL),
+# and a sign-in or other write from the site waits a fraction of a second at
+# most, not for the whole import.
+IMPORT_COMMIT_BATCH_SIZE = 50
 
 
 def _review_recipients(db: Session) -> list:
@@ -1224,43 +1232,50 @@ async def run_extraction(
 
     events_inserted = 0
     events_updated = 0
-    for candidate in dedup_outcome.kept:
-        existing = find_existing_event_for_candidate(
-            db, candidate, website_id=website.id, city_id=website.city_id
-        )
-        if existing is not None:
-            event = update_event(db, existing, candidate)
-            events_updated += 1
-            _fire_alerts(db, event, new=False, cancelled=candidate.is_cancelled)
-        else:
-            event = create_event_from_candidate(
-                db,
-                candidate,
-                website_id=website.id,
-                city_id=website.city_id,
-                source=website.source_display_name or website.name,
+    # The active categorization rules are read once per batch, not per event.
+    with active_rules_cached(db):
+        for position, candidate in enumerate(dedup_outcome.kept, start=1):
+            existing = find_existing_event_for_candidate(
+                db, candidate, website_id=website.id, city_id=website.city_id
             )
-            events_inserted += 1
-            _fire_alerts(db, event, new=True, cancelled=candidate.is_cancelled)
+            if existing is not None:
+                event = update_event(db, existing, candidate, commit=False)
+                events_updated += 1
+                _fire_alerts(db, event, new=False, cancelled=candidate.is_cancelled)
+            else:
+                event = create_event_from_candidate(
+                    db,
+                    candidate,
+                    website_id=website.id,
+                    city_id=website.city_id,
+                    source=website.source_display_name or website.name,
+                    commit=False,
+                )
+                events_inserted += 1
+                _fire_alerts(db, event, new=True, cancelled=candidate.is_cancelled)
 
-        # A missing-geography "needs_review" outcome keeps the event but routes
-        # it to a human rather than silently trusting it.
-        if geo_needs_review(candidate) and event.review_status != "needs_review":
-            event.review_status = "needs_review"
+            # A missing-geography "needs_review" outcome keeps the event but routes
+            # it to a human rather than silently trusting it.
+            if geo_needs_review(candidate) and event.review_status != "needs_review":
+                event.review_status = "needs_review"
 
-        create_event_provenance(
-            db,
-            event_id=event.id,
-            extraction_run_id=run.id,
-            website_id=website.id,
-            source_page=candidate.source_page,
-            extraction_pattern=candidate.extraction_pattern,
-            pattern_version=REGISTRY.get(config.pattern_name).version,
-            raw_record_hash=candidate.raw_record_hash,
-            source_response_hash=outcome.response_hash_by_page.get(candidate.source_page, ""),
-            field_source_paths=candidate.field_source_paths,
-            transformation_history=list(candidate.transformation_history),
-        )
+            create_event_provenance(
+                db,
+                event_id=event.id,
+                extraction_run_id=run.id,
+                website_id=website.id,
+                source_page=candidate.source_page,
+                extraction_pattern=candidate.extraction_pattern,
+                pattern_version=REGISTRY.get(config.pattern_name).version,
+                raw_record_hash=candidate.raw_record_hash,
+                source_response_hash=outcome.response_hash_by_page.get(candidate.source_page, ""),
+                field_source_paths=candidate.field_source_paths,
+                transformation_history=list(candidate.transformation_history),
+                commit=False,
+            )
+            if position % IMPORT_COMMIT_BATCH_SIZE == 0:
+                db.commit()
+                reload_cached_rules(db)
 
     run.events_inserted = events_inserted
     run.events_updated = events_updated

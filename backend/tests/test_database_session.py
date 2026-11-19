@@ -21,8 +21,10 @@ def test_sqlite_connections_use_wal_and_wait_for_writers():
     with engine.connect() as connection:
         mode = connection.exec_driver_sql("PRAGMA journal_mode").scalar()
         timeout = connection.exec_driver_sql("PRAGMA busy_timeout").scalar()
+        synchronous = connection.exec_driver_sql("PRAGMA synchronous").scalar()
     assert mode == "wal"
     assert timeout == SQLITE_BUSY_TIMEOUT_SECONDS * 1000
+    assert synchronous == 1  # NORMAL: sync at checkpoints, not on every commit
 
 
 def test_sqlite_reader_is_not_blocked_by_open_write(tmp_path):
