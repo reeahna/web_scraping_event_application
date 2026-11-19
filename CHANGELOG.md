@@ -42,7 +42,7 @@ lines. Lines may use `**bold**`, `` `code` `` and `[links](https://...)`.
 - Fewer listings that aren't for students: kids' and family programs, faculty and TA workshops, thesis defenses, and events in other towns (like away meets and county health checks elsewhere) no longer show. Alumni groups and networking nights in town do show. (#65)
 
 ### Admin and behind the scenes
-- Imports save events in batches instead of committing several times per event, so a source with 500 events imports in about 2.5 seconds of database work instead of 6 to 15, and the site stays responsive while it runs. Imports still run one at a time to stay within the server's memory. (#PR)
+- Imports save events in batches instead of committing several times per event, so a source with 500 events imports in about 2.5 seconds of database work instead of 6 to 15, and the site stays responsive while it runs. Imports still run one at a time to stay within the server's memory. (#90)
 - After signing in, administrators land on the Dashboard. If sign-in started from a particular admin page, they go back to that page instead (only pages on this site are accepted). The Dashboard shows big numbers with thousands separators, tighter tiles and clearer "nothing here" notes. (#86)
 - Admin browser tabs read "Page | Bulletin admin", and event page titles use a colon instead of a middle dot. (#86)
 - The stylesheet's colours all go through named tokens, the fonts (DM Serif Display and DM Sans) are served from the site itself so the content security policy needs no font host, and admin pages share the new colours and focus outlines while keeping their layout. (#85)
