@@ -75,7 +75,9 @@ and `docs/scheduler.md`. The scheduler is the single owner of all background wor
 - **Email unsubscribe**: token-based, no login required (`/alerts/unsubscribe`).
 - **Visitor log** (`/admin/visitors`, needs `reports.view`): counts public page
   views and which towns are looked at. It sets no cookie and stores no IP
-  address. A visitor is a hash of (that day's random salt, IP, user agent); the
+  address. An anonymous visitor is a hash of (that day's random salt, IP, user
+  agent, browser language); a signed-in visitor is a hash of the salt and their
+  account, so their signed-out visits stay separate and anonymous. The
   salt is deleted when the day ends, so a hash can't be traced back to an IP and
   the same person can't be followed from day to day. A signed-in visitor's row
   names their account (`user_id`, set to null if the account is deleted). Bots,
