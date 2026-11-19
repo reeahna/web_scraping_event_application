@@ -6,6 +6,13 @@ Run from backend/:
     python scripts/release.py patch                 # fixes only:   1.9.0 -> 1.9.1
     python scripts/release.py major                 # big change:   1.9.0 -> 2.0.0
     python scripts/release.py minor --name "Dark mode"
+    python scripts/release.py auto                  # what the nightly job runs
+
+`auto` picks the part from the notes: minor when anything is listed under
+For everyone, patch when only Admin and behind the scenes changed. With
+`auto`, an empty Unreleased section is not an error: nothing is changed and
+the script says so. The nightly GitHub Actions job
+(.github/workflows/nightly-release.yml) runs it and commits the result.
 
 It renames `## [Unreleased]` to `## [x.y.z] - <today> - <name>`, opens a fresh
 empty Unreleased section above it, and sets the same version in pyproject.toml.
@@ -37,6 +44,14 @@ def next_version(current: str, part: str) -> str:
     return f"{major}.{minor}.{patch + 1}"
 
 
+def auto_part(text: str) -> str | None:
+    """The part `auto` bumps for this changelog, or None when there is nothing to release."""
+    unreleased = next((r for r in parse_changelog(text) if r.is_unreleased), None)
+    if unreleased is None or not unreleased.has_notes:
+        return None
+    return "minor" if unreleased.public_notes else "patch"
+
+
 def cut_release(text: str, part: str, name: str | None, today: date) -> tuple[str, str]:
     """Return (new changelog text, new version). Raises SystemExit on a problem."""
     releases = parse_changelog(text)
@@ -52,13 +67,18 @@ def cut_release(text: str, part: str, name: str | None, today: date) -> tuple[st
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
-    parser.add_argument("part", choices=["major", "minor", "patch"])
+    parser.add_argument("part", choices=["major", "minor", "patch", "auto"])
     parser.add_argument("--name", help="a short name for the release, e.g. 'Dark mode'")
     args = parser.parse_args(argv)
 
-    new_text, version = cut_release(
-        CHANGELOG.read_text(encoding="utf-8"), args.part, args.name, date.today()
-    )
+    text = CHANGELOG.read_text(encoding="utf-8")
+    part = args.part
+    if part == "auto":
+        part = auto_part(text)
+        if part is None:
+            print("Nothing under ## [Unreleased]; no release today.")
+            return 0
+    new_text, version = cut_release(text, part, args.name, date.today())
     CHANGELOG.write_text(new_text, encoding="utf-8")
 
     pyproject = PYPROJECT.read_text(encoding="utf-8")

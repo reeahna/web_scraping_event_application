@@ -20,6 +20,11 @@ shows in the site footer.
 2. To cut a release, run `python scripts/release.py minor` from `backend/` (or
    `patch` for fixes only, `major` for a big change). It turns **Unreleased** into
    the next version with today's date and bumps `pyproject.toml`. Commit that.
+   You rarely need to: every night at 10:30 PM Indianapolis time (11:30 PM in
+   summer) a GitHub Actions job (`.github/workflows/nightly-release.yml`) runs
+   `release.py auto`, which cuts a minor release when there are **For everyone**
+   notes and a patch release when there are only admin notes, and commits it to
+   `main`. When **Unreleased** is empty it does nothing.
 
 Format: a release is `## [x.y.z] - YYYY-MM-DD - Optional name`, followed by
 `### For everyone` and/or `### Admin and behind the scenes`, each a list of `- `
@@ -44,6 +49,7 @@ lines. Lines may use `**bold**`, `` `code` `` and `[links](https://...)`.
 - Fewer listings that aren't for students: kids' and family programs, faculty and TA workshops, thesis defenses, and events in other towns (like away meets and county health checks elsewhere) no longer show. Alumni groups and networking nights in town do show. (#65)
 
 ### Admin and behind the scenes
+- Version history updates itself: every night at 10:30 PM Indianapolis time (11:30 PM in summer) a GitHub Actions job turns the notes under Unreleased into a new version, minor if anything is listed for everyone and patch if only admin notes changed, and commits it to `main` so the site redeploys with it. Nights with no new notes do nothing. It can also be run by hand from the Actions tab. (#88)
 - The Active cities, Websites and Events tiles on the admin Dashboard open the Cities (active only), Websites and Events pages. A tile is only a link for someone allowed to open that page. (#87)
 - After signing in, administrators land on the Dashboard. If sign-in started from a particular admin page, they go back to that page instead (only pages on this site are accepted). The Dashboard shows big numbers with thousands separators, tighter tiles and clearer "nothing here" notes. (#86)
 - Admin browser tabs read "Page | Bulletin admin", and event page titles use a colon instead of a middle dot. (#86)
