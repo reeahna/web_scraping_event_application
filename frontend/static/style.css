@@ -1520,6 +1520,22 @@ button[aria-disabled="true"] {
   padding: var(--space-3) var(--space-4);
 }
 
+a.metric-tile-link {
+  display: block;
+  color: var(--text);
+  text-decoration: none;
+}
+
+a.metric-tile-link:hover {
+  border-color: var(--accent);
+}
+
+a.metric-tile-link:hover .metric-label {
+  color: var(--accent);
+  text-decoration: underline;
+  text-underline-offset: 0.2em;
+}
+
 .metric-value {
   font-size: 1.5rem;
   font-weight: 700;

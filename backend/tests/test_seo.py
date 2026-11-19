@@ -249,7 +249,8 @@ def test_favicon_is_served(client):
         "/static/site.webmanifest",
     ):
         assert client.get(path).status_code == 200, path
-        assert f'href="{path}"' in html, path
+        # Versioned, so a browser holding the old purple icon fetches anew.
+        assert f'href="{path}?v=2"' in html, path
 
 
 def test_the_favicon_is_the_serif_b_not_the_old_purple_one(client):
