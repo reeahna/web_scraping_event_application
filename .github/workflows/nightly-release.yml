@@ -1,0 +1,56 @@
+name: Nightly release
+
+# Every night, turn the CHANGELOG.md notes under ## [Unreleased] into a new
+# version (backend/scripts/release.py auto) and commit it to main, which
+# redeploys the site with the new version on What's new and the admin
+# Version history. If nothing was added under Unreleased since the last
+# release, the job changes nothing and commits nothing.
+#
+# GitHub reads the schedule in UTC. 03:30 UTC is 10:30 PM in Indianapolis in
+# winter (EST) and 11:30 PM in summer (EDT), so the release date (taken in
+# America/Indiana/Indianapolis below) is always the day the changes were merged.
+# Scheduled runs can start a few minutes late when GitHub is busy.
+on:
+  schedule:
+    - cron: "30 3 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: nightly-release
+  cancel-in-progress: false
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: backend
+    env:
+      TZ: America/Indiana/Indianapolis
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+      - name: Install
+        # release.py only needs the changelog parser, which uses MarkupSafe.
+        run: pip install "markupsafe>=2.1"
+      - name: Cut a release if there are new notes
+        run: python scripts/release.py auto
+      - name: Commit and push
+        run: |
+          if git diff --quiet -- ../CHANGELOG.md pyproject.toml; then
+            echo "No changes today. Nothing to commit."
+            exit 0
+          fi
+          version=$(sed -n 's/^version = "\(.*\)"$/\1/p' pyproject.toml | head -n 1)
+          git config user.name "github-actions[bot]"
+          git config user.email "41898283+github-actions[bot]@users.noreply.github.com"
+          git add ../CHANGELOG.md pyproject.toml
+          git commit -m "Release $version"
+          git push origin HEAD:main

@@ -501,13 +501,7 @@ textarea:focus-visible,
 .chooser-intro h1 {
   font-size: var(--text-headline);
   max-width: 16ch;
-  margin-bottom: var(--space-3);
-}
-
-.chooser-subtext {
-  color: var(--muted);
-  font-size: var(--font-md);
-  max-width: 44ch;
+  margin-bottom: 0;
 }
 
 .chooser-label {
@@ -1518,6 +1512,22 @@ button[aria-disabled="true"] {
   border: 1px solid var(--border);
   border-radius: var(--radius-md);
   padding: var(--space-3) var(--space-4);
+}
+
+a.metric-tile-link {
+  display: block;
+  color: var(--text);
+  text-decoration: none;
+}
+
+a.metric-tile-link:hover {
+  border-color: var(--accent);
+}
+
+a.metric-tile-link:hover .metric-label {
+  color: var(--accent);
+  text-decoration: underline;
+  text-underline-offset: 0.2em;
 }
 
 .metric-value {

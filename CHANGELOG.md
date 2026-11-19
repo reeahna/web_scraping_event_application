@@ -20,6 +20,11 @@ shows in the site footer.
 2. To cut a release, run `python scripts/release.py minor` from `backend/` (or
    `patch` for fixes only, `major` for a big change). It turns **Unreleased** into
    the next version with today's date and bumps `pyproject.toml`. Commit that.
+   You rarely need to: every night at 10:30 PM Indianapolis time (11:30 PM in
+   summer) a GitHub Actions job (`.github/workflows/nightly-release.yml`) runs
+   `release.py auto`, which cuts a minor release when there are **For everyone**
+   notes and a patch release when there are only admin notes, and commits it to
+   `main`. When **Unreleased** is empty it does nothing.
 
 Format: a release is `## [x.y.z] - YYYY-MM-DD - Optional name`, followed by
 `### For everyone` and/or `### Admin and behind the scenes`, each a list of `- `
@@ -28,6 +33,8 @@ lines. Lines may use `**bold**`, `` `code` `` and `[links](https://...)`.
 ## [Unreleased]
 
 ### For everyone
+- The home page drops the line under the headline, so the search and the towns sit higher. (#89)
+- Browsers that kept showing the old purple tab icon now pick up the new serif B. (#87)
 - A simpler home page: "Find something worth going to." above a bigger town and school search, then a cleaner directory that lists each town with its state and upcoming event count. Schools still work in the search, and a search by school says which school matched. Once the list grows long, a row of letters jumps to towns by their first letter. (#86)
 - A smaller footer on one line with Suggest a town, What's new, Privacy and Terms. The version number now lives on What's new. (#86)
 - A new browser icon: the serif B from the Bulletin name, dark green on cream, with sharper sizes for tabs, phones and home screens. Shared links show a matching card. (#86)
@@ -43,6 +50,8 @@ lines. Lines may use `**bold**`, `` `code` `` and `[links](https://...)`.
 
 ### Admin and behind the scenes
 - Imports save events in batches instead of committing several times per event, so a source with 500 events imports in about 2.5 seconds of database work instead of 6 to 15, and the site stays responsive while it runs. Imports still run one at a time to stay within the server's memory. (#90)
+- Version history updates itself: every night at 10:30 PM Indianapolis time (11:30 PM in summer) a GitHub Actions job turns the notes under Unreleased into a new version, minor if anything is listed for everyone and patch if only admin notes changed, and commits it to `main` so the site redeploys with it. Nights with no new notes do nothing. It can also be run by hand from the Actions tab. (#88)
+- The Active cities, Websites and Events tiles on the admin Dashboard open the Cities (active only), Websites and Events pages. A tile is only a link for someone allowed to open that page. (#87)
 - After signing in, administrators land on the Dashboard. If sign-in started from a particular admin page, they go back to that page instead (only pages on this site are accepted). The Dashboard shows big numbers with thousands separators, tighter tiles and clearer "nothing here" notes. (#86)
 - Admin browser tabs read "Page | Bulletin admin", and event page titles use a colon instead of a middle dot. (#86)
 - The stylesheet's colours all go through named tokens, the fonts (DM Serif Display and DM Sans) are served from the site itself so the content security policy needs no font host, and admin pages share the new colours and focus outlines while keeping their layout. (#85)

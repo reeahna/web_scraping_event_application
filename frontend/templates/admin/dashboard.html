@@ -5,26 +5,30 @@
 {% block admin_content %}
 <h1 class="dashboard-title">Welcome, {{ current_user.full_name or current_user.email }}</h1>
 
+{#
+  Cities, Websites and Events open their admin pages. A tile is a link only
+  for someone with permission to view that page.
+#}
+{% macro tile(key, value, label) %}
+{% set href = tile_links.get(key) %}
+{% if href %}<a class="metric-tile metric-tile-link" href="{{ href }}">{% else %}<div class="metric-tile">{% endif %}
+    <div class="metric-value">{{ value | thousands }}</div>
+    <div class="metric-label">{{ label }}</div>
+    {{ caller() if caller is defined }}
+{% if href %}</a>{% else %}</div>{% endif %}
+{% endmacro %}
 <div class="metrics-grid">
-  <div class="metric-tile">
-    <div class="metric-value">{{ metrics.active_cities | thousands }}</div>
-    <div class="metric-label">Active cities</div>
+  {% call tile("active_cities", metrics.active_cities, "Active cities") %}
     {% if metrics.inactive_cities %}
     <div class="metric-note">{{ metrics.inactive_cities | thousands }} inactive</div>
     {% endif %}
-  </div>
+  {% endcall %}
   <div class="metric-tile">
     <div class="metric-value">{{ metrics.universities | thousands }}</div>
     <div class="metric-label">Universities</div>
   </div>
-  <div class="metric-tile">
-    <div class="metric-value">{{ metrics.websites | thousands }}</div>
-    <div class="metric-label">Websites</div>
-  </div>
-  <div class="metric-tile">
-    <div class="metric-value">{{ metrics.events | thousands }}</div>
-    <div class="metric-label">Events</div>
-  </div>
+  {{ tile("websites", metrics.websites, "Websites") }}
+  {{ tile("events", metrics.events, "Events") }}
   {% if ai_queue is not none %}
   <div class="metric-tile">
     <div class="metric-value">{{ ai_queue.waiting | thousands }}</div>
