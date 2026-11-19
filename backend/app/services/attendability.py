@@ -136,6 +136,8 @@ _AUDIENCE_TITLE = _rx(
     # Chess Club", "Little Play Date!", "Chair-Based Exercise Class".
     r"baby (time|playgroups?)|playgroups?|play ?dates?|kids \w+ club|youth thea(ter|tre)|"
     r"chair[- ]based exercise|"
+    # "Children's Drawing from the Masters"; a restaurant's "Kids Eat Free" night.
+    r"children['’]s (drawing|art|story|programs?|class(es)?|workshops?)|kids eat free|"
     r"(trunk|trick)[- ]or[- ]treats?|prospective (\w+ )?students?|"
     r"senior (expo|citizens?|center)|seniors (55|60|62|65)|older adults|retirees|"
     r"(50|55|60|62|65)\s*(\+|and (up|over|older))|teens?|tots?|emeriti|"
@@ -297,6 +299,8 @@ _INTERNAL_TITLE = _rx(
     r"\bdeveloping an? (study abroad|online|new) (program|course)\b|"
     r"\b(deepen|improve|enhance) student learning\b|\binto your (course|curriculum|syllabus)\b|"
     r"\bscholarship of teaching and learning\b|"
+    # A teaching tool demo for instructors: "Google NotebookLM for Teaching and Learning".
+    r"\bfor teaching and learning\s*$|"
     r"\bresearch refresher\b|"
     r"\b(system|educator|staff|volunteer|employee|g?ta) trainings?\b|"
     # "Workshop: Pronunciation Brush-Up for International TAs".
