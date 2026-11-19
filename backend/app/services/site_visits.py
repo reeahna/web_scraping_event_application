@@ -141,10 +141,23 @@ def _salt_for(day: date) -> str:
         return salt
 
 
-def visitor_hash(day: date, ip: str, user_agent: str) -> str:
+def visitor_hash(
+    day: date,
+    ip: str,
+    user_agent: str,
+    accept_language: str = "",
+    *,
+    user_id: int | None = None,
+) -> str:
+    """A signed-in visitor is keyed by their account; everyone else by IP,
+    browser and language. Keying signed-in people by account keeps their
+    visits apart from anonymous ones: before, a signed-out visit from the same
+    network and browser (a private window, or anyone else on the same campus
+    Wi-Fi with the same browser) was folded into the signed-in person's row and
+    never showed as an anonymous visitor."""
     salt = _salt_for(day)
-    digest = hashlib.sha256(f"{salt}|{ip}|{user_agent}".encode()).hexdigest()
-    return digest[:32]
+    source = f"user:{user_id}" if user_id is not None else f"{ip}|{user_agent}|{accept_language}"
+    return hashlib.sha256(f"{salt}|{source}".encode()).hexdigest()[:32]
 
 
 # --------------------------------------------------------------------------
@@ -161,6 +174,7 @@ class Hit:
     host: str | None
     user_id: int | None
     town_slug: str | None
+    accept_language: str = ""
 
 
 @dataclass
@@ -198,7 +212,12 @@ def _own_hosts(host: str | None) -> set[str]:
 def record_hit(hit: Hit) -> None:
     day = current_public_date()
     now = datetime.now(UTC)
-    key = (day, visitor_hash(day, hit.ip, hit.user_agent))
+    key = (
+        day,
+        visitor_hash(
+            day, hit.ip, hit.user_agent, hit.accept_language, user_id=hit.user_id
+        ),
+    )
     path = hit.path[:255]
     with _buffer_lock:
         entry = _visitors.get(key)
@@ -435,6 +454,7 @@ class VisitTrackingMiddleware:
             path=scope["path"],
             ip=_client_ip(scope),
             user_agent=user_agent[:500],
+            accept_language=(_header(scope, b"accept-language") or "")[:200],
             referer=_header(scope, b"referer"),
             host=_header(scope, b"host"),
             user_id=state.get("visit_user_id"),
