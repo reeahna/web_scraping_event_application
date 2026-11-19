@@ -36,7 +36,7 @@ lines. Lines may use `**bold**`, `` `code` `` and `[links](https://...)`.
 - Fewer listings meant for young children or teachers: children's art programs, "Kids Eat Free" nights and teaching-tool demos no longer show. (#91)
 
 ### Admin and behind the scenes
-- The Visitors page now shows anonymous visitors who share a network or browser with someone signed in. Before, a signed-out visit from the same Wi-Fi and browser as a signed-in person was added to that person's row instead of showing as an anonymous visitor. (#PRNUM)
+- The Visitors page now shows anonymous visitors who share a network or browser with someone signed in. Before, a signed-out visit from the same Wi-Fi and browser as a signed-in person was added to that person's row instead of showing as an anonymous visitor. (#95)
 - Calendar feeds that leave some events without their own link now import: those events link to the source's page, instead of the whole import failing with a server error. (#93)
 - Admin Notifications has a **Mark all as read** button that clears every unread notification at once and resets the unread count in the admin menu. (#92)
 
