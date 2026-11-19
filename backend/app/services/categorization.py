@@ -1,4 +1,6 @@
 import re
+from collections.abc import Iterator
+from contextlib import contextmanager
 from dataclasses import dataclass
 
 from sqlalchemy.orm import Session
@@ -72,10 +74,41 @@ def _rule_matches(event: Event, rule: CategorizationRule) -> bool:
     return False
 
 
-def categorize_event(db: Session, event: Event) -> CategorizationResult:
+_CACHED_RULES_KEY = "categorization_active_rules"
+
+
+def _load_active_rules(db: Session) -> list[CategorizationRule]:
     rules = db.query(CategorizationRule).filter(CategorizationRule.is_active.is_(True)).all()
     rules.sort(key=lambda rule: (_PRECEDENCE.get(rule.rule_type, 999), -rule.priority, rule.id))
-    for rule in rules:
+    return rules
+
+
+@contextmanager
+def active_rules_cached(db: Session) -> Iterator[None]:
+    """Load the active rules once for a block that categorizes many events (an
+    import), instead of querying them again for every event. Call
+    reload_cached_rules() after each commit inside the block, so a rule an
+    administrator edits or deletes meanwhile is picked up rather than read
+    from a stale copy."""
+    db.info[_CACHED_RULES_KEY] = _load_active_rules(db)
+    try:
+        yield
+    finally:
+        db.info.pop(_CACHED_RULES_KEY, None)
+
+
+def reload_cached_rules(db: Session) -> None:
+    if _CACHED_RULES_KEY in db.info:
+        db.info[_CACHED_RULES_KEY] = _load_active_rules(db)
+
+
+def _active_rules(db: Session) -> list[CategorizationRule]:
+    cached = db.info.get(_CACHED_RULES_KEY)
+    return cached if cached is not None else _load_active_rules(db)
+
+
+def categorize_event(db: Session, event: Event) -> CategorizationResult:
+    for rule in _active_rules(db):
         if not rule.category.is_active or not _rule_matches(event, rule):
             continue
         confidence = {
@@ -133,6 +166,9 @@ def _set_category_fields(event: Event, result: CategorizationResult) -> None:
 
 
 def _active_rules_exist(db: Session) -> bool:
+    cached = db.info.get(_CACHED_RULES_KEY)
+    if cached is not None:
+        return bool(cached)
     return (
         db.query(CategorizationRule.id).filter(CategorizationRule.is_active.is_(True)).first()
         is not None

@@ -177,10 +177,13 @@ def test_whats_new_shows_public_notes_only(client):
     assert str(render_note(first_admin_only, public=True)) not in page
 
 
-def test_footer_shows_version_and_links_whats_new(client):
+def test_footer_links_whats_new_without_a_public_version_number(client):
+    """The version is for What's new and the admin, not every page's footer."""
     page = client.get("/privacy").text
-    assert f">Version {APP_VERSION}</a>" in page
-    assert '<a href="/whats-new">What\'s new</a>' in page
+    footer = page[page.index('<footer class="site-footer">'):]
+    assert '<a href="/whats-new">What\'s new</a>' in footer
+    assert f"Version {APP_VERSION}" not in footer
+    assert f"version {APP_VERSION}" in client.get("/whats-new").text
 
 
 def test_admin_version_history_shows_everything(client, make_user, login):
@@ -209,3 +212,44 @@ def test_admin_version_history_needs_admin(client, make_user, login):
 def test_whats_new_in_sitemap_and_readiness(client):
     assert "/whats-new</loc>" in client.get("/sitemap.xml").text
     assert client.get("/health/ready").json()["version"] == APP_VERSION
+
+
+def test_release_auto_picks_minor_for_public_notes_and_patch_for_admin_only():
+    release = _release_module()
+    assert release.auto_part(SAMPLE) == "patch"  # the sample's Unreleased is admin only
+    public = SAMPLE.replace(
+        "## [Unreleased]\n", "## [Unreleased]\n\n### For everyone\n- Something new. (#71)\n", 1
+    )
+    assert release.auto_part(public) == "minor"
+
+
+def test_release_auto_does_nothing_when_unreleased_is_empty(monkeypatch, tmp_path, capsys):
+    release = _release_module()
+    changelog = tmp_path / "CHANGELOG.md"
+    pyproject = tmp_path / "pyproject.toml"
+    empty, _ = release.cut_release(SAMPLE, "patch", None, date(2026, 12, 1))
+    changelog.write_text(empty, encoding="utf-8")
+    pyproject.write_text('version = "1.1.1"\n', encoding="utf-8")
+    monkeypatch.setattr(release, "CHANGELOG", changelog)
+    monkeypatch.setattr(release, "PYPROJECT", pyproject)
+
+    assert release.main(["auto"]) == 0
+    assert "no release today" in capsys.readouterr().out
+    assert changelog.read_text(encoding="utf-8") == empty
+    assert pyproject.read_text(encoding="utf-8") == 'version = "1.1.1"\n'
+
+
+def test_release_auto_cuts_a_version_when_there_are_notes(monkeypatch, tmp_path):
+    release = _release_module()
+    changelog = tmp_path / "CHANGELOG.md"
+    pyproject = tmp_path / "pyproject.toml"
+    changelog.write_text(SAMPLE, encoding="utf-8")
+    pyproject.write_text('version = "1.1.0"\n', encoding="utf-8")
+    monkeypatch.setattr(release, "CHANGELOG", changelog)
+    monkeypatch.setattr(release, "PYPROJECT", pyproject)
+
+    assert release.main(["auto"]) == 0
+    releases = parse_changelog(changelog.read_text(encoding="utf-8"))
+    assert releases[0].is_unreleased and not releases[0].has_notes
+    assert releases[1].version == "1.1.1"
+    assert pyproject.read_text(encoding="utf-8") == 'version = "1.1.1"\n'

@@ -20,6 +20,11 @@ shows in the site footer.
 2. To cut a release, run `python scripts/release.py minor` from `backend/` (or
    `patch` for fixes only, `major` for a big change). It turns **Unreleased** into
    the next version with today's date and bumps `pyproject.toml`. Commit that.
+   You rarely need to: every night at 10:30 PM Indianapolis time (11:30 PM in
+   summer) a GitHub Actions job (`.github/workflows/nightly-release.yml`) runs
+   `release.py auto`, which cuts a minor release when there are **For everyone**
+   notes and a patch release when there are only admin notes, and commits it to
+   `main`. When **Unreleased** is empty it does nothing.
 
 Format: a release is `## [x.y.z] - YYYY-MM-DD - Optional name`, followed by
 `### For everyone` and/or `### Admin and behind the scenes`, each a list of `- `
@@ -27,13 +32,33 @@ lines. Lines may use `**bold**`, `` `code` `` and `[links](https://...)`.
 
 ## [Unreleased]
 
+## [1.10.0] - 2026-11-19
+
 ### For everyone
+- The home page drops the line under the headline, so the search and the towns sit higher. (#89)
+- Browsers that kept showing the old purple tab icon now pick up the new serif B. (#87)
+- A simpler home page: "Find something worth going to." above a bigger town and school search, then a cleaner directory that lists each town with its state and upcoming event count. Schools still work in the search, and a search by school says which school matched. Once the list grows long, a row of letters jumps to towns by their first letter. (#86)
+- A smaller footer on one line with Suggest a town, What's new, Privacy and Terms. The version number now lives on What's new. (#86)
+- A new browser icon: the serif B from the Bulletin name, dark green on cream, with sharper sizes for tabs, phones and home screens. Shared links show a matching card. (#86)
+- A new look for Bulletin: warm paper colours, serif headlines and calmer pages. The home page shows the towns right away as a directory, with how many events are coming up in each. (#85)
+- Town pages show events on the first screen. All upcoming, Today and This weekend sit at the top as tabs, search is always there, and the other filters fold behind a **Filters** button that shows how many are on. Events are a dated list with the day set large, the time, the venue and a photo. (#85)
+- Event pages lead with what you need: the title, when, where and a button to the original listing, then the photo, the description, the details (now including the category) and sharing. The photo loads first. (#85)
+- Easier to use with a keyboard and on phones: every link, button and field shows a clear focus outline, animation stops when your device asks for less motion, buttons are bigger to tap, and nothing scrolls sideways on small screens. (#85)
+- `/login` now takes you to the sign-in page. (#85)
 - Pages no longer fail with an error now and then while new events are being collected in the background. (#82)
 - Fewer listings that aren't events: building open hours, team practices, class sections, study days, "no seminar today" notices, baby and kids' programs, and away games no longer show. (#82)
 - Every town now has its own **This weekend** and **Today** pages, and each town page links to other college towns nearby, so it is easier to find something to do (and easier for search engines to send people to the right town). (#78)
 - Fewer listings that aren't for students: kids' and family programs, faculty and TA workshops, thesis defenses, and events in other towns (like away meets and county health checks elsewhere) no longer show. Alumni groups and networking nights in town do show. (#65)
 
 ### Admin and behind the scenes
+- Imports save events in batches instead of committing several times per event, so a source with 500 events imports in about 2.5 seconds of database work instead of 6 to 15, and the site stays responsive while it runs. Imports still run one at a time to stay within the server's memory. (#90)
+- Version history updates itself: every night at 10:30 PM Indianapolis time (11:30 PM in summer) a GitHub Actions job turns the notes under Unreleased into a new version, minor if anything is listed for everyone and patch if only admin notes changed, and commits it to `main` so the site redeploys with it. Nights with no new notes do nothing. It can also be run by hand from the Actions tab. (#88)
+- The Active cities, Websites and Events tiles on the admin Dashboard open the Cities (active only), Websites and Events pages. A tile is only a link for someone allowed to open that page. (#87)
+- After signing in, administrators land on the Dashboard. If sign-in started from a particular admin page, they go back to that page instead (only pages on this site are accepted). The Dashboard shows big numbers with thousands separators, tighter tiles and clearer "nothing here" notes. (#86)
+- Admin browser tabs read "Page | Bulletin admin", and event page titles use a colon instead of a middle dot. (#86)
+- The stylesheet's colours all go through named tokens, the fonts (DM Serif Display and DM Sans) are served from the site itself so the content security policy needs no font host, and admin pages share the new colours and focus outlines while keeping their layout. (#85)
+- New **BiblioCommons library events** pattern: public library calendars on BiblioCommons are read from the platform's events API, 100 events per page, with each event's branch or other venue, address, type and image. Library pages on the platform are recognised automatically. (#84)
+- Security check: every package the app uses was confirmed genuine, the minimum versions of Jinja2, python-multipart, Authlib, requests and Starlette were raised past releases with known security problems, the map's Leaflet files from unpkg are now checked against fixed fingerprints so a tampered copy is refused, and CI runs `pip-audit` on every change. No keys or passwords were found in the code or its history. (#83)
 - The Simpleview events pattern can read an API that answers with a bare list of events (set `events_root` to an empty string). Library calendars that work this way can now be set up by hand. (#81)
 - The admin Websites page can filter by several statuses at once: tick the ones you want to see, or switch to hiding them (for example, everything except Active and Blocked by site). The choice stays in the link, so it can be bookmarked or shared, and older single-status links still work. (#80)
 - Town pages are titled and described the way people search ("Things to do in Ann Arbor, Michigan this weekend"), carry breadcrumb and town location data for search engines, and the sitemap lists each town's weekend and today pages. `docs/seo.md` explains what the code does and the steps only the owner can take (custom domain, Search Console, local links). (#78)

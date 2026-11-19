@@ -11,6 +11,7 @@ from dataclasses import dataclass
 from app.extraction.detection import (
     RELIABILITY_ORDER,
     AlgoliaSearchDetector,
+    BiblioCommonsEventsDetector,
     CampusLabsEngageDetector,
     EmbeddedJsonDetector,
     IcsCalendarDetector,
@@ -28,6 +29,7 @@ from app.extraction.detection import (
     WordPressRestDetector,
 )
 from app.extraction.inference.base import PatternConfigurationProposer
+from app.extraction.inference.proposers.bibliocommons import BiblioCommonsEventsProposer
 from app.extraction.inference.proposers.engage import CampusLabsEngageProposer
 from app.extraction.inference.proposers.feeds import (
     AlgoliaSearchProposer,
@@ -52,6 +54,8 @@ from app.extraction.inference.proposers.structured import (
 from app.extraction.patterns.algolia_search import PATTERN_VERSION as _ALGOLIA_VERSION
 from app.extraction.patterns.algolia_search import AlgoliaSearchPattern
 from app.extraction.patterns.base import ExtractionPattern
+from app.extraction.patterns.bibliocommons_events import PATTERN_VERSION as _BIBLIO_VERSION
+from app.extraction.patterns.bibliocommons_events import BiblioCommonsEventsPattern
 from app.extraction.patterns.campus_labs_engage import PATTERN_VERSION as _ENGAGE_VERSION
 from app.extraction.patterns.campus_labs_engage import CampusLabsEngagePattern
 from app.extraction.patterns.embedded_json import PATTERN_VERSION as _EMBEDDED_VERSION
@@ -387,6 +391,21 @@ def build_default_registry() -> PatternRegistry:
             supported_pagination=("none",),
             proposer=CampusLabsEngageProposer(),
             display_name="Campus Labs Engage",
+            classification="structured",
+        )
+    )
+    registry.register(
+        PatternRegistration(
+            name="bibliocommons_events",
+            detector=BiblioCommonsEventsDetector(),
+            extractor=BiblioCommonsEventsPattern(),
+            config_schema=SiteConfiguration,
+            priority=RELIABILITY_ORDER.index("bibliocommons_events"),
+            version=_BIBLIO_VERSION,
+            browser_required=False,
+            supported_pagination=("none", "path_page"),
+            proposer=BiblioCommonsEventsProposer(),
+            display_name="BiblioCommons library events",
             classification="structured",
         )
     )

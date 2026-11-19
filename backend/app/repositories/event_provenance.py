@@ -16,6 +16,7 @@ def create_event_provenance(
     source_response_hash: str,
     field_source_paths: dict[str, str],
     transformation_history: list[str],
+    commit: bool = True,
 ) -> EventProvenance:
     provenance = EventProvenance(
         event_id=event_id,
@@ -30,6 +31,9 @@ def create_event_provenance(
         transformation_history=transformation_history,
     )
     db.add(provenance)
+    if not commit:
+        # The import loop commits once per batch of events.
+        return provenance
     db.commit()
     db.refresh(provenance)
     return provenance

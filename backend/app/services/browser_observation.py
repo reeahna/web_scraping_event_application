@@ -51,6 +51,7 @@ _STRUCTURED_API_PATTERNS = frozenset(
         "simpleview_events",
         "paged_json_events",
         "campus_labs_engage",
+        "bibliocommons_events",
     }
 )
 
@@ -139,6 +140,7 @@ _EXTERNAL_API_PATTERNS = frozenset(
         "algolia_search",
         "paged_json_events",
         "campus_labs_engage",
+        "bibliocommons_events",
     }
 )
 

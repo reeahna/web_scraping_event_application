@@ -33,6 +33,13 @@ if _is_sqlite:
         # the first connection. An in-memory database answers "memory" instead.
         cursor.execute("PRAGMA journal_mode=WAL")
         cursor.execute(f"PRAGMA busy_timeout={SQLITE_BUSY_TIMEOUT_SECONDS * 1000}")
+        # In WAL mode, NORMAL syncs the disk at each checkpoint rather than on
+        # every commit, which makes writes (imports above all) much cheaper.
+        # It is SQLite's recommended setting for WAL: the database can't be
+        # corrupted, and a crashed or killed process (an out-of-memory restart)
+        # loses nothing. Only a power cut or an OS crash could undo the last
+        # moments of commits, which the next scheduled import would redo.
+        cursor.execute("PRAGMA synchronous=NORMAL")
         cursor.close()
 
 

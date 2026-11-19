@@ -49,6 +49,15 @@ This is a safety net, not a substitute for running a single instance.
   it is still running is skipped. If the holding process dies, its heartbeat
   stops; after `STALE_LOCK_SECONDS` any scheduler reclaims the lock, so a crash
   never leaves a site stuck.
+- **One import at a time, saved in batches**: `MAX_CONCURRENT_RUNS` is 1
+  because a large calendar can use a few hundred MB while it imports and the
+  Render Starter instance has 512 MB. An import saves its events in batches of
+  `IMPORT_COMMIT_BATCH_SIZE` (50) with one commit each, rather than a commit per
+  step per event, so it finishes sooner and holds the SQLite write lock only
+  briefly at a time. Pages keep reading meanwhile (WAL), and a write from the
+  site waits a fraction of a second at most. SQLite runs with
+  `synchronous=NORMAL`, which syncs the disk at checkpoints instead of on every
+  commit; a killed process loses nothing.
 - **Retries**: each run retries up to `schedule_config.max_retries` with bounded
   exponential backoff. Repeated failure advances the site toward the `FAILING`
   state through the existing extraction-health logic.

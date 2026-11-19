@@ -197,6 +197,8 @@ def _render_events(
             "can_access_admin": can_access_admin(db, current_user) if current_user else False,
             "registration_enabled": settings.registration_enabled,
             "events": events,
+            # So the list can show a long-running event by when it ends.
+            "today": today,
             "total": total,
             "page": page,
             "has_next": has_next,

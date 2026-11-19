@@ -3,33 +3,37 @@
 {% block title %}Admin Dashboard{% endblock %}
 
 {% block admin_content %}
-<h1>Welcome, {{ current_user.full_name or current_user.email }}</h1>
+<h1 class="dashboard-title">Welcome, {{ current_user.full_name or current_user.email }}</h1>
 
+{#
+  Cities, Websites and Events open their admin pages. A tile is a link only
+  for someone with permission to view that page.
+#}
+{% macro tile(key, value, label) %}
+{% set href = tile_links.get(key) %}
+{% if href %}<a class="metric-tile metric-tile-link" href="{{ href }}">{% else %}<div class="metric-tile">{% endif %}
+    <div class="metric-value">{{ value | thousands }}</div>
+    <div class="metric-label">{{ label }}</div>
+    {{ caller() if caller is defined }}
+{% if href %}</a>{% else %}</div>{% endif %}
+{% endmacro %}
 <div class="metrics-grid">
-  <div class="metric-tile">
-    <div class="metric-value">{{ metrics.active_cities }}</div>
-    <div class="metric-label">Active cities</div>
+  {% call tile("active_cities", metrics.active_cities, "Active cities") %}
     {% if metrics.inactive_cities %}
-    <div class="metric-note">{{ metrics.inactive_cities }} inactive</div>
+    <div class="metric-note">{{ metrics.inactive_cities | thousands }} inactive</div>
     {% endif %}
-  </div>
+  {% endcall %}
   <div class="metric-tile">
-    <div class="metric-value">{{ metrics.universities }}</div>
+    <div class="metric-value">{{ metrics.universities | thousands }}</div>
     <div class="metric-label">Universities</div>
   </div>
-  <div class="metric-tile">
-    <div class="metric-value">{{ metrics.websites }}</div>
-    <div class="metric-label">Websites</div>
-  </div>
-  <div class="metric-tile">
-    <div class="metric-value">{{ metrics.events }}</div>
-    <div class="metric-label">Events</div>
-  </div>
+  {{ tile("websites", metrics.websites, "Websites") }}
+  {{ tile("events", metrics.events, "Events") }}
   {% if ai_queue is not none %}
   <div class="metric-tile">
-    <div class="metric-value">{{ ai_queue.waiting }}</div>
+    <div class="metric-value">{{ ai_queue.waiting | thousands }}</div>
     <div class="metric-label">Waiting for AI labels</div>
-    <div class="metric-note">{{ ai_queue.labeled }} upcoming event{{ "s" if ai_queue.labeled != 1 }} labeled</div>
+    <div class="metric-note">{{ ai_queue.labeled | thousands }} upcoming event{{ "s" if ai_queue.labeled != 1 }} labeled</div>
   </div>
   {% endif %}
 </div>
@@ -39,17 +43,17 @@
 {% if broken or unresolved_reports %}
 <ul class="status-list">
   {% for row in broken or [] %}
-  <li><a href="{{ row.url }}"><strong>{{ row.count }}</strong> {{ row.label }}</a></li>
+  <li><a href="{{ row.url }}"><strong>{{ row.count | thousands }}</strong> {{ row.label }}</a></li>
   {% endfor %}
   {% if unresolved_reports %}
   {# Counted separately from the "unsupported website" row above: a report is
      filed per distinct failure, so one website can hold several, and a website
      that has since been fixed can still have an open report outstanding. #}
-  <li><a href="/admin/unsupported-reports"><strong>{{ unresolved_reports }}</strong> open failure report{{ "s" if unresolved_reports != 1 }} to triage</a></li>
+  <li><a href="/admin/unsupported-reports"><strong>{{ unresolved_reports | thousands }}</strong> open failure report{{ "s" if unresolved_reports != 1 }} to triage</a></li>
   {% endif %}
 </ul>
 {% else %}
-<p class="audit-meta">Nothing is broken.</p>
+<p class="dashboard-empty">Nothing is broken.</p>
 {% endif %}
 {% endif %}
 
@@ -58,11 +62,11 @@
 {% if waiting %}
 <ul class="status-list">
   {% for row in waiting %}
-  <li><a href="{{ row.url }}"><strong>{{ row.count }}</strong> {{ row.label }}</a></li>
+  <li><a href="{{ row.url }}"><strong>{{ row.count | thousands }}</strong> {{ row.label }}</a></li>
   {% endfor %}
 </ul>
 {% else %}
-<p class="audit-meta">Nothing is waiting on you.</p>
+<p class="dashboard-empty">Nothing is waiting on you.</p>
 {% endif %}
 {% endif %}
 
@@ -75,7 +79,7 @@
   {% for entry in recent_audit %}
     <tr>
       <td class="audit-meta">{{ entry.created_at | admin_datetime }}</td>
-      <td class="audit-meta">{{ entry.user_id or "—" }}</td>
+      <td class="audit-meta">{{ entry.user_id or "System" }}</td>
       <td>{{ entry.action }}</td>
       <td class="audit-meta">{{ entry.entity_type }}{% if entry.entity_id %}#{{ entry.entity_id }}{% endif %}</td>
     </tr>
@@ -84,7 +88,7 @@
 </table>
 <p><a href="/admin/audit">View full audit log</a></p>
 {% else %}
-<p>No audit activity yet.</p>
+<p class="dashboard-empty">No audit activity yet.</p>
 {% endif %}
 {% endif %}
 {% endblock %}

@@ -1,3 +1,5 @@
+import re
+
 import pytest
 
 from app.core.permissions import EDITOR
@@ -235,3 +237,57 @@ def test_dashboard_hides_the_ai_queue_when_ai_is_off(
     make_super_admin(email="dash-noai@example.com", password="root-pass-1234")
     login("dash-noai@example.com", "root-pass-1234")
     assert "Waiting for AI labels" not in client.get("/admin").text
+
+
+def test_dashboard_counts_use_thousands_separators():
+    from app.core.templating import templates
+
+    thousands = templates.env.filters["thousands"]
+    assert thousands(12345) == "12,345"
+    assert thousands(0) == "0"
+    assert thousands(None) == "0"
+
+
+def test_cities_websites_and_events_tiles_open_their_admin_pages(client, make_user, login):
+    from app.core.permissions import ADMINISTRATOR
+
+    make_user(email="tiles@example.com", role_name=ADMINISTRATOR)
+    login("tiles@example.com")
+    html = client.get("/admin").text
+    for href, label in (
+        ("/admin/cities?status=active", "Active cities"),
+        ("/admin/websites", "Websites"),
+        ("/admin/events", "Events"),
+    ):
+        tile = re.search(
+            rf'<a class="metric-tile metric-tile-link" href="{re.escape(href)}">(.*?)</a>',
+            html,
+            re.S,
+        )
+        assert tile, href
+        assert f">{label}</div>" in tile.group(1)
+        assert client.get(href).status_code == 200
+    # Universities has no page of its own, so its tile stays plain.
+    assert 'metric-tile-link" href="/admin/universities' not in html
+
+
+def test_a_tile_is_not_a_link_without_permission_to_open_its_page(
+    client, make_user, login, monkeypatch
+):
+    """A custom role can see the dashboard without events.view; its Events
+    tile then stays a plain number instead of a link to a Forbidden page."""
+    from app.core.permissions import ADMINISTRATOR
+    from app.routers import admin as admin_router
+
+    real = admin_router.user_has_permission
+    monkeypatch.setattr(
+        admin_router,
+        "user_has_permission",
+        lambda db, user, code: code != "events.view" and real(db, user, code),
+    )
+    make_user(email="tiles-partial@example.com", role_name=ADMINISTRATOR)
+    login("tiles-partial@example.com")
+    html = client.get("/admin").text
+    assert 'href="/admin/websites">' in html
+    assert 'metric-tile-link" href="/admin/events"' not in html
+    assert ">Events</div>" in html

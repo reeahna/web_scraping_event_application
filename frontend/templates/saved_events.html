@@ -1,6 +1,6 @@
 {% extends "base.html" %}
 
-{% block title %}Saved events — {{ site_name }}{% endblock %}
+{% block title %}Saved events | {{ site_name }}{% endblock %}
 
 {% macro saved_item(item) %}
 {% set event = item.event %}
@@ -14,7 +14,7 @@
     {% if ph %}
     <img src="{{ ph.thumb_url or ph.image_url }}" alt="" loading="lazy" />
     {% else %}
-    <div class="saved-item-thumb-fallback ph-{{ event.id % 8 }}">
+    <div class="saved-item-thumb-fallback">
       <svg viewBox="0 0 24 24" width="28" height="28" fill="none" stroke="currentColor" stroke-width="1.5">
         <rect x="3" y="5" width="18" height="16" rx="2" />
         <path d="M3 9h18" />
@@ -32,13 +32,13 @@
       {% elif item.days_until == 1 %}<span class="saved-chip saved-chip-soon">Tomorrow</span>
       {% elif item.days_until is not none and item.days_until < 7 %}<span class="saved-chip">In {{ item.days_until }} days</span>
       {% endif %}
-      {% if event.start_date %}{{ event.start_date | human_date }}{% else %}Date TBD{% endif %}{% if event.start_time %} · {{ event.start_time | human_time }}{% set tz = event | event_tz %}{% if tz %} <span class="event-tz">{{ tz }}</span>{% endif %}{% endif %}{% if event.end_date and event.end_date != event.start_date %} – {{ event.end_date | human_date }}{% endif %}
+      {% if event.start_date %}{{ event.start_date | human_date }}{% else %}Date TBD{% endif %}{% if event.start_time %}, {{ event.start_time | human_time }}{% set tz = event | event_tz %}{% if tz %} <span class="event-tz">{{ tz }}</span>{% endif %}{% endif %}{% if event.end_date and event.end_date != event.start_date %} to {{ event.end_date | human_date }}{% endif %}
     </p>
     <h3 class="saved-item-title">
       {% if item.is_linkable %}<a href="/events/{{ event.id }}">{{ event.title }}</a>{% else %}{{ event.title }}{% endif %}
     </h3>
     <p class="saved-item-where">
-      {{ event.public_venue or 'Venue TBD' }}{% if event.city and event.city.name not in (event.public_venue or '') %} · {{ event.city.name }}{% endif %}
+      {{ event.public_venue or 'Venue TBD' }}{% if event.city and event.city.name not in (event.public_venue or '') %}, {{ event.city.name }}{% endif %}
       {% if event.effective_category %}<span class="badge badge-muted">{{ event.effective_category.name }}</span>{% endif %}
       {% if event.is_cancelled and not finished %}<span class="badge badge-danger">Cancelled</span>{% endif %}
     </p>
@@ -79,7 +79,7 @@
       <h1>Saved events</h1>
       {% if current_items or finished_items %}
       <p class="saved-summary">
-        {{ current_items | length }} coming up{% if finished_items %} · {{ finished_items | length }} past or no longer listed{% endif %}
+        {{ current_items | length }} coming up{% if finished_items %}, {{ finished_items | length }} past or no longer listed{% endif %}
       </p>
       {% endif %}
     </div>

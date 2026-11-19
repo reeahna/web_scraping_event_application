@@ -17,6 +17,15 @@ from urllib.parse import urljoin, urlsplit, urlunsplit
 from bs4 import BeautifulSoup, XMLParsedAsHTMLWarning
 
 from app.extraction.challenge import find_marker
+from app.extraction.patterns.bibliocommons_events import (
+    gateway_endpoint as _bibliocommons_gateway,
+)
+from app.extraction.patterns.bibliocommons_events import (
+    library_from_url as _bibliocommons_library,
+)
+from app.extraction.patterns.bibliocommons_events import (
+    records as _bibliocommons_records,
+)
 from app.extraction.patterns.campus_labs_engage import (
     PAGE_MARKERS as _ENGAGE_PAGE_MARKERS,
 )
@@ -74,6 +83,9 @@ RELIABILITY_ORDER: tuple[str, ...] = (
     # Campus Labs Engage: keyed on its discovery-API response shape or its own
     # page markers; sits with the other vendor APIs' JSON/feed family.
     "campus_labs_engage",
+    # BiblioCommons library events: keyed on the gateway API's id-list plus
+    # `entities` shape, or a library page on the platform.
+    "bibliocommons_events",
     # Event data embedded as a plain JS variable (window.x = [...]). Parsed,
     # never executed. Last structured resort before HTML-card scraping.
     "inline_json_events",
@@ -1115,6 +1127,55 @@ class CampusLabsEngageDetector:
         )
 
 
+class BiblioCommonsEventsDetector:
+    """BiblioCommons library events: matches the gateway API's own response (an
+    `events.items` id list next to an `entities.events` table of records with a
+    `definition`), or a library page on the platform, recognised by its own
+    markup together with a `<library>.bibliocommons.com` address. The gateway
+    endpoint follows the platform's route convention for that library."""
+
+    def detect(self, response: FetchResponse) -> PatternDetectionResult:
+        if _access_denied_detected(response):
+            return _blocked_result("access denied or challenge page detected")
+        library = _bibliocommons_library(response.final_url)
+        stripped = response.text.lstrip()
+        if stripped.startswith("{"):
+            try:
+                payload = json.loads(stripped)
+            except (json.JSONDecodeError, ValueError):
+                payload = None
+            found = _bibliocommons_records(payload)
+            if found is not None:
+                return PatternDetectionResult(
+                    pattern_name="bibliocommons_events",
+                    confidence=0.9 if found else 0.65,
+                    evidence={"bibliocommons_api_response": True, "record_count": len(found)},
+                    discovered_endpoints=(
+                        (_bibliocommons_gateway(library),) if library else ()
+                    ),
+                    browser_required=False,
+                    warnings=() if found else ("bibliocommons_no_events",),
+                    detector_version=DETECTOR_VERSION,
+                    needs_review=False,
+                )
+        if library and "bibliocommons" in response.text[:200_000].lower():
+            return PatternDetectionResult(
+                pattern_name="bibliocommons_events",
+                confidence=0.8,
+                evidence={"bibliocommons_library": library},
+                discovered_endpoints=(_bibliocommons_gateway(library),),
+                browser_required=False,
+                warnings=(),
+                detector_version=DETECTOR_VERSION,
+                needs_review=False,
+            )
+        return PatternDetectionResult(
+            pattern_name=None, confidence=0.0, evidence={},
+            discovered_endpoints=(), browser_required=False, warnings=(),
+            detector_version=DETECTOR_VERSION, needs_review=False,
+        )
+
+
 def run_all_detectors(response: FetchResponse) -> dict[str, PatternDetectionResult]:
     """Run every registered detector over `response` and return each raw result
     keyed by pattern name. `run_detection` selects a single winner from these;
@@ -1136,6 +1197,7 @@ def run_all_detectors(response: FetchResponse) -> dict[str, PatternDetectionResu
         "algolia_search": AlgoliaSearchDetector(),
         "paged_json_events": PagedJsonEventsDetector(),
         "campus_labs_engage": CampusLabsEngageDetector(),
+        "bibliocommons_events": BiblioCommonsEventsDetector(),
         "generic_html_cards": StaticHtmlDetector(),
     }
     cache: dict[str, BeautifulSoup] = {}

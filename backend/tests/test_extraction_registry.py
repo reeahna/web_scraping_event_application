@@ -67,6 +67,8 @@ def test_default_registry_has_the_expected_patterns():
         "paged_json_events",
         # Campus Labs Engage discovery API
         "campus_labs_engage",
+        # BiblioCommons library events gateway API
+        "bibliocommons_events",
     }
     # Every registered pattern is automatically configurable.
     assert all(registry.get(name).proposer is not None for name in registry.names())

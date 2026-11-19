@@ -44,6 +44,16 @@ _STATES = {
     "WI": "wisconsin", "WY": "wyoming",
 }
 _STATE_NAMES = {name: abbr for abbr, name in _STATES.items()}
+
+def state_abbreviation(value: str | None) -> str:
+    """"Indiana" -> "IN", "in" -> "IN". Anything that is not a US state (a
+    Canadian province, a country) comes back as it was written."""
+    text = (value or "").strip()
+    if text.upper() in _STATES:
+        return text.upper()
+    return _STATE_NAMES.get(text.lower(), text)
+
+
 # Newspaper-style abbreviations, as athletics calendars write venues:
 # "Terre Haute, Ind.". Matched only with their closing period.
 _AP_STATES = {

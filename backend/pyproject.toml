@@ -1,17 +1,20 @@
 [project]
 name = "new-app"
-version = "1.9.0"
+version = "1.10.0"
 description = "Replacement city events application (Phase 1: foundation only)"
 requires-python = ">=3.13"
 dependencies = [
     "fastapi>=0.115.0",
+    # FastAPI's web layer. Floor set above versions with known security
+    # advisories (pip-audit); FastAPI alone would allow older ones.
+    "starlette>=1.3.1",
     "uvicorn[standard]>=0.32.0",
     "sqlalchemy>=2.0.36",
     "alembic>=1.14.0",
     "pydantic>=2.9.0",
     "pydantic-settings>=2.6.0",
-    "jinja2>=3.1.4",
-    "python-multipart>=0.0.12",
+    "jinja2>=3.1.6",
+    "python-multipart>=0.0.31",
     "tzdata>=2024.1",
     "httpx>=0.27.0",
     "beautifulsoup4>=4.12.3",
@@ -32,9 +35,9 @@ dependencies = [
     # External authentication (Phase 14). Authlib implements the OAuth/OIDC
     # protocol — never hand-rolled. Providers are credential-gated and off by
     # default; tests use a mocked provider.
-    "Authlib>=1.3",
+    "Authlib>=1.9.1",
     # Authlib's OAuth client runs on requests, which it does not install itself.
-    "requests>=2.32",
+    "requests>=2.33",
     # Shared production rate-limit backend. Imported lazily; only used when
     # RATE_LIMIT_BACKEND=redis. Dev/tests need no Redis server.
     "redis>=5",

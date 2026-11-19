@@ -1,11 +1,11 @@
 {% extends "base.html" %}
 
-{% block title %}Alert preferences — {{ site_name }}{% endblock %}
+{% block title %}Alert preferences | {{ site_name }}{% endblock %}
 
 {% block content %}
 <div class="page-container">
   <h1>Alert preferences</h1>
-  <p class="hero-subtext">Choose how you hear about events. <a href="/account/inbox">Your alerts</a> · <a href="/account/saved">Your saved events</a></p>
+  <p class="hero-subtext">Choose how you hear about events. See <a href="/account/inbox">your alerts</a> or <a href="/account/saved">your saved events</a>.</p>
 
   <form method="post" action="/account/alerts" class="filter-form filter-form-stacked">
     <input type="hidden" name="csrf_token" value="{{ csrf_token }}" />

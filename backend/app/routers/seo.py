@@ -138,8 +138,8 @@ def favicon() -> FileResponse:
     links to; answer with the site icon instead of a 404. Served directly
     rather than redirected, so it costs one request."""
     return FileResponse(
-        STATIC_DIR / "favicon.svg",
-        media_type="image/svg+xml",
+        STATIC_DIR / "favicon.ico",
+        media_type="image/x-icon",
         headers={"Cache-Control": "public, max-age=86400"},
     )
 
