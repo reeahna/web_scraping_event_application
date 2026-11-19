@@ -32,6 +32,8 @@ lines. Lines may use `**bold**`, `` `code` `` and `[links](https://...)`.
 
 ## [Unreleased]
 
+## [1.10.0] - 2026-11-19
+
 ### For everyone
 - The home page drops the line under the headline, so the search and the towns sit higher. (#89)
 - Browsers that kept showing the old purple tab icon now pick up the new serif B. (#87)
