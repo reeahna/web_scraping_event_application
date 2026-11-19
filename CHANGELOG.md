@@ -36,7 +36,7 @@ lines. Lines may use `**bold**`, `` `code` `` and `[links](https://...)`.
 - Fewer listings meant for young children or teachers: children's art programs, "Kids Eat Free" nights and teaching-tool demos no longer show. (#91)
 
 ### Admin and behind the scenes
-- Admin Notifications has a **Mark all as read** button that clears every unread notification at once and resets the unread count in the admin menu. (#PR)
+- Admin Notifications has a **Mark all as read** button that clears every unread notification at once and resets the unread count in the admin menu. (#92)
 
 ## [1.10.0] - 2026-11-19
 
