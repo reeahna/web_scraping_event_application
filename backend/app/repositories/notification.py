@@ -1,5 +1,6 @@
 from datetime import UTC, datetime, timedelta
 
+from sqlalchemy import update
 from sqlalchemy.orm import Session
 
 from app.models.notification import Notification
@@ -77,6 +78,22 @@ def mark_read(db: Session, notification: Notification) -> Notification:
         db.commit()
         db.refresh(notification)
     return notification
+
+
+def mark_all_read_for_user(db: Session, user_id: int) -> int:
+    """Mark every unread notification of one user as read in a single UPDATE.
+
+    Uses the same "unread" definition as count_unread_for_user, so the admin
+    nav's unread count drops to zero afterwards. Returns the number of rows
+    changed.
+    """
+    result = db.execute(
+        update(Notification)
+        .where(Notification.recipient_user_id == user_id, Notification.read_at.is_(None))
+        .values(read_at=datetime.now(UTC))
+    )
+    db.commit()
+    return result.rowcount or 0
 
 
 def dismiss(db: Session, notification: Notification) -> Notification:

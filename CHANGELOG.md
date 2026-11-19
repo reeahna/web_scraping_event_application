@@ -37,6 +37,7 @@ lines. Lines may use `**bold**`, `` `code` `` and `[links](https://...)`.
 
 ### Admin and behind the scenes
 - Calendar feeds that leave some events without their own link now import: those events link to the source's page, instead of the whole import failing with a server error. (#93)
+- Admin Notifications has a **Mark all as read** button that clears every unread notification at once and resets the unread count in the admin menu. (#92)
 
 ## [1.10.0] - 2026-11-19
 
