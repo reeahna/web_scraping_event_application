@@ -32,6 +32,9 @@ lines. Lines may use `**bold**`, `` `code` `` and `[links](https://...)`.
 
 ## [Unreleased]
 
+### For everyone
+- Fewer listings meant for young children or teachers: children's art programs, "Kids Eat Free" nights and teaching-tool demos no longer show. (#91)
+
 ## [1.10.0] - 2026-11-19
 
 ### For everyone
