@@ -180,8 +180,28 @@
     {% if active_filters %}<a href="{{ town.path }}" class="filter-clear-link">Clear filters</a>{% endif %}
   </div>
   {% if events %}
-  <ol class="event-grid" aria-labelledby="results">
-    {% for event in events %}
+  {#- Events already running (shown as "Until" a date) sort ahead of the rest.
+      When this page has any, each group gets a small heading on a hairline
+      so the change from one to the other reads. A group with no events on
+      this page gets no heading, and a page with no running events is one
+      plain list. -#}
+  {% set groups_ns = namespace(multi=[], single=[]) %}
+  {% for event in events %}
+    {% if event.start_date and event.end_date and event.start_date < today and event.end_date >= today %}
+      {% set groups_ns.multi = groups_ns.multi + [event] %}
+    {% else %}
+      {% set groups_ns.single = groups_ns.single + [event] %}
+    {% endif %}
+  {% endfor %}
+  {% if groups_ns.multi %}
+    {% set event_groups = [("multi-day", "Multi-day events", groups_ns.multi), ("single-day", "Single-day events", groups_ns.single)] %}
+  {% else %}
+    {% set event_groups = [("", "", events)] %}
+  {% endif %}
+  {% for group_key, group_label, group_events in event_groups if group_events %}
+  {% if group_key %}<h3 class="event-group-heading" id="events-{{ group_key }}">{{ group_label }}</h3>{% endif %}
+  <ol class="event-grid{% if group_key %} event-grid-grouped{% endif %}" aria-labelledby="{{ 'events-' ~ group_key if group_key else 'results' }}">
+    {% for event in group_events %}
     {% set ongoing = event.start_date and event.end_date and event.start_date < today and event.end_date >= today %}
     {% set shown_date = event.end_date if ongoing else event.start_date %}
     <li class="event-row">
@@ -242,6 +262,7 @@
     </li>
     {% endfor %}
   </ol>
+  {% endfor %}
 
   {{ paginate(
        page, per_page, total,
