@@ -15,7 +15,8 @@
       <input type="hidden" name="csrf_token" value="{{ csrf_token }}" />
       {% if status %}<input type="hidden" name="status" value="{{ status }}" />{% endif %}
       {% if severity %}<input type="hidden" name="severity" value="{{ severity }}" />{% endif %}
-      <button type="submit">Mark all as read</button>
+      <button type="submit">Mark all inbox notifications as read</button>
+      {% if filtered %}<p class="audit-meta">Applies to all {{ unread_total }} unread, not only the filtered list.</p>{% endif %}
     </form>
   </div>
   {% endif %}

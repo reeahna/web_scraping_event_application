@@ -279,6 +279,30 @@ def test_viewing_pages_marks_nothing_read(client, make_super_admin, db_session, 
     assert count_unread_for_user(db_session, admin.id) == 60
 
 
+def test_mark_all_read_says_it_covers_the_whole_inbox(
+    client, make_super_admin, db_session, login
+):
+    admin = _admin(make_super_admin, login, "inbox-all-label@example.com")
+    _add(db_session, admin, 2, severity="error", start=0)
+    _add(db_session, admin, 3, severity="info", start=2)
+
+    page = client.get("/admin/notifications")
+    assert "Mark all inbox notifications as read" in page.text
+    assert "not only the filtered list" not in page.text
+
+    filtered = client.get("/admin/notifications?severity=error")
+    assert "Mark all inbox notifications as read" in filtered.text
+    assert "Applies to all 5 unread, not only the filtered list." in filtered.text
+
+    client.post(
+        "/admin/notifications/read-all",
+        data={"csrf_token": _csrf(client), "severity": "error"},
+        follow_redirects=False,
+    )
+    # The bulk action is inbox-wide, as the label says.
+    assert count_unread_for_user(db_session, admin.id) == 0
+
+
 def test_mark_all_read_keeps_filters(client, make_super_admin, db_session, login):
     admin = _admin(make_super_admin, login, "inbox-all@example.com")
     _add(db_session, admin, 2, severity="error")
