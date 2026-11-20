@@ -120,6 +120,16 @@ def mark_read(db: Session, notification: Notification) -> Notification:
     return notification
 
 
+def mark_unread(db: Session, notification: Notification) -> Notification:
+    """Clear `read_at` so the notification counts as unread again. Nothing else
+    on the row changes."""
+    if notification.read_at is not None:
+        notification.read_at = None
+        db.commit()
+        db.refresh(notification)
+    return notification
+
+
 def mark_all_read_for_user(db: Session, user_id: int) -> int:
     """Mark every unread notification of one user as read in a single UPDATE.
 
@@ -134,10 +144,3 @@ def mark_all_read_for_user(db: Session, user_id: int) -> int:
     )
     db.commit()
     return result.rowcount or 0
-
-
-def dismiss(db: Session, notification: Notification) -> Notification:
-    notification.dismissed_at = datetime.now(UTC)
-    db.commit()
-    db.refresh(notification)
-    return notification

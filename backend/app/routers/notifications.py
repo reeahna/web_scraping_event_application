@@ -17,10 +17,10 @@ from app.repositories.notification import (
     page_notifications_for_user,
 )
 from app.repositories.notification import (
-    dismiss as dismiss_notification,
+    mark_read as mark_notification_read,
 )
 from app.repositories.notification import (
-    mark_read as mark_notification_read,
+    mark_unread as mark_notification_unread,
 )
 from app.services.audit import record_audit
 from app.services.rbac import can_access_admin
@@ -30,32 +30,46 @@ router = APIRouter(prefix="/admin/notifications", tags=["admin-notifications"])
 PER_PAGE = 50
 LIST_URL = "/admin/notifications"
 
+STATUS_ALL = "all"
+# Unread is the default view: the inbox opens on what still needs attention.
+DEFAULT_STATUS = READ_STATE_UNREAD
+
 # Filter values -> labels, in the order the filter menus show them.
-READ_STATES = {READ_STATE_UNREAD: "Unread", READ_STATE_READ: "Read"}
+READ_STATES = {READ_STATE_UNREAD: "Unread", READ_STATE_READ: "Read", STATUS_ALL: "All"}
 SEVERITIES = {"error": "Errors", "warning": "Warnings", "info": "Info"}
 
 
-def _clean_filters(
-    status: str | None, severity: str | None, unread_only: bool = False
-) -> tuple[str, str]:
-    """Known filter values only; anything else means "all". `unread_only` is
-    the older checkbox parameter and still means status=unread."""
+def _clean_filters(status: str | None, severity: str | None) -> tuple[str, str]:
+    """Known filter values only. A missing or unknown status means the default
+    (Unread), which also covers the older `?unread_only=true` links; an unknown
+    severity means any."""
     status = (status or "").strip().lower()
     severity = (severity or "").strip().lower()
     if status not in READ_STATES:
-        status = READ_STATE_UNREAD if unread_only else ""
+        status = DEFAULT_STATUS
     if severity not in SEVERITIES:
         severity = ""
     return status, severity
 
 
+def _filter_params(status: str, severity: str) -> list[tuple[str, str]]:
+    """Query parameters for a filter combination, leaving out the defaults so
+    the plain URL is the Unread view."""
+    params = []
+    if status != DEFAULT_STATUS:
+        params.append(("status", status))
+    if severity:
+        params.append(("severity", severity))
+    return params
+
+
 def _list_url(status: str, severity: str, page: int = 1) -> str:
     """The list URL for a filter combination and page. Built from cleaned values
     only, never from a submitted URL, so redirects stay on this page."""
-    params = [("status", status), ("severity", severity)]
+    params = _filter_params(status, severity)
     if page > 1:
         params.append(("page", str(page)))
-    query = urlencode([(k, v) for k, v in params if v])
+    query = urlencode(params)
     return f"{LIST_URL}?{query}" if query else LIST_URL
 
 
@@ -73,22 +87,21 @@ def list_notifications_view(
     db: DbSession,
     status: str | None = None,
     severity: str | None = None,
-    unread_only: bool = False,
     page: int = 1,
 ):
     if not can_access_admin(db, current_user):
         raise AppError("Forbidden: no admin access", status_code=403)
 
-    status, severity = _clean_filters(status, severity, unread_only)
+    status, severity = _clean_filters(status, severity)
     notifications, total, page = page_notifications_for_user(
         db,
         current_user.id,
-        read_state=status or None,
+        read_state=None if status == STATUS_ALL else status,
         severity=severity or None,
         page=page,
         per_page=PER_PAGE,
     )
-    filter_query = urlencode([(k, v) for k, v in (("status", status), ("severity", severity)) if v])
+    filter_query = urlencode(_filter_params(status, severity))
     return render(
         request,
         "admin/notifications/list.html",
@@ -99,8 +112,8 @@ def list_notifications_view(
             "severity": severity,
             "read_states": READ_STATES,
             "severities": SEVERITIES,
-            "filtered": bool(status or severity),
-            "unread_only": status == READ_STATE_UNREAD,
+            "filtered": status != DEFAULT_STATUS or bool(severity),
+            "default_status": DEFAULT_STATUS,
             "total": total,
             "page": page,
             "per_page": PER_PAGE,
@@ -120,7 +133,6 @@ def mark_all_read_view(
     ip_address: ClientIp,
     current_user: CurrentUser,
     csrf_token: str = Form(...),
-    unread_only: bool = Form(False),
     status: str = Form(""),
     severity: str = Form(""),
 ):
@@ -138,10 +150,7 @@ def mark_all_read_view(
             correlation_id=correlation_id,
             ip_address=ip_address,
         )
-    if unread_only and not status:
-        url = "/admin/notifications?unread_only=true"
-    else:
-        url = _list_url(*_clean_filters(status, severity))
+    url = _list_url(*_clean_filters(status, severity))
     response = RedirectResponse(url=url, status_code=303)
     if changed:
         noun = "notification" if changed == 1 else "notifications"
@@ -184,8 +193,8 @@ def mark_read_view(
     return RedirectResponse(url=url, status_code=303)
 
 
-@router.post("/{notification_id}/dismiss")
-def dismiss_view(
+@router.post("/{notification_id}/unread")
+def mark_unread_view(
     notification_id: int,
     request: Request,
     db: DbSession,
@@ -193,21 +202,25 @@ def dismiss_view(
     ip_address: ClientIp,
     current_user: CurrentUser,
     csrf_token: str = Form(...),
+    status: str = Form(""),
+    severity: str = Form(""),
+    page: int = Form(1),
 ):
+    """Put a read notification back in the Unread view. Only `read_at` changes;
+    the notification, its timestamps and earlier audit entries are kept."""
     verify_csrf(request, csrf_token)
     if not can_access_admin(db, current_user):
         raise AppError("Forbidden: no admin access", status_code=403)
     notification = _own_notification_or_404(db, notification_id, current_user.id)
-    dismiss_notification(db, notification)
+    mark_notification_unread(db, notification)
     record_audit(
         db,
         actor_id=current_user.id,
-        action="notification_dismissed",
+        action="notification_marked_unread",
         entity_type="notification",
         entity_id=notification.id,
         correlation_id=correlation_id,
         ip_address=ip_address,
     )
-    response = RedirectResponse(url="/admin/notifications", status_code=303)
-    set_flash(response, "Notification dismissed.")
-    return response
+    url = _list_url(*_clean_filters(status, severity), page=max(1, page))
+    return RedirectResponse(url=url, status_code=303)
