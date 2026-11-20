@@ -579,3 +579,117 @@ async def test_recheck_session_must_match_series_page_and_date(
     assert [r.event_id for r in report.reviews] == [wrong_page.id]
     db_session.refresh(wrong_page)
     assert wrong_page.start_time == time(0)
+
+
+# --- Scheduled imports keep events right without a recheck --------------------
+#
+# The scheduler runs app.services.scheduler_runner -> run_extraction, the same
+# pipeline these tests drive: fetch the feed, extract, normalize, update_event.
+
+
+def _listing_handler(*records: dict, seen: list[str] | None = None):
+    def handler(request: httpx.Request) -> httpx.Response:
+        if seen is not None:
+            seen.append(str(request.url))
+        if "/live/json/events" in request.url.path:
+            body = _feed(*records) if request.url.params.get("page", "1") == "1" else _feed()
+            return httpx.Response(200, text=body, headers={"content-type": "application/json"})
+        return httpx.Response(404, text="")
+
+    return handler
+
+
+NEW_EVENT = _event(
+    id=2600001, title="Evening Jam Session",
+    url="https://events.iu.edu/musiciub/event/2600001-evening-jam-session",
+    date_iso="2026-12-03T20:30:00-05:00", date_ts=None,
+    date2_iso=None, date2_ts=1796349600,  # 9:00 PM EST, end only as a timestamp
+    location="TBD", location_title="Musical Arts Center",
+)
+
+
+@pytest.mark.asyncio
+async def test_scheduled_import_corrects_stale_rows_and_new_events_arrive_right(
+    db_session, iu_source, make_event
+):
+    from app.services.extraction_runs import run_extraction
+
+    city, website = iu_source
+    row = _stored_like_31925(make_event, city, website)
+    update_fingerprint_and_duplicates(db_session, row)
+    seen: list[str] = []
+    with patched_http_fetch(_listing_handler(RECITAL, NEW_EVENT, seen=seen)):
+        result = await run_extraction(db_session, website, triggered_by_user_id=None)
+
+    assert result.status == "success"
+    assert "/response_fields/" in seen[0]  # the feed is asked for locations
+    db_session.refresh(row)
+    assert (row.start_date, row.start_time, row.end_time) == (
+        date(2026, 11, 19), time(19), time(20)
+    )
+    assert row.venue == "Recital Hall & LIVE@jacobs"
+    new = db_session.query(Event).filter(Event.external_source_id == "2600001").one()
+    assert (new.start_date, new.start_time) == (date(2026, 12, 3), time(20, 30))
+    assert (new.end_date, new.end_time) == (date(2026, 12, 3), time(21))
+    assert new.venue == "Musical Arts Center"  # "TBD" didn't block the real place
+    assert new.timezone == INDY
+    assert db_session.query(Event).count() == 2
+
+
+@pytest.mark.asyncio
+async def test_later_imports_never_revert_a_corrected_event(db_session, iu_source, make_event):
+    from app.services.extraction_runs import run_extraction
+
+    city, website = iu_source
+    row = _stored_like_31925(make_event, city, website)
+    update_fingerprint_and_duplicates(db_session, row)
+    with patched_http_fetch(_listing_handler(RECITAL)):
+        await run_extraction(db_session, website, triggered_by_user_id=None)
+    db_session.refresh(row)
+    corrected = (row.start_date, row.start_time, row.end_date, row.end_time, row.venue)
+    changed_at = row.content_updated_at
+
+    # 1. The same feed again: nothing moves, and no "details changed".
+    with patched_http_fetch(_listing_handler(RECITAL)):
+        again = await run_extraction(db_session, website, triggered_by_user_id=None)
+    db_session.refresh(row)
+    assert (row.start_date, row.start_time, row.end_date, row.end_time, row.venue) == corrected
+    assert row.content_updated_at == changed_at
+    assert again.events_inserted == 0
+
+    # 2. A configuration saved with the old timestamp paths still reads date_iso.
+    website.approved_pattern = CONFIG.model_copy(
+        update={"json_paths": {"start_datetime": "date_ts", "end_datetime": "date2_ts"}}
+    ).model_dump(mode="json")
+    db_session.commit()
+    with patched_http_fetch(_listing_handler(RECITAL)):
+        await run_extraction(db_session, website, triggered_by_user_id=None)
+    db_session.refresh(row)
+    assert (row.start_date, row.start_time, row.end_date, row.end_time, row.venue) == corrected
+
+    # 3. The feed briefly says "Venue TBD" / gives no location: the venue stays.
+    for location in ("Venue TBD", None):
+        with patched_http_fetch(_listing_handler(_event(location=location))):
+            await run_extraction(db_session, website, triggered_by_user_id=None)
+        db_session.refresh(row)
+        assert row.venue == "Recital Hall & LIVE@jacobs"
+
+    # 4. A bare midnight with no offset never replaces the real 7 PM.
+    placeholder = _event(date_iso="2026-11-19T00:00:00", date2_iso=None,
+                         date_ts=None, date2_ts=None)
+    with patched_http_fetch(_listing_handler(placeholder)):
+        await run_extraction(db_session, website, triggered_by_user_id=None)
+    db_session.refresh(row)
+    assert (row.start_date, row.start_time) == (date(2026, 11, 19), time(19))
+    assert db_session.query(Event).count() == 1
+
+
+def test_recheck_runs_only_when_an_admin_asks():
+    """Imports never call the recheck; only the admin route does."""
+    import inspect
+
+    from app.scheduler import runtime
+    from app.services import extraction_runs, scheduler_runner
+
+    for module in (extraction_runs, scheduler_runner, runtime):
+        assert "recheck_website_events" not in inspect.getsource(module)
