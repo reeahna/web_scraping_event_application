@@ -8,12 +8,13 @@ same visibility rules.
 
 from datetime import UTC, datetime, time, timedelta
 from urllib.parse import urlsplit
-from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
+from zoneinfo import ZoneInfo
 
 from icalendar import Calendar
 from icalendar import Event as CalendarEvent
 
 from app.config import get_settings
+from app.core.timezones import zone_info
 from app.models.city import City
 from app.models.event import Event
 from app.services.seo import absolute_url
@@ -24,18 +25,11 @@ REFRESH_INTERVAL = timedelta(hours=6)
 _MAX_DESCRIPTION = 1000
 
 
-def _zone(*names: str | None) -> ZoneInfo:
-    """The first of `names` that is a real time zone, else UTC. A scraped event
-    can carry a zone name that does not exist; its town's zone is then a far
-    better guess than UTC."""
-    for name in names:
-        if not name:
-            continue
-        try:
-            return ZoneInfo(name)
-        except (ZoneInfoNotFoundError, ValueError):
-            continue
-    return ZoneInfo("UTC")
+def _zone(name: str | None, fallback: str | None = None) -> ZoneInfo:
+    """The event's zone, else its town's, else UTC. A scraped event can carry
+    a zone name that does not exist; its town's zone is then a far better
+    guess than UTC. A bare "EST" is read as US Eastern so DST still applies."""
+    return zone_info(name, fallback)
 
 
 def _event_component(event: Event, *, host: str, tz: ZoneInfo, now: datetime) -> CalendarEvent:

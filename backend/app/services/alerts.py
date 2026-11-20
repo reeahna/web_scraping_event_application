@@ -21,9 +21,11 @@ from sqlalchemy.orm import Session
 
 from app.config import get_settings
 from app.core.logging import get_logger
+from app.models.city import City
 from app.models.event import Event
 from app.models.user import User
 from app.models.user_engagement import AlertDelivery, AlertPreference, SavedEvent
+from app.repositories.public_events import local_today
 from app.services.email import EmailMessage, EmailSender, get_email_sender
 from app.services.engagement import followers_of
 from app.services.notifications import SEVERITY_INFO, notify
@@ -200,11 +202,14 @@ def send_saved_event_reminders(
     (user, event) so a reminder is sent at most once."""
     now = now or datetime.now(UTC)
     sender = sender or get_email_sender(get_settings())
-    target = now.date() + timedelta(days=1)
+    # "Tomorrow" in each event's town: by UTC, an evening run was already a
+    # day ahead and reminded people two days early.
+    tomorrow = local_today(db, now).shifted(1)
     rows = db.execute(
         select(SavedEvent.user_id, Event)
         .join(Event, Event.id == SavedEvent.event_id)
-        .where(Event.start_date == target, Event.is_active.is_(True))
+        .join(City, City.id == Event.city_id)
+        .where(Event.start_date == tomorrow.sql(City.timezone), Event.is_active.is_(True))
     ).all()
     user_ids = {user_id for user_id, _ in rows}
     prefs = _prefs_for(db, user_ids)

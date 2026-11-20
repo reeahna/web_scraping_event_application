@@ -20,7 +20,7 @@ from app.models.city import City
 from app.models.event import Event
 from app.models.event_category import EventCategory
 from app.models.website import Website
-from app.repositories.public_events import current_public_date, get_public_event
+from app.repositories.public_events import get_public_event, local_today
 from app.services import engagement, user_alerts
 from app.services.rbac import can_access_admin
 
@@ -63,7 +63,7 @@ def save(
 ):
     verify_csrf(request, csrf_token)
     # Only allow saving an event the user can actually see.
-    if get_public_event(db, event_id, today=current_public_date()) is None:
+    if get_public_event(db, event_id, today=local_today(db)) is None:
         raise NotFoundError("Event not found")
     engagement.save_event(db, user_id=current_user.id, event_id=event_id)
     response = RedirectResponse(_safe_next(next, f"/events/{event_id}"), status_code=303)
@@ -90,7 +90,7 @@ def unsave(
 @router.get("/account/saved", response_class=HTMLResponse)
 def saved_page(request: Request, current_user: CurrentUser, db: DbSession):
     current, finished = engagement.saved_events_by_state(
-        db, user_id=current_user.id, today=current_public_date()
+        db, user_id=current_user.id, today=local_today(db)
     )
     return render(
         request,
@@ -114,7 +114,7 @@ def clear_past_saved(
 ):
     verify_csrf(request, csrf_token)
     removed = engagement.clear_past_saved_events(
-        db, user_id=current_user.id, today=current_public_date()
+        db, user_id=current_user.id, today=local_today(db)
     )
     response = RedirectResponse("/account/saved", status_code=303)
     set_flash(
@@ -165,7 +165,7 @@ def follow(
 
 @router.get("/account/inbox", response_class=HTMLResponse)
 def inbox_page(request: Request, current_user: CurrentUser, db: DbSession):
-    items = user_alerts.list_inbox(db, user_id=current_user.id, today=current_public_date())
+    items = user_alerts.list_inbox(db, user_id=current_user.id, today=local_today(db))
     return render(
         request,
         "alerts_inbox.html",

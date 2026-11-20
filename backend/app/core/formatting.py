@@ -11,6 +11,8 @@ from datetime import UTC, date, datetime, time
 from typing import Any
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
+from app.core.timezones import resolve_zone_name
+
 # A town's timezone defaults to UTC until an admin sets it, and no college town
 # runs on UTC, so a UTC zone means "not set" and shows no abbreviation.
 _UNSET_ZONES = frozenset({"UTC", "Etc/UTC", "GMT", "Etc/GMT", "UCT", "Universal", "Zulu"})
@@ -46,8 +48,12 @@ def time_zone_abbreviation(zone_name: str | None, on: date | None, at: time | No
     time is reflected. Empty when the zone is unknown or not set."""
     if not zone_name or zone_name in _UNSET_ZONES:
         return ""
+    # A bare "EST" setting is read as US Eastern, so a July event says EDT.
+    resolved = resolve_zone_name(zone_name)
+    if not resolved:
+        return ""
     try:
-        zone = ZoneInfo(zone_name)
+        zone = ZoneInfo(resolved)
     except (ZoneInfoNotFoundError, ValueError):
         return ""
     moment = datetime.combine(on or date.today(), at or time(12, 0), tzinfo=zone)

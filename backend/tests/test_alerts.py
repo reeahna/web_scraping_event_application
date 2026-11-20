@@ -102,3 +102,23 @@ def test_saved_event_reminder(make_user, make_city, make_website, make_event, db
     assert any(d.alert_key.startswith("reminder:") for d in _deliveries(db_session, user.id))
     # Deduped: running again does nothing new.
     assert alerts.send_saved_event_reminders(db_session, now=now, sender=MemoryEmailSender()) == 0
+
+
+def test_saved_event_reminder_uses_the_towns_tomorrow(
+    make_user, make_city, make_website, make_event, db_session
+):
+    # 9 PM Thursday in Bloomington is already Friday in UTC: "tomorrow" is
+    # Friday there, not Saturday.
+    user = _user(make_user, 1)
+    city = make_city(timezone="America/Indiana/Indianapolis")
+    website = make_website(city, is_active=True, approved_pattern={"pattern_name": "static_html"})
+    now = datetime(2026, 11, 20, 2, 0, tzinfo=UTC)
+    friday = make_event(city, website=website, title="Friday Show",
+                        start_date=datetime(2026, 11, 20).date(), canonical_url="https://x/f")
+    saturday = make_event(city, website=website, title="Saturday Show",
+                          start_date=datetime(2026, 11, 21).date(), canonical_url="https://x/s")
+    for event in (friday, saturday):
+        engagement.save_event(db_session, user_id=user.id, event_id=event.id)
+    assert alerts.send_saved_event_reminders(db_session, now=now, sender=MemoryEmailSender()) == 1
+    keys = {d.alert_key for d in _deliveries(db_session, user.id)}
+    assert keys == {f"reminder:{friday.id}"}

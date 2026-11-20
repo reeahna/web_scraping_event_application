@@ -82,11 +82,9 @@ class Settings(BaseSettings):
     test_login_enabled: bool = False
     test_user_email: str = "test-user@bulletin.invalid"
 
-    # Single application-wide timezone used to compute "today" for public
-    # event visibility (see app/repositories/public_events.py). Deliberately
-    # not per-city or per-viewer for this MVP — per-city date-boundary
-    # handling is deferred to a later phase rather than mixing timezone
-    # semantics inconsistently across events from different cities.
+    # Fallback timezone for "today" where there is no town to go by (the
+    # visitor log, a town with no zone). Public event visibility uses each
+    # town's own timezone (see app/repositories/public_events.py).
     app_timezone: str = "UTC"
 
     # Visitor log (app.services.site_visits, admin page /admin/visitors).
