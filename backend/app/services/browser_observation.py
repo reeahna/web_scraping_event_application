@@ -153,6 +153,7 @@ _PAGE_EMBEDDED_STRUCTURED_PATTERNS = (
     "next_data",
     "nuxt_payload",
     "embedded_json",
+    "audienceview_events",
     "inline_json_events",
 )
 
