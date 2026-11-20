@@ -20,7 +20,12 @@ from app.models.user_engagement import (
     SavedEvent,
     UserFollow,
 )
-from app.repositories.public_events import DateBound, get_public_event_ids, today_for_event
+from app.repositories.public_events import (
+    DateBound,
+    event_has_ended,
+    get_public_event_ids,
+    today_for_event,
+)
 
 _FOLLOW_TYPES = {"city", "category", "source"}
 
@@ -95,8 +100,8 @@ class SavedEventItem:
 
 
 def _has_happened(event: Event, today: DateBound) -> bool:
-    last_day = event.end_date or event.start_date
-    return last_day is not None and last_day < today_for_event(today, event)
+    # The same rule as the public listing: over once its end time has passed.
+    return event_has_ended(event, today)
 
 
 def saved_events_by_state(
