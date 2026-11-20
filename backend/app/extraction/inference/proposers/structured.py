@@ -405,6 +405,55 @@ class InlineJsonEventsProposer:
         )
 
 
+class AudienceViewEventsProposer:
+    """An AudienceView box-office listing (`searchHeaders` / `searchResults`).
+    The pattern derives every field from the table itself, so the proposal
+    keeps the pattern's default paths and measures their coverage against the
+    performances already in the page."""
+
+    pattern_name = "audienceview_events"
+
+    def propose(self, context: ProposalContext) -> ConfigurationProposal:
+        from app.extraction.patterns.audienceview_events import (
+            _DEFAULT_PATHS as AUDIENCEVIEW_PATHS,
+        )
+        from app.extraction.patterns.audienceview_events import find_audienceview_listing
+
+        listing = find_audienceview_listing(context.response.text)
+        if listing is None or not listing.records:
+            return failed_proposal(
+                "audienceview_events was detected but no performance rows could be re-read"
+            )
+        candidates, missing = _schema_candidates(
+            AUDIENCEVIEW_PATHS, listing.records, context.policy
+        )
+
+        try:
+            configuration = SiteConfiguration(
+                pattern_name=self.pattern_name,
+                listing_url=context.listing_url,
+                timezone=context.fallback_timezone,
+                json_paths={},
+                max_detail_fetches=0,
+                required_fields=list(DEFAULT_REQUIRED_FIELDS),
+            )
+        except ValueError as exc:
+            return failed_proposal(f"proposed configuration failed validation: {exc}")
+
+        return ConfigurationProposal(
+            configuration=configuration,
+            field_candidates=candidates,
+            confidence=round(min(0.9, 0.5 + 0.4 * context.detection.confidence), 4),
+            missing_required_fields=missing,
+            notes=(
+                "AudienceView box-office listing read from the page's searchResults table",
+                f"{len(listing.records)} performance(s) in the table",
+                "fields can be pointed at a raw column under 'JSON paths' in advanced "
+                "configuration (for example description: Data 2)",
+            ),
+        )
+
+
 def wordpress_rest_proposer() -> _StructuredProposer:
     return _StructuredProposer(
         _StructuredSpec(

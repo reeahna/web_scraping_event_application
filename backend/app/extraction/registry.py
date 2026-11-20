@@ -11,6 +11,7 @@ from dataclasses import dataclass
 from app.extraction.detection import (
     RELIABILITY_ORDER,
     AlgoliaSearchDetector,
+    AudienceViewEventsDetector,
     BiblioCommonsEventsDetector,
     CampusLabsEngageDetector,
     EmbeddedJsonDetector,
@@ -45,6 +46,7 @@ from app.extraction.inference.proposers.json_scripts import (
 from app.extraction.inference.proposers.paged_json import PagedJsonEventsProposer
 from app.extraction.inference.proposers.simpleview import simpleview_events_proposer
 from app.extraction.inference.proposers.structured import (
+    AudienceViewEventsProposer,
     InlineJsonEventsProposer,
     JsonLdEventProposer,
     livewhale_proposer,
@@ -53,6 +55,10 @@ from app.extraction.inference.proposers.structured import (
 )
 from app.extraction.patterns.algolia_search import PATTERN_VERSION as _ALGOLIA_VERSION
 from app.extraction.patterns.algolia_search import AlgoliaSearchPattern
+from app.extraction.patterns.audienceview_events import (
+    PATTERN_VERSION as _AUDIENCEVIEW_VERSION,
+)
+from app.extraction.patterns.audienceview_events import AudienceViewEventsPattern
 from app.extraction.patterns.base import ExtractionPattern
 from app.extraction.patterns.bibliocommons_events import PATTERN_VERSION as _BIBLIO_VERSION
 from app.extraction.patterns.bibliocommons_events import BiblioCommonsEventsPattern
@@ -300,6 +306,21 @@ def build_default_registry() -> PatternRegistry:
             supported_pagination=("none", "query_param"),
             proposer=EmbeddedJsonProposer(),
             display_name="Embedded JSON (<script>)",
+            classification="structured",
+        )
+    )
+    registry.register(
+        PatternRegistration(
+            name="audienceview_events",
+            detector=AudienceViewEventsDetector(),
+            extractor=AudienceViewEventsPattern(),
+            config_schema=SiteConfiguration,
+            priority=RELIABILITY_ORDER.index("audienceview_events"),
+            version=_AUDIENCEVIEW_VERSION,
+            browser_required=False,
+            supported_pagination=("none",),
+            proposer=AudienceViewEventsProposer(),
+            display_name="AudienceView box office listing",
             classification="structured",
         )
     )
