@@ -49,6 +49,7 @@ def search_websites(
     city_id: int | None = None,
     onboarding_status: str | Sequence[str] | None = None,
     exclude_statuses: Sequence[str] = (),
+    website_ids: Sequence[int] | None = None,
     page: int = 1,
     per_page: int = 20,
 ) -> tuple[list[Website], int]:
@@ -56,6 +57,8 @@ def search_websites(
 
     `onboarding_status` keeps only sites in the given state (or any of several
     states); `exclude_statuses` drops sites in those states. Both may be given.
+    `website_ids`, when given, keeps only those sites (an empty list matches
+    nothing).
     """
     q = db.query(Website)
     if query:
@@ -74,6 +77,8 @@ def search_websites(
         q = q.filter(Website.onboarding_status.in_(list(onboarding_status)))
     if exclude_statuses:
         q = q.filter(Website.onboarding_status.not_in(list(exclude_statuses)))
+    if website_ids is not None:
+        q = q.filter(Website.id.in_(list(website_ids)))
 
     total = q.count()
     page = max(page, 1)

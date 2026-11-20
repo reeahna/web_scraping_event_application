@@ -111,6 +111,32 @@ act):
 `interval_minutes` is floored at 15 minutes regardless of what a form submits,
 so a misconfiguration cannot poll a third-party site aggressively.
 
+## Daily check baseline
+
+Every active, approved source should complete a successful check at least once
+every 24 hours (a busy source may run every 12 hours when there is a clear
+reason). `app/services/source_freshness.py` measures each source against that,
+read-only, from run records, the scheduler job row and `schedule_config`:
+
+- **Admin > Websites** shows each source's last successful check, next
+  scheduled check, latest failure (and whether it has since recovered), and
+  its daily-check status. A source more than 12 hours past its expected
+  interval is marked **Overdue** (a source with automatic imports off is held
+  to the daily baseline; one never checked is measured from its approval). The
+  source that is holding its town's "Listings checked" time back is marked
+  **Holds back town time**. The **Needs attention only** filter lists every
+  source that is overdue, failing, or not on a daily schedule.
+- **Admin > Websites > Daily checks** (`/admin/websites/daily-checks`) sorts
+  sources into: checked daily, no schedule, automatic imports switched off,
+  checked less often than daily, and failing. An administrator ticks sources
+  and presses the button to put them on the 24-hour schedule. Nothing changes
+  without that press, so a schedule an administrator chose (off, or longer
+  than daily) is reported before it is replaced. Each change keeps the
+  source's retry and backoff settings, spreads first checks over the next 24
+  hours, and is audited as `schedule_daily_baseline`. Failing sources are never
+  switched on or sped up there, and blocked, archived and unapproved sources
+  are never scheduled. Approved configurations and events are not touched.
+
 ## Freshness shown to visitors
 
 `app/services/event_freshness.py` turns run records into two public timestamps.
@@ -122,7 +148,10 @@ so a misconfiguration cannot poll a third-party site aggressively.
   can't date the town, so the page says how many have not completed a first
   check yet; a source whose latest run failed keeps its last good time and is
   mentioned on the page too, and preview or detection runs never count. Page views
-  never change it.
+  never change it. When the source that sets the time is failing or overdue
+  while the others are current, the page names it ("... could not be checked
+  on the latest try" or "... has not been checked since then") and says when
+  every other source was checked; administrators get a link to that source.
 - **Event pages** ("Event information last updated ..."): `Event.content_updated_at`,
   set when an event is first listed and moved only when what a visitor sees
   changes (`visitor_snapshot`): from a check, an admin correction or a new AI

@@ -15,7 +15,7 @@ Two separate timestamps, never stand-ins for each other:
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from typing import Any
 
 from sqlalchemy import func
@@ -89,6 +89,22 @@ class TownFreshness:
     sources: int
     failing: int
     pending: int = 0
+    # The source whose last successful check is ``checked_at``: the one that
+    # dates the whole town.
+    oldest_website_id: int | None = None
+    oldest_source_name: str = ""
+    # When every *other* counted source had last been checked; None with a
+    # single source.
+    others_checked_at: datetime | None = None
+    # Why the oldest source is holding the town back, when it is: "failing"
+    # (its latest check failed) or "overdue" (no successful check for more
+    # than its expected interval plus the grace period). Empty when it is
+    # simply the oldest of a set of up-to-date sources, or the only source.
+    held_back_by: str = ""
+
+    @property
+    def held_back(self) -> bool:
+        return bool(self.held_back_by)
 
 
 def _public_sources_query(db: Session, city_id: int):
@@ -145,20 +161,45 @@ def town_listings_checked(
         .all()
     )
     successes = {key: as_aware_utc(value) for key, value in last_success.items()}
-    failing = sum(
-        1
+    failing_ids = {
+        key
         for key, failed_at in last_failure.items()
         if failed_at is not None and as_aware_utc(failed_at) > successes[key]
-    )
+    }
+    now = now or datetime.now(UTC)
     # A clock skew between the scheduler and the web process must never show a
     # check that has not happened yet.
-    checked_at = min(min(successes.values()), now or datetime.now(UTC))
+    oldest_id = min(successes, key=lambda key: (successes[key], key))
+    checked_at = min(successes[oldest_id], now)
+    others = [at for key, at in successes.items() if key != oldest_id]
+    oldest = db.get(Website, oldest_id)
+    held_back_by = ""
+    if others:
+        if oldest_id in failing_ids:
+            held_back_by = "failing"
+        elif _is_overdue(oldest, successes[oldest_id], now):
+            held_back_by = "overdue"
     return TownFreshness(
         checked_at=checked_at,
         sources=len(successes),
-        failing=failing,
+        failing=len(failing_ids),
         pending=len(set(source_ids) - set(successes)),
+        oldest_website_id=oldest_id,
+        oldest_source_name=(oldest.source_display_name or oldest.name) if oldest else "",
+        others_checked_at=min(min(others), now) if others else None,
+        held_back_by=held_back_by,
     )
+
+
+def _is_overdue(website: Website | None, last_success: datetime, now: datetime) -> bool:
+    """Past its expected interval plus the grace period (see
+    app.services.source_freshness), so it is not just the next one due."""
+    if website is None:
+        return False
+    from app.services.source_freshness import OVERDUE_GRACE, _target
+
+    _, interval = _target(website, should_be_checked=True)
+    return now - last_success > timedelta(minutes=interval) + OVERDUE_GRACE
 
 
 # --- Formatting --------------------------------------------------------------

@@ -57,17 +57,21 @@ from app.services.audit import record_audit
 from app.services.auto_onboarding_execution import effective_decision
 from app.services.auto_onboarding_reevaluation import reevaluate_website
 from app.services.browser_recovery import browser_retry_recovery
+from app.services.daily_checks import apply_daily_checks, plan_daily_checks
+from app.services.event_freshness import town_listings_checked
 from app.services.event_recheck import recheck_website_events, supports_recheck
 from app.services.extraction_runs import preview_extraction, run_detection, run_extraction
 from app.services.onboarding_automation import detect_and_configure
 from app.services.rbac import require_permission, user_has_permission
 from app.services.schedule_admin import (
     INTERVAL_PRESETS,
+    admin_time_html,
     apply_schedule,
     build_schedule_config,
     build_website_schedule_view,
     format_interval,
 )
+from app.services.source_freshness import attention_website_ids, format_age, source_freshness
 from app.services.website_configuration import (
     approve_configuration,
     reject_configuration,
@@ -234,6 +238,9 @@ def _status_filter_groups(db, selected: frozenset[str] = frozenset()) -> list[di
 # How the checked statuses apply: keep only those sites, or hide them.
 STATUS_MODE_ONLY = "only"
 STATUS_MODE_HIDE = "hide"
+# The "Needs attention" filter: sources that should be checked daily and are
+# overdue, failing, or not on a daily schedule (app.services.source_freshness).
+FRESHNESS_ATTENTION = "attention"
 
 
 def _clean_statuses(values: list[str] | None) -> list[str]:
@@ -259,18 +266,21 @@ def list_websites_view(
     city_id: OptionalId = None,
     onboarding_status: Annotated[list[str] | None, Query()] = None,
     status_mode: OptionalText = None,
+    freshness: OptionalText = None,
     page: int = 1,
 ):
     # `onboarding_status` may repeat (?onboarding_status=a&onboarding_status=b),
     # so a single-status link from before multi-select still means the same.
     statuses = _clean_statuses(onboarding_status)
     hiding = status_mode == STATUS_MODE_HIDE and bool(statuses)
+    attention_only = freshness == FRESHNESS_ATTENTION
     websites, total = search_websites(
         db,
         query=q,
         city_id=city_id,
         onboarding_status=None if hiding else statuses,
         exclude_statuses=statuses if hiding else (),
+        website_ids=attention_website_ids(db) if attention_only else None,
         page=page,
         per_page=PER_PAGE,
     )
@@ -282,6 +292,8 @@ def list_websites_view(
             params.append(("status_mode", STATUS_MODE_HIDE))
     else:
         params.append(("onboarding_status", ""))
+    if attention_only:
+        params.append(("freshness", FRESHNESS_ATTENTION))
     base_url = "/admin/websites?" + urlencode(params)
     return render(
         request,
@@ -300,8 +312,76 @@ def list_websites_view(
             "cities": cities,
             "status_groups": _status_filter_groups(db, frozenset(statuses)),
             "base_url": base_url,
+            "attention_only": attention_only,
+            "freshness": source_freshness(db, websites),
+            "town_holders": _town_holders(db, websites),
+            "admin_time": admin_time_html,
+            "format_age": format_age,
+            "format_interval": format_interval,
         },
     )
+
+
+def _town_holders(db, websites) -> dict[int, str]:
+    """For each listed source that is holding its town's "Listings checked"
+    time back, why: "failing" or "overdue". One town lookup per town listed."""
+    holders: dict[int, str] = {}
+    for town_id in {site.city_id for site in websites if site.city_id is not None}:
+        town = town_listings_checked(db, town_id)
+        if town is not None and town.held_back and town.oldest_website_id is not None:
+            holders[town.oldest_website_id] = town.held_back_by
+    return holders
+
+
+# --- Daily check baseline ----------------------------------------------------------
+
+
+@router.get("/daily-checks", response_class=HTMLResponse)
+def daily_checks_view(request: Request, current_user: ViewSites, db: DbSession):
+    """Where every source stands against "checked at least every 24 hours",
+    and a form to put the picked ones on the daily schedule."""
+    return render(
+        request,
+        "admin/websites/daily_checks.html",
+        {
+            "current_user": current_user,
+            "plan": plan_daily_checks(db),
+            "can_apply": user_has_permission(db, current_user, "sites.update"),
+            "admin_time": admin_time_html,
+            "format_age": format_age,
+            "format_interval": format_interval,
+        },
+    )
+
+
+@router.post("/daily-checks")
+def apply_daily_checks_view(
+    request: Request,
+    db: DbSession,
+    correlation_id: CorrelationId,
+    ip_address: ClientIp,
+    current_user: UpdateSites,
+    csrf_token: str = Form(...),
+    website_id: Annotated[list[int] | None, Form()] = None,
+):
+    verify_csrf(request, csrf_token)
+    response = RedirectResponse(url="/admin/websites/daily-checks", status_code=303)
+    if not website_id:
+        set_flash(response, "No sources were picked, so no schedules changed.", "error")
+        return response
+    result = apply_daily_checks(
+        db,
+        website_ids=website_id,
+        actor_id=current_user.id,
+        correlation_id=correlation_id,
+        ip_address=ip_address,
+    )
+    message = f"Daily checks turned on for {len(result.changed)} source(s)."
+    if result.skipped:
+        names = ", ".join(site.name for site in result.skipped[:5])
+        message += f" Left unchanged because they are failing or no longer need it: {names}."
+    set_flash(response, message)
+    return response
 
 
 # --- Create ------------------------------------------------------------------------

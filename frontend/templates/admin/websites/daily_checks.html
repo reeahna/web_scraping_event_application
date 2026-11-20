@@ -1,0 +1,86 @@
+{% extends "admin_base.html" %}
+
+{% block title %}Daily checks{% endblock %}
+
+{% macro source_rows(items, form_name, pick) %}
+<div class="table-scroll">
+<table class="websites-table">
+  <thead>
+    <tr>
+      {% if pick %}<th><span class="visually-hidden">Pick</span></th>{% endif %}
+      <th>Source</th><th>Schedule now</th><th>Last successful check</th><th>Latest failure</th>
+    </tr>
+  </thead>
+  <tbody>
+  {% for item in items %}
+    {% set site = item.website %}{% set fresh = item.freshness %}
+    <tr{% if fresh.overdue %} class="row-attention"{% endif %}>
+      {% if pick %}<td><input type="checkbox" form="{{ form_name }}" name="website_id" value="{{ site.id }}" checked aria-label="Pick {{ site.name }}" /></td>{% endif %}
+      <td><a href="/admin/websites/{{ site.id }}">{{ site.name }}</a><br /><small class="muted">{{ site.city.name if site.city else "No town" }}</small></td>
+      <td>
+        {{ fresh.target_label }}{% if item.stored_interval_minutes and fresh.target == "slow" %} ({{ format_interval(item.stored_interval_minutes) | lower }}){% endif %}
+        {%- if fresh.overdue %}<br /><span class="badge badge-danger">Overdue</span> <small>{{ format_age(fresh.overdue_by) }}</small>{% endif %}
+      </td>
+      <td>{% if fresh.last_success_at %}{{ admin_time(fresh.last_success_at) }}{% else %}<span class="muted">Never</span>{% endif %}</td>
+      <td>
+        {%- if fresh.latest_failure_at %}{{ fresh.latest_failure_status | replace("_", " ") | capitalize }}{% if not fresh.failing %} <span class="muted">(since recovered)</span>{% endif %}<br /><small>{{ admin_time(fresh.latest_failure_at) }}</small>
+        {%- else %}<span class="muted">None</span>{% endif -%}
+      </td>
+    </tr>
+  {% endfor %}
+  </tbody>
+</table>
+</div>
+{% endmacro %}
+
+{% block admin_content %}
+<h1>Daily checks</h1>
+<p>Every active, approved source should complete a successful check at least once every 24 hours. A source more than 12 hours past its expected interval is marked overdue. Blocked, archived and unapproved sources are never scheduled.</p>
+
+<div class="summary-grid">
+  <div><strong>{{ plan.meets | length }}</strong> of {{ plan.should_be_checked }} sources are checked daily or more often</div>
+  <div><strong>{{ plan.overdue | length }}</strong> overdue</div>
+  <div><strong>{{ plan.held | length }}</strong> failing on their latest check</div>
+  <div><strong>{{ plan.not_scheduled }}</strong> not scheduled (blocked, archived, unapproved or inactive)</div>
+</div>
+<p><a href="/admin/websites?freshness=attention">See every source that needs attention in Websites</a></p>
+
+{% for group in [
+  ("missing", plan.missing, "No schedule", "These sources should be checked but have no automatic import schedule, so they are never checked. Turning them on gives them the default: every 24 hours."),
+  ("off", plan.off, "Automatic imports switched off", "An administrator saved these with automatic imports off. They are listed rather than changed, so untick any that should stay off."),
+  ("slow", plan.slow, "Checked less often than daily", "An administrator chose a longer interval for these. They are listed rather than changed, so untick any that should keep it."),
+] %}
+{% set key, items, heading, intro = group %}
+{% if items %}
+<section class="daily-checks-group">
+  <h2>{{ heading }} ({{ items | length }})</h2>
+  <p>{{ intro }}</p>
+  {% if can_apply %}
+  <form method="post" action="/admin/websites/daily-checks" id="daily-{{ key }}">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}" />
+  </form>
+  {% endif %}
+  {{ source_rows(items, "daily-" ~ key, can_apply) }}
+  {% if can_apply %}
+  <p><button type="submit" form="daily-{{ key }}">Turn on daily checks for the ticked sources</button></p>
+  <p class="muted"><small>Each source keeps its retry and backoff settings, and their first checks are spread over the next 24 hours. Each change is recorded in the audit log.</small></p>
+  {% endif %}
+</section>
+{% endif %}
+{% endfor %}
+
+{% if plan.held %}
+<section class="daily-checks-group">
+  <h2>Failing, left as they are ({{ plan.held | length }})</h2>
+  <p>The latest check of each of these failed. Their schedules are not turned on or sped up here, so a failing site is not asked more often. Fix or re-approve the source first.</p>
+  {{ source_rows(plan.held, "", false) }}
+</section>
+{% endif %}
+
+{% if plan.meets %}
+<details>
+  <summary>Checked daily or more often ({{ plan.meets | length }})</summary>
+  {{ source_rows(plan.meets, "", false) }}
+</details>
+{% endif %}
+{% endblock %}

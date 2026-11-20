@@ -4104,3 +4104,23 @@ a.wf-danger, button.wf-danger {
   font-weight: 500;
   text-decoration: underline;
 }
+
+/* Admin > Websites: freshness columns. A source that needs attention
+   (overdue, failing, or not on a daily schedule) gets a warning rule on its
+   left edge so it stands out when scanning the list. */
+.websites-table td {
+  vertical-align: top;
+}
+.websites-table .websites-base-url {
+  font-size: 0.8em;
+  word-break: break-all;
+}
+.websites-table tr.row-attention td:first-child {
+  box-shadow: inset 3px 0 0 var(--warning);
+}
+.websites-table .muted {
+  color: var(--muted);
+}
+.listings-checked-holder a {
+  color: inherit;
+}
