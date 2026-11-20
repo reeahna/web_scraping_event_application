@@ -353,3 +353,58 @@ def test_weekend_window_still_per_town():
     assert saturday.for_zone(LA) == date(2026, 11, 21)
     # Shifted dates are not "now", so they carry no clock.
     assert saturday.clock_for_zone(LA) is None
+
+
+# --- The event's own timezone ------------------------------------------------------
+
+
+def test_end_time_is_read_on_the_events_own_zone(
+    monkeypatch, client, db_session, make_user, make_event, town
+):
+    # A source set to Pacific time in a Bloomington town: its stored 2 PM is
+    # 2 PM Pacific (5 PM in Bloomington), so it ends at 22:00 UTC.
+    city, _ = town
+    webinar = _event(make_event, town, "Pacific webinar", start_date=FRI,
+                     start_time=time(12), end_time=time(14), timezone=LA)
+    local = _event(make_event, town, "Local talk", start_date=FRI,
+                   start_time=time(12), end_time=time(14), timezone=INDY)
+    _at(monkeypatch, _indy_local(FRI, 15))  # noon in Los Angeles
+    assert _listed(db_session, city) == ["Pacific webinar"]
+    assert upcoming_counts_by_city(db_session, today=local_today(db_session)) == {city.id: 1}
+    assert client.get(f"/events/{webinar.id}").status_code == 200
+    assert client.get(f"/events/{local.id}").status_code == 404
+    user = make_user(email="z@example.com", password="password12345",
+                     role_name=REGISTERED_USER)
+    engagement.save_event(db_session, user_id=user.id, event_id=webinar.id)
+    current, _ = engagement.saved_events_by_state(
+        db_session, user_id=user.id, today=local_today(db_session)
+    )
+    assert [i.event.title for i in current] == ["Pacific webinar"]
+    _at(monkeypatch, _indy_local(FRI, 17))  # 2 PM in Los Angeles
+    assert _listed(db_session, city) == []
+    assert event_has_ended(webinar, local_today(db_session))
+
+
+def test_bare_abbreviation_on_an_event_uses_its_region(
+    monkeypatch, db_session, make_city, make_website, make_event
+):
+    # "EST" is read as America/New_York, with daylight saving time.
+    city = make_city(name="College Park", slug="college-park-md", timezone="EST")
+    site = make_website(city, name="UMD", is_active=True, approved_pattern={"pattern_name": "x"})
+    make_event(city, website=site, title="Summer lab", start_date=date(2026, 7, 10),
+               start_time=time(9), end_time=time(11), timezone="EST",
+               canonical_url="https://x/est")
+    _at(monkeypatch, datetime(2026, 7, 10, 14, 59, tzinfo=UTC))  # 10:59 AM EDT
+    assert _listed(db_session, city) == ["Summer lab"]
+    _at(monkeypatch, datetime(2026, 7, 10, 15, 0, tzinfo=UTC))
+    assert _listed(db_session, city) == []
+
+
+def test_event_with_unset_zone_falls_back_to_its_town(
+    monkeypatch, db_session, make_event, town
+):
+    city, _ = town
+    _event(make_event, town, "Manual entry", start_date=FRI, start_time=time(12),
+           end_time=time(14), timezone="UTC")
+    _at(monkeypatch, _indy_local(FRI, 14, 30))
+    assert _listed(db_session, city) == []
