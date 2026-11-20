@@ -212,3 +212,80 @@ async def test_rerun_repairs_old_records_without_duplicates(
         again = await run_extraction(db_session, website, triggered_by_user_id=None)
     assert again.events_inserted == 0
     assert db_session.query(Event).filter(Event.website_id == website.id).count() == 6
+
+
+# --- A series whose sessions straddle two feed pages ---------------------------
+
+
+def _session(day: str, event_id: int = 3301) -> dict:
+    return {
+        "id": event_id, "title": "Weekly Knitting Circle",
+        "url": f"https://events.iu.edu/x/event/{event_id}-knitting",
+        "date_iso": f"{day}T18:00:00-05:00", "date2_iso": f"{day}T19:00:00-05:00",
+        "timezone": "America/Indiana/Indianapolis", "location_title": "Wells Library",
+    }
+
+
+def _paged_handler(pages: dict[str, list[dict]]):
+    def handler(request: httpx.Request) -> httpx.Response:
+        records = pages.get(request.url.params.get("page", "1"), [])
+        return httpx.Response(200, text=json.dumps({"data": records}),
+                              headers={"content-type": "application/json"})
+
+    return handler
+
+
+def test_sessions_are_keyed_the_same_way_on_every_page():
+    pattern = LiveWhalePattern()
+    page_one = make_response(json.dumps({"data": [_session("2026-12-01")]}),
+                             final_url=FEED, content_type="application/json")
+    page_two = make_response(
+        json.dumps({"data": [_session("2026-12-08"), _session("2026-12-15")]}),
+        final_url=f"{FEED}?page=2", content_type="application/json",
+    )
+    candidates = pattern.extract(page_one, CONFIG) + pattern.extract(page_two, CONFIG)
+    finalized = pattern.finalize_candidates(candidates, CONFIG)
+    assert [c.raw["external_source_id"] for c in finalized] == [
+        "3301@2026-12-01", "3301@2026-12-08", "3301@2026-12-15",
+    ]
+    assert {c.recurrence_parent_id for c in finalized} == {"3301"}
+
+
+@pytest.mark.asyncio
+async def test_series_split_across_pages_repairs_its_old_row_without_failing(
+    db_session, iu_source, make_event
+):
+    city, website = iu_source
+    paged = CONFIG.model_dump(mode="json")
+    paged["pagination"] = {"strategy": "query_param", "page_param": "page", "max_pages": 3}
+    website.approved_pattern = paged
+    old = make_event(
+        city, website=website, title="Weekly Knitting Circle", external_source_id="3301",
+        canonical_url="https://events.iu.edu/x/event/3301-knitting",
+        start_date=date(2026, 12, 2), start_time=time(0), timezone="EST",
+    )
+    update_fingerprint_and_duplicates(db_session, old)
+    db_session.commit()
+
+    pages = {
+        "1": [_session("2026-12-01")],
+        "2": [_session("2026-12-08"), _session("2026-12-15")],
+    }
+    with patched_http_fetch(_paged_handler(pages)):
+        result = await run_extraction(db_session, website, triggered_by_user_id=None)
+
+    assert result.status == "success"
+    rows = db_session.query(Event).filter(Event.website_id == website.id).order_by(
+        Event.start_date
+    ).all()
+    assert [(r.external_source_id, r.start_date, r.start_time) for r in rows] == [
+        ("3301@2026-12-01", date(2026, 12, 1), time(18)),
+        ("3301@2026-12-08", date(2026, 12, 8), time(18)),
+        ("3301@2026-12-15", date(2026, 12, 15), time(18)),
+    ]
+    assert rows[0].id == old.id
+
+    with patched_http_fetch(_paged_handler(pages)):
+        again = await run_extraction(db_session, website, triggered_by_user_id=None)
+    assert again.events_inserted == 0
+    assert db_session.query(Event).filter(Event.website_id == website.id).count() == 3

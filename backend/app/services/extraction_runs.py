@@ -763,6 +763,12 @@ async def _execute_pipeline(
             config, pattern, fetch, all_candidates, warnings, response_hash_by_page,
         )
 
+    # A pattern that keys records by what the whole run returned (LiveWhale's
+    # repeating sessions) gets to see every page's records together.
+    finalize = getattr(pattern, "finalize_candidates", None)
+    if finalize is not None:
+        all_candidates = finalize(all_candidates, config)
+
     pagination_note = _pagination_warning(response)
     if pagination_note:
         warnings.append(pagination_note)
@@ -1276,10 +1282,17 @@ async def run_extraction(
     events_updated = 0
     # The active categorization rules are read once per batch, not per event.
     with active_rules_cached(db):
+        claimed: set[int] = set()
+        collapsed = 0
         for position, candidate in enumerate(dedup_outcome.kept, start=1):
             existing = find_existing_event_for_candidate(
                 db, candidate, website_id=website.id, city_id=website.city_id
             )
+            if existing is not None and existing.id in claimed:
+                # Two records of this run resolved to one stored event. Keep the
+                # first record's update rather than failing the whole import.
+                collapsed += 1
+                continue
             if existing is not None:
                 event = update_event(db, existing, candidate, commit=False)
                 events_updated += 1
@@ -1302,6 +1315,7 @@ async def run_extraction(
             if geo_needs_review(candidate) and event.review_status != "needs_review":
                 event.review_status = "needs_review"
 
+            claimed.add(event.id)
             create_event_provenance(
                 db,
                 event_id=event.id,
@@ -1322,7 +1336,7 @@ async def run_extraction(
 
     run.events_inserted = events_inserted
     run.events_updated = events_updated
-    run.duplicates_skipped = dedup_outcome.duplicates_skipped
+    run.duplicates_skipped = dedup_outcome.duplicates_skipped + collapsed
     db.commit()
 
     _update_website_health(
@@ -1345,7 +1359,7 @@ async def run_extraction(
         events_rejected=len(rejected),
         events_inserted=events_inserted,
         events_updated=events_updated,
-        duplicates_skipped=dedup_outcome.duplicates_skipped,
+        duplicates_skipped=run.duplicates_skipped,
         warnings=tuple(warnings),
         errors=tuple(errors),
         evidence={},
