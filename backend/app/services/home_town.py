@@ -276,11 +276,42 @@ _TOWN_TEAM_AT = re.compile(
 )
 
 
+# The same with the sport first: "Football - Clemson at Duke", "Women's
+# Basketball - Clemson at Georgetown". The team must name the town, so
+# "Basketball - Pickup at Fike" stays.
+_SPORT_TEAM_AT = re.compile(
+    rf"^\s*((men|women)['\u2019]?s\s+)?({_SPORTS})\s*[-\u2013:]\s*"
+    r"(?P<team>[^-\u2013:]+?)\s+(at|@)\s+(?!the\b|home\b)",
+    re.IGNORECASE,
+)
+
+
 def _town_team_away(title: str, town: str | None) -> bool:
-    match = _TOWN_TEAM_AT.search(title)
-    if match is None or not town:
+    if not town:
+        return False
+    match = _TOWN_TEAM_AT.search(title) or _SPORT_TEAM_AT.search(title)
+    if match is None:
         return False
     return bool(_words(match.group("team")) & _words(town))
+
+
+# A watch party held by one of the school's clubs in another place: "Chicago
+# Clemson Club - Watch Party". The town's own club ("Clemson Club - Watch
+# Party") names no other place, so it stays.
+_REMOTE_CLUB_WATCH = re.compile(
+    r"^\s*(?P<place>.+?)\s+(?P<school>[\w]+)\s+club\s*[-\u2013:]\s*watch part(y|ies)\b",
+    re.IGNORECASE,
+)
+
+
+def _remote_club_watch_party(title: str, town: str | None) -> bool:
+    match = _REMOTE_CLUB_WATCH.search(title)
+    if match is None or not town:
+        return False
+    town_words = _words(town)
+    return bool(_words(match.group("school")) & town_words) and not (
+        _words(match.group("place")) & town_words
+    )
 
 
 # A regatta named for another river: "Lehigh University Men's Rowing vs Head of
@@ -299,7 +330,11 @@ def _away_regatta(title: str, town: str | None) -> bool:
 
 
 def is_away_game(title: str | None, town: str | None = None) -> bool:
-    if not title or _WATCH_PARTY.search(title):
+    if not title:
+        return False
+    if _remote_club_watch_party(title, town):
+        return True
+    if _WATCH_PARTY.search(title):
         return False
     return (
         bool(_AWAY_GAME.search(title) or _AWAY_TAILGATE.search(title))

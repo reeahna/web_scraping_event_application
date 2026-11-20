@@ -360,6 +360,14 @@ async def test_scheduler_sweep_takes_down_out_of_town_events(db_session, make_ci
         ("Iowa Volleyball vs. USC", "Iowa City", False),
         ("Pickup Basketball at SRSC", "Bloomington", False),
         ("Pickup Basketball at the Rec", "Iowa City", False),
+        ("Football - Clemson at Duke", "Clemson", True),
+        ("Women’s Basketball - Clemson at Georgetown", "Clemson", True),
+        ("Women’s Basketball - Clemson vs. UNC Asheville", "Clemson", False),
+        ("Basketball - Pickup at Fike", "Clemson", False),
+        ("Chicago Clemson Club - Watch Party", "Clemson", True),
+        ("Northern California Clemson Club - Watch Parties", "Clemson", True),
+        ("Clemson Club - Watch Party", "Clemson", False),
+        ("Football Watch Party at the Tiger Den", "Clemson", False),
     ],
 )
 def test_town_team_away_game(title, town, away):

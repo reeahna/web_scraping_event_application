@@ -129,7 +129,8 @@ _AUDIENCE_TITLE = _rx(
     # "Smith 2 & Ed 3: Lucky Charms" (two floors' joint social).
     r"floors? \d+|"
     r"senior u|seniors?['’] (academy|university)|intro to (email|computers|the internet)|"
-    r"computer basics|senior planet|mba campus visits?|family (art labs?|workshops?|series)|"
+    r"computer basics|senior planet|mba campus visits?|"
+    r"family (art labs?|art projects?|workshops?|series|playtime|craft-?ernoon)|"
     # Preschool cartoon characters: "Breakfast with Bluey and Bingo".
     r"bluey|paw patrol|peppa pig|daniel tiger|cocomelon|"
     # Library programs for little ones and older adults: "Baby Time", "Kids
@@ -138,12 +139,22 @@ _AUDIENCE_TITLE = _rx(
     r"chair[- ]based exercise|"
     # "Children's Drawing from the Masters"; a restaurant's "Kids Eat Free" night.
     r"children['’]s (drawing|art|story|programs?|class(es)?|workshops?)|kids eat free|"
+    # Library and parks programs for little ones, kids and older adults:
+    # "Babytime", "ToddlerTime", "Terrific Twos", "MMSD Play & Learn",
+    # "Kids LEGO Masters", "Tween Manga Club", "Get to Know the Guitar: Kids
+    # Edition", "Children's Learn to Swim", "Flag Football - 10U Coed Division",
+    # "Zumba Gold", "Senior Ballet Programming", "Chair Yoga".
+    r"baby ?play|babytime|toddler ?time|wonderful ones|terrific twos|play (&|and) learn|"
+    r"^\s*kids\b|kids (edition|art workshop)|tweens?|children['’]s learn to swim|"
+    r"youth martial arts?|after-school|4-h|\d{1,2}u (coed )?division|cuentos familiares|"
+    r"zumba gold|senior ballet|(therapy|fitness|yoga|exercise) for seniors|"
+    r"chair yoga|ageless grace|"
     r"(trunk|trick)[- ]or[- ]treats?|prospective (\w+ )?students?|"
     r"senior (expo|citizens?|center)|seniors (55|60|62|65)|older adults|retirees|"
     r"(50|55|60|62|65)\s*(\+|and (up|over|older))|teens?|tots?|emeriti|"
     r"ages? (2[5-9]|[3-9]\d)\s*(-|–|to|\+|and)|"
     # An age range that tops out below 18: "Family Workshop, Ages 6-10".
-    r"ages? \d{1,2}\s*(-|–|to)\s*(1[0-7]|[1-9])\b|"
+    r"ages?:? \d{1,2}\s*(-|–|to)\s*(1[0-7]|[1-9])\b|"
     r"(alumni|iuaa)\b.*\b(game watch|chapter|reception|happy hour|weekend|reunion)|"
     r"game watch\b.*\b(alumni|iuaa)|iuaa|"
     r"\balumni (association|chapter|club|reception|game watch|awards?))\b|"
@@ -161,6 +172,9 @@ _SERVICE_TITLE = _rx(
     # A building's open hours: "Building Hours - RSF".
     r"^\s*building hours\b|"
     r"\b(career coaching|study tables?|tutoring hours|writing (center|tutor)|advising hours)\b|"
+    # "Drop-in Academic Coaching", "Study Abroad Walk-In Hours", "Adult Tutoring",
+    # "Veteran Services Drop In".
+    r"\bacademic coaching\b|\bwalk[- ]in hours\b|^\s*adult tutoring\b|\bservices drop[- ]in\b|"
     # A study group's own booking: "Motor Speech Study Session", "LGSA Study Hour".
     r"\bstudy (sesh\w*|sessions?|hours?|nights?|days?)\b|^\s*study groups?\b|"
     # A course's exam review: "Introduction to IP Review Session: Patents".
@@ -328,6 +342,11 @@ _INTERNAL_TITLE = _rx(
     r"\bscholarship of teaching and learning\b|"
     # A teaching tool demo for instructors: "Google NotebookLM for Teaching and Learning".
     r"\bfor teaching and learning\s*$|"
+    # Staff training: "Academic Leader Learning Series: Team Design",
+    # "LARC R3 Facility Basic Orientation-In-Person Training".
+    r"\bacademic leader(ship)? learning series\b|\bfacility (basic )?orientation\b|"
+    # A shop's delivery order, not an event: "Wake up to donuts ... Order by 10pm Friday."
+    r"\border by (noon|\d{1,2}(:\d\d)?\s*[ap]\.?m)\b|"
     r"\bresearch refresher\b|"
     r"\b(system|educator|staff|volunteer|employee|g?ta) trainings?\b|"
     # "Workshop: Pronunciation Brush-Up for International TAs".
