@@ -32,6 +32,8 @@ lines. Lines may use `**bold**`, `` `code` `` and `[links](https://...)`.
 
 ## [Unreleased]
 
+## [1.11.0] - 2026-11-20
+
 ### For everyone
 - Fewer academic listings: guest speakers, speaker and lecture series, colloquia, research talks and poster sessions, brown bag talks, reading and discussion groups, journal clubs and research group meetings are left out, wherever they come from. Workshops, exhibitions, performances, gallery and artist talks, book clubs and student-org socials stay. (#99)
 - Events now leave the site once they are over. A 12 to 2 PM talk disappears at 2 PM in its town instead of staying up for the rest of the day, everywhere you can find events: town pages, Today and This weekend, search, the map, event pages, saved events and the sitemap. Events with no end time still stay up until midnight, and nothing is guessed about how long they run. A late show that ends after midnight stays up until it finishes. (#98)
