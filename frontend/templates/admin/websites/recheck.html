@@ -15,19 +15,20 @@
     <tr><th>Events selected</th><td>{{ report.selected }}</td></tr>
     <tr><th>Read back from the source</th><td>{{ report.checked }}</td></tr>
     <tr><th>{% if report.applied %}Corrected{% else %}Would correct{% endif %}</th><td>{{ report.changes | length }}</td></tr>
-    <tr><th>Already correct</th><td>{{ report.unchanged }}</td></tr>
+    <tr><th>{% if report.applied %}Already correct, recorded as checked{% else %}Already correct{% endif %}</th><td>{{ report.unchanged }}</td></tr>
     <tr><th>Need a person to look</th><td>{{ report.reviews | length }}</td></tr>
     <tr><th>Left for a later recheck (request limit)</th><td>{{ report.over_limit }}</td></tr>
   </tbody>
 </table>
 
-{% if report.changes and not report.applied %}
+{% if (report.changes or report.unchanged) and not report.applied %}
 <form method="post" action="/admin/websites/{{ website.id }}/recheck-events" class="inline-form"
-      data-confirm="Apply {{ report.changes | length }} correction(s) to {{ website.name }} events?">
+      data-confirm="Apply {{ report.changes | length }} correction(s) and record {{ report.unchanged }} already-correct event(s) as checked for {{ website.name }}?">
   <input type="hidden" name="csrf_token" value="{{ csrf_token }}" />
   <input type="hidden" name="apply" value="1" />
-  <button type="submit" class="wf-secondary">Apply these corrections</button>
+  <button type="submit" class="wf-secondary">{% if report.changes %}Apply these corrections{% else %}Record these as checked{% endif %}</button>
 </form>
+<p class="audit-meta">Applying also records every event the source confirmed (corrected or already correct) as checked, so the next preview moves on to the events not checked yet. Events that need a person to look are not marked.</p>
 {% endif %}
 
 {% if report.changes %}
