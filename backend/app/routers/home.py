@@ -18,10 +18,11 @@ from app.repositories.city import (
 from app.repositories.event_category import list_active_categories
 from app.repositories.public_events import (
     PUBLIC_EVENTS_PER_PAGE,
-    current_public_date,
     list_public_events,
     list_public_sources,
+    local_today,
     this_weekend,
+    town_today,
     upcoming_counts_by_city,
 )
 from app.services import seo
@@ -183,7 +184,7 @@ def _render_events(
     town: dict | None = None,
 ):
     settings = get_settings()
-    today = current_public_date()
+    today = town_today(selected_city) if selected_city is not None else local_today(db)
     page = _page_number(request)
     events, total, has_next = list_public_events(
         db, today=today, page=page, **filters.as_query_kwargs()
@@ -198,7 +199,7 @@ def _render_events(
             "registration_enabled": settings.registration_enabled,
             "events": events,
             # So the list can show a long-running event by when it ends.
-            "today": today,
+            "today": today if isinstance(today, date) else today.default,
             "total": total,
             "page": page,
             "has_next": has_next,
@@ -253,7 +254,7 @@ def home(request: Request, current_user: OptionalCurrentUser, db: DbSession):
     """
     query = (request.query_params.get("q") or "").strip()
     cities = search_public_cities(db, query=query)
-    counts = upcoming_counts_by_city(db, today=current_public_date())
+    counts = upcoming_counts_by_city(db, today=local_today(db))
 
     # The whole town list travels with the page so the suggestions appear on the
     # keystroke rather than after a round trip. This is a few dozen towns; if it
@@ -309,10 +310,12 @@ def _town_page(
     # For the visitor log: which town this visitor is looking at.
     request.state.visit_town = city.slug
     # The city page pins the city filter, and a window page pins its dates.
-    today = current_public_date()
+    # Today in this town, not in UTC: at 8 PM in Bloomington UTC is already on
+    # tomorrow, and "Today" showed tomorrow's events.
+    today = town_today(city)
     preset = seo.TOWN_WINDOWS[window][0] if window else None
     filters = _Filters(request.query_params, today=today, city_id=city.id, preset=preset)
-    counts = upcoming_counts_by_city(db, today=today)
+    counts = upcoming_counts_by_city(db, today=local_today(db))
     upcoming = counts.get(city.id, 0)
     weekend_from, weekend_to = this_weekend(today)
     _, weekend_count, _ = list_public_events(

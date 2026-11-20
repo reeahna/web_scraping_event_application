@@ -97,6 +97,9 @@ _DEFAULT_PATHS: dict[str, str] = {
     "canonical_url": "url",
     "start_datetime": "start",
     "end_datetime": "end",
+    # FullCalendar keeps a date-only `start` and the printed time under
+    # extendedProps; without it every show read "Time TBD".
+    "start_time": "extendedProps.time",
     "venue": "venue",
     "address": "address",
     "image": "image",

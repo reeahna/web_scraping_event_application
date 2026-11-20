@@ -8,7 +8,6 @@ from __future__ import annotations
 
 import secrets
 from dataclasses import dataclass
-from datetime import date
 
 from sqlalchemy import delete, func, select
 from sqlalchemy.orm import Session
@@ -21,7 +20,12 @@ from app.models.user_engagement import (
     SavedEvent,
     UserFollow,
 )
-from app.repositories.public_events import get_public_event_ids
+from app.repositories.public_events import (
+    DateBound,
+    event_has_ended,
+    get_public_event_ids,
+    today_for_event,
+)
 
 _FOLLOW_TYPES = {"city", "category", "source"}
 
@@ -95,13 +99,13 @@ class SavedEventItem:
         return self.state in ("upcoming", "ongoing")
 
 
-def _has_happened(event: Event, today: date) -> bool:
-    last_day = event.end_date or event.start_date
-    return last_day is not None and last_day < today
+def _has_happened(event: Event, today: DateBound) -> bool:
+    # The same rule as the public listing: over once its end time has passed.
+    return event_has_ended(event, today)
 
 
 def saved_events_by_state(
-    db: Session, *, user_id: int, today: date
+    db: Session, *, user_id: int, today: DateBound
 ) -> tuple[list[SavedEventItem], list[SavedEventItem]]:
     """The user's saved events split into (current, finished).
 
@@ -120,16 +124,17 @@ def saved_events_by_state(
             past.append(SavedEventItem(event, "past"))
         elif event.id not in public_ids:
             unavailable.append(SavedEventItem(event, "unavailable"))
-        elif event.start_date is not None and event.start_date < today:
+        elif event.start_date is not None and event.start_date < today_for_event(today, event):
             current.append(SavedEventItem(event, "ongoing", 0))
         else:
-            days = (event.start_date - today).days if event.start_date else None
+            local = today_for_event(today, event)
+            days = (event.start_date - local).days if event.start_date else None
             current.append(SavedEventItem(event, "upcoming", days))
     past.sort(key=lambda i: (i.event.end_date or i.event.start_date, i.event.id), reverse=True)
     return current, past + unavailable
 
 
-def clear_past_saved_events(db: Session, *, user_id: int, today: date) -> int:
+def clear_past_saved_events(db: Session, *, user_id: int, today: DateBound) -> int:
     """Remove every saved event that has already happened. Returns how many."""
     ids = [
         e.id for e in list_saved_events(db, user_id=user_id) if _has_happened(e, today)

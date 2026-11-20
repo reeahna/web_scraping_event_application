@@ -17,9 +17,10 @@ from app.models.city import City
 from app.paths import STATIC_DIR
 from app.repositories.city import get_city_by_slug, get_city_by_slug_ignoring_case
 from app.repositories.public_events import (
-    current_public_date,
     list_public_events,
+    local_today,
     public_event_ids,
+    town_today,
     upcoming_counts_by_city,
 )
 from app.services.calendar_feed import town_calendar
@@ -70,7 +71,7 @@ def robots_txt() -> Response:
 
 @router.get("/sitemap.xml", include_in_schema=False)
 def sitemap_xml(db: DbSession) -> Response:
-    today = current_public_date()
+    today = local_today(db)
     urls = [
         absolute_url("/"),
         absolute_url("/whats-new"),
@@ -123,7 +124,7 @@ def town_calendar_feed(slug: str, request: Request, db: DbSession) -> Response:
     if city is None or not city.is_active:
         raise NotFoundError("City not found")
     events, _, _ = list_public_events(
-        db, today=current_public_date(), city_id=city.id, per_page=MAX_FEED_EVENTS
+        db, today=town_today(city), city_id=city.id, per_page=MAX_FEED_EVENTS
     )
     return Response(
         town_calendar(city, events),
@@ -149,7 +150,7 @@ def llms_txt(db: DbSession) -> Response:
     """A plain-text guide to the site for AI tools (the llms.txt convention):
     what it is, and where the towns, feeds and sitemap are."""
     settings = get_settings()
-    counts = upcoming_counts_by_city(db, today=current_public_date())
+    counts = upcoming_counts_by_city(db, today=local_today(db))
     cities = db.scalars(select(City).where(City.is_active.is_(True)).order_by(City.name)).all()
 
     lines = [

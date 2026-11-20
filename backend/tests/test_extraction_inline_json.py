@@ -80,6 +80,16 @@ def test_extracted_events_normalize_and_validate():
     assert len(valid) == 3
 
 
+def test_fullcalendar_time_is_read_with_the_date():
+    # Constellation's listing: date-only `start`, the show time beside it.
+    candidates = InlineJsonEventsPattern().extract(make_response(_PAGE), _CONFIG)
+    times = {
+        c.raw["title"]: normalize_candidate(c, _CONFIG).start_time.isoformat()
+        for c in candidates
+    }
+    assert times == {"Heist": "19:30:00", "Cabaret": "20:00:00", "Recital": "18:00:00"}
+
+
 def test_detector_finds_the_event_variable():
     result = InlineJsonEventsDetector().detect(make_response(_PAGE))
     assert result.pattern_name == "inline_json_events"

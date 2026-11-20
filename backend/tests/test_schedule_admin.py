@@ -205,3 +205,18 @@ def test_describe_scheduler_process_not_detected(db_session):
     status = describe_scheduler_process(db_session)
     assert status.status == "Not detected"
     assert "python -m app.scheduler" in status.detail
+
+
+def test_format_admin_datetime_names_its_timezone():
+    out = format_admin_datetime(datetime(2026, 11, 20, 2, 14, tzinfo=UTC))
+    assert out.endswith(" UTC") or out.endswith("ST") or out.endswith("DT")
+
+
+def test_admin_time_html_marks_the_instant_for_local_display():
+    from app.services.schedule_admin import admin_time_html
+
+    # Naive values are stored UTC.
+    html = str(admin_time_html(datetime(2026, 11, 20, 2, 14, 6, 149115)))
+    assert html.startswith('<time datetime="2026-11-20T02:14:06Z" data-local-time>')
+    assert "149115" not in html
+    assert admin_time_html(None) == "—"

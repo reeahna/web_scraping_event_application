@@ -40,7 +40,8 @@
   <meta name="theme-color" content="#f8f6f1" />
 
   <link rel="stylesheet" href="/static/style.css" />
-  {% if current_user %}<script src="/static/js/account-menu.js" defer></script>{% endif %}
+  {% if current_user %}<script src="/static/js/account-menu.js" defer></script>
+  <script src="/static/js/local-time.js" defer></script>{% endif %}
   {% block head_extra %}{% endblock %}
 </head>
 <body class="{% block body_class %}site-public{% endblock %}">

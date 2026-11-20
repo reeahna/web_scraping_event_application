@@ -131,6 +131,26 @@ class TestCounting:
         rows = [r for r in _visitors(db_session) if r.user_id is not None]
         assert len(rows) == 1
 
+    def test_signed_out_visits_on_the_same_browser_stay_anonymous(
+        self, tracking, client, login, make_city, db_session
+    ):
+        make_city(slug="ithaca")
+        _visit(client, "/city/ithaca")  # before signing in
+        login("reader@example.com")
+        _visit(client, "/city/ithaca")
+        site_visits.flush()
+        ithaca = [r for r in _visitors(db_session) if r.towns == "ithaca"]
+        assert sorted(r.user_id is None for r in ithaca) == [False, True]
+
+    def test_same_network_different_language_counts_twice(
+        self, tracking, client, make_city, db_session
+    ):
+        make_city(slug="ithaca")
+        _visit(client, "/city/ithaca", **{"Accept-Language": "en-US"})
+        _visit(client, "/city/ithaca", **{"Accept-Language": "es-MX"})
+        site_visits.flush()
+        assert len(_visitors(db_session)) == 2
+
     def test_disabled_counts_nothing(self, client, make_city, db_session):
         make_city(slug="ithaca")
         _visit(client, "/city/ithaca")

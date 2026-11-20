@@ -12,14 +12,14 @@ another user's alerts.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import UTC, date, datetime
+from datetime import UTC, datetime
 
 from sqlalchemy import func, select, update
 from sqlalchemy.orm import Session
 
 from app.models.event import Event
 from app.models.notification import Notification
-from app.repositories.public_events import get_public_event_ids
+from app.repositories.public_events import DateBound, event_has_ended, get_public_event_ids
 
 USER_ALERT_TYPE = "user_alert"
 
@@ -50,7 +50,9 @@ def _inbox_query(user_id: int):
     )
 
 
-def list_inbox(db: Session, *, user_id: int, today: date, limit: int = 100) -> list[InboxItem]:
+def list_inbox(
+    db: Session, *, user_id: int, today: DateBound, limit: int = 100
+) -> list[InboxItem]:
     rows = list(
         db.scalars(
             _inbox_query(user_id)
@@ -75,8 +77,7 @@ def list_inbox(db: Session, *, user_id: int, today: date, limit: int = 100) -> l
             items.append(InboxItem(n, None, "open"))
             continue
         event = events.get(n.related_resource_id)
-        last_day = event and (event.end_date or event.start_date)
-        if last_day is not None and last_day < today:
+        if event is not None and event_has_ended(event, today):
             state = "past"
         elif n.related_resource_id in public_ids:
             state = "open"

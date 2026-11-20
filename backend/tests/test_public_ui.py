@@ -201,3 +201,51 @@ class TestTownNamedOnceOnCards:
         page = client.get(_listing(city)).text
         card = page.split("<h3>Jazz Night</h3>", 1)[1].split("</a>", 1)[0]
         assert card.count("Bloomington") == 1
+
+
+class TestMultiDayGroupHeadings:
+    """Running ("Until") events sort first; when a page has any, each group
+    gets a small heading so the switch to dated events is clear."""
+
+    def _town(self, make_city, make_website):
+        city = make_city(name="Ithaca", slug="ithaca-ny")
+        website = make_website(city, is_active=True, approved_pattern={"pattern_name": "x"})
+        return city, website
+
+    def test_both_headings_when_page_has_both_groups(
+        self, client, make_city, make_website, make_event
+    ):
+        city, website = self._town(make_city, make_website)
+        make_event(city, website=website, title="Lantern Exhibit",
+                   canonical_url="https://example.com/a",
+                   start_date=TODAY - timedelta(days=5), end_date=TODAY + timedelta(days=5))
+        make_event(city, website=website, title="Poetry Reading",
+                   canonical_url="https://example.com/b",
+                   start_date=TODAY + timedelta(days=2))
+        page = client.get(_listing(city)).text
+        multi = page.index('id="events-multi-day">Multi-day events</h3>')
+        single = page.index('id="events-single-day">Single-day events</h3>')
+        assert multi < page.index("<h3>Lantern Exhibit</h3>") < single
+        assert single < page.index("<h3>Poetry Reading</h3>")
+        assert page.count('class="event-grid event-grid-grouped"') == 2
+
+    def test_no_headings_without_running_events(
+        self, client, make_city, make_website, make_event
+    ):
+        city, website = self._town(make_city, make_website)
+        make_event(city, website=website, title="Poetry Reading",
+                   start_date=TODAY + timedelta(days=2))
+        page = client.get(_listing(city)).text
+        assert "<h3>Poetry Reading</h3>" in page
+        assert "event-group-heading" not in page
+        assert '<ol class="event-grid" aria-labelledby="results">' in page
+
+    def test_only_multi_day_heading_when_every_event_is_running(
+        self, client, make_city, make_website, make_event
+    ):
+        city, website = self._town(make_city, make_website)
+        make_event(city, website=website, title="Lantern Exhibit",
+                   start_date=TODAY - timedelta(days=5), end_date=TODAY + timedelta(days=5))
+        page = client.get(_listing(city)).text
+        assert "Multi-day events</h3>" in page
+        assert "Single-day events" not in page

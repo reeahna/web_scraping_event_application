@@ -3,13 +3,28 @@ through (_base_public_query) — a hidden event can never be reachable via one
 public path (listing) but not another (detail): get_public_event returning
 None *is* the "not visible" answer, with no separate check needed.
 
-"Today" is computed in one configured application timezone
-(settings.app_timezone, UTC by default) rather than per-viewer or
-per-event-city. An event's own city/venue may sit in a different timezone,
-but reconciling that per-city is deliberately deferred past this MVP.
-Comparisons are date-only (no time-of-day cutoff), so an event stays visible
-for the entirety of its displayed day regardless of when during that day
-it's viewed.
+"Today" is each town's own calendar date. Event dates and times are stored as
+the event's local wall clock, so they are compared with the date in the
+event's town (City.timezone), never with UTC's: at 8 PM in Bloomington UTC is
+already on tomorrow, and comparing with it hid tonight's events and filled
+"Today" with tomorrow's. A town page passes its town's date (town_today); a
+listing across towns passes a LocalDates, which the queries turn into a
+per-town date (a CASE on City.timezone).
+
+Ended events: "today" also carries the instant it was taken at (LocalDay.moment,
+LocalDates.moment), and on an event's last day it stops being public once its
+end time has passed on the event's own clock (see _not_ended and
+event_has_ended). That clock is Event.timezone, the zone the event's times were
+stored in (a source's own setting, else its town's), falling back to the
+town's when the event has none. Only a
+reliable end time counts: none, midnight (which several sources give when they
+have no time at all) and an end at or before the start on the same day all
+mean "unknown", and the event stays up until local midnight after its last
+day. No duration is ever assumed. A same-day end before the start (10 PM to
+2 AM) ends on the next morning. An event with no real zone (a town still on
+the UTC default) has no clock to go by, so it keeps the whole-day rule.
+Ended events are only hidden: nothing is deleted, archived or deactivated
+here.
 
 Occurrence-aware (Phase 12): a recurrence parent is never shown publicly — only
 its concrete expanded occurrences (or a plain single event) appear — so a
@@ -23,14 +38,17 @@ _without_repeat_listings). The other copies stay reachable at their own
 detail URL and under their own source's filter.
 """
 
-from datetime import date, datetime, time, timedelta
-from zoneinfo import ZoneInfo
+from __future__ import annotations
 
-from sqlalchemy import and_, exists, func, not_, or_, select
+from dataclasses import dataclass, field
+from datetime import UTC, date, datetime, time, timedelta
+
+from sqlalchemy import Date, Time, and_, case, exists, func, literal, not_, or_, select
 from sqlalchemy.orm import Session, aliased
 
 from app.config import get_settings
 from app.core.search import LIKE_ESCAPE, contains_pattern
+from app.core.timezones import is_unset_zone, local_date, zone_info
 from app.models.city import City
 from app.models.event import Event
 from app.models.website import Website
@@ -41,30 +59,272 @@ PUBLIC_EVENTS_PER_PAGE = 12
 MAX_MAP_POINTS = 2000
 
 
+def _utcnow() -> datetime:
+    """The current instant (one place, so tests can set the clock)."""
+    return datetime.now(UTC)
+
+
 def current_public_date() -> date:
+    """The date in the configured application timezone (UTC by default). Only
+    for places with no town to go by; public queries take town_today() or
+    local_today() instead."""
     settings = get_settings()
-    return datetime.now(ZoneInfo(settings.app_timezone)).date()
+    return local_date(settings.app_timezone, _utcnow())
 
 
-def this_weekend(today: date) -> tuple[date, date]:
-    """The upcoming (or current) weekend as an inclusive (Saturday, Sunday)
-    date range. If today is already Sat/Sun, the current weekend is used."""
+class LocalDay(date):
+    """A town's date that also knows the instant it was taken at (`moment`),
+    so an event can leave the listing once its end time passes on its own
+    clock. Date arithmetic on a LocalDay gives one without a moment: only
+    "now" has one."""
+
+    moment: datetime | None
+
+    def __new__(cls, year: int, month: int, day: int, moment: datetime | None = None):
+        instance = super().__new__(cls, year, month, day)
+        instance.moment = moment
+        return instance
+
+
+def _local_clock(zone: str | None, moment: datetime) -> time | None:
+    """The wall-clock time in `zone` at `moment`, to the second; None for a
+    town still on the UTC default, whose stored times are not in UTC."""
+    if is_unset_zone(zone):
+        return None
+    return moment.astimezone(zone_info(zone)).time().replace(microsecond=0, tzinfo=None)
+
+
+def town_today(city: City | None, now: datetime | None = None) -> date:
+    """Today's date in this town (a LocalDay that knows the current instant)."""
+    if city is None:
+        return current_public_date()
+    moment = now or _utcnow()
+    day = local_date(city.timezone, moment)
+    return LocalDay(day.year, day.month, day.day, moment)
+
+
+@dataclass(frozen=True)
+class LocalDates:
+    """A calendar date per town timezone, for queries across towns: "today"
+    (or a weekend's Saturday) is not the same date everywhere at once.
+
+    `by_zone` maps each timezone value as stored (City.timezone and
+    Event.timezone) to its date; `default` (the application timezone's date)
+    serves any other zone. `clocks` maps each real zone to its wall-clock time
+    at `moment` (only "now" has these; a zone without a clock keeps the
+    whole-day rule)."""
+
+    by_zone: dict[str, date]
+    default: date
+    clocks: dict[str, time] = field(default_factory=dict)
+    moment: datetime | None = None
+
+    def for_zone(self, zone: str | None) -> date:
+        return self.by_zone.get(zone or "", self.default)
+
+    def clock_for_zone(self, zone: str | None) -> time | None:
+        return self.clocks.get(zone or "")
+
+    def shifted(self, days: int) -> LocalDates:
+        return LocalDates(
+            {zone: day + timedelta(days=days) for zone, day in self.by_zone.items()},
+            self.default + timedelta(days=days),
+        )
+
+    def map(self, fn) -> LocalDates:
+        return LocalDates({zone: fn(day) for zone, day in self.by_zone.items()}, fn(self.default))
+
+    def isoformat(self) -> str:
+        return self.default.isoformat()
+
+    def sql(self, zone_column):
+        """This date for each row, by the row's town timezone."""
+        if not self.by_zone:
+            return literal(self.default, Date)
+        return case(
+            {zone: literal(day, Date) for zone, day in sorted(self.by_zone.items())},
+            value=zone_column,
+            else_=literal(self.default, Date),
+        )
+
+    def clock_sql(self, zone_column):
+        """Each row's town clock, NULL where there is none."""
+        if not self.clocks:
+            return None
+        return case(
+            {zone: literal(clock, Time) for zone, clock in sorted(self.clocks.items())},
+            value=zone_column,
+            else_=literal(None, Time),
+        )
+
+
+def local_today(db: Session, now: datetime | None = None) -> LocalDates:
+    """Today's date in every town's timezone at the same instant."""
+    moment = now or _utcnow()
+    zones = {zone for (zone,) in db.query(City.timezone).distinct() if zone}
+    zones |= {zone for (zone,) in db.query(Event.timezone).distinct() if zone}
+    clocks = {zone: _local_clock(zone, moment) for zone in zones}
+    return LocalDates(
+        {zone: local_date(zone, moment) for zone in zones},
+        local_date(get_settings().app_timezone, moment),
+        {zone: clock for zone, clock in clocks.items() if clock is not None},
+        moment,
+    )
+
+
+def _with_clocks(db: Session, today: DateBound) -> DateBound:
+    """A town's LocalDay as a LocalDates at the same instant, so visibility can
+    use each event's own zone. For the town's own zone the date is the same."""
+    if isinstance(today, LocalDay) and today.moment is not None:
+        return local_today(db, today.moment)
+    return today
+
+
+DateBound = date | LocalDates
+
+
+def today_for_event(today: DateBound, event: Event) -> date:
+    """`today` as the calendar date in this event's town."""
+    if isinstance(today, LocalDates):
+        city = getattr(event, "city", None)
+        return today.for_zone(city.timezone if city is not None else None)
+    return today
+
+
+def _moment(today: DateBound) -> datetime | None:
+    return getattr(today, "moment", None)
+
+
+def event_clock_zone(event: Event, moment: datetime) -> str | None:
+    """The zone an event's stored times are in: its own when that is a real
+    zone, else its town's."""
+    if _local_clock(event.timezone, moment) is not None:
+        return event.timezone
+    city = getattr(event, "city", None)
+    return city.timezone if city is not None else None
+
+
+def _bound(value: DateBound, zone_column=None):
+    """A date bound as SQL: a plain date as itself, a LocalDates per row."""
+    if isinstance(value, LocalDates):
+        return value.sql(City.timezone if zone_column is None else zone_column)
+    if isinstance(value, date):
+        # A LocalDay binds as the plain date it is.
+        return date(value.year, value.month, value.day)
+    return value
+
+
+def _clock_zone(event, today: LocalDates):
+    """Each row's clock zone as SQL: Event.timezone when it has a clock,
+    else City.timezone (see event_clock_zone)."""
+    if not today.clocks:
+        return City.timezone
+    return case(
+        (event.timezone.in_(sorted(today.clocks)), event.timezone), else_=City.timezone
+    )
+
+
+def _real_time(column):
+    """A clock time a source actually gave (midnight often stands for none)."""
+    return and_(column.isnot(None), column != time(0, 0))
+
+
+def _not_ended(event, *, today: DateBound) -> object:
+    """An event is public until its last day is over in its own town, or,
+    when it has a reliable end time, until that time on its last day.
+
+    The last day is end_date, else start_date. A reliable end time is a real
+    clock time that, on a single-day event, comes after a real start time.
+    A same-day end before the start (a 10 PM to 2 AM show with no end date)
+    ends on the morning after its date. Times are read on the event's own
+    clock (_clock_zone). Without a clock (a plain date, or an event with no
+    real zone) this is the whole-day rule alone."""
+    last_day = func.coalesce(event.end_date, event.start_date)
+    if not isinstance(today, LocalDates) or not today.clocks:
+        return last_day >= _bound(today)
+    zone = _clock_zone(event, today)
+    day = today.sql(zone)
+    clock = today.clock_sql(zone)
+    single_day = or_(event.end_date.is_(None), event.end_date == event.start_date)
+    times_known = and_(_real_time(event.start_time), _real_time(event.end_time))
+    reliable_end = and_(
+        _real_time(event.end_time),
+        or_(not_(single_day), not_(_real_time(event.start_time)),
+            event.end_time > event.start_time),
+    )
+    overnight = and_(single_day, times_known, event.end_time < event.start_time)
+    return or_(
+        last_day > day,
+        and_(
+            last_day == day,
+            or_(clock.is_(None), not_(reliable_end), event.end_time > clock),
+        ),
+        # Last night's 10 PM to 2 AM show is still on until 2 AM.
+        and_(
+            overnight,
+            event.start_date == today.shifted(-1).sql(zone),
+            clock.isnot(None),
+            event.end_time > clock,
+        ),
+    )
+
+
+def _is_real(value: time | None) -> bool:
+    return value is not None and value != time(0, 0)
+
+
+def event_has_ended(event: Event, today: DateBound) -> bool:
+    """The Python twin of _not_ended, for pages that sort already-loaded
+    events (saved events, the alerts inbox) into current and past."""
+    last_day = event.end_date or event.start_date
+    if last_day is None:
+        return False
+    moment = _moment(today)
+    clock = None
+    if moment is not None:
+        zone = event_clock_zone(event, moment)
+        clock = _local_clock(zone, moment)
+    local = local_date(zone, moment) if clock is not None else today_for_event(today, event)
+    single_day = event.end_date is None or event.end_date == event.start_date
+    start, end = event.start_time, event.end_time
+    if last_day < local:
+        overnight = single_day and _is_real(start) and _is_real(end) and end < start
+        on_last_night = (
+            overnight
+            and event.start_date == local - timedelta(days=1)
+            and clock is not None
+            and end > clock
+        )
+        return not on_last_night
+    if last_day > local or clock is None or not _is_real(end):
+        return False
+    if single_day and _is_real(start) and end <= start:
+        return False
+    return end <= clock
+
+
+def _weekend_from(today: date) -> date:
     weekday = today.weekday()  # Mon=0 .. Sun=6
     if weekday == 5:  # Saturday
-        saturday = today
-    elif weekday == 6:  # Sunday
-        saturday = today - timedelta(days=1)
-    else:
-        saturday = today + timedelta(days=(5 - weekday))
+        return today
+    if weekday == 6:  # Sunday
+        return today - timedelta(days=1)
+    return today + timedelta(days=(5 - weekday))
+
+
+def this_weekend(today: DateBound) -> tuple[DateBound, DateBound]:
+    """The upcoming (or current) weekend as an inclusive (Saturday, Sunday)
+    date range. If today is already Sat/Sun, the current weekend is used.
+    For a LocalDates, each town gets its own weekend."""
+    if isinstance(today, LocalDates):
+        saturday = today.map(_weekend_from)
+        return saturday, saturday.shifted(1)
+    saturday = _weekend_from(today)
     return saturday, saturday + timedelta(days=1)
 
 
-def _visible(event, website, *, today: date) -> list:
+def _visible(event, website, *, today: DateBound) -> list:
     """The conditions for an event row (and its source row) to be public."""
-    upcoming_or_ongoing = or_(
-        and_(event.end_date.isnot(None), event.end_date >= today),
-        and_(event.end_date.is_(None), event.start_date.isnot(None), event.start_date >= today),
-    )
     return [
         event.is_active.is_(True),
         event.archived_at.is_(None),
@@ -81,11 +341,12 @@ def _visible(event, website, *, today: date) -> list:
         # and stays NULL until then, so it's the SQL-safe proxy for "has
         # an approved configuration".
         website.active_configuration_version.isnot(None),
-        upcoming_or_ongoing,
+        _not_ended(event, today=today),
     ]
 
 
-def _base_public_query(db: Session, *, today: date):
+def _base_public_query(db: Session, *, today: DateBound):
+    today = _with_clocks(db, today)
     return (
         db.query(Event)
         .join(Website, Event.website_id == Website.id)
@@ -99,7 +360,7 @@ def _time_unknown(column):
     return or_(column.is_(None), column == time(0, 0))
 
 
-def _without_repeat_listings(query, *, today: date, filters: dict | None = None):
+def _without_repeat_listings(query, *, today: DateBound, filters: dict | None = None):
     """Leave out an event when an earlier-added public event has the same title
     (by Event.normalized_title, which ignores case and punctuation) on the same
     day in the same city, at the same time or with no time given on either.
@@ -133,12 +394,13 @@ def _without_repeat_listings(query, *, today: date, filters: dict | None = None)
     return query.filter(~exists(earlier_copy))
 
 
-def upcoming_counts_by_city(db: Session, *, today: date) -> dict[int, int]:
+def upcoming_counts_by_city(db: Session, *, today: DateBound) -> dict[int, int]:
     """How many publicly-visible upcoming events each city has, in one query.
 
     Uses the same base query as the listing, so a count can never promise
     events the city page would not then show.
     """
+    today = _with_clocks(db, today)
     rows = (
         _without_repeat_listings(_base_public_query(db, today=today), today=today)
         .with_entities(Event.city_id, func.count(Event.id))
@@ -148,23 +410,36 @@ def upcoming_counts_by_city(db: Session, *, today: date) -> dict[int, int]:
     return {city_id: count for city_id, count in rows if city_id is not None}
 
 
-def public_event_ids(db: Session, *, today: date, limit: int) -> list[int]:
+def public_event_ids(db: Session, *, today: DateBound, limit: int) -> list[int]:
     """Ids of the events the public site would currently show, newest first.
 
     Shares _base_public_query with the listing, so the sitemap can never
     advertise an event the site itself would not serve.
     """
+    today = _with_clocks(db, today)
     return [
         row.id
         for row in _without_repeat_listings(_base_public_query(db, today=today), today=today)
-        .order_by(Event.start_date.asc(), Event.id.asc())
+        .order_by(*_chronological())
         .limit(limit)
         .all()
     ]
 
 
-def _listing_query(db: Session, *, today: date, **filters):
+def _chronological(entity=Event):
+    """Soonest first by local date, then by start time (events without one
+    after the timed ones that day), then oldest row first for a stable order."""
+    return (
+        entity.start_date.asc(),
+        case((entity.start_time.is_(None), 1), else_=0),
+        entity.start_time.asc(),
+        entity.id.asc(),
+    )
+
+
+def _listing_query(db: Session, *, today: DateBound, **filters):
     """The public listing with the visitor's filters applied."""
+    today = _with_clocks(db, today)
     query = _base_public_query(db, today=today)
     # Filtered to one source, that source's own copy is the one to show.
     if filters.get("source_id") is None:
@@ -175,15 +450,15 @@ def _listing_query(db: Session, *, today: date, **filters):
 def _filter_conditions(
     entity,
     *,
-    today: date,
+    today: DateBound,
     city_id: int | None,
     category_id: int | None,
     source_id: int | None,
     search: str | None,
     recurrence: str | None,
     upcoming_only: bool,
-    date_from: date | None,
-    date_to: date | None,
+    date_from: DateBound | None,
+    date_to: DateBound | None,
     exclude_category_ids: tuple[int, ...] = (),
     exclude_source_ids: tuple[int, ...] = (),
 ) -> list:
@@ -223,8 +498,11 @@ def _filter_conditions(
     elif recurrence == "single":
         conditions.append(entity.recurrence_parent_id.is_(None))
     if upcoming_only:
-        conditions.append(and_(entity.start_date.isnot(None), entity.start_date > today))
+        conditions.append(
+            and_(entity.start_date.isnot(None), entity.start_date > _bound(today))
+        )
     if date_from is not None:
+        date_from = _bound(date_from)
         conditions.append(
             or_(
                 entity.end_date >= date_from,
@@ -232,22 +510,24 @@ def _filter_conditions(
             )
         )
     if date_to is not None:
-        conditions.append(and_(entity.start_date.isnot(None), entity.start_date <= date_to))
+        conditions.append(
+            and_(entity.start_date.isnot(None), entity.start_date <= _bound(date_to))
+        )
     return conditions
 
 
 def list_public_events(
     db: Session,
     *,
-    today: date,
+    today: DateBound,
     city_id: int | None = None,
     category_id: int | None = None,
     source_id: int | None = None,
     search: str | None = None,
     recurrence: str | None = None,
     upcoming_only: bool = False,
-    date_from: date | None = None,
-    date_to: date | None = None,
+    date_from: DateBound | None = None,
+    date_to: DateBound | None = None,
     exclude_category_ids: tuple[int, ...] = (),
     exclude_source_ids: tuple[int, ...] = (),
     page: int = 1,
@@ -263,7 +543,7 @@ def list_public_events(
     total = query.count()
     page = max(page, 1)
     events = (
-        query.order_by(Event.start_date.asc(), Event.id.asc())
+        query.order_by(*_chronological())
         .offset((page - 1) * per_page)
         .limit(per_page)
         .all()
@@ -275,15 +555,15 @@ def list_public_events(
 def list_public_map_points(
     db: Session,
     *,
-    today: date,
+    today: DateBound,
     city_id: int | None = None,
     category_id: int | None = None,
     source_id: int | None = None,
     search: str | None = None,
     recurrence: str | None = None,
     upcoming_only: bool = False,
-    date_from: date | None = None,
-    date_to: date | None = None,
+    date_from: DateBound | None = None,
+    date_to: DateBound | None = None,
     exclude_category_ids: tuple[int, ...] = (),
     exclude_source_ids: tuple[int, ...] = (),
 ) -> list[dict]:
@@ -296,7 +576,7 @@ def list_public_map_points(
         search=search, recurrence=recurrence, upcoming_only=upcoming_only,
         date_from=date_from, date_to=date_to,
         exclude_category_ids=exclude_category_ids, exclude_source_ids=exclude_source_ids,
-    ).order_by(Event.start_date.asc(), Event.id.asc())
+    ).order_by(*_chronological())
 
     points: list[dict] = []
     for event in query.limit(MAX_MAP_POINTS * 3):  # over-fetch; many lack coords
@@ -322,7 +602,7 @@ def list_public_map_points(
 
 
 def list_public_sources(
-    db: Session, *, today: date, city_id: int | None = None
+    db: Session, *, today: DateBound, city_id: int | None = None
 ) -> list[Website]:
     """Websites that currently have at least one publicly-visible event, for the
     source filter. Scoped to a city when one is selected."""
@@ -340,11 +620,11 @@ def list_public_sources(
     )
 
 
-def get_public_event(db: Session, event_id: int, *, today: date) -> Event | None:
+def get_public_event(db: Session, event_id: int, *, today: DateBound) -> Event | None:
     return _base_public_query(db, today=today).filter(Event.id == event_id).first()
 
 
-def get_public_event_ids(db: Session, event_ids: list[int], *, today: date) -> set[int]:
+def get_public_event_ids(db: Session, event_ids: list[int], *, today: DateBound) -> set[int]:
     """Which of these event ids are public today (the ones get_public_event finds)."""
     if not event_ids:
         return set()

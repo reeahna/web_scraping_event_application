@@ -10,11 +10,16 @@ Nothing here is site-specific: the DST warning is derived purely from the
 timezone name and its own offset behaviour, never from a hostname, city, or
 institution. It never rewrites a stored value; it only reports so an
 administrator can decide.
+
+For date arithmetic (converting a source's UTC instant to the town's wall
+clock, or working out what "today" is in a town), resolve_zone_name() reads a
+bare US abbreviation such as ``EST`` as the region it stands for, so daylight
+saving time is still applied while the stored setting waits for an admin.
 """
 
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import UTC, date, datetime
 from zoneinfo import ZoneInfo, available_timezones
 
 _VALID_TIMEZONES = frozenset(available_timezones())
@@ -77,3 +82,82 @@ def dst_warning(name: str | None) -> str | None:
         "'America/Indiana/Indianapolis' or 'America/New_York') so event times "
         "stay correct across DST transitions."
     )
+
+
+# What an administrator almost always means by a bare US abbreviation. zoneinfo
+# reads "EST" as a constant UTC-5 all year, so a summer 8 PM event converted
+# with it lands at 7 PM. These regional zones carry the real DST rules. (Every
+# Indiana town Bulletin covers follows the same rules as New York today; a town
+# with its own history should still be given its own IANA name.)
+_US_ABBREVIATION_ZONES = {
+    "EST": "America/New_York",
+    "EDT": "America/New_York",
+    "EST5EDT": "America/New_York",
+    "CST": "America/Chicago",
+    "CDT": "America/Chicago",
+    "CST6CDT": "America/Chicago",
+    "MST": "America/Denver",
+    "MDT": "America/Denver",
+    "MST7MDT": "America/Denver",
+    "PST": "America/Los_Angeles",
+    "PDT": "America/Los_Angeles",
+    "PST8PDT": "America/Los_Angeles",
+    "HST": "Pacific/Honolulu",
+}
+
+_DEFAULT_ZONE = "UTC"
+
+
+def _regional(name: str | None) -> str | None:
+    """`name` when it is a usable regional (or genuinely fixed, like UTC) zone."""
+    if not name:
+        return None
+    name = name.strip()
+    if name in _US_ABBREVIATION_ZONES:
+        return None
+    if name not in _VALID_TIMEZONES or is_fixed_offset_abbreviation(name):
+        return None
+    return name
+
+
+def resolve_zone_name(name: str | None, fallback: str | None = None) -> str | None:
+    """The IANA zone to do date arithmetic in, for a configured `name` and an
+    optional `fallback` (a source's own setting falls back to its town's).
+
+    A proper regional name always wins. A bare US abbreviation such as "EST"
+    gives way to a regional fallback, and failing that to the region it stands
+    for, so daylight saving time is never ignored. None when neither value
+    names a zone. Stored values are never rewritten here."""
+    for candidate in (name, fallback):
+        regional = _regional(candidate)
+        if regional and regional not in _LEGITIMATE_FIXED:
+            return regional
+    for candidate in (name, fallback):
+        if candidate and candidate.strip() in _US_ABBREVIATION_ZONES:
+            return _US_ABBREVIATION_ZONES[candidate.strip()]
+    for candidate in (name, fallback):
+        if _regional(candidate):
+            return candidate.strip()
+    return None
+
+
+def zone_info(name: str | None, fallback: str | None = None) -> ZoneInfo:
+    """ZoneInfo for resolve_zone_name(name, fallback), UTC when neither names
+    a zone."""
+    return ZoneInfo(resolve_zone_name(name, fallback) or _DEFAULT_ZONE)
+
+
+def local_date(name: str | None, now: datetime | None = None) -> date:
+    """Today's calendar date in that zone (UTC when unknown). `now` must be
+    timezone-aware; it defaults to the current instant."""
+    moment = now or datetime.now(UTC)
+    if moment.tzinfo is None:
+        moment = moment.replace(tzinfo=UTC)
+    return moment.astimezone(zone_info(name)).date()
+
+
+def is_unset_zone(name: str | None) -> bool:
+    """True for no zone or a UTC alias. A town's timezone defaults to UTC
+    until an admin sets it, and no college town runs on UTC, so UTC means
+    "not set" when deciding which wall clock an event belongs on."""
+    return not name or name.strip() in _LEGITIMATE_FIXED or name.strip() == "Etc/UTC"

@@ -99,18 +99,20 @@ def test_configured_site_timezone_applied_when_no_explicit_offset():
     assert normalized.timezone == "America/Chicago"
 
 
-def test_explicit_offset_flagged_as_conflicting_when_site_timezone_also_configured():
+def test_explicit_offset_is_converted_to_the_site_timezone():
     config = SiteConfiguration(
         pattern_name="json_ld_event",
         listing_url="https://example.com/events",
         timezone="America/Chicago",
     )
+    # 7 PM at UTC-4 (New York in June) is 6 PM in Chicago.
     normalized = normalize_candidate(
-        _raw_candidate(start_datetime="2025-06-01T19:00:00-05:00"), config
+        _raw_candidate(start_datetime="2025-06-01T19:00:00-04:00"), config
     )
-    assert any("conflicting_timezone_info" in w for w in normalized.warnings)
     assert normalized.start_time is not None
     assert normalized.start_time.tzinfo is None  # stored as naive wall-clock time
+    assert normalized.start_time.isoformat() == "18:00:00"
+    assert normalized.start_date.isoformat() == "2025-06-01"
 
 
 def test_never_invents_missing_optional_fields():

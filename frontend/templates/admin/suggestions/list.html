@@ -34,7 +34,7 @@
   <tbody>
   {% for s in suggestions %}
     <tr>
-      <td>{{ s.created_at.strftime("%Y-%m-%d") }}</td>
+      <td>{{ s.created_at | admin_datetime }}</td>
       <td>{{ "Town" if s.kind == "town" else "Feature" }}</td>
       <td>
         <strong>{{ s.title }}{% if s.region %}, {{ s.region }}{% endif %}</strong>

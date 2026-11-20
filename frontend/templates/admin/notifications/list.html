@@ -3,7 +3,21 @@
 {% block title %}Notifications{% endblock %}
 
 {% block admin_content %}
-<h1>Notifications</h1>
+<div class="wf-header notifications-header">
+  <div class="wf-header-main">
+    <h1>Notifications</h1>
+    <p class="audit-meta">{% if unread_total %}{{ unread_total }} unread{% else %}All caught up{% endif %}</p>
+  </div>
+  {% if unread_total %}
+  <div class="wf-header-actions">
+    <form method="post" action="/admin/notifications/read-all" class="inline-form">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}" />
+      {% if unread_only %}<input type="hidden" name="unread_only" value="true" />{% endif %}
+      <button type="submit">Mark all as read</button>
+    </form>
+  </div>
+  {% endif %}
+</div>
 
 <form method="get" action="/admin/notifications" class="filter-bar">
   <label class="checkbox-label">
@@ -18,7 +32,7 @@
   <tbody>
     {% for n in notifications %}
     <tr class="{{ 'notification-unread' if not n.read_at else '' }}">
-      <td>{{ n.created_at }}</td>
+      <td>{{ n.created_at | admin_datetime }}</td>
       <td>{{ n.severity }}</td>
       <td>{{ n.title }}</td>
       <td>{{ n.message }}{% if n.action_url %} — <a href="{{ n.action_url }}">view</a>{% endif %}</td>
