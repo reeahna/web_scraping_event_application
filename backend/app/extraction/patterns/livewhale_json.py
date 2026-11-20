@@ -39,6 +39,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+from dataclasses import replace
 from datetime import UTC, datetime
 from typing import Any
 from urllib.parse import urlsplit, urlunsplit
@@ -50,6 +51,8 @@ from app.schemas.extraction import SiteConfiguration
 
 NAME = "livewhale_json"
 PATTERN_VERSION = "1"
+
+_SESSION_KEY = "livewhale_session"
 
 _DEFAULT_PATHS: dict[str, str] = {
     # The occurrence's own id — dedup-safe for recurring events, same
@@ -239,6 +242,37 @@ class LiveWhalePattern:
     def request_url(self, url: str, config: SiteConfiguration) -> str:
         return request_url(url)
 
+    def finalize_candidates(
+        self, candidates: list[EventCandidate], config: SiteConfiguration
+    ) -> list[EventCandidate]:
+        """Session keys decided across the whole run, not page by page. A
+        series whose sessions straddle two feed pages would otherwise be keyed
+        by its bare id on one page and "<id>@<date>" on the other, and both
+        would match the same stored row."""
+        counts: dict[str, int] = {}
+        for candidate in candidates:
+            session = candidate.raw.get(_SESSION_KEY)
+            if session:
+                counts[session[0]] = counts.get(session[0], 0) + 1
+        finalized: list[EventCandidate] = []
+        for candidate in candidates:
+            session = candidate.raw.get(_SESSION_KEY)
+            if not session:
+                finalized.append(candidate)
+                continue
+            event_id, day, repeats = session
+            raw = dict(candidate.raw)
+            if repeats or counts[event_id] > 1:
+                raw["external_source_id"] = f"{event_id}@{day}"
+                raw["recurrence_parent_id"] = event_id
+            else:
+                raw["external_source_id"] = event_id
+                raw["recurrence_parent_id"] = None
+            finalized.append(
+                replace(candidate, raw=raw, recurrence_parent_id=raw["recurrence_parent_id"])
+            )
+        return finalized
+
     def extract(self, response: FetchResponse, config: SiteConfiguration) -> list[EventCandidate]:
         try:
             payload = json.loads(response.text)
@@ -309,14 +343,16 @@ class LiveWhalePattern:
                 event_id is not None and id_counts.get(str(event_id), 0) > 1
             )
             if (
-                repeating
-                and event.get("occur_id") is None
+                event.get("occur_id") is None
                 and event_id is not None
                 and isinstance(start, str)
                 and len(start) >= 10
             ):
-                raw["external_source_id"] = f"{event_id}@{start[:10]}"
-                raw["recurrence_parent_id"] = str(event_id)
+                # Kept so finalize_candidates can key the whole run consistently.
+                raw[_SESSION_KEY] = [str(event_id), start[:10], bool(event.get("repeats"))]
+                if repeating:
+                    raw["external_source_id"] = f"{event_id}@{start[:10]}"
+                    raw["recurrence_parent_id"] = str(event_id)
 
             raw["image"] = _extract_image(raw.get("image") or event.get("thumbnail"))
             raw["source_category"] = (
