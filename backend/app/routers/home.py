@@ -227,6 +227,7 @@ def _render_events(
                     events,
                     page_url=seo.absolute_url(base_path),
                     name=town.get("heading"),
+                    centers=town.get("centers"),
                 )
                 if selected_city
                 else None
@@ -282,6 +283,7 @@ def home(request: Request, current_user: OptionalCurrentUser, db: DbSession):
             "event_counts": counts,
             "city_index": city_index,
             "site_structured_data": seo.site_structured_data(),
+            "organization_structured_data": seo.organization_structured_data(),
         },
     )
 
@@ -330,9 +332,15 @@ def _town_page(
         _, window_count, _ = list_public_events(
             db, today=today, city_id=city.id, date_from=today, date_to=today, per_page=1
         )
+    centers = seo.town_centers(db)
     nearby = [
-        {"city": other, "miles": round(miles), "count": counts.get(other.id, 0)}
-        for other, miles in seo.nearby_towns(city, list_cities(db))
+        {
+            "city": other,
+            "place": seo.town_place(other),
+            "miles": round(miles),
+            "count": counts.get(other.id, 0),
+        }
+        for other, miles in seo.nearby_towns(city, list_cities(db), centers=centers)
     ]
     base_path = seo.town_path(city, window)
     crumbs = [("Towns", "/"), (city.name, seo.town_path(city))]
@@ -350,6 +358,7 @@ def _town_page(
         "upcoming": upcoming,
         "weekend_count": weekend_count,
         "nearby": nearby,
+        "centers": centers,
         "breadcrumb_structured_data": seo.breadcrumb_structured_data(crumbs),
         **_listings_checked(db, city),
     }

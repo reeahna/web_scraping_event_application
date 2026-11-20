@@ -49,6 +49,7 @@ from app.models.website import Website  # noqa: E402
 from app.services import oauth_login, site_visits  # noqa: E402
 from app.services.oauth import ExternalIdentityInfo, MockProvider  # noqa: E402
 from app.services.rate_limit import _attempts_by_ip  # noqa: E402
+from app.services.seo import clear_town_center_cache  # noqa: E402
 
 settings = get_settings()
 
@@ -74,6 +75,7 @@ def _schema():
 def _reset_db(_schema):
     _attempts_by_ip.clear()
     site_visits.reset_for_tests()
+    clear_town_center_cache()
     _empty_all_tables()
     seed_session = SessionLocal()
     try:

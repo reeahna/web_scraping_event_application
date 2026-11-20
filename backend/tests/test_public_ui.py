@@ -85,6 +85,9 @@ class TestHumanReadableDateTime:
         visible = _re.sub(
             r'<script type="application/ld\+json">.*?</script>', "", resp.text, flags=_re.S
         )
+        # <time datetime="..."> holds the ISO value for machines; readers see
+        # only the words inside it.
+        visible = _re.sub(r' datetime="[^"]*"', "", visible)
         assert event.start_date.isoformat() not in visible
         assert "09:30:00" not in visible
         assert "9:30 AM" in visible
@@ -166,7 +169,7 @@ class TestTimeZoneShown:
         listing = client.get(_listing(city)).text
         assert '7:00 PM <span class="event-tz">EDT</span>' in listing
         detail = client.get(f"/events/{event.id}").text
-        assert '7:00 PM <span class="event-tz">EDT</span>' in detail
+        assert '7:00 PM</time> <span class="event-tz">EDT</span>' in detail
 
     def test_no_zone_shown_for_an_unconfigured_town_or_untimed_event(
         self, client, make_city, make_website, make_event

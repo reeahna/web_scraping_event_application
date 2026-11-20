@@ -13,13 +13,14 @@ from sqlalchemy import select
 from app.config import get_settings
 from app.core.exceptions import NotFoundError
 from app.dependencies import DbSession
+from app.models.base import as_aware_utc
 from app.models.city import City
 from app.paths import STATIC_DIR
 from app.repositories.city import get_city_by_slug, get_city_by_slug_ignoring_case
 from app.repositories.public_events import (
     list_public_events,
     local_today,
-    public_event_ids,
+    public_event_sitemap_rows,
     town_today,
     upcoming_counts_by_city,
 )
@@ -32,9 +33,10 @@ router = APIRouter(tags=["seo"])
 # that redirect to a login form, and a private area has no business in an index.
 DISALLOWED_PREFIXES = ("/admin", "/account", "/auth", "/register")
 
-# A cap, so a site with a very large catalogue still returns one valid document
-# rather than a multi-megabyte response. Sitemaps may hold 50,000 URLs.
-MAX_SITEMAP_URLS = 10_000
+# A sitemap file may hold 50,000 URLs (and 50 MB). The old cap of 10,000 events
+# left about 3,000 upcoming events out once the catalogue grew past it; this
+# keeps one file, with room to spare, until the catalogue needs a sitemap index.
+MAX_SITEMAP_URLS = 45_000
 
 
 # AI crawlers, named so it is explicit that they are welcome on the public
@@ -95,18 +97,31 @@ def sitemap_xml(db: DbSession) -> Response:
 
     # The same visibility rules as the public listing, so the sitemap can never
     # advertise an event the site would not show.
-    urls += [
-        absolute_url(f"/events/{event_id}")
-        for event_id in public_event_ids(db, today=today, limit=MAX_SITEMAP_URLS)
+    # Each event carries <lastmod>: when its listed details last changed
+    # (content_updated_at), so a crawler revisits what changed rather than
+    # everything. Left out when unknown: a guessed date is worse than none.
+    entries = [(url, None) for url in urls]
+    entries += [
+        (absolute_url(f"/events/{event_id}"), updated)
+        for event_id, updated in public_event_sitemap_rows(
+            db, today=today, limit=MAX_SITEMAP_URLS - len(urls)
+        )
     ]
 
     body = "\n".join(
         ['<?xml version="1.0" encoding="UTF-8"?>',
          '<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">']
-        + [f"  <url><loc>{url}</loc></url>" for url in urls]
+        + [_url_entry(url, updated) for url, updated in entries]
         + ["</urlset>"]
     )
     return Response(body, media_type="application/xml")
+
+
+def _url_entry(url: str, updated) -> str:
+    if updated is None:
+        return f"  <url><loc>{url}</loc></url>"
+    lastmod = as_aware_utc(updated).isoformat(timespec="seconds")
+    return f"  <url><loc>{url}</loc><lastmod>{lastmod}</lastmod></url>"
 
 
 @router.get("/city/{slug}/events.ics", include_in_schema=False)
