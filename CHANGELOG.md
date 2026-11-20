@@ -33,6 +33,7 @@ lines. Lines may use `**bold**`, `` `code` `` and `[links](https://...)`.
 ## [Unreleased]
 
 ### For everyone
+- Events now leave the site once they are over. A 12 to 2 PM talk disappears at 2 PM in its town instead of staying up for the rest of the day, everywhere you can find events: town pages, Today and This weekend, search, the map, event pages, saved events and the sitemap. Events with no end time still stay up until midnight, and nothing is guessed about how long they run. A late show that ends after midnight stays up until it finishes. (#PR)
 - **Today** and **This weekend** now go by the town's own clock. In the evening, Bulletin was already on tomorrow's date (it was using UTC), so Today showed tomorrow's events and tonight's disappeared early. Event times are also shown in the town's time, so an 8 PM show no longer appears as 1 AM the next day, and events within a day are listed in time order. (#96)
 - Indiana University events now show their real start and end times, venue, description and picture instead of "Time TBD" and "Venue TBD", all-day events no longer show a made-up 5:00 AM start, and every session of a repeating IU event gets its own listing. (#96)
 - Constellation Stage & Screen shows now include their curtain times. (#96)
@@ -40,6 +41,7 @@ lines. Lines may use `**bold**`, `` `code` `` and `[links](https://...)`.
 - Fewer listings meant for young children or teachers: children's art programs, "Kids Eat Free" nights and teaching-tool demos no longer show. (#91)
 
 ### Admin and behind the scenes
+- Public visibility uses each town's current wall-clock time on an event's last day: an event is hidden once a reliable end time has passed (a real time, not midnight, and after the start on a single-day event). Towns still on the UTC default keep the whole-day rule. Ended events stay in the database untouched, and admin pages still list them. (#PR)
 - Times a source gives in UTC (or with an offset) are converted to the event's own timezone during import, using the source's timezone or else its town's, with daylight saving time. A bare "EST"-style setting is read as the region it stands for, so it no longer drops summer time. Calendar (ICS) feeds keep their UTC and TZID times for this conversion too. (#96)
 - The IU LiveWhale feed is asked for its location, description and image fields, reads its end time and all-day flag, and keys each session of a repeating event separately. The next import corrects existing IU events in place (dates, times, venues, end dates); nothing is deleted, and administrator corrections are kept. (#96)
 - A run that reaches a source but reads no events now says so in its warnings ("no events were read" or "records were read but none had the required fields"), so an empty calendar or a changed page is easier to tell apart from a block. (#96)

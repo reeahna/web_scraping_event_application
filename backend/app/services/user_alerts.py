@@ -19,7 +19,7 @@ from sqlalchemy.orm import Session
 
 from app.models.event import Event
 from app.models.notification import Notification
-from app.repositories.public_events import DateBound, get_public_event_ids, today_for_event
+from app.repositories.public_events import DateBound, event_has_ended, get_public_event_ids
 
 USER_ALERT_TYPE = "user_alert"
 
@@ -77,8 +77,7 @@ def list_inbox(
             items.append(InboxItem(n, None, "open"))
             continue
         event = events.get(n.related_resource_id)
-        last_day = event and (event.end_date or event.start_date)
-        if last_day is not None and last_day < today_for_event(today, event):
+        if event is not None and event_has_ended(event, today):
             state = "past"
         elif n.related_resource_id in public_ids:
             state = "open"
