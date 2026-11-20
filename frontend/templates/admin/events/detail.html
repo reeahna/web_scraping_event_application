@@ -23,12 +23,12 @@
     <tr><th>Categorization explanation</th><td>{{ categorization_result.explanation }}</td></tr>
     <tr><th>Confidence</th><td>{{ categorization_result.confidence_type }}</td></tr>
     <tr><th>Active</th><td>{{ 'Yes' if event.is_active else 'No' }}</td></tr>
-    <tr><th>Archived</th><td>{{ event.archived_at or 'No' }}</td></tr>
+    <tr><th>Archived</th><td>{% if event.archived_at %}{{ event.archived_at | admin_datetime }}{% else %}No{% endif %}</td></tr>
     <tr><th>Review status</th><td>{{ event.review_status }}</td></tr>
     <tr><th>Duplicate status</th><td>{{ event.duplicate_status }}</td></tr>
     <tr><th>Canonical URL</th><td><a href="{{ event.canonical_url }}" rel="noopener noreferrer">{{ event.canonical_url }}</a></td></tr>
-    <tr><th>Last seen by a check</th><td>{{ event.scraped_at|admin_datetime if event.scraped_at else 'Not yet recorded' }}</td></tr>
-    <tr><th>Details last changed</th><td>{{ event.content_updated_at|admin_datetime if event.content_updated_at else 'Not recorded (listed before change tracking)' }}</td></tr>
+    <tr><th>Last seen by a check</th><td>{% if event.scraped_at %}{{ event.scraped_at | admin_datetime }}{% else %}Not yet recorded{% endif %}</td></tr>
+    <tr><th>Details last changed</th><td>{% if event.content_updated_at %}{{ event.content_updated_at | admin_datetime }}{% else %}Not recorded (listed before change tracking){% endif %}</td></tr>
     <tr><th>Fingerprint</th><td><code>{{ event.fingerprint or 'Not yet generated' }}</code></td></tr>
   </tbody>
 </table>
@@ -127,7 +127,7 @@
   <li>Extraction run: #{{ latest_provenance.extraction_run_id or "unavailable" }}</li>
   <li>Raw record hash: <code>{{ latest_provenance.raw_record_hash }}</code></li>
   <li>Source response hash: <code>{{ latest_provenance.source_response_hash }}</code></li>
-  <li>Recorded: {{ latest_provenance.created_at }}</li>
+  <li>Recorded: {{ latest_provenance.created_at | admin_datetime }}</li>
 </ul>
 {% if latest_provenance.field_source_paths %}
 <table>

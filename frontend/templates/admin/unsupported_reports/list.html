@@ -35,7 +35,7 @@
   <tbody>
   {% for report in reports %}
     <tr>
-      <td>{{ report.created_at }}</td>
+      <td>{{ report.created_at | admin_datetime }}</td>
       <td><a href="/admin/websites/{{ report.website_id }}">{{ report.website.name }}</a></td>
       <td>{{ report_status_badge(report.status) }}</td>
       <td>{{ report.http_status or "—" }}</td>

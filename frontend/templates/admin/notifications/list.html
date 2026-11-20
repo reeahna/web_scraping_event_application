@@ -32,7 +32,7 @@
   <tbody>
     {% for n in notifications %}
     <tr class="{{ 'notification-unread' if not n.read_at else '' }}">
-      <td>{{ n.created_at }}</td>
+      <td>{{ n.created_at | admin_datetime }}</td>
       <td>{{ n.severity }}</td>
       <td>{{ n.title }}</td>
       <td>{{ n.message }}{% if n.action_url %} — <a href="{{ n.action_url }}">view</a>{% endif %}</td>

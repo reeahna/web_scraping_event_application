@@ -40,7 +40,7 @@
       <td>{{ inference.pattern_name or "none" }}
         (detection confidence {{ "%.2f"|format(inference.detection_confidence) }},
         proposal confidence {{ "%.2f"|format(inference.proposal_confidence) }})</td></tr>
-    <tr><th>Generated</th><td>{{ result.generated_at }}</td></tr>
+    <tr><th>Generated</th><td>{{ result.generated_at | admin_datetime }}</td></tr>
     <tr><th>Current status</th><td>{{ onboarding_badge(website.onboarding_status) }}</td></tr>
     {% if inference.error %}
     <tr><th>Problem</th><td>{{ inference.error }}</td></tr>

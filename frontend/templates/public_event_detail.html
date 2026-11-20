@@ -193,7 +193,7 @@
       {% if latest_run %}
       <ul class="impact-list">
         <li>Latest successful extraction run: #{{ latest_run.id }} ({{ latest_run.status }})</li>
-        <li>Started: {{ latest_run.started_at }}</li>
+        <li>Started: {{ latest_run.started_at | admin_datetime }}</li>
         <li>Events found / valid: {{ latest_run.events_found }} / {{ latest_run.events_valid }}</li>
       </ul>
       {% else %}

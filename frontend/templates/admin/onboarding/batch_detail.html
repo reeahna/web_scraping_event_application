@@ -8,7 +8,7 @@
 
 <table>
   <tbody>
-    <tr><th>Created</th><td>{{ batch.created_at }}</td></tr>
+    <tr><th>Created</th><td>{{ batch.created_at | admin_datetime }}</td></tr>
     <tr><th>Submitted by</th><td>{{ batch.submitted_by.email if batch.submitted_by else "—" }}</td></tr>
     <tr><th>Default city</th><td>{{ batch.default_city.name if batch.default_city else "—" }}</td></tr>
     <tr><th>Default timezone</th><td>{{ batch.default_timezone or "(each city's timezone)" }}</td></tr>
@@ -21,7 +21,7 @@
     <tr><th>Status</th><td>{{ batch.status }} — {{ batch.completed_count }} / {{ batch.valid_count }} complete</td></tr>
     <tr><th>Outcomes</th>
       <td>{% for status, count in counts.items() %}{{ status.replace("_", " ") }}: {{ count }}{% if not loop.last %} · {% endif %}{% endfor %}</td></tr>
-    <tr><th>Completed</th><td>{{ batch.completed_at or "—" }}</td></tr>
+    <tr><th>Completed</th><td>{{ batch.completed_at | admin_datetime }}</td></tr>
   </tbody>
 </table>
 

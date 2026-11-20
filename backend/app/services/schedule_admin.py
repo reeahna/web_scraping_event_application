@@ -11,6 +11,7 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from zoneinfo import ZoneInfo
 
+from markupsafe import Markup, escape
 from sqlalchemy.orm import Session
 
 from app.config import get_settings
@@ -64,14 +65,30 @@ def _admin_zone() -> ZoneInfo:
 
 def format_admin_datetime(value: datetime | None) -> str:
     """A timestamp rendered in the configured application timezone (never a
-    naive UTC string). None -> '—'."""
+    naive UTC string), with the zone's abbreviation. None gives the dash placeholder."""
     if value is None:
         return "—"
     aware = value if value.tzinfo is not None else value.replace(tzinfo=UTC)
     local = aware.astimezone(_admin_zone())
     hour = local.hour % 12 or 12
     ampm = "AM" if local.hour < 12 else "PM"
-    return f"{local.strftime('%b')} {local.day}, {local.year} at {hour}:{local.minute:02d} {ampm}"
+    zone = local.tzname() or ""
+    text = f"{local.strftime('%b')} {local.day}, {local.year} at {hour}:{local.minute:02d} {ampm}"
+    return f"{text} {zone}".rstrip()
+
+
+def admin_time_html(value: datetime | None) -> Markup | str:
+    """A system timestamp as a <time> element that static/js/local-time.js
+    rewrites into the viewer's own timezone. The server-side text (the
+    application timezone, UTC in production) is what shows if the script does
+    not run. Naive values are stored UTC. None gives the dash placeholder."""
+    if value is None:
+        return "—"
+    aware = value if value.tzinfo is not None else value.replace(tzinfo=UTC)
+    iso = aware.astimezone(UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
+    return Markup('<time datetime="{}" data-local-time>{}</time>').format(
+        iso, escape(format_admin_datetime(aware))
+    )
 
 
 # --- default schedule (approval + activation) --------------------------------
@@ -178,8 +195,8 @@ def build_website_schedule_view(db: Session, website: Website) -> WebsiteSchedul
         status_detail=status_detail,
         frequency=format_interval(interval) if (schedule and schedule.enabled) else "—",
         interval_minutes=interval,
-        next_run_display=format_admin_datetime(state.next_run_at),
-        last_run_display=format_admin_datetime(state.last_run_finished_at),
+        next_run_display=admin_time_html(state.next_run_at),
+        last_run_display=admin_time_html(state.last_run_finished_at),
         scheduler_state=derive_scheduler_state(state, eligibility, now=now),
         execution=execution,
         enabled=bool(schedule and schedule.enabled),
@@ -266,7 +283,7 @@ def describe_scheduler_process(db: Session) -> SchedulerProcessStatus:
         status=status,
         detail=detail,
         holder=health.leader_holder,
-        heartbeat_display=format_admin_datetime(health.leader_heartbeat_at),
+        heartbeat_display=admin_time_html(health.leader_heartbeat_at),
         scheduled_count=health.scheduled_count,
         running_count=health.running_count,
         paused_count=health.paused_count,
