@@ -252,6 +252,33 @@ _INTERNAL_ANYWHERE = _rx(
     r"(iu|university) (username|network id|login|credentials) (is\s+)?required|"
     r"(log|sign) in with your (iu|university) (username|account|credentials))\b"
 )
+# A department's own working group, by title: "Sociolinguistics Discussion
+# Group", "Neuroscience Journal Club", "Elston Lab Group", "Syntax-Semantics
+# Reading Group". A book club stays listed.
+_WORKING_GROUP_TITLE = _rx(
+    r"\b(reading|discussion) groups?\b|\bjournal clubs?\b|"
+    r"\b(lab|research) (group|team)s?\b(?!\s+(open house|tours?|showcase|exhibit))|"
+    r"\b(works?[- ]in[- ]progress|wip) (seminar|session|talk|series|workshop)s?\b|"
+    r"\b(thesis|dissertation) (writing )?(group|support group|boot ?camp)s?\b"
+)
+
+# An academic talk, whoever it is aimed at: checked before the student-draw
+# words, so "Physics Colloquium: Teaching Students ..." and "Graduate Student
+# Seminar Series" are still left out. A performance, screening, exhibition or
+# hands-on workshop is kept ("Lecture-Recital", "Gallery Talk").
+_ACADEMIC_TALK_TITLE = _rx(
+    r"\b(colloqui(um|a)|seminar series|lecture series|speaker series|guest (speaker|lecture)s?|"
+    r"(public|guest|named|memorial|distinguished|keynote) lectures?|keynote( address)?|"
+    r"brown bag (talk|seminar|lecture|lunch talk|series)s?|"
+    r"exit seminar|research (presentations?|symposium|talks?|seminar)|poster session|"
+    r"student presentations|ph\.?\s?d\.? candidate|(thesis|dissertation) presentations?)\b|"
+    r"[|:\-–]\s*lecture\s*$|^\s*\w+ brown bag\s*:"
+)
+_PERFORMANCE_OR_HANDS_ON = _rx(
+    r"\b(concerts?|recitals?|performances?|screenings?|exhibitions?|exhibits?|gallery|"
+    r"artist|studio|workshop|book club|festival|party|show)\b"
+)
+
 _INTERNAL_TITLE = _rx(
     r"\b((staff|faculty|department(al)?|committee|lab|team|advisory|executive|all[- ]hands)"
     r"\s+meetings?|faculty senate|"
@@ -433,6 +460,7 @@ def not_attendable_reason(
         _INTERNAL_TITLE.search(title)
         or _INTERNAL_CODES.search(title)
         or _INTERNAL_ANYWHERE.search(f"{title}\n{description}")
+        or _WORKING_GROUP_TITLE.search(title)
     ):
         return INTERNAL
     if _CERTIFICATION_TITLE.search(title):
@@ -443,6 +471,8 @@ def not_attendable_reason(
         return DEADLINE
     if _AUDIENCE_TITLE.search(title) or _FLOOR_PAIR_TITLE.search(title):
         return AUDIENCE
+    if _ACADEMIC_TALK_TITLE.search(title) and not _PERFORMANCE_OR_HANDS_ON.search(title):
+        return CONFERENCE
     if not _STUDENT_DRAW.search(title):
         if _CONFERENCE_TITLE.search(title) or _CONFERENCE_DESCRIPTION.search(description):
             return CONFERENCE

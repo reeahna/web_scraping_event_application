@@ -33,6 +33,7 @@ lines. Lines may use `**bold**`, `` `code` `` and `[links](https://...)`.
 ## [Unreleased]
 
 ### For everyone
+- Fewer academic listings: guest speakers, speaker and lecture series, colloquia, research talks and poster sessions, brown bag talks, reading and discussion groups, journal clubs and research group meetings are left out, wherever they come from. Workshops, exhibitions, performances, gallery and artist talks, book clubs and student-org socials stay. (#99)
 - Events now leave the site once they are over. A 12 to 2 PM talk disappears at 2 PM in its town instead of staying up for the rest of the day, everywhere you can find events: town pages, Today and This weekend, search, the map, event pages, saved events and the sitemap. Events with no end time still stay up until midnight, and nothing is guessed about how long they run. A late show that ends after midnight stays up until it finishes. (#98)
 - **Today** and **This weekend** now go by the town's own clock. In the evening, Bulletin was already on tomorrow's date (it was using UTC), so Today showed tomorrow's events and tonight's disappeared early. Event times are also shown in the town's time, so an 8 PM show no longer appears as 1 AM the next day, and events within a day are listed in time order. (#96)
 - Indiana University events now show their real start and end times, venue, description and picture instead of "Time TBD" and "Venue TBD", all-day events no longer show a made-up 5:00 AM start, and every session of a repeating IU event gets its own listing. (#96)

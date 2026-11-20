@@ -295,8 +295,6 @@ def test_not_attendable_titles(title, reason):
         "2026 Thomas H. Lake Lecture with Meghan Sullivan",
         "One Person, No Vote: A lecture and Q&A with Carol Anderson",
         "Lecture: Rivers",
-        "Guest Lecture: AI Ethics",
-        "Monday Night Lecture Series: The History of Jazz",
         "General Board Meeting",
         "Free Lindy Hop Dance Lessons (Beginner)",
         "Weekly Latin Dance Lessons",
@@ -569,3 +567,59 @@ def test_named_lecture_on_alumni_calendar_is_kept():
 def test_executive_education_calendar():
     url = "https://events.iu.edu/kelley-execed/event/2137062-leading-with-ai"
     assert not_attendable_reason(title="Leading with AI: Influence", url=url) == PROFESSIONAL
+
+
+# Academic programming and a department's working groups are left out; things
+# a student or resident can go and take part in stay, whoever hosts them.
+@pytest.mark.parametrize(
+    "title,reason",
+    [
+        ('Physics Colloquium: "Teaching Students How to Learn in an AI World"', CONFERENCE),
+        ('Department of Chemistry Graduate Student Seminar Series: "Mechanistic Studies"',
+         CONFERENCE),
+        ("MMGE CME Seminar Series - Student Presentations", CONFERENCE),
+        ("AI Research Brown Bag Talk - Prof. Jiang Bian", CONFERENCE),
+        ("EEB Brown Bag: Melissa Wannemacher", CONFERENCE),
+        ("Guest Lecture: AI Ethics", CONFERENCE),
+        ("Guest Speaker: Jane Doe on Climate", CONFERENCE),
+        ("Monday Night Lecture Series: The History of Jazz", CONFERENCE),
+        ("Kristýna Milde | Forest as Home: Landscape, Memory, Connection | Lecture", CONFERENCE),
+        ("Undergraduate Research Symposium", CONFERENCE),
+        ("Research Presentation: Undergraduate Posters", CONFERENCE),
+        ("Emily DeTemple, O'Neill Environmental Science Ph.D. Candidate, Exit Seminar",
+         CONFERENCE),
+        ("Sociolinguistics Discussion Group", INTERNAL),
+        ("Syntax-Semantics Reading Group", INTERNAL),
+        ("Neuroscience Journal Club", INTERNAL),
+        ("Elston Lab Group", INTERNAL),
+        ("Weekly Research Group Check-in", INTERNAL),
+        ("Works-in-Progress Seminar: Early Modern Studies", INTERNAL),
+        ("Dissertation Writing Group", INTERNAL),
+    ],
+)
+def test_academic_programming_is_left_out(title, reason):
+    assert not_attendable_reason(title=title) == reason
+
+
+@pytest.mark.parametrize(
+    "title",
+    [
+        "Gallery Talk: Impressionism in the Permanent Collection",
+        "Artist Talk with Maya Lin",
+        "Lecture-Recital: Bach Cello Suites",
+        "Brown Bag Book Club",
+        "Book Club: The Women",
+        "Letterpress Open Lab",
+        "Riso Lab",
+        "Sewing Lab",
+        "Research Lab Open House",
+        "Watercolor Workshop",
+        "Open Studio",
+        "Free Friday Bouldering",
+        "Magic The Gathering Club Meeting",
+        "Mental Health Support Group",
+        "Film Screening and Discussion",
+    ],
+)
+def test_activities_people_take_part_in_are_kept(title):
+    assert not_attendable_reason(title=title) is None
