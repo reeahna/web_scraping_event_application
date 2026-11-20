@@ -23,6 +23,7 @@ from typing import Any
 from bs4 import BeautifulSoup
 
 from app.extraction.locations import venue_from_location
+from app.extraction.page_anchors import AnchorRequest, find_page_anchors
 from app.extraction.selectors import resolve_json_path
 from app.extraction.types import EventCandidate, FetchResponse
 from app.schemas.extraction import SiteConfiguration
@@ -75,7 +76,10 @@ def _flatten_node(node: Any) -> list[dict[str, Any]]:
 
 
 def _find_jsonld_nodes(html: str) -> list[dict[str, Any]]:
-    soup = BeautifulSoup(html, "html.parser")
+    return _jsonld_nodes_in(BeautifulSoup(html, "html.parser"))
+
+
+def _jsonld_nodes_in(soup: BeautifulSoup) -> list[dict[str, Any]]:
     nodes: list[dict[str, Any]] = []
     for script in soup.find_all("script", attrs={"type": "application/ld+json"}):
         text = script.string or script.get_text()
@@ -124,21 +128,36 @@ def _extract_address(value: Any) -> str | None:
     return None
 
 
+def _page_anchors(soup: BeautifulSoup, page_url: str, nodes: list[dict[str, Any]]) -> dict:
+    """Page anchors for the events whose JSON-LD has no `url`, by position."""
+    requests = [
+        AnchorRequest(key=index, name=str(node.get("name")), start=_text(node.get("startDate")))
+        for index, node in enumerate(nodes)
+        if not node.get("url") and isinstance(node.get("name"), str)
+    ]
+    if not requests:
+        return {}
+    return find_page_anchors(soup, page_url, requests)
+
+
+def _text(value: Any) -> str | None:
+    return value if isinstance(value, str) else None
+
+
 class JsonLdEventPattern:
     name = NAME
 
     def extract(self, response: FetchResponse, config: SiteConfiguration) -> list[EventCandidate]:
-        nodes = _find_jsonld_nodes(response.text)
+        soup = BeautifulSoup(response.text, "html.parser")
+        nodes = [node for node in _jsonld_nodes_in(soup) if _is_event_type(node)]
+        anchors = _page_anchors(soup, response.final_url, nodes)
         paths = {
             **_DEFAULT_PATHS,
             **{k: v for k, v in config.json_paths.items() if k in _RAW_FIELDS},
         }
 
         candidates: list[EventCandidate] = []
-        for node in nodes:
-            if not _is_event_type(node):
-                continue
-
+        for index, node in enumerate(nodes):
             raw: dict[str, Any] = {}
             field_source_paths: dict[str, str] = {}
             warnings: list[str] = []
@@ -166,6 +185,18 @@ class JsonLdEventPattern:
             raw["attendance_mode"] = node.get("eventAttendanceMode")
 
             canonical_url = raw.get("canonical_url")
+            anchor = anchors.get(index)
+            if not canonical_url and anchor is not None:
+                # The event's own element on the page (see page_anchors). A
+                # `#id` link normalizes to the page address, so the id also
+                # becomes the source ID that tells these events apart.
+                canonical_url = anchor.url
+                field_source_paths["canonical_url"] = f"page_anchor:#{anchor.element_id}"
+                if not anchor.is_permalink and not raw.get("external_source_id"):
+                    raw["external_source_id"] = anchor.element_id
+                    field_source_paths["external_source_id"] = (
+                        f"page_anchor:#{anchor.element_id}"
+                    )
             if not canonical_url and config.allow_page_url_as_canonical_fallback:
                 canonical_url = response.final_url
                 field_source_paths["canonical_url"] = "fallback:page_url"
