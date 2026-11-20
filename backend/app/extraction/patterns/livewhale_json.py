@@ -45,6 +45,7 @@ from typing import Any
 from urllib.parse import urlsplit, urlunsplit
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
+from app.extraction.locations import has_venue
 from app.extraction.selectors import resolve_json_path
 from app.extraction.types import EventCandidate, FetchResponse
 from app.schemas.extraction import SiteConfiguration
@@ -117,6 +118,22 @@ def request_url(url: str) -> str:
     return urlunsplit(parts._replace(path=f"{head}{_EVENTS_PATH}{fields}{tail}"))
 
 
+def record_url(api_endpoint: str, event_id: str) -> str | None:
+    """The feed URL for one event by its LiveWhale id
+    (`/live/json/events/id/<id>/response_fields/...`), on the same host as
+    the configured feed. It returns the event even after it has passed and
+    left the listing, which is how stored events are rechecked."""
+    if not event_id.isdigit():
+        return None
+    parts = urlsplit(api_endpoint)
+    head, found, _ = parts.path.partition(_EVENTS_PATH)
+    if not found:
+        return None
+    fields = "/response_fields/" + ",".join(RESPONSE_FIELDS)
+    path = f"{head}{_EVENTS_PATH}/id/{event_id}{fields}"
+    return urlunsplit(parts._replace(path=path, query="", fragment=""))
+
+
 def _zone(name: Any) -> ZoneInfo | None:
     if not isinstance(name, str) or not name:
         return None
@@ -150,6 +167,84 @@ def _iso_value(value: Any, *, all_day: bool) -> Any:
     if not isinstance(value, str) or len(value) < 10:
         return None
     return value[:10] if all_day else value
+
+
+def _instant(value: Any) -> datetime | None:
+    """The UTC instant a timestamp or offset-carrying ISO value names, or
+    None for anything else (a local or date-only value names no instant)."""
+    if isinstance(value, bool) or value is None:
+        return None
+    if isinstance(value, int | float) or (isinstance(value, str) and value.strip().isdigit()):
+        try:
+            return datetime.fromtimestamp(float(value), tz=UTC)
+        except (OverflowError, OSError, ValueError):
+            return None
+    if isinstance(value, str):
+        try:
+            parsed = datetime.fromisoformat(value.strip().replace("Z", "+00:00"))
+        except ValueError:
+            return None
+        return parsed.astimezone(UTC) if parsed.tzinfo is not None else None
+    return None
+
+
+# (offset-aware ISO key, timestamp keys) for each end of the event. The two
+# ends are read independently: a start found in `date_iso` says nothing about
+# whether the end is in `date2_iso` or only in a timestamp.
+_TIME_KEYS: dict[str, tuple[str, tuple[str, ...]]] = {
+    "start_datetime": ("date_iso", ("date_ts",)),
+    "end_datetime": ("date2_iso", ("date2_ts", "date_end_ts")),
+}
+
+
+def _pick_time(
+    event: dict[str, Any],
+    field_name: str,
+    configured: Any,
+    configured_path: str,
+    *,
+    overridden: bool,
+    all_day: bool,
+    zone: ZoneInfo | None,
+    index: int,
+    field_source_paths: dict[str, str],
+    warnings: list[str],
+) -> Any:
+    """One end of the event's time, best source first.
+
+    The offset-carrying ISO value is the source's own local wall clock and is
+    preferred whenever it is present. A saved json_path for the field used to
+    switch the ISO value off entirely, so a configuration naming `date_ts`
+    silently discarded it; now a configured value is used only when the feed
+    has no ISO value, and a configured timestamp that names a different
+    instant from the ISO value is reported rather than trusted."""
+    iso_key, ts_keys = _TIME_KEYS[field_name]
+    iso = _iso_value(event.get(iso_key), all_day=all_day)
+    iso_instant = _instant(event.get(iso_key))
+    if iso is not None:
+        checks = [(configured_path, configured)] if overridden else []
+        checks += [(key, event.get(key)) for key in ts_keys]
+        for path, value in checks:
+            other = _instant(value)
+            if other is not None and iso_instant is not None and other != iso_instant:
+                warnings.append(f"livewhale_time_mismatch:{field_name}:{iso_key}!={path}")
+                break
+        field_source_paths[field_name] = _provenance_path(index, iso_key)
+        return iso
+    value, path = configured, configured_path
+    if value is None:
+        for key in ts_keys:
+            if event.get(key) is not None:
+                value, path = event.get(key), key
+                break
+    if value is None:
+        return None
+    field_source_paths[field_name] = _provenance_path(index, path)
+    if isinstance(value, str) and not value.strip().isdigit():
+        # A configured ISO-like value: normalize reads its offset (or, for a
+        # `*_utc` path, treats it as UTC).
+        return value[:10] if all_day else value
+    return _timestamp_to_iso(value, all_day=all_day, zone=zone)
 
 
 def _extract_image(value: Any) -> Any:
@@ -195,6 +290,23 @@ _PLACE_FALLBACKS: dict[str, tuple[str, ...]] = {
 }
 
 
+def _usable(field_name: str, value: Any) -> bool:
+    """A value that can stand as this field. A venue written as a placeholder
+    ("TBD", "Location TBA") is not one, so it never blocks a real place name
+    from `location_title` or a nested place."""
+    if value is None or (isinstance(value, str) and not value.strip()):
+        return False
+    if field_name == "venue":
+        return isinstance(value, str) and has_venue({"venue": value})
+    return True
+
+
+def _place_name(value: Any) -> Any:
+    if isinstance(value, dict):
+        return value.get("title") or value.get("name")
+    return value
+
+
 def _fill_place_fallbacks(
     event: dict[str, Any],
     raw: dict[str, Any],
@@ -204,21 +316,23 @@ def _fill_place_fallbacks(
     venue = raw.get("venue")
     if isinstance(venue, dict):
         # A nested place object: its name is the venue.
-        name = venue.get("title") or venue.get("name")
+        name = _place_name(venue)
         raw["venue"] = name if isinstance(name, str) else None
         field_source_paths["venue"] = _provenance_path(index, "location.title")
     for field_name, keys in _PLACE_FALLBACKS.items():
-        current = raw.get(field_name)
-        if current is not None and not (isinstance(current, str) and not current.strip()):
+        if _usable(field_name, raw.get(field_name)):
             continue
         for key in keys:
-            value = event.get(key)
-            if isinstance(value, dict):
-                value = value.get("title") or value.get("name")
-            if value is not None and not (isinstance(value, str) and not value.strip()):
+            value = _place_name(event.get(key))
+            if _usable(field_name, value):
                 raw[field_name] = value
                 field_source_paths[field_name] = _provenance_path(index, key)
                 break
+        else:
+            if field_name == "venue" and raw.get("venue") is not None:
+                # Only a placeholder was given: no venue, so the event's own
+                # page is still looked up for one.
+                raw["venue"] = None
 
 
 def _events_from_payload(payload: Any) -> list[Any] | None:
@@ -317,24 +431,26 @@ class LiveWhalePattern:
             all_day = bool(raw.get("all_day") or event.get("is_all_day"))
             raw["all_day"] = all_day
             zone = _zone(event.get("timezone")) or _zone(config.timezone)
-            start = end = None
-            if "start_datetime" not in overridden:
-                start = _iso_value(event.get("date_iso"), all_day=all_day)
-                if start is not None:
-                    field_source_paths["start_datetime"] = _provenance_path(index, "date_iso")
-            if start is None:
-                start = _timestamp_to_iso(raw.get("start_datetime"), all_day=all_day, zone=zone)
-            if "end_datetime" not in overridden:
-                end = _iso_value(event.get("date2_iso"), all_day=all_day)
-                if end is not None:
-                    field_source_paths["end_datetime"] = _provenance_path(index, "date2_iso")
-                elif raw.get("end_datetime") is None and event.get("date2_ts") is not None:
-                    raw["end_datetime"] = event.get("date2_ts")
-                    field_source_paths["end_datetime"] = _provenance_path(index, "date2_ts")
-            if end is None:
-                end = _timestamp_to_iso(raw.get("end_datetime"), all_day=all_day, zone=zone)
-            raw["start_datetime"] = start
-            raw["end_datetime"] = end
+            warnings: list[str] = []
+            for field_name in _TIME_KEYS:
+                raw[field_name] = _pick_time(
+                    event,
+                    field_name,
+                    raw.get(field_name),
+                    paths[field_name],
+                    overridden=field_name in overridden,
+                    all_day=all_day,
+                    zone=zone,
+                    index=index,
+                    field_source_paths=field_source_paths,
+                    warnings=warnings,
+                )
+            start = raw["start_datetime"]
+            end = raw["end_datetime"]
+            if end is None and "date2_iso" in event:
+                # The feed states the end and it is empty: the event has no end
+                # time, so one stored by an earlier, misread run is stale.
+                raw["end_absent"] = True
 
             # Every session of a repeating event shares its `id`: key each
             # session by id and local date so none is collapsed into another.
@@ -396,10 +512,10 @@ class LiveWhalePattern:
                     transformation_history=(),
                     source_page=response.final_url,
                     extraction_pattern=NAME,
-                    warnings=(),
                     raw_record_hash=raw_record_hash,
                     recurrence_parent_id=raw.get("recurrence_parent_id"),
                     is_cancelled=bool(event.get("is_canceled")),
+                    warnings=tuple(warnings),
                 )
             )
         return candidates
