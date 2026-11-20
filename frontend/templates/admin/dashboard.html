@@ -30,11 +30,11 @@
   {{ tile("websites", metrics.websites, "Websites") }}
   {{ tile("events", metrics.events, "Events") }}
   {% if ai_queue is not none %}
-  <div class="metric-tile">
+  <a class="metric-tile metric-tile-link" href="/admin/ai-labeling">
     <div class="metric-value">{{ ai_queue.waiting | thousands }}</div>
     <div class="metric-label">Waiting for AI labels</div>
     <div class="metric-note">{{ ai_queue.labeled | thousands }} upcoming event{{ "s" if ai_queue.labeled != 1 }} labeled</div>
-  </div>
+  </a>
   {% endif %}
 </div>
 

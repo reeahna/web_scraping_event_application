@@ -10,6 +10,7 @@ from app.extraction.types import EventCandidate
 from app.models.event import Event
 from app.repositories.public_events import town_today
 from app.schemas.event import EventCreate
+from app.services.ai_label_state import requeue_if_inputs_changed
 from app.services.categorization import assign_category
 from app.services.event_freshness import mark_if_changed, visitor_snapshot
 from app.services.fingerprints import update_fingerprint_and_duplicates
@@ -271,6 +272,9 @@ def update_event(
     # category only; an administrator's category override is a separate field and
     # is left untouched.
     assign_category(db, event)
+    # New words for the model to read send an AI-labeled (or needs-review)
+    # event back to the AI queue; its current category stays meanwhile.
+    requeue_if_inputs_changed(event)
     mark_if_changed(event, before)
     if not commit:
         # The caller commits (once per batch in the import loop).

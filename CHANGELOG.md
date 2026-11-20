@@ -77,6 +77,7 @@ lines. Lines may use `**bold**`, `` `code` `` and `[links](https://...)`.
 
 ### Admin and behind the scenes
 - **Preview recheck** on a LiveWhale source's admin page (under Advanced tools): reads current events that show 12:00 AM, have no venue or were missed by the latest import back from the source one by one, lists the corrections it would make, and applies them only when you choose to. (#104)
+- Admins can open **Events > AI labeling** to see what AI event labeling is doing: how many events are waiting, the tokens each request used, which free-tier limit is slowing it down, and the events the AI couldn't label, with a button to ask it again. (#105)
 
 ## [1.11.0] - 2026-11-20
 
