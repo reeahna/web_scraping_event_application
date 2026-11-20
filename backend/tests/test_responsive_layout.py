@@ -133,7 +133,7 @@ def layout_data(make_city, make_website, make_event, make_user, db_session):
     )
 
     member = make_user(email="member@example.com", role_name=REGISTERED_USER)
-    make_user(email="admin@example.com", role_name=SUPER_ADMINISTRATOR)
+    admin = make_user(email="admin@example.com", role_name=SUPER_ADMINISTRATOR)
     for event in (events[0], events[1], past):
         db_session.add(SavedEvent(user_id=member.id, event_id=event.id))
     db_session.commit()
@@ -149,6 +149,18 @@ def layout_data(make_city, make_website, make_event, make_user, db_session):
             related_resource_type="event",
             related_resource_id=event.id,
             action_url=f"/events/{event.id}",
+        )
+    # More than one page of admin notifications, so the inbox shows its pager.
+    for i in range(55):
+        notify(
+            db_session,
+            notification_type="test_event",
+            severity=("error", "warning", SEVERITY_INFO)[i % 3],
+            title=f"Website check {i}: {LONG_WORD}"[:255],
+            message="Preview found no valid events. " + LONG_WORD,
+            recipients=[admin],
+            dedup_fingerprint=f"layout:admin:{i}",
+            action_url=f"/admin/websites/{website.id}",
         )
     return {"city": city, "event": events[1]}
 
@@ -218,7 +230,9 @@ def test_pages_fit_every_screen(browser_name, live_server, layout_data, client, 
                     "/account/saved", "/account/inbox", "/account/alerts", "/suggest"]
     admin_pages = ["/admin", "/admin/cities", f"/admin/cities/{city.id}",
                    "/admin/websites", "/admin/events", f"/admin/events/{event.id}",
-                   "/admin/event-categories", "/admin/notifications", "/admin/scheduler",
+                   "/admin/event-categories", "/admin/notifications",
+                   "/admin/notifications?status=unread&severity=error&page=1",
+                   "/admin/notifications?page=2", "/admin/scheduler",
                    "/admin/suggestions"]
     visits = (
         [("guest", None, p) for p in public]

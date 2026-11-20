@@ -1,4 +1,5 @@
 {% extends "admin_base.html" %}
+{% from "_pagination.html" import paginate %}
 
 {% block title %}Notifications{% endblock %}
 
@@ -12,22 +13,41 @@
   <div class="wf-header-actions">
     <form method="post" action="/admin/notifications/read-all" class="inline-form">
       <input type="hidden" name="csrf_token" value="{{ csrf_token }}" />
-      {% if unread_only %}<input type="hidden" name="unread_only" value="true" />{% endif %}
+      {% if status %}<input type="hidden" name="status" value="{{ status }}" />{% endif %}
+      {% if severity %}<input type="hidden" name="severity" value="{{ severity }}" />{% endif %}
       <button type="submit">Mark all as read</button>
     </form>
   </div>
   {% endif %}
 </div>
 
-<form method="get" action="/admin/notifications" class="filter-bar">
-  <label class="checkbox-label">
-    <input type="checkbox" name="unread_only" value="true" {% if unread_only %}checked{% endif %} data-submit-on-change />
-    Unread only
-  </label>
+<form method="get" action="/admin/notifications" class="filter-bar notifications-filters">
+  <label for="notif-status" class="sr-only">Read status</label>
+  <select id="notif-status" name="status" data-submit-on-change>
+    <option value="">All notifications</option>
+    {% for value, label in read_states.items() %}
+    <option value="{{ value }}" {% if status == value %}selected{% endif %}>{{ label }} only</option>
+    {% endfor %}
+  </select>
+  <label for="notif-severity" class="sr-only">Severity</label>
+  <select id="notif-severity" name="severity" data-submit-on-change>
+    <option value="">All severities</option>
+    {% for value, label in severities.items() %}
+    <option value="{{ value }}" {% if severity == value %}selected{% endif %}>{{ label }}</option>
+    {% endfor %}
+  </select>
+  <button type="submit" class="btn-secondary">Filter</button>
+  {% if filtered %}<a href="/admin/notifications" class="notifications-clear">Clear filters</a>{% endif %}
 </form>
 
+<p class="audit-meta notifications-summary">
+  {{ total }} {{ "notification" if total == 1 else "notifications" }}{% if filtered %} match these filters{% endif %}
+  {% if total > per_page %}<span aria-hidden="true">·</span> Page {{ page }} of {{ total_pages }}{% endif %}
+</p>
+
 {% if notifications %}
-<table>
+<div class="table-scroll">
+<table class="notifications-table">
   <thead><tr><th>Created</th><th>Severity</th><th>Title</th><th>Message</th><th><span class="sr-only">Mark read</span></th><th><span class="sr-only">Dismiss</span></th></tr></thead>
   <tbody>
     {% for n in notifications %}
@@ -40,6 +60,9 @@
         {% if not n.read_at %}
         <form method="post" action="/admin/notifications/{{ n.id }}/read" class="inline-form">
           <input type="hidden" name="csrf_token" value="{{ csrf_token }}" />
+          {% if status %}<input type="hidden" name="status" value="{{ status }}" />{% endif %}
+          {% if severity %}<input type="hidden" name="severity" value="{{ severity }}" />{% endif %}
+          {% if page > 1 %}<input type="hidden" name="page" value="{{ page }}" />{% endif %}
           <button type="submit" class="btn-secondary">Mark read</button>
         </form>
         {% endif %}
@@ -56,7 +79,9 @@
     {% endfor %}
   </tbody>
 </table>
+</div>
+{% if total > per_page %}{{ paginate(page, per_page, total, base_url) }}{% endif %}
 {% else %}
-<p class="audit-meta">No notifications.</p>
+<p class="audit-meta">{% if filtered %}No notifications match these filters.{% else %}No notifications.{% endif %}</p>
 {% endif %}
 {% endblock %}
