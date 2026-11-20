@@ -27,6 +27,26 @@ output).
 | `paged_json_events` | Paged JSON API (`content` + page metadata, Spring-style); fields inferred |
 | `bibliocommons_events` | BiblioCommons library events gateway (`events.items` ids looked up in `entities`) |
 
+## Dates, times and timezones
+
+Every stored event date and time is the event's **local wall clock**, and
+`Event.timezone` names the IANA zone it is in. The rules:
+
+- The zone is the source's `SiteConfiguration.timezone`, else the website's
+  `timezone_override`, else its town's `City.timezone`
+  (`app.core.timezones.resolve_zone_name`). A bare US abbreviation such as
+  `EST` gives way to a regional fallback, or else is read as the region it
+  stands for (`America/New_York`), so daylight saving time always applies.
+- A value that carries its own offset (`...Z`, `...-05:00`, an aware datetime,
+  an ICS `TZID` or UTC time, a unix timestamp a pattern emits as `+00:00`) is
+  converted to that zone in `normalize_candidate` before the date and time are
+  split. Values without an offset, and date-only values, are taken as already
+  local. A date-only value is a calendar date, never a UTC midnight.
+- A town still on the UTC default has no real zone, so an offset-carrying
+  value keeps the source's own clock there.
+- "Today" on the public site is each town's own date
+  (`app.repositories.public_events.town_today` and `local_today`), never UTC's.
+
 ## Shared capabilities (Phase 8G)
 
 - **Date ranges** (`app/extraction/date_ranges.py`): a closed parser for

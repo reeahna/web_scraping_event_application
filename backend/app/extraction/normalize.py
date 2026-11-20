@@ -13,14 +13,19 @@ from __future__ import annotations
 import dataclasses
 import html
 import re
-from datetime import date, datetime
+from datetime import date, datetime, time
 from urllib.parse import urljoin
+from zoneinfo import ZoneInfo
 
+from app.core.timezones import is_unset_zone, resolve_zone_name
 from app.extraction.date_ranges import parse_date_range
 from app.extraction.sanitize import strip_to_text
 from app.extraction.transform import apply_transformations, parse_date_value, parse_time_value
 from app.extraction.types import EventCandidate
 from app.schemas.extraction import SiteConfiguration, TransformationRuleConfig
+
+# In transformation_history when the source marks the event as all-day.
+ALL_DAY_MARKER = "all_day"
 
 _ISO_DATETIME_SPLIT_RE = re.compile(r"^(\d{4}-\d{2}-\d{2})T(.*)$")
 
@@ -60,6 +65,43 @@ def _rules_for_field(
     rules: list[TransformationRuleConfig], field_name: str
 ) -> list[TransformationRuleConfig]:
     return [r for r in rules if r.field == field_name]
+
+
+_ISO_OFFSET_RE = re.compile(r"^\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}.*(Z|[+-]\d{2}:?\d{2})$")
+
+
+def _to_local(value: object, zone: ZoneInfo | None) -> object:
+    """An instant that carries its own UTC offset ("2026-11-20T01:00:00Z",
+    "...-05:00", or an aware datetime) as the event's local wall-clock
+    datetime, so an 8 PM show in Bloomington stays at 8 PM on its own day
+    instead of becoming 1 AM the next day. Values without an offset (local
+    times, date-only values, prose) are returned unchanged: a date-only value
+    is a calendar date, never a UTC midnight. Without a known zone the value is
+    left as the source wrote it (its own offset's wall clock)."""
+    if zone is None:
+        return value
+    moment: datetime | None = None
+    if isinstance(value, datetime):
+        moment = value if value.tzinfo is not None else None
+    elif isinstance(value, str) and _ISO_OFFSET_RE.match(value.strip()):
+        try:
+            moment = datetime.fromisoformat(value.strip().replace("Z", "+00:00"))
+        except ValueError:
+            moment = None
+    if moment is None or moment.tzinfo is None:
+        return value
+    return moment.astimezone(zone).replace(tzinfo=None)
+
+
+def _localize_time(
+    day: date | None, moment: time | None, zone: ZoneInfo | None
+) -> tuple[date | None, time | None]:
+    """A separately-given time with an offset ("19:00:00-05:00") moved to the
+    event's zone, together with its date (which can change at midnight)."""
+    if day is None or moment is None or moment.tzinfo is None or zone is None:
+        return day, moment
+    local = datetime.combine(day, moment).astimezone(zone)
+    return local.date(), local.time().replace(tzinfo=None)
 
 
 def _split_iso_datetime(value: object) -> tuple[object | None, str | None]:
@@ -144,11 +186,15 @@ def normalize_candidate(
     if image_url:
         image_url = urljoin(candidate.source_page, str(image_url))
 
+    timezone = resolve_zone_name(config.timezone, fallback_timezone)
+    # With no real zone (a town still on the UTC default) an offset-carrying
+    # time keeps the source's own wall clock rather than being moved to UTC.
+    zone = None if is_unset_zone(timezone) else ZoneInfo(timezone)
     start_date_part, start_time_from_dt = _split_iso_datetime(
-        apply("start_datetime", raw.get("start_datetime"))
+        _to_local(apply("start_datetime", raw.get("start_datetime")), zone)
     )
     end_date_part, end_time_from_dt = _split_iso_datetime(
-        apply("end_datetime", raw.get("end_datetime"))
+        _to_local(apply("end_datetime", raw.get("end_datetime")), zone)
     )
     start_time_raw = apply("start_time", raw.get("start_time")) or start_time_from_dt
     end_time_raw = apply("end_time", raw.get("end_time")) or end_time_from_dt
@@ -184,19 +230,28 @@ def normalize_candidate(
     if end_date_part is not None and end_date is None:
         warnings.append(f"unparseable_end_date:{end_date_part}")
 
-    timezone = config.timezone or fallback_timezone
-    for label, parsed_time in (("start_time", start_time), ("end_time", end_time)):
-        if parsed_time is not None and parsed_time.tzinfo is not None and timezone is not None:
-            warnings.append(f"conflicting_timezone_info:{label}")
-        if parsed_time is not None and parsed_time.tzinfo is not None:
-            # Store naive wall-clock time as extracted; the explicit source
-            # offset isn't an IANA zone name and can't be losslessly stored
-            # in the `timezone` string column, so it's recorded as a warning
-            # rather than silently discarded.
-            if label == "start_time":
-                start_time = parsed_time.replace(tzinfo=None)
-            else:
-                end_time = parsed_time.replace(tzinfo=None)
+    # A time that still carries an offset (given apart from its date) is moved
+    # to the event's zone with its date. Stored times are always the event's
+    # local wall clock; `timezone` names the zone they are in.
+    if start_time is not None and start_time.tzinfo is not None:
+        if zone is not None:
+            start_date, start_time = _localize_time(start_date, start_time, zone)
+            history.append("start_time:converted_to_event_timezone")
+        start_time = start_time.replace(tzinfo=None) if start_time else None
+    if end_time is not None and end_time.tzinfo is not None:
+        if zone is not None:
+            end_day = end_date or start_date
+            converted_day, end_time = _localize_time(end_day, end_time, zone)
+            if end_date is not None:
+                end_date = converted_day
+            history.append("end_time:converted_to_event_timezone")
+        end_time = end_time.replace(tzinfo=None) if end_time else None
+
+    if raw.get("all_day") is True and start_date is not None:
+        # An all-day event has no clock time; a re-scrape clears a stale one
+        # (see app.repositories.event.update_event).
+        start_time = end_time = None
+        history.append(ALL_DAY_MARKER)
 
     latitude = _parse_coordinate(raw.get("latitude"), warnings, "latitude")
     longitude = _parse_coordinate(raw.get("longitude"), warnings, "longitude")

@@ -5,7 +5,7 @@ from sqlalchemy.orm import Session
 
 from app.extraction.dedup import candidate_fingerprint
 from app.extraction.locations import has_venue
-from app.extraction.normalize import plain_text
+from app.extraction.normalize import ALL_DAY_MARKER, plain_text
 from app.extraction.types import EventCandidate
 from app.models.event import Event
 from app.schemas.event import EventCreate
@@ -77,9 +77,32 @@ def find_existing_event_for_candidate(
     *different* source's event is treated as a cross-source possible
     duplicate (Phase 5's existing workflow) rather than silently merged."""
     fingerprint = candidate_fingerprint(candidate, website_id=website_id, city_id=city_id)
-    return (
+    existing = (
         db.query(Event)
         .filter(Event.website_id == website_id, Event.fingerprint == fingerprint)
+        .first()
+    )
+    if existing is not None:
+        return existing
+    return _row_keyed_by_series(db, candidate, website_id=website_id)
+
+
+def _row_keyed_by_series(
+    db: Session, candidate: EventCandidate, *, website_id: int
+) -> Event | None:
+    """A session keyed "<series id>@<date>" (see the LiveWhale pattern) whose
+    series was stored before sessions had their own ids, as one row under the
+    bare series id. The first session to arrive takes that row over (its id is
+    rewritten by update_event), so the old row is corrected in place rather
+    than left behind next to its sessions with stale dates."""
+    parent = candidate.recurrence_parent_id
+    own_id = candidate.external_source_id or ""
+    if not parent or not own_id.startswith(f"{parent}@"):
+        return None
+    return (
+        db.query(Event)
+        .filter(Event.website_id == website_id, Event.external_source_id == parent)
+        .order_by(Event.id)
         .first()
     )
 
@@ -169,6 +192,11 @@ def update_event(
         event.start_time = candidate.start_time
     if candidate.end_time is not None:
         event.end_time = candidate.end_time
+    if ALL_DAY_MARKER in candidate.transformation_history and candidate.start_date is not None:
+        # The source says this is an all-day event, so a time stored by an
+        # earlier run (a UTC midnight read as "5:00 AM") is stale, not data.
+        event.start_time = None
+        event.end_time = None
     if candidate.venue is not None:
         event.venue = candidate.venue
     if candidate.address is not None:

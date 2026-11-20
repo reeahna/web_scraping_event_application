@@ -123,7 +123,23 @@ def parse_time_value(value: Any, formats: list[str] | None = None) -> time | Non
     try:
         return time.fromisoformat(text)
     except ValueError:
+        pass
+    return _twelve_hour_time(text)
+
+
+# "7:30 PM", "7:30pm", "7 p.m.": the clock time most listings print.
+_TWELVE_HOUR_RE = re.compile(r"^(\d{1,2})(?::(\d{2}))?\s*([ap])\.?\s*m\.?$", re.IGNORECASE)
+
+
+def _twelve_hour_time(text: str) -> time | None:
+    match = _TWELVE_HOUR_RE.match(text)
+    if not match:
         return None
+    hour, minute = int(match.group(1)), int(match.group(2) or 0)
+    if not 1 <= hour <= 12 or minute > 59:
+        return None
+    hour = hour % 12 + (12 if match.group(3).lower() == "p" else 0)
+    return time(hour, minute)
 
 
 def _next_occurrence(month: int, day: int, reference: date) -> date | None:

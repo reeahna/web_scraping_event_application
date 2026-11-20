@@ -12,10 +12,10 @@ Field handling:
 * `UID` is the stable identity, mapped to `external_source_id` — ICS events
   frequently have no public URL, and this pattern never fabricates one. The
   proposer therefore does not require `canonical_url`; dedup uses the UID.
-* `DTSTART`/`DTEND` produce a date for an all-day (`VALUE=DATE`) event and a
-  naive wall-clock datetime otherwise, in the same ISO shape every other
-  pattern emits — this engine performs no timezone math (see
-  app.extraction.normalize), so a `TZID` only labels the value.
+* `DTSTART`/`DTEND` produce a date for an all-day (`VALUE=DATE`) event. A
+  floating time stays a naive wall-clock datetime; a UTC (`Z`) or `TZID` time
+  keeps its offset, and app.extraction.normalize converts it to the event's
+  own timezone.
 * `STATUS:CANCELLED` events are extracted but flagged; they are never silently
   dropped, and (per the recurrence rules that arrive in Phase 8G) never used
   to auto-delete anything.
@@ -46,6 +46,10 @@ def _to_iso(value: Any) -> tuple[str | None, bool]:
     dt = getattr(value, "dt", value)
     # A bare date (all-day) has no time component.
     if hasattr(dt, "hour"):
+        if getattr(dt, "tzinfo", None) is not None and dt.utcoffset() is not None:
+            # A UTC ("...Z") or TZID time keeps its offset, so normalize can
+            # place it on the town's wall clock instead of reading UTC as local.
+            return dt.replace(microsecond=0).isoformat(), False
         return dt.strftime("%Y-%m-%dT%H:%M:%S"), False
     if hasattr(dt, "isoformat"):
         return dt.isoformat(), True

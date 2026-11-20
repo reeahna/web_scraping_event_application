@@ -38,6 +38,7 @@ from app.core.onboarding import (
     UNSUPPORTED,
 )
 from app.core.onboarding import can_transition as _can_transition
+from app.core.timezones import local_date, resolve_zone_name
 from app.extraction.browser import (
     BrowserRenderFetchStrategy,
     BrowserStructuredResponseFetchStrategy,
@@ -575,6 +576,11 @@ async def _fetch_legacy_pages(
     request_url = config.api_endpoint or config.listing_url
     if not request_url:
         raise AppError("Site configuration has no listing_url or api_endpoint", status_code=409)
+    # A pattern may complete its endpoint (LiveWhale only returns venues and
+    # descriptions when they are asked for by name).
+    prepare = getattr(pattern, "request_url", None)
+    if callable(prepare):
+        request_url = prepare(request_url, config)
     visited_urls: set[str] = set()
     seen_hashes: set[str] = set()
     current_request: FetchRequest | None = FetchRequest(
@@ -651,7 +657,7 @@ async def _fetch_recipe_pages(
     pagination with bounded stop conditions. Same fetch strategy, SSRF, and
     byte caps as every other request — no Playwright at import time."""
     recipe = config.request_recipe
-    timezone = config.timezone or fallback_timezone
+    timezone = resolve_zone_name(config.timezone, fallback_timezone)
     now = datetime.now(UTC)
     seen_hashes: set[str] = set()
     first_response: FetchResponse | None = None
@@ -728,6 +734,13 @@ async def _execute_pipeline(
     (preview), no extra pages are fetched."""
     registration = REGISTRY.get(pattern_name)
     pattern = registration.extractor
+    # Patterns that turn a source's UTC instants into local times read
+    # config.timezone; without this a source that leaves it blank (it "uses
+    # the city timezone") had its times converted to UTC's wall clock, and a
+    # bare "EST" ignored daylight saving time.
+    effective_timezone = resolve_zone_name(config.timezone, fallback_timezone)
+    if effective_timezone and effective_timezone != config.timezone:
+        config = config.model_copy(update={"timezone": effective_timezone})
 
     warnings: list[str] = []
     all_candidates: list[EventCandidate] = []
@@ -782,7 +795,7 @@ async def _execute_pipeline(
     # default) leaves the list untouched. Shared by preview and persistent runs
     # so quality reflects the events that will actually be stored.
     normalized, recurrence_warnings = expand_candidates(
-        normalized, config, reference_date=datetime.now(UTC).date()
+        normalized, config, reference_date=local_date(config.timezone)
     )
     warnings.extend(recurrence_warnings)
     # Geographic decision (Phase 8G), recorded once here as provenance so both
@@ -800,6 +813,28 @@ async def _execute_pipeline(
         last_response=response,
         response_hash_by_page=response_hash_by_page,
     )
+
+
+def _empty_result_warning(
+    *, blocked: bool, events_found: int, valid_before_filters: int
+) -> str | None:
+    """Why a run that reached the source produced nothing, so a failed run says
+    whether to look at the page or at the records. A page that loads but
+    yields no event records is never read as healthy: an empty calendar and a
+    changed layout look the same from here, and both need a person to look."""
+    if blocked:
+        return None
+    if events_found == 0:
+        return (
+            "no_event_records_found: the source responded but no events were read "
+            "(an empty calendar, or the page layout changed)"
+        )
+    if valid_before_filters == 0:
+        return (
+            f"all_records_rejected: {events_found} records were read but none had "
+            "the required fields (the field mapping may be out of date)"
+        )
+    return None
 
 
 def _compute_status(*, blocked: bool, events_found: int, events_valid: int) -> str:
@@ -1154,6 +1189,13 @@ async def run_extraction(
         blocked=blocked, events_found=len(outcome.outcomes), events_valid=len(valid)
     )
     events_valid = len(valid)
+    health_note = _empty_result_warning(
+        blocked=blocked, events_found=len(outcome.outcomes), valid_before_filters=len(
+            [c for c, result in outcome.outcomes if result.is_valid]
+        ),
+    )
+    if health_note:
+        warnings.append(health_note)
 
     # Outside the source's own town (Eventbrite's city pages reach well past
     # it). Only where no admin-set geographic filter already says what the

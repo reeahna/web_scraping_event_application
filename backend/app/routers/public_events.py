@@ -5,11 +5,13 @@ from app.config import get_settings
 from app.core.exceptions import NotFoundError
 from app.core.templating import render
 from app.dependencies import DbSession, OptionalCurrentUser
+from app.repositories.city import get_city
 from app.repositories.extraction_run import get_latest_successful_run_for_website
 from app.repositories.public_events import (
-    current_public_date,
     get_public_event,
     list_public_map_points,
+    local_today,
+    town_today,
 )
 from app.routers.home import _Filters
 from app.services import seo
@@ -24,8 +26,14 @@ def map_data(request: Request, db: DbSession) -> JSONResponse:
     """Map markers for the current filters — only publicly-visible, matching
     events that have usable coordinates. Carries nothing sensitive (no
     provenance, raw records, configuration, or correction history)."""
-    today = current_public_date()
+    today = local_today(db)
     filters = _Filters(request.query_params, today=today)
+    city = get_city(db, filters.city_id) if filters.city_id is not None else None
+    if city is not None:
+        # One town's map: its own date, so "today" and "this weekend" match
+        # the town page.
+        today = town_today(city)
+        filters = _Filters(request.query_params, today=today)
     # Like the listing, the map is always one town's: without a town there is
     # nothing to show, rather than every city's events at once.
     if filters.city_id is None:
@@ -36,7 +44,7 @@ def map_data(request: Request, db: DbSession) -> JSONResponse:
 
 @router.get("/{event_id}", response_class=HTMLResponse)
 def event_detail(event_id: int, request: Request, current_user: OptionalCurrentUser, db: DbSession):
-    event = get_public_event(db, event_id, today=current_public_date())
+    event = get_public_event(db, event_id, today=local_today(db))
     if event is None:
         raise NotFoundError("Event not found")
     if event.city is not None:
