@@ -37,6 +37,7 @@ from app.services.ai_categorizer import (
     GeminiQuotaExceeded,
     GeminiTransportError,
     GroqCategorizer,
+    SplitPrompt,
 )
 from app.services.ai_label_state import (
     NEEDS_REVIEW,
@@ -89,6 +90,8 @@ def make_categorizer(
         return GroqCategorizer(
             settings.groq_api_key or "",
             settings.groq_model,
+            description_chars=settings.ai_description_chars,
+            prompt_layout=settings.groq_prompt_layout,
             timeout=settings.gemini_timeout_seconds,
             min_interval_seconds=(
                 settings.groq_min_interval_seconds
@@ -108,6 +111,7 @@ def make_categorizer(
         ),
         max_retries=settings.gemini_max_retries if max_retries is None else max_retries,
         fallback_model=settings.gemini_fallback_model,
+        description_chars=settings.ai_description_chars,
     )
 
 
@@ -277,6 +281,32 @@ def apply_labels(
     return labeled, hidden
 
 
+def estimate_tokens(text: str) -> int:
+    """A deliberately high token estimate (3.5 characters a token) for
+    keeping requests under a per-minute token limit."""
+    return int(len(text) / 3.5) + 1
+
+
+def fit_to_token_budget(
+    categorizer: GeminiCategorizer,
+    options: list[CategoryOption],
+    events: list[EventToClassify],
+    max_tokens: int,
+) -> list[EventToClassify]:
+    """The longest leading run of `events` whose prompt is estimated at or
+    under max_tokens (always at least one event)."""
+    def size(items: list[EventToClassify]) -> int:
+        prompt = categorizer._build_prompt(options, items)
+        if isinstance(prompt, SplitPrompt):
+            return estimate_tokens(prompt.instructions + prompt.events)
+        return estimate_tokens(prompt)
+
+    fitted = list(events)
+    while len(fitted) > 1 and size(fitted) > max_tokens:
+        fitted.pop()
+    return fitted
+
+
 def _skip_reason(label: EventLabel | None) -> str:
     if label is None:
         return "the model left this event out of its answer"
@@ -433,6 +463,11 @@ def drain_categorization_queue(
         # per tick already stays inside the rate limit. Fail fast on a 429 (0
         # retries) so the tick's cooldown kicks in instead of burning quota.
         with make_categorizer(min_interval_seconds=0.0, max_retries=0) as categorizer:
+            max_tokens = get_settings().groq_max_prompt_tokens
+            if provider == "groq" and max_tokens > 0:
+                to_classify = fit_to_token_budget(categorizer, options, to_classify, max_tokens)
+                kept = {item.id for item in to_classify}
+                events = [event for event in events if event.id in kept]
             try:
                 labels = categorizer.classify_batch(options, to_classify)
             except GeminiQuotaExceeded:

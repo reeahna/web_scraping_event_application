@@ -155,6 +155,11 @@ without any of it.
 | `UNSPLASH_ACCESS_KEY` | unset | Placeholder photos for imageless events |
 | `GROQ_API_KEY` | unset | AI categorization of new events with Groq (used instead of Gemini when set) |
 | `GROQ_MODEL` | `openai/gpt-oss-120b` | Groq model for categorization |
+| `AI_DESCRIPTION_CHARS` | `600` | How much of each event's description the AI labeler reads |
+| `GROQ_PROMPT_LAYOUT` | `single` | `split` sends the fixed instructions as their own message so Groq can cache them |
+| `GROQ_BATCH_SIZE` | `25` | Events per labeling request (trimmed further when `GROQ_MAX_PROMPT_TOKENS` is set) |
+| `GROQ_MAX_PROMPT_TOKENS` | `0` (off) | Estimated prompt size a labeling request is cut down to (`6500` suits an 8K tokens-per-minute limit) |
+| `GROQ_EVAL_CANDIDATE_MODEL` | `openai/gpt-oss-20b` | Model the AI labeling page's evaluation compares with `GROQ_MODEL` |
 | `GEMINI_API_KEY` | unset | AI categorization with Gemini, when no Groq key is set |
 | `GEMINI_FALLBACK_MODEL` | unset | Second Gemini model to try when the main one answers 503 "overloaded" |
 | `GEOCODING_ENABLED`, `GEOCODING_PROVIDER` | off | Fill in map coordinates from addresses |

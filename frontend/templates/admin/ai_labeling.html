@@ -88,6 +88,37 @@
 </section>
 
 <section class="wf-card">
+  <h2>Model evaluations</h2>
+  <p class="audit-meta">Labels about 100 sample events with the current setup, a leaner prompt
+    (shorter descriptions, cacheable instructions, bigger batches) and the cheaper model
+    ({{ candidate_model }}), and compares their categories and keep decisions. It only reads events and
+    changes nothing. While it runs, the label queue pauses; it makes about one request a minute and
+    usually finishes within a few hours, depending on how much daily quota is left.</p>
+  {% set busy = evaluations | selectattr("status", "equalto", "running") | list %}
+  {% if not busy %}
+  <form method="post" action="/admin/ai-labeling/evaluations" class="inline-form">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}" />
+    <button type="submit">Start an evaluation</button>
+  </form>
+  {% endif %}
+  <table>
+    <thead><tr><th>Started</th><th>Status</th><th>Requests</th><th>Report</th></tr></thead>
+    <tbody>
+      {% for evaluation in evaluations %}
+      <tr>
+        <td>{{ evaluation.created_at | admin_datetime }}</td>
+        <td>{{ evaluation.status }}</td>
+        <td>{{ evaluation.requests_made }}</td>
+        <td><a href="/admin/ai-labeling/evaluations/{{ evaluation.id }}">Open</a></td>
+      </tr>
+      {% else %}
+      <tr><td colspan="4">None yet.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</section>
+
+<section class="wf-card">
   <h2>Recent requests</h2>
   <p class="audit-meta">Groq's "requests" figures are per day and its "tokens" figures per minute. A
     rate-limited request names the limit it hit (TPD is tokens per day).</p>
