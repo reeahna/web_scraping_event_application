@@ -10,10 +10,11 @@ newest first. The app reads this file to build two pages:
 This is not a log of every change. Git history and the pull requests are the full
 technical record; this file only announces things that are genuinely new.
 
-Version numbers follow [semantic versioning](https://semver.org): the first number
-goes up for a big change in how the site works, the second for new features, the
-third when a release only adds admin tools. The newest released version below is
-the app's version and shows on What's new.
+Version numbers follow Bulletin's own convention (shaped like semantic versioning,
+but not strict SemVer): the first number goes up for a big change in how the site
+works, the second for a release with something new for everyone, the third for a
+release that only adds admin tools. The newest released version below is the app's
+version and shows on What's new.
 
 ## What belongs here
 
@@ -123,10 +124,11 @@ lines. Lines may use `**bold**`, `` `code` `` and `[links](https://...)`.
 - New extraction patterns for paged JSON feeds and Campus Labs Engage. (#35)
 - Previewed drafts can be approved directly. (#36)
 
-## [1.5.0] - 2026-10-09 - Social sign-in and calendar feeds
+## [1.5.0] - 2026-10-09 - Map and social sign-in
 
 ### For everyone
 - Sign in with Google, Microsoft or Facebook. Bulletin no longer stores passwords. (#11, #12, #13)
+- The events map shows events. (#14)
 - AI tools and calendar apps can read the site, including a calendar feed for each town. (#10)
 
 ### Admin and behind the scenes
