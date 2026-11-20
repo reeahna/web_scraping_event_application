@@ -33,17 +33,17 @@ lines. Lines may use `**bold**`, `` `code` `` and `[links](https://...)`.
 ## [Unreleased]
 
 ### For everyone
-- **Today** and **This weekend** now go by the town's own clock. In the evening, Bulletin was already on tomorrow's date (it was using UTC), so Today showed tomorrow's events and tonight's disappeared early. Event times are also shown in the town's time, so an 8 PM show no longer appears as 1 AM the next day, and events within a day are listed in time order. (#PR)
-- Indiana University events now show their real start and end times, venue, description and picture instead of "Time TBD" and "Venue TBD", all-day events no longer show a made-up 5:00 AM start, and every session of a repeating IU event gets its own listing. (#PR)
-- Constellation Stage & Screen shows now include their curtain times. (#PR)
+- **Today** and **This weekend** now go by the town's own clock. In the evening, Bulletin was already on tomorrow's date (it was using UTC), so Today showed tomorrow's events and tonight's disappeared early. Event times are also shown in the town's time, so an 8 PM show no longer appears as 1 AM the next day, and events within a day are listed in time order. (#96)
+- Indiana University events now show their real start and end times, venue, description and picture instead of "Time TBD" and "Venue TBD", all-day events no longer show a made-up 5:00 AM start, and every session of a repeating IU event gets its own listing. (#96)
+- Constellation Stage & Screen shows now include their curtain times. (#96)
 - On a town's page, events already underway (the ones marked "Until") now sit under a small **Multi-day events** heading, with a thin line and a **Single-day events** heading where the dated events begin. (#94)
 - Fewer listings meant for young children or teachers: children's art programs, "Kids Eat Free" nights and teaching-tool demos no longer show. (#91)
 
 ### Admin and behind the scenes
-- Times a source gives in UTC (or with an offset) are converted to the event's own timezone during import, using the source's timezone or else its town's, with daylight saving time. A bare "EST"-style setting is read as the region it stands for, so it no longer drops summer time. Calendar (ICS) feeds keep their UTC and TZID times for this conversion too. (#PR)
-- The IU LiveWhale feed is asked for its location, description and image fields, reads its end time and all-day flag, and keys each session of a repeating event separately. The next import corrects existing IU events in place (dates, times, venues, end dates); nothing is deleted, and administrator corrections are kept. (#PR)
-- A run that reaches a source but reads no events now says so in its warnings ("no events were read" or "records were read but none had the required fields"), so an empty calendar or a changed page is easier to tell apart from a block. (#PR)
-- Three Bloomington sources are queued for onboarding: Visit Bloomington, the Bloomington Convention Center's public events and Bloomington Online. (#PR)
+- Times a source gives in UTC (or with an offset) are converted to the event's own timezone during import, using the source's timezone or else its town's, with daylight saving time. A bare "EST"-style setting is read as the region it stands for, so it no longer drops summer time. Calendar (ICS) feeds keep their UTC and TZID times for this conversion too. (#96)
+- The IU LiveWhale feed is asked for its location, description and image fields, reads its end time and all-day flag, and keys each session of a repeating event separately. The next import corrects existing IU events in place (dates, times, venues, end dates); nothing is deleted, and administrator corrections are kept. (#96)
+- A run that reaches a source but reads no events now says so in its warnings ("no events were read" or "records were read but none had the required fields"), so an empty calendar or a changed page is easier to tell apart from a block. (#96)
+- Three Bloomington sources are queued for onboarding: Visit Bloomington, the Bloomington Convention Center's public events and Bloomington Online. (#96)
 - The Visitors page now shows anonymous visitors who share a network or browser with someone signed in. Before, a signed-out visit from the same Wi-Fi and browser as a signed-in person was added to that person's row instead of showing as an anonymous visitor. (#95)
 - Calendar feeds that leave some events without their own link now import: those events link to the source's page, instead of the whole import failing with a server error. (#93)
 - Admin Notifications has a **Mark all as read** button that clears every unread notification at once and resets the unread count in the admin menu. (#92)
