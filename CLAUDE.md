@@ -42,12 +42,19 @@ python -m pytest tests/test_public_ui.py -q   # one file
 - **Absolutely no em dashes (—).** Not in UI text, templates, docs, code
   comments, commit messages or PR descriptions. Use a comma, colon, period or
   parentheses instead. (Older files still have some; don't add new ones.)
-- Every pull request adds a line to `CHANGELOG.md` under `## [Unreleased]`:
-  `### For everyone` for anything a visitor or signed-in user would notice
-  (written for them, no jargon), `### Admin and behind the scenes` for the rest.
-  End it with the PR number, e.g. `(#67)`. The app builds the public What's new
-  page and the admin Version history from this file; see its header. Cut a release
-  with `python scripts/release.py minor|patch|major` from `backend/`.
+- `CHANGELOG.md` is Bulletin's version history (the public What's new page and
+  the admin Version history), not a log of every PR. Add a line under
+  `## [Unreleased]` only when the PR adds something genuinely new: a feature,
+  page, tool or capability someone can now use. Bug fixes, scraper and filter
+  fixes, refactors, performance, dependency, security, migration, test and CI
+  changes add no line, even when they are big. `### For everyone` is for new
+  things a visitor or signed-in user gets (written for them, no jargon),
+  `### Admin and behind the scenes` for new admin tools. Describe what the reader
+  can now do; don't copy the PR title or commit message. End it with the PR
+  number, e.g. `(#67)`. The full rule and examples are at the top of
+  `CHANGELOG.md`. The nightly release job only moves what is already there; cut
+  a release by hand with `python scripts/release.py minor|patch|major` from
+  `backend/`.
 - Never commit secrets or `.env`; configuration is environment variables
   (`backend/.env.example` lists them, `backend/README.md` explains them).
 - There are no passwords: sign-in is Google/Microsoft/Facebook/X/Yahoo OAuth only.
