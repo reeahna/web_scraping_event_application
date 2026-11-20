@@ -362,6 +362,16 @@
     {% for a in workflow.advanced_actions %}{{ action_button(a, csrf_token) }}{% endfor %}
   </div>
 
+  {% if can_recheck and can_test %}
+  <h3>Recheck stored dates, times and venues</h3>
+  <p class="audit-meta">Reads current and upcoming events that show 12:00 AM, have no venue, or were not refreshed by the latest import back from the source by their own id, and lists the corrections. Nothing changes until you apply them on the next page.</p>
+  <form method="post" action="/admin/websites/{{ website.id }}/recheck-events" class="inline-form">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}" />
+    <input type="hidden" name="apply" value="0" />
+    <button type="submit" class="wf-secondary">Preview recheck</button>
+  </form>
+  {% endif %}
+
   {% if website.onboarding_status in ("draft", "unsupported", "needs_review") and can_update %}
   <h3>Manual pattern selection</h3>
   <p class="audit-meta">A fallback when automatic recovery cannot resolve the source. Selecting a pattern saves a <em>draft only</em> — it still requires preview, validation and normal approval.</p>

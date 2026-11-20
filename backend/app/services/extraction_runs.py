@@ -76,6 +76,7 @@ from app.repositories.event import (
     count_upcoming_events_not_seen,
     create_event_from_candidate,
     described_event_urls,
+    event_urls_with_time,
     event_urls_with_venue,
     find_existing_event_for_candidate,
     update_event,
@@ -728,6 +729,7 @@ async def _execute_pipeline(
     fallback_timezone: str | None,
     described_urls: frozenset[str] | None = None,
     venue_urls: frozenset[str] = frozenset(),
+    timed_urls: frozenset[str] = frozenset(),
 ) -> _PipelineOutcome:
     """`described_urls` turns on the detail-page lookup for events whose
     listing has no description or no venue, skipping URLs already stored with a
@@ -790,6 +792,8 @@ async def _execute_pipeline(
                 listing_html=first_response.text if first_response is not None else None,
                 known_described_urls=described_urls,
                 known_venue_urls=venue_urls,
+                known_timed_urls=timed_urls,
+                timezone=config.timezone,
             )
             warnings.extend(lookup_warnings)
 
@@ -1176,6 +1180,7 @@ async def run_extraction(
         fallback_timezone=_fallback_timezone(website),
         described_urls=described_event_urls(db, website.id),
         venue_urls=event_urls_with_venue(db, website.id),
+        timed_urls=event_urls_with_time(db, website.id),
     )
     completed_at = datetime.now(UTC)
 

@@ -1,0 +1,65 @@
+{% extends "admin_base.html" %}
+
+{% block title %}Recheck events: {{ website.name }}{% endblock %}
+
+{% block admin_content %}
+<h1>Recheck stored events</h1>
+<p class="audit-meta"><a href="/admin/websites/{{ website.id }}">&laquo; Back to {{ website.name }}</a></p>
+
+{% if not report.supported %}
+<p>This source's pattern can't read a single event back by its id, so its events are corrected by the next import instead.</p>
+{% else %}
+<table>
+  <tbody>
+    <tr><th>Mode</th><td>{% if report.applied %}Applied{% if report.run_id %} (<a href="/admin/websites/{{ website.id }}/runs/{{ report.run_id }}">run #{{ report.run_id }}</a>){% endif %}{% else %}Preview only, nothing changed{% endif %}</td></tr>
+    <tr><th>Events selected</th><td>{{ report.selected }}</td></tr>
+    <tr><th>Read back from the source</th><td>{{ report.checked }}</td></tr>
+    <tr><th>{% if report.applied %}Corrected{% else %}Would correct{% endif %}</th><td>{{ report.changes | length }}</td></tr>
+    <tr><th>Already correct</th><td>{{ report.unchanged }}</td></tr>
+    <tr><th>Need a person to look</th><td>{{ report.reviews | length }}</td></tr>
+    <tr><th>Left for a later recheck (request limit)</th><td>{{ report.over_limit }}</td></tr>
+  </tbody>
+</table>
+
+{% if report.changes and not report.applied %}
+<form method="post" action="/admin/websites/{{ website.id }}/recheck-events" class="inline-form"
+      data-confirm="Apply {{ report.changes | length }} correction(s) to {{ website.name }} events?">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token }}" />
+  <input type="hidden" name="apply" value="1" />
+  <button type="submit" class="wf-secondary">Apply these corrections</button>
+</form>
+{% endif %}
+
+{% if report.changes %}
+<h2>{% if report.applied %}Corrected{% else %}Proposed corrections{% endif %}</h2>
+<table>
+  <thead><tr><th>Event</th><th>Field</th><th>Stored</th><th>Source</th></tr></thead>
+  <tbody>
+    {% for change in report.changes %}
+    {% for field, values in change.changes.items() %}
+    <tr>
+      {% if loop.first %}<td rowspan="{{ change.changes | length }}"><a href="/admin/events/{{ change.event_id }}">#{{ change.event_id }}</a> {{ change.title }}</td>{% endif %}
+      <td>{{ field }}</td>
+      <td>{{ values[0] if values[0] is not none else "(empty)" }}</td>
+      <td>{{ values[1] if values[1] is not none else "(empty)" }}</td>
+    </tr>
+    {% endfor %}
+    {% endfor %}
+  </tbody>
+</table>
+{% endif %}
+
+{% if report.reviews %}
+<h2>Need a person to look</h2>
+<p class="audit-meta">These were left unchanged because they could not be matched to exactly one source record and occurrence.</p>
+<table>
+  <thead><tr><th>Event</th><th>Why</th></tr></thead>
+  <tbody>
+    {% for review in report.reviews %}
+    <tr><td><a href="/admin/events/{{ review.event_id }}">#{{ review.event_id }}</a> {{ review.title }}</td><td>{{ review.reason }}</td></tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% endif %}
+{% endif %}
+{% endblock %}
