@@ -135,6 +135,12 @@ class ExtractionResult:
     warnings: tuple[str, ...]
     errors: tuple[str, ...]
     evidence: dict[str, Any]
+    # Of events_updated (stored events seen again), how many had visitor-facing
+    # changes; plus events newly cancelled at the source, and upcoming events
+    # this source no longer listed. Only persistent runs fill these in.
+    events_changed: int = 0
+    events_cancelled: int = 0
+    events_missing: int = 0
 
 
 @dataclass(frozen=True)

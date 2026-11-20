@@ -2387,6 +2387,14 @@ a.metric-tile-link:hover .metric-label {
   font-size: var(--text-section);
 }
 
+/* "Listings checked ...": small metadata under the count, never a badge. */
+.listings-checked {
+  margin-top: var(--space-2);
+  color: var(--muted);
+  font-size: var(--font-sm);
+  line-height: 1.5;
+}
+
 .map-section {
   margin-bottom: var(--space-5);
 }
@@ -3028,6 +3036,15 @@ button.toggle-on:focus-visible .toggle-label-off { display: inline; }
 
 .event-detail-facts dd {
   overflow-wrap: anywhere;
+}
+
+/* "Event information last updated ...", under the source line. */
+.event-updated {
+  padding-top: var(--space-3);
+  border-top: 1px solid var(--border);
+  color: var(--muted);
+  font-size: var(--font-sm);
+  line-height: 1.5;
 }
 
 /* ==========================================================================

@@ -9,6 +9,7 @@ from app.core.safe_regex import validate_safe_regex
 from app.models.categorization_rule import CategorizationRule
 from app.models.event import Event
 from app.models.event_category import EventCategory
+from app.services.event_freshness import mark_if_changed, visitor_snapshot
 
 RULE_TYPES = (
     "source_mapping",
@@ -200,16 +201,21 @@ def set_ai_category(
     """Apply a category chosen by the Gemini categorizer. Writes the automatic
     category only and marks its source "ai"; an administrator's manual override
     (category_override_id) is a separate field and is never touched here. Does
-    not commit — the caller owns the transaction."""
+    not commit: the caller owns the transaction. A label that changes the
+    category a visitor sees counts as a content update."""
+    before = visitor_snapshot(event)
     event.category_id = category.id
     event.categorization_rule_id = None
     event.category_source = "ai"
     event.ai_prompt_version = prompt_version
+    mark_if_changed(event, before)
 
 
 def apply_categorization(db: Session, event: Event) -> CategorizationResult:
+    before = visitor_snapshot(event)
     result = categorize_event(db, event)
     _set_category_fields(event, result)
+    mark_if_changed(event, before)
     db.commit()
     db.refresh(event)
     return result
