@@ -21,7 +21,14 @@ the stored row in place:
 * a field the source leaves empty never clears a stored value, except an end
   the source explicitly says is absent, and an all-day event's times;
 * nothing is deleted or created; a corrected row gets a provenance record
-  tied to a "recheck" run, so its history shows what changed and from where.
+  tied to a "recheck" run, so its history shows what changed and from where;
+* a row the source confirms (corrected, or already right) is recorded as
+  checked: its "last seen by a check" time (`scraped_at`) moves forward and
+  it gets a provenance record from the recheck run. Its `content_updated_at`
+  moves only when a visitor-facing detail actually changed. A confirmed row
+  is not selected again until its details change, so the next preview moves
+  on to the events not yet confirmed. Rows that could not be read or matched
+  are not marked and stay in the selection for a person to look at.
 
 Dry run by default: `apply=False` reports the changes without writing.
 """
@@ -34,7 +41,7 @@ from datetime import UTC, date, datetime, time, timedelta
 from typing import Any
 from urllib.parse import urlsplit
 
-from sqlalchemy import or_
+from sqlalchemy import or_, select
 from sqlalchemy.orm import Session
 
 from app.core.timezones import local_date, resolve_zone_name
@@ -49,6 +56,8 @@ from app.extraction.patterns import livewhale_json
 from app.extraction.registry import REGISTRY
 from app.extraction.types import EventCandidate, FetchRequest
 from app.models.event import Event
+from app.models.event_provenance import EventProvenance
+from app.models.extraction_run import ExtractionRun
 from app.models.website import Website
 from app.repositories.event_provenance import create_event_provenance
 from app.repositories.extraction_run import (
@@ -117,13 +126,48 @@ def _zone_name(website: Website, config) -> str | None:
     return resolve_zone_name(config.timezone, _fallback_timezone(website))
 
 
+def _recheck_provenance(website: Website):
+    """Provenance records a recheck of this website wrote."""
+    return (
+        select(EventProvenance.event_id, EventProvenance.created_at)
+        .join(ExtractionRun, ExtractionRun.id == EventProvenance.extraction_run_id)
+        .where(
+            EventProvenance.website_id == website.id,
+            ExtractionRun.run_type == "recheck",
+        )
+    )
+
+
+def _confirmed_at(db: Session, website: Website) -> dict[int, datetime]:
+    """When a recheck last confirmed each of this website's events against
+    the source (latest provenance record of a "recheck" run)."""
+    rows = db.execute(_recheck_provenance(website)).all()
+    confirmed: dict[int, datetime] = {}
+    for event_id, created_at in rows:
+        created_at = _aware(created_at)
+        if created_at is not None and (
+            event_id not in confirmed or created_at > confirmed[event_id]
+        ):
+            confirmed[event_id] = created_at
+    return confirmed
+
+
+def _aware(value: datetime | None) -> datetime | None:
+    if value is not None and value.tzinfo is None:
+        return value.replace(tzinfo=UTC)
+    return value
+
+
 def suspect_events(
     db: Session, website: Website, *, zone_name: str | None, today: date | None = None
 ) -> list[Event]:
     """Events of this website worth reading back: current or upcoming (from
     yesterday, in the town's own calendar, so a day shifted forward by the
     old UTC reading is caught), from the source's own records, and either at
-    a bare 12:00 AM, without a venue, or not refreshed by the latest import."""
+    a bare 12:00 AM, without a venue, or not refreshed by the latest import.
+    Rows a recheck already confirmed are left out unless their details
+    changed since (an import or an administrator's correction); such a row
+    is read back again whatever its time and venue now look like."""
     since = (today or local_date(zone_name)) - timedelta(days=1)
     latest = get_latest_successful_run_for_website(db, website.id)
     stale = [Event.scraped_at < latest.started_at] if latest is not None else []
@@ -144,23 +188,28 @@ def suspect_events(
                 Event.venue.ilike("%tb%"),
                 Event.venue.ilike("%n/a%"),
                 Event.venue.ilike("none"),
+                # Confirmed earlier: kept only if changed since (below).
+                Event.id.in_(_recheck_provenance(website).with_only_columns(
+                    EventProvenance.event_id
+                )),
             ),
         )
         .order_by(Event.start_date, Event.id)
         .all()
     )
-    latest_start = latest.started_at if latest is not None else None
-    if latest_start is not None and latest_start.tzinfo is None:
-        latest_start = latest_start.replace(tzinfo=UTC)
+    latest_start = _aware(latest.started_at) if latest is not None else None
+    confirmed = _confirmed_at(db, website)
 
     def suspect(event: Event) -> bool:
+        checked = confirmed.get(event.id)
+        if checked is not None:
+            changed = _aware(event.content_updated_at)
+            return changed is not None and changed > checked
         if event.start_time == time(0):
             return True
         if not has_venue({"venue": event.venue}) and not event.corrected_venue:
             return True
-        scraped = event.scraped_at
-        if scraped is not None and scraped.tzinfo is None:
-            scraped = scraped.replace(tzinfo=UTC)
+        scraped = _aware(event.scraped_at)
         return latest_start is not None and scraped is not None and scraped < latest_start
 
     return [event for event in rows if suspect(event)]
@@ -295,6 +344,7 @@ async def recheck_website_events(
         body_hash = hashlib.sha256(response.text.encode("utf-8")).hexdigest()
         fetched[source_id] = (normalized, response.final_url, body_hash)
 
+    # Every row the source confirmed, corrected or not.
     matched: list[tuple[Event, EventCandidate, dict[str, tuple[Any, Any]], str]] = []
     for source_id, rows in by_source.items():
         if source_id not in fetched:
@@ -312,10 +362,10 @@ async def recheck_website_events(
                 report.reviews.append(RecheckReview(event.id, event.title, candidate))
                 continue
             changes = _proposed(event, candidate)
-            if not changes:
+            if changes:
+                report.changes.append(RecheckChange(event.id, event.title, changes))
+            else:
                 report.unchanged += 1
-                continue
-            report.changes.append(RecheckChange(event.id, event.title, changes))
             matched.append((event, candidate, changes, result[2]))
 
     if not apply or not matched:
@@ -332,19 +382,23 @@ async def recheck_website_events(
         final_url=None,
         events_found=report.checked,
         events_valid=report.checked,
-        events_updated=len(matched),
+        events_updated=len(report.changes),
         warnings=[f"recheck_needs_review:{len(report.reviews)}"] if report.reviews else [],
         started_at=started_at,
         completed_at=datetime.now(UTC),
         initiating_user_id=triggered_by_user_id,
     )
     version = REGISTRY.get(config.pattern_name).version
+    checked_at = datetime.now(UTC)
     for event, candidate, changes, body_hash in matched:
-        before = visitor_snapshot(event)
-        for field, (_, value) in changes.items():
-            setattr(event, field, value)
-        mark_if_changed(event, before)
-        update_fingerprint_and_duplicates(db, event, commit=False)
+        # Seen by a check either way; content_updated_at only on a real change.
+        event.scraped_at = checked_at
+        if changes:
+            before = visitor_snapshot(event)
+            for field, (_, value) in changes.items():
+                setattr(event, field, value)
+            mark_if_changed(event, before, now=checked_at)
+            update_fingerprint_and_duplicates(db, event, commit=False)
         create_event_provenance(
             db,
             event_id=event.id,
@@ -362,7 +416,7 @@ async def recheck_website_events(
             },
             transformation_history=[
                 *candidate.transformation_history,
-                *(f"recheck:{field}" for field in changes),
+                *((f"recheck:{field}" for field in changes) if changes else ["recheck:confirmed"]),
             ],
             commit=False,
         )
