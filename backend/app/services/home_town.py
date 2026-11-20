@@ -440,12 +440,26 @@ def is_outside_home_town(
     *, address: str | None, venue: str | None, town: str | None, state: str | None
 ) -> bool:
     """True only when the event's own address names a town other than `town`
-    (or the same town name in another state)."""
+    (or the same town name in another state).
+
+    The venue is read when the address names no town. It is also read when
+    the address names the home town but the venue itself names another town
+    *and its state* ("Athens, Ga."): some aggregators fill every event's
+    address with their own town, while the venue says where the event is."""
     if not town:
         return False
-    found = address_town(address) or address_town(venue)
-    if found is None:
+    found_address = address_town(address)
+    if found_address is not None and _names_other_town(found_address, town, state):
+        return True
+    found_venue = address_town(venue)
+    if found_venue is None:
         return False
+    if found_address is None:
+        return _names_other_town(found_venue, town, state)
+    return found_venue[1] is not None and _names_other_town(found_venue, town, state)
+
+
+def _names_other_town(found: tuple[str, str | None], town: str, state: str | None) -> bool:
     found_town, found_state = found
     home_state = _state_code(state)
     if home_state and found_state and found_state != home_state:
