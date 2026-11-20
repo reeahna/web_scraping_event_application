@@ -14,8 +14,8 @@
     <tr><th>Configuration version</th><td>{{ run.configuration_version if run.configuration_version is not none else "—" }}</td></tr>
     <tr><th>Source URL</th><td><code>{{ run.source_url }}</code></td></tr>
     <tr><th>Final URL</th><td><code>{{ run.final_url or "—" }}</code></td></tr>
-    <tr><th>Started</th><td>{{ run.started_at }}</td></tr>
-    <tr><th>Completed</th><td>{{ run.completed_at or "—" }}</td></tr>
+    <tr><th>Started</th><td>{{ run.started_at | admin_datetime }}</td></tr>
+    <tr><th>Completed</th><td>{{ run.completed_at | admin_datetime }}</td></tr>
     <tr><th>Initiating user</th><td>{% if run.initiating_user_id %}user #{{ run.initiating_user_id }}{% else %}(system){% endif %}</td></tr>
     <tr><th>Correlation ID</th><td>{{ run.correlation_id or "—" }}</td></tr>
     <tr><th>Events found / valid / rejected</th><td>{{ run.events_found }} / {{ run.events_valid }} / {{ run.events_rejected }}</td></tr>

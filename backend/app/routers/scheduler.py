@@ -29,7 +29,7 @@ from app.models.website import Website
 from app.services.audit import record_audit
 from app.services.bulk_import import active_bulk_run, create_bulk_import, plan_bulk_import
 from app.services.rbac import require_permission, user_has_permission
-from app.services.schedule_admin import describe_scheduler_process, format_admin_datetime
+from app.services.schedule_admin import admin_time_html, describe_scheduler_process
 from app.services.scheduler import (
     evaluate_eligibility,
     get_or_create_state,
@@ -65,7 +65,7 @@ def operations(request: Request, db: DbSession, current_user: ViewSites):
             "recent_runs": recent,
             "active_run": active_bulk_run(db),
             "can_run": user_has_permission(db, current_user, "sites.approve"),
-            "format_admin_datetime": format_admin_datetime,
+            "format_admin_datetime": admin_time_html,
         },
     )
 
@@ -111,7 +111,7 @@ def bulk_import_detail(run_id: int, request: Request, db: DbSession, current_use
         {
             "current_user": current_user,
             "run": run,
-            "format_admin_datetime": format_admin_datetime,
+            "format_admin_datetime": admin_time_html,
         },
     )
 

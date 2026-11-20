@@ -23,12 +23,12 @@
     <tr><th>Pagination indicators</th><td>{{ report.pagination_indicators or "—" }}</td></tr>
     <tr><th>Fingerprint</th><td><code>{{ report.fingerprint }}</code></td></tr>
     <tr><th>Occurrence count</th><td>{{ report.occurrence_count }}</td></tr>
-    <tr><th>First seen</th><td>{{ report.created_at }}</td></tr>
-    <tr><th>Last seen</th><td>{{ report.last_seen_at }}</td></tr>
+    <tr><th>First seen</th><td>{{ report.created_at | admin_datetime }}</td></tr>
+    <tr><th>Last seen</th><td>{{ report.last_seen_at | admin_datetime }}</td></tr>
     <tr><th>Latest extraction run</th>
       <td>{% if report.latest_extraction_run_id %}<a href="/admin/websites/{{ report.website_id }}/runs/{{ report.latest_extraction_run_id }}">Run #{{ report.latest_extraction_run_id }}</a>{% else %}—{% endif %}</td></tr>
     <tr><th>Assigned to</th><td>{{ report.assigned_user.email if report.assigned_user else "Unassigned" }}</td></tr>
-    <tr><th>Resolved</th><td>{% if report.resolved_at %}{{ report.resolved_at }} by {{ report.resolved_by_user.email if report.resolved_by_user else "—" }}{% else %}Not resolved{% endif %}</td></tr>
+    <tr><th>Resolved</th><td>{% if report.resolved_at %}{{ report.resolved_at | admin_datetime }} by {{ report.resolved_by_user.email if report.resolved_by_user else "—" }}{% else %}Not resolved{% endif %}</td></tr>
   </tbody>
 </table>
 
@@ -45,11 +45,11 @@
 {% if recovery.new_pattern_needed %}
 <p class="badge badge-pending">Preferred structured event endpoint found</p>
 <p class="audit-meta">No registered extraction pattern supports this response shape yet — a reusable
-  pattern is required. No configuration draft or preview was created for this retry.{% if recovery.attempts and recovery.attempts > 1 %} Observed on {{ recovery.attempts }} equivalent retries (last {{ recovery.last_attempt_at }}).{% endif %}</p>
+  pattern is required. No configuration draft or preview was created for this retry.{% if recovery.attempts and recovery.attempts > 1 %} Observed on {{ recovery.attempts }} equivalent retries (last {{ recovery.last_attempt_at | admin_datetime }}).{% endif %}</p>
 {% endif %}
 <table>
   <tbody>
-    <tr><th>Attempted at</th><td>{{ recovery.attempted_at or "—" }}</td></tr>
+    <tr><th>Attempted at</th><td>{{ recovery.attempted_at | admin_datetime }}</td></tr>
     <tr><th>Recovery status</th><td>{{ recovery.status or "—" }}</td></tr>
     <tr><th>Rendered page status</th><td>{{ recovery.rendered_status or "—" }}</td></tr>
     <tr><th>Observed response types</th><td>{% if recovery.observed_response_types %}{{ recovery.observed_response_types | join(", ") }}{% else %}—{% endif %}</td></tr>

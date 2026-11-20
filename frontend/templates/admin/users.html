@@ -13,7 +13,7 @@
     <tr>
       <td><a href="/admin/users/{{ user.id }}/effective-permissions">{{ user.email }}</a></td>
       <td>{{ "Yes" if user.is_active else "No" }}</td>
-      <td>{{ user.last_login_at or "Never" }}</td>
+      <td>{% if user.last_login_at %}{{ user.last_login_at | admin_datetime }}{% else %}Never{% endif %}</td>
       <td>
         {% if user.is_active %}
         <form method="post" action="/admin/users/{{ user.id }}/deactivate" class="inline-form">

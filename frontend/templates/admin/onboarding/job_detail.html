@@ -15,9 +15,9 @@
       <td>{{ job.status.replace("_", " ") }}
         {% if job.status == ready_status %}<span class="badge badge-active">ready for approval</span>{% endif %}</td></tr>
     <tr><th>Last step attempted</th><td>{{ job.current_step or "—" }}</td></tr>
-    <tr><th>Created</th><td>{{ job.created_at }}</td></tr>
-    <tr><th>Started</th><td>{{ job.started_at or "—" }}</td></tr>
-    <tr><th>Completed</th><td>{{ job.completed_at or "—" }}</td></tr>
+    <tr><th>Created</th><td>{{ job.created_at | admin_datetime }}</td></tr>
+    <tr><th>Started</th><td>{{ job.started_at | admin_datetime }}</td></tr>
+    <tr><th>Completed</th><td>{{ job.completed_at | admin_datetime }}</td></tr>
     <tr><th>Retries</th><td>{{ job.retry_count }}</td></tr>
     <tr><th>Correlation ID</th><td><code>{{ job.correlation_id or "—" }}</code></td></tr>
     {% if job.failure_reason %}

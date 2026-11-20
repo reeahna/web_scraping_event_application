@@ -7,7 +7,7 @@
 <h1>{{ city.name }} {{ status_badge(city.is_active) }}</h1>
 
 <p class="audit-meta">
-  Created {{ city.created_at }} · Updated {{ city.updated_at }}
+  Created {{ city.created_at | admin_datetime }} · Updated {{ city.updated_at | admin_datetime }}
 </p>
 
 <table>
