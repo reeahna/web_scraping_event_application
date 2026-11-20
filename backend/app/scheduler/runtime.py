@@ -333,6 +333,14 @@ class SchedulerRuntime:
     async def _categorization_tick(self) -> None:
         if not self._is_leader:
             return
+        # A model evaluation an administrator started takes the tick's one
+        # request while it runs (it keeps its own per-model cooldowns), so the
+        # label queue pauses until it finishes.
+        from app.services.ai_label_eval import run_evaluation_step
+
+        step = await asyncio.to_thread(run_evaluation_step, self._session_factory)
+        if step is not None:
+            return
         now = datetime.now(UTC)
         if self._categorization_cooldown_until and now < self._categorization_cooldown_until:
             return

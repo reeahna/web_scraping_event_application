@@ -186,6 +186,22 @@ class Settings(BaseSettings):
     groq_model: str = "openai/gpt-oss-120b"
     groq_batch_size: int = 25
     groq_min_interval_seconds: float = 60.0
+    # Token savers, measured by the model evaluation on the AI labeling page
+    # before being changed in production. ai_description_chars caps how much
+    # of each event's description is sent (the biggest part of a request).
+    # groq_prompt_layout "split" puts the fixed instructions in the system
+    # message so every request starts with the same text, which Groq can
+    # serve from its prompt cache (cached tokens do not count toward its
+    # rate limits); "single" is the original one-message layout.
+    ai_description_chars: int = 600
+    groq_prompt_layout: str = "single"
+    # A batch is cut down until its prompt is estimated below this many
+    # tokens, so a larger groq_batch_size can never exceed the per-minute
+    # token limit (8K for gpt-oss on the Free plan) once the answer is added.
+    groq_max_prompt_tokens: int = 6500
+    # The cheaper model an administrator can compare with groq_model from the
+    # AI labeling page (it has its own free-tier quota on Groq).
+    groq_eval_candidate_model: str = "openai/gpt-oss-20b"
 
     # Asynchronous geocoding (app.services.geocoding). Disabled by default: the
     # application is fully functional without it and no live third-party

@@ -1,0 +1,94 @@
+{% extends "admin_base.html" %}
+
+{% block title %}AI model evaluation #{{ evaluation.id }}{% endblock %}
+
+{% macro pct(value) %}{% if value is none %}-{% else %}{{ value }}%{% endif %}{% endmacro %}
+{% macro cfg(config) %}{{ config.model }}, {{ config.description_chars }}-character descriptions, {{ config.layout }} prompt, {{ config.batch_size }} per request{% endmacro %}
+
+{% block admin_content %}
+<p><a href="/admin/ai-labeling">&laquo; AI labeling</a></p>
+<h1>AI model evaluation #{{ evaluation.id }}</h1>
+<p class="audit-meta">Status: {{ evaluation.status }}. {{ evaluation.requests_made }} requests so far.
+  <a href="/admin/ai-labeling/evaluations/{{ evaluation.id }}/data">Raw data</a></p>
+{% if evaluation.error %}<p>Stopped by an error: {{ evaluation.error }}</p>{% endif %}
+
+{% if evaluation.status == "running" %}
+<form method="post" action="/admin/ai-labeling/evaluations/{{ evaluation.id }}/cancel" class="inline-form">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token }}" />
+  <button type="submit">Stop this evaluation</button>
+</form>
+{% endif %}
+
+<section class="wf-card">
+  <h2>Progress</h2>
+  <table>
+    <thead><tr><th>Setup</th><th>Model</th><th>Requests done</th><th>Events answered</th><th>Times rate limited</th></tr></thead>
+    <tbody>
+      {% for row in evaluation.progress %}
+      <tr><td>{{ row.key }}</td><td>{{ row.model }}</td><td>{{ row.chunks_done }} of {{ row.chunks }}</td><td>{{ row.labeled }}</td><td>{{ row.rate_limited }}</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</section>
+
+{% set report = evaluation.report %}
+{% if report %}
+<section class="wf-card">
+  <h2>Baseline</h2>
+  <p>{{ cfg(report.baseline.config) }}. {{ report.sample_size }} sample events.</p>
+  <table>
+    <tbody>
+      <tr><th>Tokens per event</th><td>{{ report.baseline.tokens_per_event or "-" }} ({{ report.baseline.uncached_tokens_per_event or "-" }} not cached)</td></tr>
+      <tr><th>Hidden as not for students</th><td>{{ report.baseline.hidden }}</td></tr>
+      <tr><th>Matches admin overrides</th><td>{{ report.baseline.override_accuracy.matching }} of {{ report.baseline.override_accuracy.events }}</td></tr>
+      <tr><th>Same answer as its own earlier labels</th><td>category {{ pct(report.baseline.agreement_with_stored_labels.category_pct) }}, keep {{ pct(report.baseline.agreement_with_stored_labels.keep_pct) }} ({{ report.baseline.agreement_with_stored_labels.events }} events)</td></tr>
+    </tbody>
+  </table>
+</section>
+
+{% for c in report.candidates %}
+<section class="wf-card">
+  <h2>{{ c.config.key }}</h2>
+  <p>{{ cfg(c.config) }}.</p>
+  <table>
+    <tbody>
+      <tr><th>Category agreement</th><td>{{ pct(c.category_agreement_pct) }} of {{ c.compared }}</td></tr>
+      <tr><th>Keep or hide agreement</th><td>{{ pct(c.keep_agreement_pct) }}</td></tr>
+      <tr><th>Would hide what the baseline keeps</th><td><strong>{{ c.false_hides }}</strong></td></tr>
+      <tr><th>Would keep what the baseline hides</th><td>{{ c.extra_keeps }}</td></tr>
+      <tr><th>Matches admin overrides</th><td>{{ c.override_accuracy.matching }} of {{ c.override_accuracy.events }}</td></tr>
+      <tr><th>Tokens per event</th><td>{{ c.tokens_per_event or "-" }} ({{ c.uncached_tokens_per_event or "-" }} not cached)</td></tr>
+      <tr><th>Unanswered events</th><td>{{ c.unanswered }}</td></tr>
+    </tbody>
+  </table>
+  <h3>By kind of event</h3>
+  <table>
+    <thead><tr><th>Kind</th><th>Events</th><th>Category</th><th>Keep or hide</th></tr></thead>
+    <tbody>
+      {% for bucket, row in c.by_bucket.items() %}
+      <tr><td>{{ bucket | replace("_", " ") }}</td><td>{{ row.events }}</td><td>{{ pct(row.category_pct) }}</td><td>{{ pct(row.keep_pct) }}</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  <h3>Disagreements</h3>
+  <div class="table-scroll">
+  <table>
+    <thead><tr><th>Event</th><th>Baseline</th><th>This setup</th><th>Admin override</th></tr></thead>
+    <tbody>
+      {% for d in c.disagreements %}
+      <tr>
+        <td><a href="/admin/events/{{ d.id }}">{{ d.title }}</a></td>
+        <td>{{ d.baseline.category }}{% if not d.baseline.keep %}, hide{% endif %}</td>
+        <td>{{ d.candidate.category }}{% if not d.candidate.keep %}, <strong>hide</strong>{% endif %}</td>
+        <td>{{ d.override_category or "-" }}</td>
+      </tr>
+      {% else %}
+      <tr><td colspan="4">None.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  </div>
+</section>
+{% endfor %}
+{% endif %}
+{% endblock %}

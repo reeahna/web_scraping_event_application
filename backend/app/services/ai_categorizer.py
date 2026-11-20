@@ -169,7 +169,9 @@ def _category_lines(categories: list[CategoryOption]) -> str:
     return "\n".join(lines)
 
 
-def _event_payload(events: list[EventToClassify]) -> list[dict[str, str | int]]:
+def _event_payload(
+    events: list[EventToClassify], *, description_chars: int = _MAX_DESCRIPTION_CHARS
+) -> list[dict[str, str | int]]:
     payload: list[dict[str, str | int]] = []
     for event in events:
         entry: dict[str, str | int] = {"id": event.id, "title": _clean(event.title, limit=200)}
@@ -179,14 +181,17 @@ def _event_payload(events: list[EventToClassify]) -> list[dict[str, str | int]]:
         venue = _clean(event.venue, limit=120)
         if venue:
             entry["venue"] = venue
-        description = _clean(event.description, limit=_MAX_DESCRIPTION_CHARS)
+        description = _clean(event.description, limit=description_chars)
         if description:
             entry["description"] = description
         payload.append(entry)
     return payload
 
 
-def build_prompt(categories: list[CategoryOption], events: list[EventToClassify]) -> str:
+def build_instructions(categories: list[CategoryOption]) -> str:
+    """The part of the prompt that is the same for every batch: the task, the
+    category list and the answer format. Sent first so a provider that caches
+    prompt prefixes (Groq does for gpt-oss) can reuse it between requests."""
     return (
         "You are labeling events for an app that shows college students things to "
         "do, both on campus and anywhere in their college town. For each event, "
@@ -218,9 +223,41 @@ def build_prompt(categories: list[CategoryOption], events: list[EventToClassify]
         "ONLY a JSON array, no prose, where each element is "
         '{"id": <the event id>, "category": "<a slug from the list>", '
         '"keep": true or false}.\n\n'
-        "Events:\n"
-        f"{json.dumps(_event_payload(events), ensure_ascii=False)}"
     )
+
+
+def build_event_block(
+    events: list[EventToClassify], *, description_chars: int = _MAX_DESCRIPTION_CHARS
+) -> str:
+    """The part of the prompt that changes with every batch."""
+    payload = _event_payload(events, description_chars=description_chars)
+    return f"Events:\n{json.dumps(payload, ensure_ascii=False)}"
+
+
+def build_prompt(
+    categories: list[CategoryOption],
+    events: list[EventToClassify],
+    *,
+    description_chars: int = _MAX_DESCRIPTION_CHARS,
+) -> str:
+    return build_instructions(categories) + build_event_block(
+        events, description_chars=description_chars
+    )
+
+
+@dataclass(frozen=True)
+class SplitPrompt:
+    """A prompt sent as a fixed instructions message followed by the batch's
+    events, so the instructions form an identical prefix on every request."""
+
+    instructions: str
+    events: str
+
+
+# How a prompt is laid out in the request. "single": everything in one user
+# message (the original layout). "split": instructions in the system message,
+# events in the user message, so the cacheable prefix is as long as possible.
+PROMPT_LAYOUTS = ("single", "split")
 
 
 def _extract_text(body: dict) -> str:
@@ -434,10 +471,13 @@ class GeminiCategorizer:
         min_interval_seconds: float = 4.0,
         max_retries: int = 4,
         fallback_model: str | None = None,
+        description_chars: int = _MAX_DESCRIPTION_CHARS,
     ) -> None:
         if not api_key:
             raise GeminiUnavailable("no Gemini API key configured")
         self.model = model
+        self.description_chars = max(0, description_chars)
+        self.prompt_layout = "single"
         self._min_interval = max(0.0, min_interval_seconds)
         self._max_retries = max(0, max_retries)
         self._url = _ENDPOINT.format(model=model)
@@ -470,7 +510,19 @@ class GeminiCategorizer:
         if elapsed < self._min_interval:
             time.sleep(self._min_interval - elapsed)
 
-    def _payload(self, prompt: str) -> dict:
+    def _build_prompt(
+        self, categories: list[CategoryOption], events: list[EventToClassify]
+    ) -> str | SplitPrompt:
+        if self.prompt_layout == "split":
+            return SplitPrompt(
+                build_instructions(categories),
+                build_event_block(events, description_chars=self.description_chars),
+            )
+        return build_prompt(categories, events, description_chars=self.description_chars)
+
+    def _payload(self, prompt: str | SplitPrompt) -> dict:
+        if isinstance(prompt, SplitPrompt):
+            prompt = prompt.instructions + prompt.events
         return {
             "contents": [{"parts": [{"text": prompt}]}],
             "generationConfig": {
@@ -556,7 +608,7 @@ class GeminiCategorizer:
         if not events:
             return {}
         valid = {option.slug for option in categories}
-        prompt = build_prompt(categories, events)
+        prompt = self._build_prompt(categories, events)
         body = self._post(prompt)
         try:
             labels = _parse_labels(self._response_text(body))
@@ -588,10 +640,16 @@ class GroqCategorizer(GeminiCategorizer):
         timeout: float = 60.0,
         min_interval_seconds: float = 4.0,
         max_retries: int = 4,
+        description_chars: int = _MAX_DESCRIPTION_CHARS,
+        prompt_layout: str = "single",
     ) -> None:
         if not api_key:
             raise GeminiUnavailable("no Groq API key configured")
+        if prompt_layout not in PROMPT_LAYOUTS:
+            raise ValueError(f"unknown prompt layout {prompt_layout!r}")
         self.model = model
+        self.description_chars = max(0, description_chars)
+        self.prompt_layout = prompt_layout
         self._min_interval = max(0.0, min_interval_seconds)
         self._max_retries = max(0, max_retries)
         self._url = _GROQ_ENDPOINT
@@ -605,20 +663,29 @@ class GroqCategorizer(GeminiCategorizer):
     def __enter__(self) -> GroqCategorizer:
         return self
 
-    def _payload(self, prompt: str) -> dict:
+    def _payload(self, prompt: str | SplitPrompt) -> dict:
+        wrap = (
+            'Reply with a JSON object {"labels": [...]} whose '
+            "labels array is exactly the array the user asks for."
+        )
+        if isinstance(prompt, SplitPrompt):
+            # Everything that never changes goes first, in the system message,
+            # so consecutive requests share the longest possible prefix.
+            messages = [
+                {"role": "system", "content": prompt.instructions + wrap},
+                {"role": "user", "content": prompt.events},
+            ]
+        else:
+            messages = [
+                {"role": "system", "content": wrap},
+                {"role": "user", "content": prompt},
+            ]
         payload = {
             "model": self.model,
             "temperature": 0.0,
             # JSON mode returns an object, so the array is wrapped in "labels".
             "response_format": {"type": "json_object"},
-            "messages": [
-                {
-                    "role": "system",
-                    "content": 'Reply with a JSON object {"labels": [...]} whose '
-                    "labels array is exactly the array the user asks for.",
-                },
-                {"role": "user", "content": prompt},
-            ],
+            "messages": messages,
         }
         if self.model.startswith("openai/gpt-oss"):
             # Its reasoning tokens count against the per-minute token limit and
