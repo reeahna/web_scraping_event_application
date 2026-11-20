@@ -5,6 +5,7 @@ from app.config import get_settings
 from app.core.exceptions import NotFoundError
 from app.core.templating import render
 from app.dependencies import DbSession, OptionalCurrentUser
+from app.models.base import as_aware_utc
 from app.repositories.city import get_city
 from app.repositories.extraction_run import get_latest_successful_run_for_website
 from app.repositories.public_events import (
@@ -15,6 +16,7 @@ from app.repositories.public_events import (
 )
 from app.routers.home import _Filters
 from app.services import seo
+from app.services.event_freshness import event_zone_name, local_timestamp
 from app.services.rbac import can_access_admin
 
 router = APIRouter(prefix="/events", tags=["public-events"])
@@ -75,6 +77,14 @@ def event_detail(event_id: int, request: Request, current_user: OptionalCurrentU
             "event": event,
             "can_access_admin": admin_access,
             "latest_run": latest_run,
+            "content_updated": local_timestamp(
+                event.content_updated_at, event_zone_name(event)
+            ),
+            "content_updated_iso": (
+                as_aware_utc(event.content_updated_at).isoformat(timespec="seconds")
+                if event.content_updated_at
+                else ""
+            ),
             "fallback_image_url": get_settings().public_fallback_image_url,
             "is_saved": is_saved,
             "is_following_city": is_following_city,

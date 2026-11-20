@@ -34,6 +34,10 @@ lines. Lines may use `**bold**`, `` `code` `` and `[links](https://...)`.
 
 ### For everyone
 - Fewer listings that aren't for students: baby, toddler, kids' and seniors' programs, campus walk-in and coaching hours, shop delivery deals, and away games or watch parties in other cities no longer show. (#102)
+- Town pages, including Today and This weekend, now say when their listings were last checked, in the town's own time (for example "Listings checked November 19, 2026 at 8:45 PM EST"). The time is when every source for that town had last been checked successfully, so a source that couldn't be reached keeps it from looking newer than it is, and the page says so, as it does for a new source that hasn't been checked yet. Event pages say when that event's details last changed. (#100)
+
+### Admin and behind the scenes
+- Scheduled checks now tell apart events that are new, changed, unchanged, newly cancelled or no longer listed, and only a real change to what visitors see (title, description, dates and times, venue, address, picture, category, cancellation) moves an event's new "details last changed" time; admin corrections move it too, and a source change underneath a correction doesn't. Saved-event "details changed" alerts now go out only when details actually changed. The run detail page shows the breakdown. Adds `events.content_updated_at` and three run counts (migration `c3d8e1f5a9b2`); events listed before this have no change time and show no line until they next change. (#100)
 
 ## [1.11.0] - 2026-11-20
 

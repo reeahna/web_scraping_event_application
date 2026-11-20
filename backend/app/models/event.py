@@ -69,6 +69,14 @@ class Event(Base, TimestampMixin):
     geocoded_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), default=None)
 
     scraped_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), default=None)
+    # When visitor-facing information last changed: a source edit noticed by a
+    # check, or an administrator's correction. Not the last scrape (scraped_at)
+    # and not the last database write (updated_at). Set only by
+    # app.services.event_freshness. NULL for events listed before this was
+    # tracked, whose change history is unknown; the public page then says nothing.
+    content_updated_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), default=None
+    )
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
     # Distinct from is_active: archiving is a deliberate curatorial step (a
     # prerequisite for deleting the event's city), not just a visibility toggle.

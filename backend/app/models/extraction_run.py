@@ -34,6 +34,15 @@ class ExtractionRun(Base):
     events_inserted: Mapped[int] = mapped_column(Integer, default=0)
     events_updated: Mapped[int] = mapped_column(Integer, default=0)
     duplicates_skipped: Mapped[int] = mapped_column(Integer, default=0)
+    # What a persistent check found. events_updated counts every stored event
+    # the check saw again; events_changed is the part of those whose
+    # visitor-facing details actually differed (the rest were unchanged).
+    # events_cancelled: newly cancelled at the source. events_missing: this
+    # source's upcoming public events that were not in the listing this time
+    # (counted only; nothing is hidden for it).
+    events_changed: Mapped[int] = mapped_column(Integer, default=0)
+    events_cancelled: Mapped[int] = mapped_column(Integer, default=0)
+    events_missing: Mapped[int] = mapped_column(Integer, default=0)
 
     # JSON-encoded diagnostics — never secrets, never unbounded raw response
     # bodies (see app/extraction/fetch.py's byte cap and body_hash-only

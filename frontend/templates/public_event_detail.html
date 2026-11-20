@@ -178,6 +178,11 @@
             <dd>{{ event.source }}</dd>
           </div>
         </dl>
+        {#- When what this page shows last changed (a source edit or an admin
+            correction), not when it was last scraped or viewed. -#}
+        {% if content_updated %}
+        <p class="event-updated">Event information last updated <time datetime="{{ content_updated_iso }}">{{ content_updated }}</time></p>
+        {% endif %}
       </section>
     </div>
 

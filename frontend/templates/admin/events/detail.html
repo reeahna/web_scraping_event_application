@@ -27,7 +27,8 @@
     <tr><th>Review status</th><td>{{ event.review_status }}</td></tr>
     <tr><th>Duplicate status</th><td>{{ event.duplicate_status }}</td></tr>
     <tr><th>Canonical URL</th><td><a href="{{ event.canonical_url }}" rel="noopener noreferrer">{{ event.canonical_url }}</a></td></tr>
-    <tr><th>Scraped</th><td>{% if event.scraped_at %}{{ event.scraped_at | admin_datetime }}{% else %}Not yet recorded{% endif %}</td></tr>
+    <tr><th>Last seen by a check</th><td>{% if event.scraped_at %}{{ event.scraped_at | admin_datetime }}{% else %}Not yet recorded{% endif %}</td></tr>
+    <tr><th>Details last changed</th><td>{% if event.content_updated_at %}{{ event.content_updated_at | admin_datetime }}{% else %}Not recorded (listed before change tracking){% endif %}</td></tr>
     <tr><th>Fingerprint</th><td><code>{{ event.fingerprint or 'Not yet generated' }}</code></td></tr>
   </tbody>
 </table>
