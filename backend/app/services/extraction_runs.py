@@ -73,6 +73,7 @@ from app.extraction.unsupported import build_report
 from app.extraction.validate import validate_candidate
 from app.models.website import Website
 from app.repositories.event import (
+    count_upcoming_events_not_seen,
     create_event_from_candidate,
     described_event_urls,
     event_urls_with_time,
@@ -1285,6 +1286,8 @@ async def run_extraction(
 
     events_inserted = 0
     events_updated = 0
+    events_changed = 0
+    events_cancelled = 0
     # The active categorization rules are read once per batch, not per event.
     with active_rules_cached(db):
         claimed: set[int] = set()
@@ -1299,9 +1302,18 @@ async def run_extraction(
                 collapsed += 1
                 continue
             if existing is not None:
+                was_cancelled = bool(existing.is_cancelled)
+                previous_change = existing.content_updated_at
                 event = update_event(db, existing, candidate, commit=False)
                 events_updated += 1
-                _fire_alerts(db, event, new=False, cancelled=candidate.is_cancelled)
+                newly_cancelled = event.is_cancelled and not was_cancelled
+                if newly_cancelled:
+                    events_cancelled += 1
+                if event.content_updated_at != previous_change:
+                    events_changed += 1
+                    # Saved-event alerts only for a real change: a check that
+                    # found the same details has nothing to tell anyone.
+                    _fire_alerts(db, event, new=False, cancelled=newly_cancelled)
             else:
                 event = create_event_from_candidate(
                     db,
@@ -1341,7 +1353,13 @@ async def run_extraction(
 
     run.events_inserted = events_inserted
     run.events_updated = events_updated
+    run.events_changed = events_changed
+    run.events_cancelled = events_cancelled
     run.duplicates_skipped = dedup_outcome.duplicates_skipped + collapsed
+    if status in ("success", "partial"):
+        run.events_missing = count_upcoming_events_not_seen(
+            db, website, seen_event_ids=claimed
+        )
     db.commit()
 
     _update_website_health(
@@ -1368,6 +1386,9 @@ async def run_extraction(
         warnings=tuple(warnings),
         errors=tuple(errors),
         evidence={},
+        events_changed=events_changed,
+        events_cancelled=events_cancelled,
+        events_missing=run.events_missing or 0,
     )
 
 

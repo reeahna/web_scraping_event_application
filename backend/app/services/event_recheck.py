@@ -55,6 +55,7 @@ from app.repositories.extraction_run import (
     create_extraction_run,
     get_latest_successful_run_for_website,
 )
+from app.services.event_freshness import mark_if_changed, visitor_snapshot
 from app.services.fingerprints import update_fingerprint_and_duplicates
 
 DEFAULT_LIMIT = 200
@@ -326,8 +327,10 @@ async def recheck_website_events(
     )
     version = REGISTRY.get(config.pattern_name).version
     for event, candidate, changes, body_hash in matched:
+        before = visitor_snapshot(event)
         for field, (_, value) in changes.items():
             setattr(event, field, value)
+        mark_if_changed(event, before)
         update_fingerprint_and_duplicates(db, event, commit=False)
         create_event_provenance(
             db,

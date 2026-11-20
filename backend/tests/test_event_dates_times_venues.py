@@ -409,6 +409,7 @@ async def test_recheck_previews_then_corrects_31925_in_place(
     assert row.venue == "Recital Hall & LIVE@jacobs"
     assert row.corrected_address == "1201 E 3rd St, Bloomington, IN"
     assert row.external_source_id == "2410954"
+    assert row.content_updated_at is not None  # visitors see "details changed"
     assert db_session.query(Event).count() == 1
     provenance = db_session.query(EventProvenance).filter_by(event_id=row.id).one()
     assert provenance.extraction_run_id == report.run_id

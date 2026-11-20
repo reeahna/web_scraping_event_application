@@ -26,6 +26,7 @@ from app.repositories.public_events import (
     upcoming_counts_by_city,
 )
 from app.services import seo
+from app.services.event_freshness import local_timestamp, town_listings_checked
 from app.services.rbac import can_access_admin
 
 router = APIRouter()
@@ -350,6 +351,7 @@ def _town_page(
         "weekend_count": weekend_count,
         "nearby": nearby,
         "breadcrumb_structured_data": seo.breadcrumb_structured_data(crumbs),
+        **_listings_checked(db, city),
     }
     return _render_events(
         request,
@@ -363,6 +365,32 @@ def _town_page(
         noindex=not seo.town_is_indexable(upcoming),
         town=town,
     )
+
+
+def _listings_checked(db, city) -> dict:
+    """The town's "Listings checked ..." line, from its sources' run records
+    (see app.services.event_freshness.town_listings_checked). Empty when no
+    source has completed a successful check."""
+    freshness = town_listings_checked(db, city.id)
+    if freshness is None:
+        return {"checked": "", "checked_iso": "", "checked_notes": []}
+    notes = []
+    if freshness.failing:
+        notes.append(
+            f"{_sources(freshness.failing)} could not be checked on the latest try"
+        )
+    if freshness.pending:
+        has = "has" if freshness.pending == 1 else "have"
+        notes.append(f"{_sources(freshness.pending)} {has} not completed a first check yet")
+    return {
+        "checked": local_timestamp(freshness.checked_at, city.timezone),
+        "checked_iso": freshness.checked_at.isoformat(timespec="seconds"),
+        "checked_notes": notes,
+    }
+
+
+def _sources(count: int) -> str:
+    return f"{count} source{'s' if count != 1 else ''}"
 
 
 @router.get("/city/{slug}", response_class=HTMLResponse)

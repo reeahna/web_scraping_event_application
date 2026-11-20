@@ -1,4 +1,4 @@
-from datetime import UTC, datetime, time
+from datetime import UTC, date, datetime, time
 
 from sqlalchemy import and_, or_
 from sqlalchemy.orm import Session
@@ -8,13 +8,16 @@ from app.extraction.locations import has_venue
 from app.extraction.normalize import ALL_DAY_MARKER, END_ABSENT_MARKER, plain_text
 from app.extraction.types import EventCandidate
 from app.models.event import Event
+from app.repositories.public_events import town_today
 from app.schemas.event import EventCreate
 from app.services.categorization import assign_category
+from app.services.event_freshness import mark_if_changed, visitor_snapshot
 from app.services.fingerprints import update_fingerprint_and_duplicates
 
 
 def create_event(db: Session, data: EventCreate) -> Event:
     event = Event(**data.model_dump())
+    event.content_updated_at = datetime.now(UTC)
     db.add(event)
     db.commit()
     db.refresh(event)
@@ -78,6 +81,24 @@ def event_urls_with_time(db: Session, website_id: int) -> frozenset[str]:
     return frozenset(url for (url,) in rows if url)
 
 
+def count_upcoming_events_not_seen(
+    db: Session, website, *, seen_event_ids: set[int]
+) -> int:
+    """How many of this source's live, upcoming events a successful check did
+    not see in the listing. A count for the run record only: a listing can be
+    paged or windowed, so absence alone never hides an event."""
+    today = date(*town_today(website.city).timetuple()[:3])
+    rows = db.query(Event.id).filter(
+        Event.website_id == website.id,
+        Event.is_active.is_(True),
+        Event.archived_at.is_(None),
+        Event.is_recurrence_parent.is_(False),
+        Event.is_cancelled.is_(False),
+        or_(Event.end_date >= today, and_(Event.end_date.is_(None), Event.start_date >= today)),
+    )
+    return sum(1 for (event_id,) in rows if event_id not in seen_event_ids)
+
+
 def find_existing_event_for_candidate(
     db: Session, candidate: EventCandidate, *, website_id: int, city_id: int | None
 ) -> Event | None:
@@ -128,11 +149,13 @@ def create_event_from_candidate(
     commit: bool = True,
     fallback_url: str | None = None,
 ) -> Event:
-    """``fallback_url`` stands in for an event with no link of its own (an ICS
+    """A new event's details are new to visitors, so its content_updated_at
+    starts now. ``fallback_url`` stands in for an event with no link of its own (an ICS
     feed identifies events by UID and may leave URL out), since every event
     row needs one. With ``commit=False`` the new row is only flushed (it has its id), and
     the caller commits: the import loop commits once per batch of events
     instead of three times per event (see app.services.extraction_runs)."""
+    now = datetime.now(UTC)
     event = Event(
         title=candidate.title,
         canonical_url=candidate.canonical_url or fallback_url,
@@ -151,7 +174,8 @@ def create_event_from_candidate(
         image_url=candidate.image_url,
         latitude=candidate.latitude,
         longitude=candidate.longitude,
-        scraped_at=datetime.now(UTC),
+        scraped_at=now,
+        content_updated_at=now,
         city_id=city_id,
         website_id=website_id,
         occurrence_id=candidate.occurrence_id,
@@ -185,7 +209,13 @@ def update_event(
     (category override, location correction, duplicate resolution, and
     lifecycle state) is deliberately left untouched: a re-scrape must never
     silently reactivate an administratively deactivated or archived event,
-    or erase a curator's override."""
+    or erase a curator's override.
+
+    ``content_updated_at`` moves only when what a visitor sees differs after the
+    update (see app.services.event_freshness.visitor_snapshot); a check that
+    finds the same details leaves it alone. Columns set to the value they
+    already hold are not written (SQLAlchemy leaves them out of the UPDATE)."""
+    before = visitor_snapshot(event)
     event.title = candidate.title
     if candidate.canonical_url:
         event.canonical_url = candidate.canonical_url
@@ -241,6 +271,7 @@ def update_event(
     # category only; an administrator's category override is a separate field and
     # is left untouched.
     assign_category(db, event)
+    mark_if_changed(event, before)
     if not commit:
         # The caller commits (once per batch in the import loop).
         update_fingerprint_and_duplicates(db, event, commit=False)
