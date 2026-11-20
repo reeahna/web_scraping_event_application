@@ -32,6 +32,9 @@ lines. Lines may use `**bold**`, `` `code` `` and `[links](https://...)`.
 
 ## [Unreleased]
 
+### For everyone
+- Fewer listings that aren't for students: baby, toddler, kids' and seniors' programs, campus walk-in and coaching hours, shop delivery deals, and away games or watch parties in other cities no longer show. (#102)
+
 ## [1.11.0] - 2026-11-20
 
 ### For everyone
