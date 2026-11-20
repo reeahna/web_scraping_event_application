@@ -41,7 +41,7 @@ from datetime import UTC, date, datetime, time, timedelta
 from typing import Any
 from urllib.parse import urlsplit
 
-from sqlalchemy import or_
+from sqlalchemy import or_, select
 from sqlalchemy.orm import Session
 
 from app.core.timezones import local_date, resolve_zone_name
@@ -126,18 +126,22 @@ def _zone_name(website: Website, config) -> str | None:
     return resolve_zone_name(config.timezone, _fallback_timezone(website))
 
 
-def _confirmed_at(db: Session, website: Website) -> dict[int, datetime]:
-    """When a recheck last confirmed each of this website's events against
-    the source (latest provenance record of a "recheck" run)."""
-    rows = (
-        db.query(EventProvenance.event_id, EventProvenance.created_at)
+def _recheck_provenance(website: Website):
+    """Provenance records a recheck of this website wrote."""
+    return (
+        select(EventProvenance.event_id, EventProvenance.created_at)
         .join(ExtractionRun, ExtractionRun.id == EventProvenance.extraction_run_id)
-        .filter(
+        .where(
             EventProvenance.website_id == website.id,
             ExtractionRun.run_type == "recheck",
         )
-        .all()
     )
+
+
+def _confirmed_at(db: Session, website: Website) -> dict[int, datetime]:
+    """When a recheck last confirmed each of this website's events against
+    the source (latest provenance record of a "recheck" run)."""
+    rows = db.execute(_recheck_provenance(website)).all()
     confirmed: dict[int, datetime] = {}
     for event_id, created_at in rows:
         created_at = _aware(created_at)
@@ -162,7 +166,8 @@ def suspect_events(
     old UTC reading is caught), from the source's own records, and either at
     a bare 12:00 AM, without a venue, or not refreshed by the latest import.
     Rows a recheck already confirmed are left out unless their details
-    changed since (an import or an administrator's correction)."""
+    changed since (an import or an administrator's correction); such a row
+    is read back again whatever its time and venue now look like."""
     since = (today or local_date(zone_name)) - timedelta(days=1)
     latest = get_latest_successful_run_for_website(db, website.id)
     stale = [Event.scraped_at < latest.started_at] if latest is not None else []
@@ -183,6 +188,10 @@ def suspect_events(
                 Event.venue.ilike("%tb%"),
                 Event.venue.ilike("%n/a%"),
                 Event.venue.ilike("none"),
+                # Confirmed earlier: kept only if changed since (below).
+                Event.id.in_(_recheck_provenance(website).with_only_columns(
+                    EventProvenance.event_id
+                )),
             ),
         )
         .order_by(Event.start_date, Event.id)
@@ -195,8 +204,7 @@ def suspect_events(
         checked = confirmed.get(event.id)
         if checked is not None:
             changed = _aware(event.content_updated_at)
-            if changed is None or changed <= checked:
-                return False
+            return changed is not None and changed > checked
         if event.start_time == time(0):
             return True
         if not has_venue({"venue": event.venue}) and not event.corrected_venue:

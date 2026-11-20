@@ -12,7 +12,7 @@ from __future__ import annotations
 
 import copy
 import json
-from datetime import UTC, date, datetime, time
+from datetime import UTC, date, datetime, time, timedelta
 
 import httpx
 import pytest
@@ -867,3 +867,49 @@ async def test_a_confirmed_event_is_checked_again_after_its_details_change(
     db_session.commit()
     with patched_http_fetch(_id_handler({"2800001": record}, [])):
         assert (await recheck_website_events(db_session, website, today=today)).selected == 1
+
+
+@pytest.mark.asyncio
+async def test_a_confirmed_ordinary_event_is_read_again_after_a_later_edit(
+    db_session, iu_source, make_event
+):
+    """Not at midnight, with a real venue, and seen by the latest import: only
+    the later change to its details makes it worth reading back again."""
+    from app.repositories.extraction_run import create_extraction_run
+
+    city, website = iu_source
+    record = _record(2900001, day=21, hour=19)
+    row = _stored(
+        make_event, city, website, record, start_time=time(19),
+        end_date=date(2026, 11, 21), end_time=time(20), timezone=INDY,
+        venue="Recital Hall & LIVE@jacobs",
+    )
+    # An import ran after the row was last seen, so the row is stale.
+    create_extraction_run(
+        db_session, website_id=website.id, configuration_version=None,
+        pattern_name="livewhale_json", run_type="manual", status="success",
+        source_url=FEED, final_url=FEED, events_found=0, events_valid=0,
+        started_at=datetime(2026, 11, 20, 9, tzinfo=UTC),
+        completed_at=datetime(2026, 11, 20, 9, 1, tzinfo=UTC),
+    )
+    today = date(2026, 11, 20)
+    with patched_http_fetch(_id_handler({"2900001": record}, [])):
+        assert (await recheck_website_events(db_session, website, today=today)).selected == 1
+        confirmed = await recheck_website_events(db_session, website, apply=True, today=today)
+        assert confirmed.unchanged == 1
+        assert (await recheck_website_events(db_session, website, today=today)).selected == 0
+
+    # A later edit (an import or an administrator) changes a detail and is
+    # seen now: not midnight, has a venue, not stale, yet worth reading again.
+    later = datetime.now(UTC) + timedelta(seconds=1)
+    row.venue = "Auer Hall"
+    row.content_updated_at = later
+    row.scraped_at = later
+    db_session.commit()
+    seen: list[str] = []
+    with patched_http_fetch(_id_handler({"2900001": record}, seen)):
+        again = await recheck_website_events(db_session, website, today=today)
+    assert again.selected == 1 and seen == [record_url(FEED, "2900001")]
+    assert [c.event_id for c in again.changes] == [row.id]  # a preview proposes, never writes
+    db_session.refresh(row)
+    assert row.venue == "Auer Hall"
