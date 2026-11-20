@@ -28,21 +28,10 @@ from urllib.parse import urlsplit
 
 from sqlalchemy.orm import Session
 
-_STATES = {
-    "AL": "alabama", "AK": "alaska", "AZ": "arizona", "AR": "arkansas",
-    "CA": "california", "CO": "colorado", "CT": "connecticut", "DE": "delaware",
-    "DC": "district of columbia", "FL": "florida", "GA": "georgia", "HI": "hawaii",
-    "ID": "idaho", "IL": "illinois", "IN": "indiana", "IA": "iowa", "KS": "kansas",
-    "KY": "kentucky", "LA": "louisiana", "ME": "maine", "MD": "maryland",
-    "MA": "massachusetts", "MI": "michigan", "MN": "minnesota", "MS": "mississippi",
-    "MO": "missouri", "MT": "montana", "NE": "nebraska", "NV": "nevada",
-    "NH": "new hampshire", "NJ": "new jersey", "NM": "new mexico", "NY": "new york",
-    "NC": "north carolina", "ND": "north dakota", "OH": "ohio", "OK": "oklahoma",
-    "OR": "oregon", "PA": "pennsylvania", "RI": "rhode island", "SC": "south carolina",
-    "SD": "south dakota", "TN": "tennessee", "TX": "texas", "UT": "utah",
-    "VT": "vermont", "VA": "virginia", "WA": "washington", "WV": "west virginia",
-    "WI": "wisconsin", "WY": "wyoming",
-}
+from app.core.us_states import US_STATES
+
+# Postal code -> lower-case name, from the one table in app.core.us_states.
+_STATES = {abbr: name.lower() for abbr, name in US_STATES.items()}
 _STATE_NAMES = {name: abbr for abbr, name in _STATES.items()}
 
 def state_abbreviation(value: str | None) -> str:

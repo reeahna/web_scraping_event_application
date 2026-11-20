@@ -4179,3 +4179,29 @@ a.wf-danger, button.wf-danger {
   font-weight: 500;
   text-decoration: underline;
 }
+
+/* Where a town's listings come from: a quiet paragraph above the nearby
+   towns, set like them so the foot of the page reads as one block. */
+.town-sources {
+  margin-top: var(--space-7);
+  padding-top: var(--space-5);
+  border-top: 1px solid var(--text);
+}
+
+.town-sources h2 {
+  font-size: var(--text-section);
+  margin-bottom: var(--space-3);
+}
+
+.town-sources p {
+  color: var(--muted);
+  max-width: 70ch;
+}
+
+.town-sources a {
+  color: var(--text);
+}
+
+.town-sources + .nearby-towns {
+  margin-top: var(--space-6);
+}

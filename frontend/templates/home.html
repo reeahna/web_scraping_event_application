@@ -288,13 +288,30 @@
   </div>
   {% endif %}
 
+  {#- Where this town's listings come from, by name and linked: the local
+      calendars, venues and libraries themselves. It credits them, it tells a
+      reader how complete the page is, and it is text no other town's page
+      shares. Each source's site, not its feed or API address. -#}
+  {% if sources and selected_city %}
+  <section class="town-sources" aria-labelledby="town-sources-heading">
+    <h2 id="town-sources-heading">Where {{ selected_city.name }}'s listings come from</h2>
+    <p>Bulletin gathers {{ town.place }} events every day from
+      {%- for source in sources %}
+      {%- set label = source.source_display_name or source.name %}
+      {%- set home = source.base_url | site_root %}
+      {%- if loop.last and not loop.first %} and{% endif %}
+      {% if home %}<a href="{{ home }}" rel="noopener" target="_blank">{{ label }}<span class="sr-only"> (opens in a new tab)</span></a>{% else %}{{ label }}{% endif %}{% if not loop.last and loop.length > 2 %},{% endif %}
+      {%- endfor %}.</p>
+  </section>
+  {% endif %}
+
   {% if town.nearby %}
   <section class="nearby-towns" aria-labelledby="nearby-towns-heading">
     <h2 id="nearby-towns-heading">Events near {{ selected_city.name }}</h2>
     <ul class="nearby-towns-list">
       {% for near in town.nearby %}
       <li>
-        <a href="/city/{{ near.city.slug }}">{{ near.city.name }}{% if near.city.state_or_region %}, {{ near.city.state_or_region }}{% endif %}</a>
+        <a href="/city/{{ near.city.slug }}">{{ near.place }}</a>
         <span class="nearby-towns-meta">{{ near.miles }} miles away, {{ near.count }} upcoming</span>
       </li>
       {% endfor %}

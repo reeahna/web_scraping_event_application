@@ -10,11 +10,15 @@ from __future__ import annotations
 
 import json
 import math
-from datetime import date, time
+import time as time_module
+from datetime import date, datetime, time
 from urllib.parse import quote, urlencode, urljoin
+from zoneinfo import ZoneInfo
 
 from app.config import get_settings
 from app.core.formatting import human_date_long
+from app.core.timezones import is_unset_zone, resolve_zone_name
+from app.core.us_states import is_us_state, state_name
 from app.models.event import Event
 
 # A town page with fewer upcoming events than this is kept out of search
@@ -34,11 +38,35 @@ def absolute_url(path: str) -> str:
     return urljoin(base, path.lstrip("/"))
 
 
-def _combine(day: date | None, clock: time | None) -> str | None:
-    """schema.org wants an ISO 8601 date, with a time when one is known."""
+def _combine(day: date | None, clock: time | None, zone: ZoneInfo | None = None) -> str | None:
+    """schema.org wants an ISO 8601 date, with a time when one is known.
+
+    A timed value carries its UTC offset when the event's zone is known
+    ("2026-12-06T14:00:00-05:00"), worked out for that date so daylight saving
+    is right. Without a known zone it is left as a bare local time, which
+    Google reads in the timezone of the event's location: guessing an offset
+    would be worse than none."""
     if day is None:
         return None
-    return f"{day.isoformat()}T{clock.isoformat()}" if clock else day.isoformat()
+    if clock is None:
+        return day.isoformat()
+    if zone is not None:
+        return datetime.combine(day, clock, tzinfo=zone).isoformat()
+    return f"{day.isoformat()}T{clock.isoformat()}"
+
+
+def _event_zone(event: Event) -> ZoneInfo | None:
+    """The zone the event's wall-clock times are in: its own, else its
+    town's. None when neither is set (a town left on the UTC default)."""
+    own = event.timezone
+    town = event.city.timezone if event.city is not None else None
+    for candidate in (own, town):
+        if is_unset_zone(candidate):
+            continue
+        resolved = resolve_zone_name(candidate)
+        if resolved:
+            return ZoneInfo(resolved)
+    return None
 
 
 def script_safe_json(data: dict) -> str:
@@ -77,14 +105,15 @@ def event_schema(event: Event) -> dict:
         ),
     }
 
-    start = _combine(event.start_date, event.start_time)
+    zone = _event_zone(event)
+    start = _combine(event.start_date, event.start_time, zone)
     if start:
         data["startDate"] = start
     # Only when an end is actually recorded. Falling back to the start date
     # emitted a date-only endDate for a timed event, which reads as "ends at
     # midnight" rather than "end unknown".
     if event.end_date is not None or event.end_time is not None:
-        end = _combine(event.end_date or event.start_date, event.end_time)
+        end = _combine(event.end_date or event.start_date, event.end_time, zone)
         if end and end != start:
             data["endDate"] = end
 
@@ -93,30 +122,64 @@ def event_schema(event: Event) -> dict:
     if event.image_url:
         data["image"] = event.image_url
 
-    venue = event.corrected_venue or event.venue
-    address = event.corrected_address or event.address
-    if venue or address:
-        place: dict = {"@type": "Place", "name": venue or address}
-        if address:
-            place["address"] = {"@type": "PostalAddress", "streetAddress": address}
-            if event.city:
-                place["address"]["addressLocality"] = event.city.name
-        latitude = event.corrected_latitude or event.geocoded_latitude or event.latitude
-        longitude = event.corrected_longitude or event.geocoded_longitude or event.longitude
-        if latitude is not None and longitude is not None:
-            place["geo"] = {
-                "@type": "GeoCoordinates",
-                "latitude": latitude,
-                "longitude": longitude,
-            }
-        data["location"] = place
+    data["location"] = _event_place(event)
+    # No "organizer": the only name on record is the source the event was
+    # gathered from (a campus calendar, "- TerpLink"), which is often not who
+    # is hosting it. Google only recommends the field, and a wrong host is
+    # worse than none.
 
-    if event.source:
-        data["organizer"] = {"@type": "Organization", "name": event.source}
     if event.canonical_url:
         data["sameAs"] = event.canonical_url
 
     return data
+
+
+def event_datetimes(event: Event) -> dict[str, str | None]:
+    """ISO values for the event page's <time datetime> attributes, the same
+    ones the structured data uses."""
+    zone = _event_zone(event)
+    end_day = event.end_date or event.start_date
+    return {
+        "start_date": event.start_date.isoformat() if event.start_date else None,
+        "end_date": event.end_date.isoformat() if event.end_date else None,
+        "start": _combine(event.start_date, event.start_time, zone),
+        "end": _combine(end_day, event.end_time, zone) if event.end_time else None,
+    }
+
+
+def _event_place(event: Event) -> dict:
+    """The event's schema.org Place. Google requires a location with an
+    address on every event. When the source names a venue it is used, with
+    its street address when one is known; when it names none, the place is
+    the event's town, which Google's guidelines ask for ("the city name or
+    the most representative location"). A venue is never made up."""
+    city = event.city
+    venue = event.public_venue
+    street = event.public_address
+
+    address: dict = {"@type": "PostalAddress"}
+    if street:
+        address["streetAddress"] = street
+    if city is not None:
+        address["addressLocality"] = city.name
+        region = state_name(city.state_or_region)
+        if region:
+            address["addressRegion"] = region
+        if city.country:
+            address["addressCountry"] = city.country
+        elif is_us_state(city.state_or_region):
+            address["addressCountry"] = "US"
+
+    place: dict = {"@type": "Place"}
+    name = venue or street or (town_place(city) if city is not None else None)
+    if name:
+        place["name"] = name
+    if len(address) > 1:
+        place["address"] = address
+    latitude, longitude = event.public_latitude, event.public_longitude
+    if latitude is not None and longitude is not None:
+        place["geo"] = {"@type": "GeoCoordinates", "latitude": latitude, "longitude": longitude}
+    return place
 
 
 def event_page_title(event: Event) -> str:
@@ -176,8 +239,11 @@ NEARBY_TOWN_LIMIT = 4
 
 
 def town_place(city) -> str:
-    """ "Ann Arbor, Michigan", or just the name when no state is recorded."""
-    return f"{city.name}, {city.state_or_region}" if city.state_or_region else city.name
+    """ "Ann Arbor, Michigan", or just the name when no state is recorded.
+    The state is always spelled out, whether the town was entered as "MI" or
+    "Michigan", so every town's title and heading reads the same way."""
+    state = state_name(city.state_or_region)
+    return f"{city.name}, {state}" if state else city.name
 
 
 def town_path(city, window: str | None = None) -> str:
@@ -203,10 +269,16 @@ def town_page_title(city, window: str | None = None) -> str:
     return f"Events in {place}: things to do this week"
 
 
+# A search result shows about 155 characters of a description; what runs past
+# that is cut off mid-word. Big towns list up to eight schools, so only the
+# first two are named.
+META_DESCRIPTION_LIMIT = 158
+DESCRIPTION_SCHOOLS = 2
+
+
 def town_meta_description(
     city, *, upcoming: int, window: str | None = None, window_count: int | None = None
 ) -> str:
-    schools = ", ".join(u.name for u in city.universities)
     place = town_place(city)
     if window:
         when = TOWN_WINDOWS[window][1]
@@ -214,19 +286,27 @@ def town_meta_description(
         lead = (
             f"{count} event{'s' if count != 1 else ''} in {place} {when}"
             if count
-            else f"What is on in {place} {when}"
+            else f"What's on in {place} {when}"
         )
     else:
         lead = (
             f"{upcoming} upcoming event{'s' if upcoming != 1 else ''} in {place}"
             if upcoming
-            else f"What is on in {place}"
+            else f"What's on in {place}"
         )
-    near = f" in town and around {schools}" if schools else " in town and on campus"
-    return (
-        f"{lead}: concerts, theater, festivals, talks and campus events{near}, "
-        "gathered from every local source and updated daily."
-    )
+    schools = [u.name for u in city.universities][:DESCRIPTION_SCHOOLS]
+    tail = ", updated daily from local calendars."
+    if schools:
+        full = f"{lead}: concerts, theater, talks and campus events around {' and '.join(schools)}"
+        if len(full + tail) <= META_DESCRIPTION_LIMIT:
+            return full + tail
+        if len(full) + 1 <= META_DESCRIPTION_LIMIT:
+            return full + "."
+        # One long school name ("University of California, Los Angeles and ...").
+        short = f"{lead}: concerts, theater, talks and campus events around {schools[0]}"
+        if len(short) + 1 <= META_DESCRIPTION_LIMIT:
+            return short + "."
+    return f"{lead}: concerts, theater, talks and campus events{tail}"
 
 
 def _miles_between(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
@@ -239,39 +319,106 @@ def _miles_between(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
     return 2 * r * math.asin(math.sqrt(a))
 
 
-def nearby_towns(city, candidates, *, limit: int = NEARBY_TOWN_LIMIT) -> list[tuple]:
+def nearby_towns(
+    city, candidates, *, limit: int = NEARBY_TOWN_LIMIT, centers: dict | None = None
+) -> list[tuple]:
     """Other active towns within NEARBY_TOWN_MAX_MILES, nearest first, as
     (city, miles). Links between neighbouring towns help a reader near a town
-    line and tell search engines which towns belong to the same area."""
-    if city.default_latitude is None or city.default_longitude is None:
+    line and tell search engines which towns belong to the same area.
+    `centers` fills in towns whose admin coordinates are empty (town_centers)."""
+    here = town_center(city, centers)
+    if here is None:
         return []
     found = []
     for other in candidates:
         if other.id == city.id or not other.is_active:
             continue
-        if other.default_latitude is None or other.default_longitude is None:
+        there = town_center(other, centers)
+        if there is None:
             continue
-        miles = _miles_between(
-            city.default_latitude,
-            city.default_longitude,
-            other.default_latitude,
-            other.default_longitude,
-        )
+        miles = _miles_between(*here, *there)
         if miles <= NEARBY_TOWN_MAX_MILES:
             found.append((other, miles))
     found.sort(key=lambda pair: pair[1])
     return found[:limit]
 
 
-def _city_schema(city) -> dict:
-    data: dict = {"@type": "City", "name": city.name}
-    if city.state_or_region:
-        data["containedInPlace"] = {"@type": "State", "name": city.state_or_region}
+# --- where a town is ------------------------------------------------------------
+#
+# A town's position comes from its admin coordinates. No town in production had
+# them, so the "Events near" links and the town's geo data never appeared. When
+# they are empty, the town is placed at the median of its own public events'
+# coordinates: real positions of real venues, never a made-up point. The median
+# rather than the mean, so one badly geocoded venue in another state cannot pull
+# the town away. Fewer than MIN_CENTER_EVENTS positions is too few to trust.
+
+MIN_CENTER_EVENTS = 3
+_CENTER_CACHE_SECONDS = 30 * 60
+_center_cache: dict = {"at": 0.0, "key": None, "centers": {}}
+
+
+def _median(values: list[float]) -> float:
+    ordered = sorted(values)
+    middle = len(ordered) // 2
+    if len(ordered) % 2:
+        return ordered[middle]
+    return (ordered[middle - 1] + ordered[middle]) / 2
+
+
+def centers_from_coordinates(rows) -> dict[int, tuple[float, float]]:
+    """{city_id: (latitude, longitude)} from (city_id, lat, lon) rows."""
+    by_city: dict[int, tuple[list[float], list[float]]] = {}
+    for city_id, lat, lon in rows:
+        lats, lons = by_city.setdefault(city_id, ([], []))
+        lats.append(lat)
+        lons.append(lon)
+    return {
+        city_id: (round(_median(lats), 4), round(_median(lons), 4))
+        for city_id, (lats, lons) in by_city.items()
+        if len(lats) >= MIN_CENTER_EVENTS
+    }
+
+
+def town_centers(db) -> dict[int, tuple[float, float]]:
+    """Every town's position from its events, cached for half an hour: it
+    reads every public event's coordinates, and towns do not move."""
+    from app.repositories.public_events import local_today, public_event_coordinates
+
+    key = str(db.get_bind().url)
+    now = time_module.monotonic()
+    cached = _center_cache
+    if cached["key"] == key and now - cached["at"] < _CENTER_CACHE_SECONDS:
+        return cached["centers"]
+    centers = centers_from_coordinates(public_event_coordinates(db, today=local_today(db)))
+    _center_cache.update(at=now, key=key, centers=centers)
+    return centers
+
+
+def clear_town_center_cache() -> None:
+    _center_cache.update(at=0.0, key=None, centers={})
+
+
+def town_center(city, centers: dict | None = None) -> tuple[float, float] | None:
+    """The town's (latitude, longitude): the admin's values when set, else
+    the median of its events' positions, else None."""
     if city.default_latitude is not None and city.default_longitude is not None:
+        return (city.default_latitude, city.default_longitude)
+    if centers:
+        return centers.get(city.id)
+    return None
+
+
+def _city_schema(city, centers: dict | None = None) -> dict:
+    data: dict = {"@type": "City", "name": city.name}
+    state = state_name(city.state_or_region)
+    if state:
+        data["containedInPlace"] = {"@type": "State", "name": state}
+    center = town_center(city, centers)
+    if center is not None:
         data["geo"] = {
             "@type": "GeoCoordinates",
-            "latitude": city.default_latitude,
-            "longitude": city.default_longitude,
+            "latitude": center[0],
+            "longitude": center[1],
         }
     return data
 
@@ -293,7 +440,12 @@ def breadcrumb_structured_data(crumbs: list[tuple[str, str]]) -> str:
 
 
 def city_listing_structured_data(
-    city, events: list[Event], *, page_url: str, name: str | None = None
+    city,
+    events: list[Event],
+    *,
+    page_url: str,
+    name: str | None = None,
+    centers: dict | None = None,
 ) -> str:
     """A town page as a schema.org ItemList of the events it shows, so a crawler
     (a search engine or an AI tool) gets every event's details from the one
@@ -305,7 +457,7 @@ def city_listing_structured_data(
             "@type": "ItemList",
             "name": name or f"Events in {city.name}",
             "url": page_url,
-            "about": _city_schema(city),
+            "about": _city_schema(city, centers),
             **({"keywords": schools} if schools else {}),
             "numberOfItems": len(events),
             "itemListElement": [
@@ -323,6 +475,7 @@ def site_structured_data() -> str:
         {
             "@context": "https://schema.org",
             "@type": "WebSite",
+            "publisher": {"@id": absolute_url("/") + "#organization"},
             "name": settings.app_name,
             "description": settings.public_tagline,
             "url": absolute_url("/"),
@@ -334,6 +487,27 @@ def site_structured_data() -> str:
                 },
                 "query-input": "required name=search_term_string",
             },
+        }
+    )
+
+
+def organization_structured_data() -> str:
+    """Who runs the site, for the home page: its name, address and logo.
+    Bulletin is a website, so there is no street address or opening hours,
+    and no LocalBusiness: that would claim a place that does not exist."""
+    settings = get_settings()
+    return script_safe_json(
+        {
+            "@context": "https://schema.org",
+            "@type": "Organization",
+            "@id": absolute_url("/") + "#organization",
+            "name": settings.app_name,
+            "url": absolute_url("/"),
+            "logo": absolute_url("/static/apple-touch-icon.png"),
+            "description": (
+                "Events and things to do in US college towns, gathered every day "
+                "from campus calendars, venues and libraries."
+            ),
         }
     )
 

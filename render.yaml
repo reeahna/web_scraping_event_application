@@ -45,6 +45,13 @@ services:
       # Host-header validation. Add the custom domain here too when there is one.
       - key: TRUSTED_HOSTS
         value: city-events-ryjd.onrender.com
+      # Search Console / Bing ownership tokens (the content="..." of their
+      # meta tag). Set in the dashboard; sync: false keeps the Blueprint from
+      # overwriting them. See docs/seo.md.
+      - key: GOOGLE_SITE_VERIFICATION
+        sync: false
+      - key: BING_SITE_VERIFICATION
+        sync: false
       # Look up map coordinates for events whose source gives only an address
       # or venue. Without this the public map has nothing to pin for most
       # events. Nominatim (OpenStreetMap) needs no key, but its usage policy
