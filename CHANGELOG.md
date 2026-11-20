@@ -79,6 +79,7 @@ lines. Lines may use `**bold**`, `` `code` `` and `[links](https://...)`.
 - **Preview recheck** on a LiveWhale source's admin page (under Advanced tools): reads current events that show 12:00 AM, have no venue or were missed by the latest import back from the source one by one, lists the corrections it would make, and applies them only when you choose to. (#104)
 - Admins can open **Events > AI labeling** to see what AI event labeling is doing: how many events are waiting, the tokens each request used, which free-tier limit is slowing it down, and the events the AI couldn't label, with a button to ask it again. (#105)
 - **Websites** shows when each source was last checked successfully, when it will next be checked and how its latest check failed, flags sources that are overdue or holding back their town's "Listings checked" time, and has a new **Daily checks** page for putting the sources you pick on a 24-hour schedule. (#108)
+- From **Events > AI labeling**, admins can run a model evaluation that labels about 100 sample events with the current AI setup, a leaner one and a cheaper model, then shows side by side where they agree on category and on hiding an event, which events a setup would wrongly hide, and how many tokens each uses. It never changes an event. (#107)
 
 ## [1.11.0] - 2026-11-20
 

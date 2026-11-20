@@ -79,6 +79,25 @@ def _append(value: Any, params: dict[str, Any]) -> Any:
     return f"{_as_text(value)}{text}" if value is not None else value
 
 
+# "DEC. 3, 2026": the period after an abbreviated month, which %b cannot read.
+_MONTH_PERIOD_RE = re.compile(
+    r"\b(jan|feb|mar|apr|jun|jul|aug|sep|oct|nov|dec)\.", re.IGNORECASE
+)
+
+
+def _with_full_month_names(formats: list[str]) -> list[str]:
+    """Each format, followed by its full-month-name twin when it uses %b
+    ("%b %d, %Y" also reads "MARCH 3, 2027"), and the reverse for %B. A
+    listing that abbreviates most months still spells out MARCH, APRIL, JUNE
+    and JULY, which %b alone rejects."""
+    expanded: list[str] = []
+    for fmt in formats:
+        for variant in (fmt, fmt.replace("%b", "%B"), fmt.replace("%B", "%b")):
+            if variant not in expanded:
+                expanded.append(variant)
+    return expanded
+
+
 def parse_date_value(value: Any, formats: list[str] | None = None) -> date | None:
     """Core deterministic date parser: tries each of `formats` (site-configured
     strptime formats, tried in the given order — first match wins, never a
@@ -93,11 +112,15 @@ def parse_date_value(value: Any, formats: list[str] | None = None) -> date | Non
     if not text:
         return None
     cleaned = strip_ordinals(text)
-    for fmt in formats or []:
-        try:
-            return datetime.strptime(cleaned, fmt).date()
-        except ValueError:
-            continue
+    # Formats written for "Sept. 1" ("%b. %d") read the text as it is; the
+    # copy without the period serves formats that leave it out ("%b %d").
+    variants = dict.fromkeys((cleaned, _MONTH_PERIOD_RE.sub(r"\1", cleaned)))
+    for fmt in _with_full_month_names(formats or []):
+        for variant in variants:
+            try:
+                return datetime.strptime(variant, fmt).date()
+            except ValueError:
+                continue
     try:
         return date.fromisoformat(text[:10])
     except ValueError:

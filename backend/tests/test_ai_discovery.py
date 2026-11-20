@@ -158,8 +158,9 @@ def test_a_scraped_title_cannot_break_out_of_the_listing_data(
 
 
 def test_home_page_describes_the_site_and_its_search(client):
-    (data,) = _ld_blocks(client.get("/").text)
-    assert data["@type"] == "WebSite"
+    blocks = _ld_blocks(client.get("/").text)
+    assert [b["@type"] for b in blocks] == ["WebSite", "Organization"]
+    data = blocks[0]
     assert data["potentialAction"]["target"]["urlTemplate"].endswith("?q={search_term_string}")
 
 

@@ -1029,6 +1029,15 @@ async def preview_extraction_detailed(
         if explanation:
             warnings.append(explanation)
 
+    quality = evaluate_preview_quality(
+        outcome.outcomes,
+        config,
+        warnings=list(outcome.warnings),
+        pages_fetched=len(outcome.response_hash_by_page),
+        website_id=website.id,
+        city_id=website.city_id,
+    )
+
     run = create_extraction_run(
         db,
         website_id=website.id,
@@ -1036,6 +1045,7 @@ async def preview_extraction_detailed(
         pattern_name=config.pattern_name,
         run_type="preview",
         status=status,
+        quality=quality.as_dict(),
         source_url=config.api_endpoint or config.listing_url or "",
         final_url=outcome.last_response.final_url if outcome.last_response else None,
         events_found=len(outcome.outcomes),
@@ -1118,15 +1128,6 @@ async def preview_extraction_detailed(
             ),
             correlation_id=correlation_id,
         )
-
-    quality = evaluate_preview_quality(
-        outcome.outcomes,
-        config,
-        warnings=list(outcome.warnings),
-        pages_fetched=len(outcome.response_hash_by_page),
-        website_id=website.id,
-        city_id=website.city_id,
-    )
 
     return PreviewOutcome(
         result=ExtractionResult(

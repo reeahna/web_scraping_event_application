@@ -992,6 +992,14 @@ def onboarding_result_view(
 
     inference = (website.proposed_pattern or {}).get("inference")
     decision = latest_decision_for_website(db, website.id)
+    latest_preview_run = next(
+        (
+            r
+            for r in list_extraction_runs_for_website(db, website.id, limit=20)
+            if r.run_type == "preview"
+        ),
+        None,
+    )
     return render(
         request,
         "admin/websites/onboarding.html",
@@ -1006,6 +1014,7 @@ def onboarding_result_view(
             "can_update": user_has_permission(db, current_user, "sites.update"),
             "can_test": user_has_permission(db, current_user, "sites.test"),
             "ready_outcome": INFERENCE_READY,
+            "latest_preview_run": latest_preview_run,
         },
     )
 
