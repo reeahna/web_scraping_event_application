@@ -570,8 +570,13 @@ def _total_from_response(response: FetchResponse, total_path: str | None) -> int
 # them is incomplete, and its absences say nothing about what the source
 # still lists.
 PAGE_CAP_WARNING = "pagination_max_pages_reached"
+# A record served on two different pages of one walk means the source's page
+# boundaries moved while it was being read, so as many other records were
+# probably never served at all.
+PAGE_OVERLAP_WARNING = "pagination_overlap"
 INCOMPLETE_LISTING_WARNINGS = (
     PAGE_CAP_WARNING,
+    PAGE_OVERLAP_WARNING,
     "recipe_max_pages_reached",
     "max_events_reached",
     "pagination_stopped_at_block",
@@ -624,6 +629,8 @@ async def _fetch_legacy_pages(
     last_ok_response: FetchResponse | None = None
     page_index = 0
     max_events_reached = False
+    records_on_earlier_pages: set[str] = set()
+    repeated_records = 0
     while current_request is not None:
         response = await fetch.fetch(current_request, config.fetch)
         if first_response is None:
@@ -644,6 +651,9 @@ async def _fetch_legacy_pages(
         response_hash_by_page[response.final_url] = response.body_hash
         last_ok_response = response
         page_candidates = pattern.extract(response, config)
+        page_records = {c.raw_record_hash for c in page_candidates if c.raw_record_hash}
+        repeated_records += len(page_records & records_on_earlier_pages)
+        records_on_earlier_pages |= page_records
         remaining_capacity = config.pagination.max_events - len(all_candidates)
         if len(page_candidates) > remaining_capacity:
             page_candidates = page_candidates[: max(remaining_capacity, 0)]
@@ -682,6 +692,8 @@ async def _fetch_legacy_pages(
         # before the first fetch.
         if config.fetch.rate_limit_delay_seconds > 0:
             await asyncio.sleep(config.fetch.rate_limit_delay_seconds)
+    if repeated_records:
+        warnings.append(f"{PAGE_OVERLAP_WARNING}:{repeated_records}_records_on_two_pages")
     return first_response, response, max_events_reached
 
 

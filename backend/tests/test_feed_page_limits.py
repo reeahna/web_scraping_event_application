@@ -192,3 +192,34 @@ async def test_the_run_page_says_the_listing_was_not_read_to_the_end(
     assert "Listing read to the end" in body
     assert "not counted (incomplete run)" in body
     assert "pagination_max_pages_reached:2" in body
+
+
+@pytest.mark.asyncio
+async def test_a_record_served_on_two_pages_marks_the_read_incomplete(
+    db_session, feed_source, make_event
+):
+    # The source's page boundaries moved mid-walk: page 2 repeats a page 1
+    # record, so another record (Talk 4) was never served. Seen on IU's feed:
+    # run #1980 skipped 65 records as duplicates and missed as many sessions.
+    city, website, configure = feed_source
+    configure(max_pages=25)
+    unserved = make_event(
+        city, website=website, title="Talk 4", external_source_id="4",
+        canonical_url="https://events.iu.edu/x/event/4-talk",
+        start_date=date(2027, 1, 7),
+    )
+    update_fingerprint_and_duplicates(db_session, unserved)
+    db_session.commit()
+    shifted = {
+        "1": [_record(1, "2027-01-04"), _record(2, "2027-01-05")],
+        "2": [_record(2, "2027-01-05"), _record(3, "2027-01-06")],
+        "3": [_record(5, "2027-01-08")],
+    }
+    with patched_http_fetch(_handler(shifted, [])):
+        result = await run_extraction(db_session, website, triggered_by_user_id=None)
+
+    assert "pagination_overlap:1_records_on_two_pages" in result.warnings
+    assert listing_incomplete(result.warnings)
+    assert result.events_missing == 0
+    db_session.refresh(unserved)
+    assert unserved.is_active
