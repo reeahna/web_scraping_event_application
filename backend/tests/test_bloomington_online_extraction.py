@@ -267,3 +267,15 @@ def test_long_page_containers_are_not_read_as_titles():
     filler = "word " * 2000
     soup = BeautifulSoup(f'<div id="all"><p>{filler}</p><b>Talk</b></div>', "html.parser")
     assert page_anchors._short_text(soup.div) is None
+
+
+def test_only_out_of_town_events_fail_the_town_check():
+    """Every address on this site reads "Bloomington, IN"; the venue says where
+    the event is. Exactly the two away games and the NCAA tennis in Athens,
+    Ga. (two days) are out of town; all other 36 events are kept."""
+    candidates, _, _ = _run()
+    outside = [c for c in candidates if candidate_outside_home_town(c, BLOOMINGTON)]
+    assert sorted(c.title for c in outside) == sorted(
+        [*AWAY_GAMES, *["Women's Tennis vs NCAA Individual Championships"] * 2]
+    )
+    assert all("Bloomington" in (c.address or "") for c in outside)

@@ -90,6 +90,41 @@ def test_is_outside_home_town(address, outside):
 
 
 @pytest.mark.parametrize(
+    "venue,address,outside",
+    [
+        # An aggregator that puts its own town in every address: the venue
+        # names where the event really is (Bloomington Online, Nov 2026).
+        ("Athens, Ga.", "Bloomington, IN", True),
+        ("Seattle, WA", "Bloomington, IN", True),
+        ("Lucas Oil Stadium, Indianapolis, IN", "Bloomington, IN", True),
+        ("Stadium, Bloomington, IL", "Bloomington, IN", True),  # same name, other state
+        # Local venues are kept, however they are written.
+        ("Simon Skjodt Assembly Hall, 1001 E 17th St, Bloomington, IN 47408",
+         "Bloomington, IN", False),
+        ("Bloomington, Ind.", "Bloomington, IN", False),
+        ("The Sip Craft Beer Pub, 5920 W State Rd 46, Bloomington", "Bloomington, IN", False),
+        ("Ellettsville Branch Library", "Bloomington, IN", False),
+        ("Monroe County Public Library (Indiana)", "Bloomington, IN", False),
+        ("IMU Dogwood & Redbud Rooms", "Bloomington, IN", False),
+        ("Kentucky Room, Indiana Memorial Union", "Bloomington, IN", False),
+        # A venue naming another town without its state does not outweigh an
+        # address in the home town.
+        ("Nashville Room, 10 Main St, Nashville", "111 S Walnut St, Bloomington, IN", False),
+        # The address still decides first, as before.
+        ("Buskirk-Chumley Theater", "10 W Market St, Indianapolis, IN, 46204", True),
+        # With no town in the address, the venue is read as before.
+        ("Lucas Oil Stadium, Indianapolis, IN", None, True),
+        ("Assembly Hall", None, False),
+    ],
+)
+def test_venue_naming_another_town_outweighs_a_home_town_address(venue, address, outside):
+    assert (
+        is_outside_home_town(address=address, venue=venue, town="Bloomington", state="Indiana")
+        is outside
+    )
+
+
+@pytest.mark.parametrize(
     "address,outside",
     [
         ("120 N Dubuque St, Iowa City, IA, 52245", False),
