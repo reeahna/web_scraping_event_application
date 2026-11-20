@@ -1473,7 +1473,7 @@ button[aria-disabled="true"] {
 }
 
 /* On a phone each notification becomes a short stacked entry (date and
-   severity on one line, then title, message and the two buttons) instead of a
+   severity on one line, then title, message and the button) instead of a
    table squeezed into narrow columns. */
 @media (max-width: 640px) {
   .admin-body .notifications-table,
@@ -1511,8 +1511,7 @@ button[aria-disabled="true"] {
     font-weight: 600;
     margin-top: var(--space-1);
   }
-  .notifications-table td:nth-child(5),
-  .notifications-table td:nth-child(6) {
+  .notifications-table td:nth-child(5) {
     display: inline-block;
     margin: var(--space-2) var(--space-2) 0 0;
   }

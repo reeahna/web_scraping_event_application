@@ -1,5 +1,6 @@
-"""Admin notifications inbox: paging, read/severity filters, counts, and keeping
-the reader's place after Mark read."""
+"""Admin notifications inbox: Unread by default, Unread/Read/All and severity
+filters, paging, counts, Mark read / Mark unread keeping the reader's place, and
+no Dismiss button."""
 
 import re
 from datetime import UTC, datetime, timedelta
@@ -95,7 +96,7 @@ def test_more_than_fifty_pages_forward_and_back(client, make_super_admin, db_ses
     titles = _titles(first.text)
     assert len(titles) == 50
     assert titles[0] == "N0124"
-    assert "125 notifications" in first.text
+    assert "125 unread notifications" in first.text
     assert "Page 1 of 3" in first.text
     assert "125 unread" in first.text
     assert 'href="/admin/notifications?page=2"' in first.text
@@ -117,7 +118,7 @@ def test_fifty_or_fewer_shows_no_pager(client, make_super_admin, db_session, log
     admin = _admin(make_super_admin, login, "inbox-short@example.com")
     _add(db_session, admin, 3)
     page = client.get("/admin/notifications")
-    assert "3 notifications" in page.text
+    assert "3 unread notifications" in page.text
     assert 'class="pagination"' not in page.text
     assert "Page 1 of" not in page.text
 
@@ -129,15 +130,18 @@ def test_read_and_unread_filters(client, make_super_admin, db_session, login):
 
     unread = client.get("/admin/notifications?status=unread")
     assert _titles(unread.text) == ["N0004", "N0003"]
-    assert "2 notifications match these filters" in unread.text
+    assert "2 unread notifications" in unread.text
 
     read = client.get("/admin/notifications?status=read")
     assert _titles(read.text) == ["N0002", "N0001", "N0000"]
     # The unread count is inbox-wide, whatever is being shown.
     assert "2 unread" in read.text
 
-    everything = client.get("/admin/notifications")
+    assert "3 read notifications" in read.text
+
+    everything = client.get("/admin/notifications?status=all")
     assert len(_titles(everything.text)) == 5
+    assert "5 notifications" in everything.text
 
 
 def test_older_unread_only_link_still_works(client, make_super_admin, db_session, login):
@@ -156,7 +160,7 @@ def test_severity_and_combined_filters(client, make_super_admin, db_session, log
     _add(db_session, admin, 2, severity="warning", start=3)
     _add(db_session, admin, 1, severity="info", start=5)
 
-    assert _titles(client.get("/admin/notifications?severity=error").text) == [
+    assert _titles(client.get("/admin/notifications?status=all&severity=error").text) == [
         "N0002",
         "N0001",
         "N0000",
@@ -167,13 +171,17 @@ def test_severity_and_combined_filters(client, make_super_admin, db_session, log
     ]
     assert _titles(client.get("/admin/notifications?severity=info").text) == ["N0005"]
 
-    combined = client.get("/admin/notifications?status=unread&severity=error")
+    combined = client.get("/admin/notifications?severity=error")
     assert _titles(combined.text) == ["N0001", "N0000"]
-    assert "2 notifications match these filters" in combined.text
+    assert "2 unread notifications (errors)" in combined.text
     assert "5 unread" in combined.text
 
-    # Unknown values are ignored rather than matching nothing.
-    assert len(_titles(client.get("/admin/notifications?severity=bogus").text)) == 6
+    read_errors = client.get("/admin/notifications?status=read&severity=error")
+    assert _titles(read_errors.text) == ["N0002"]
+
+    # Unknown values fall back to the defaults (Unread, any severity).
+    assert len(_titles(client.get("/admin/notifications?severity=bogus").text)) == 5
+    assert len(_titles(client.get("/admin/notifications?status=bogus").text)) == 5
 
 
 def test_filters_survive_paging(client, make_super_admin, db_session, login):
@@ -181,11 +189,14 @@ def test_filters_survive_paging(client, make_super_admin, db_session, login):
     _add(db_session, admin, 60, severity="error", start=0)
     _add(db_session, admin, 10, severity="info", start=60)
 
-    page = client.get("/admin/notifications?status=unread&severity=error")
+    page = client.get("/admin/notifications?severity=error")
     assert "Page 1 of 2" in page.text
-    assert 'href="/admin/notifications?status=unread&amp;severity=error&amp;page=2"' in page.text
+    assert 'href="/admin/notifications?severity=error&amp;page=2"' in page.text
 
-    second = client.get("/admin/notifications?status=unread&severity=error&page=2")
+    every = client.get("/admin/notifications?status=all")
+    assert 'href="/admin/notifications?status=all&amp;page=2"' in every.text
+
+    second = client.get("/admin/notifications?severity=error&page=2")
     assert _titles(second.text) == [f"N{i:04d}" for i in range(9, -1, -1)]
 
 
@@ -195,8 +206,17 @@ def test_empty_filter_result(client, make_super_admin, db_session, login):
     page = client.get("/admin/notifications?status=read&severity=error")
     assert page.status_code == 200
     assert "No notifications match these filters." in page.text
-    assert "0 notifications match these filters" in page.text
-    assert "Clear filters" in page.text
+    assert "0 read notifications (errors)" in page.text
+    assert "Back to unread" in page.text
+
+
+def test_unread_view_says_when_everything_is_read(client, make_super_admin, db_session, login):
+    admin = _admin(make_super_admin, login, "inbox-caught-up@example.com")
+    _add(db_session, admin, 2, read=True)
+    page = client.get("/admin/notifications")
+    assert _titles(page.text) == []
+    assert "All caught up" in page.text
+    assert "No unread notifications. Choose Read or All to see earlier ones." in page.text
 
 
 def test_unread_count_is_global_on_every_page(client, make_super_admin, db_session, login):
@@ -249,14 +269,14 @@ def test_mark_read_on_emptied_last_page_lands_on_nearest_page(
 
     resp = client.post(
         f"/admin/notifications/{oldest.id}/read",
-        data={"csrf_token": _csrf(client), "status": "unread", "page": "2"},
+        data={"csrf_token": _csrf(client), "page": "2"},
         follow_redirects=False,
     )
-    assert resp.headers["location"] == "/admin/notifications?status=unread&page=2"
     landed = client.get(resp.headers["location"])
     assert landed.status_code == 200
     assert len(_titles(landed.text)) == 50
     assert "50 unread" in landed.text
+    assert resp.headers["location"] == "/admin/notifications?page=2"
 
 
 def test_mark_read_redirect_ignores_unknown_values(client, make_super_admin, db_session, login):
@@ -279,9 +299,7 @@ def test_viewing_pages_marks_nothing_read(client, make_super_admin, db_session, 
     assert count_unread_for_user(db_session, admin.id) == 60
 
 
-def test_mark_all_read_says_it_covers_the_whole_inbox(
-    client, make_super_admin, db_session, login
-):
+def test_mark_all_read_says_it_covers_the_whole_inbox(client, make_super_admin, db_session, login):
     admin = _admin(make_super_admin, login, "inbox-all-label@example.com")
     _add(db_session, admin, 2, severity="error", start=0)
     _add(db_session, admin, 3, severity="info", start=2)
@@ -309,10 +327,10 @@ def test_mark_all_read_keeps_filters(client, make_super_admin, db_session, login
     client.get("/admin/notifications")
     resp = client.post(
         "/admin/notifications/read-all",
-        data={"csrf_token": _csrf(client), "status": "unread", "severity": "error"},
+        data={"csrf_token": _csrf(client), "status": "all", "severity": "error"},
         follow_redirects=False,
     )
-    assert resp.headers["location"] == "/admin/notifications?status=unread&severity=error"
+    assert resp.headers["location"] == "/admin/notifications?status=all&severity=error"
 
 
 # --- permissions and CSRF ------------------------------------------------------
@@ -349,3 +367,219 @@ def test_only_own_notifications_are_counted_and_listed(
     page = client.get("/admin/notifications")
     assert _titles(page.text) == ["N0001", "N0000"]
     assert "2 unread" in page.text
+
+
+# --- Unread by default, Mark unread, no Dismiss ---------------------------------
+
+
+def _nav_count(html: str) -> str:
+    match = re.search(r">Notifications \((\d+)\)</a>", html)
+    return match.group(1) if match else ""
+
+
+def test_default_view_is_unread_and_mark_read_moves_it_out(
+    client, make_super_admin, db_session, login
+):
+    admin = _admin(make_super_admin, login, "inbox-default@example.com")
+    _add(db_session, admin, 1, read=True, start=0)
+    rows = _add(db_session, admin, 2, start=1)
+    target = rows[1]  # N0002
+    created = target.created_at
+
+    page = client.get("/admin/notifications")
+    assert _titles(page.text) == ["N0002", "N0001"]
+    assert '<option value="unread" selected>' in page.text
+    assert '<option value="read" >' in page.text
+    assert '<option value="all" >' in page.text
+    assert _nav_count(page.text) == "2"
+
+    resp = client.post(
+        f"/admin/notifications/{target.id}/read",
+        data={"csrf_token": _csrf(client)},
+        follow_redirects=False,
+    )
+    assert resp.headers["location"] == "/admin/notifications"
+    after = client.get("/admin/notifications")
+    assert _titles(after.text) == ["N0001"]
+    assert _nav_count(after.text) == "1"
+    assert "1 unread" in after.text
+
+    # Still there, not deleted: in Read and in All, with its timestamps.
+    assert _titles(client.get("/admin/notifications?status=read").text) == ["N0002", "N0000"]
+    assert len(_titles(client.get("/admin/notifications?status=all").text)) == 3
+    db_session.refresh(target)
+    assert target.created_at.replace(tzinfo=None) == created.replace(tzinfo=None)
+    assert target.read_at is not None
+
+
+def test_mark_unread_puts_it_back_and_keeps_your_place(client, make_super_admin, db_session, login):
+    from app.models.audit_log import AuditLog
+
+    admin = _admin(make_super_admin, login, "inbox-unread@example.com")
+    rows = _add(db_session, admin, 60, read=True, severity="warning")
+    target = rows[5]  # on page 2 of the Read view
+    created, title, url = target.created_at, target.title, target.action_url
+
+    page = client.get("/admin/notifications?status=read&severity=warning&page=2")
+    assert f'action="/admin/notifications/{target.id}/unread"' in page.text
+    assert "Mark unread" in page.text
+    assert "Mark read" not in page.text
+    assert _nav_count(page.text) == "0"
+
+    resp = client.post(
+        f"/admin/notifications/{target.id}/unread",
+        data={
+            "csrf_token": _csrf(client),
+            "status": "read",
+            "severity": "warning",
+            "page": "2",
+        },
+        follow_redirects=False,
+    )
+    assert resp.status_code == 303
+    assert resp.headers["location"] == ("/admin/notifications?status=read&severity=warning&page=2")
+    db_session.refresh(target)
+    assert target.read_at is None
+    assert (target.title, target.action_url) == (title, url)
+    assert target.created_at.replace(tzinfo=None) == created.replace(tzinfo=None)
+    assert count_unread_for_user(db_session, admin.id) == 1
+
+    unread = client.get("/admin/notifications")
+    assert _titles(unread.text) == [title]
+    assert _nav_count(unread.text) == "1"
+
+    audit = (
+        db_session.query(AuditLog)
+        .filter_by(action="notification_marked_unread", entity_id=target.id)
+        .one()
+    )
+    assert audit.user_id == admin.id
+    assert audit.entity_type == "notification"
+
+
+def test_read_then_unread_both_audited(client, make_super_admin, db_session, login):
+    from app.models.audit_log import AuditLog
+
+    admin = _admin(make_super_admin, login, "inbox-audit@example.com")
+    (row,) = _add(db_session, admin, 1)
+    client.get("/admin/notifications")
+    for action in ("read", "unread", "read"):
+        client.post(
+            f"/admin/notifications/{row.id}/{action}",
+            data={"csrf_token": _csrf(client)},
+            follow_redirects=False,
+        )
+    actions = [
+        a.action
+        for a in db_session.query(AuditLog)
+        .filter_by(entity_type="notification", entity_id=row.id)
+        .order_by(AuditLog.id)
+    ]
+    assert actions == [
+        "notification_marked_read",
+        "notification_marked_unread",
+        "notification_marked_read",
+    ]
+
+
+def test_all_view_shows_the_right_action_per_row(client, make_super_admin, db_session, login):
+    admin = _admin(make_super_admin, login, "inbox-allview@example.com")
+    (read_row,) = _add(db_session, admin, 1, read=True, start=0)
+    (unread_row,) = _add(db_session, admin, 1, start=1)
+    page = client.get("/admin/notifications?status=all")
+    assert f'action="/admin/notifications/{read_row.id}/unread"' in page.text
+    assert f'action="/admin/notifications/{unread_row.id}/read"' in page.text
+    assert '<input type="hidden" name="status" value="all" />' in page.text
+
+
+def test_no_dismiss_button_and_dismiss_route_is_gone(client, make_super_admin, db_session, login):
+    admin = _admin(make_super_admin, login, "inbox-nodismiss@example.com")
+    (row,) = _add(db_session, admin, 1)
+    for url in (
+        "/admin/notifications",
+        "/admin/notifications?status=read",
+        "/admin/notifications?status=all",
+    ):
+        page = client.get(url)
+        assert "Dismiss" not in page.text, url
+        assert "/dismiss" not in page.text, url
+    resp = client.post(
+        f"/admin/notifications/{row.id}/dismiss",
+        data={"csrf_token": _csrf(client)},
+        follow_redirects=False,
+    )
+    assert resp.status_code in (404, 405)
+    db_session.refresh(row)
+    assert row.dismissed_at is None
+
+
+def test_previously_dismissed_notifications_keep_their_history(
+    client, make_super_admin, db_session, login
+):
+    admin = _admin(make_super_admin, login, "inbox-olddismiss@example.com")
+    (row,) = _add(db_session, admin, 1)
+    dismissed = datetime(2026, 11, 10, tzinfo=UTC)
+    row.dismissed_at = dismissed
+    db_session.commit()
+
+    page = client.get("/admin/notifications")
+    assert _titles(page.text) == [row.title]
+    assert _nav_count(page.text) == "1"
+    client.post(
+        f"/admin/notifications/{row.id}/read",
+        data={"csrf_token": _csrf(client)},
+        follow_redirects=False,
+    )
+    db_session.refresh(row)
+    assert row.read_at is not None
+    assert row.dismissed_at.replace(tzinfo=None) == dismissed.replace(tzinfo=None)
+
+
+def test_action_links_still_render(client, make_super_admin, db_session, login):
+    admin = _admin(make_super_admin, login, "inbox-links@example.com")
+    (row,) = _add(db_session, admin, 1)
+    row.action_url = "/admin/websites/5"
+    db_session.commit()
+    page = client.get("/admin/notifications")
+    assert '<a href="/admin/websites/5">view</a>' in page.text
+
+
+def test_mark_unread_requires_csrf_admin_and_ownership(
+    client, make_super_admin, make_user, db_session, login
+):
+    admin = _admin(make_super_admin, login, "inbox-unread-guard@example.com")
+    other = make_user(email="inbox-unread-other@example.com")
+    (mine,) = _add(db_session, admin, 1, read=True, start=0)
+    (theirs,) = _add(db_session, other, 1, read=True, start=1)
+    client.get("/admin/notifications")
+
+    bad_csrf = client.post(
+        f"/admin/notifications/{mine.id}/unread",
+        data={"csrf_token": "wrong"},
+        follow_redirects=False,
+    )
+    assert bad_csrf.status_code == 403
+    db_session.refresh(mine)
+    assert mine.read_at is not None
+
+    not_mine = client.post(
+        f"/admin/notifications/{theirs.id}/unread",
+        data={"csrf_token": _csrf(client)},
+        follow_redirects=False,
+    )
+    assert not_mine.status_code == 404
+    db_session.refresh(theirs)
+    assert theirs.read_at is not None
+
+    client.cookies.clear()
+    make_user(email="inbox-unread-member@example.com", password=PASSWORD, role_name=REGISTERED_USER)
+    login("inbox-unread-member@example.com", PASSWORD)
+    client.get("/")
+    member = client.post(
+        f"/admin/notifications/{mine.id}/unread",
+        data={"csrf_token": _csrf(client)},
+        follow_redirects=False,
+    )
+    assert member.status_code == 403
+    db_session.refresh(mine)
+    assert mine.read_at is not None
