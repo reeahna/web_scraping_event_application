@@ -32,6 +32,12 @@ lines. Lines may use `**bold**`, `` `code` `` and `[links](https://...)`.
 
 ## [Unreleased]
 
+### For everyone
+- Event times and places are more accurate. Some university events showed up a day late at 12:00 AM, or said "Venue TBD" even though the event's own page names the hall. Events now keep the day, start and end time and venue their source gives, and a few that were saved wrong earlier can be corrected. (#104)
+
+### Admin and behind the scenes
+- LiveWhale feeds always use their offset-aware times (a saved json_path no longer turns them off), placeholder venues no longer block the real place name, `*_gmt`/`*_utc` fields are read as UTC, and event-page lookups fill placeholder midnight times and LiveWhale venue lines. A new **Preview recheck** under Advanced tools reads suspect stored events back from the source by id and corrects them in place only when you apply it. (#104)
+
 ## [1.11.0] - 2026-11-20
 
 ### For everyone
