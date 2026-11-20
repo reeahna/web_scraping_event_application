@@ -1443,6 +1443,81 @@ button[aria-disabled="true"] {
   font-size: 0.88rem;
 }
 
+/* Admin Notifications: two compact menus, a quiet reset link, and a one-line
+   count under them. */
+.notifications-header {
+  margin-bottom: var(--space-3);
+}
+
+.notifications-filters {
+  margin-bottom: var(--space-2);
+}
+
+.notifications-clear {
+  font-size: 0.88rem;
+  color: var(--muted);
+}
+
+.notifications-summary {
+  margin-bottom: var(--space-4);
+}
+
+/* Long source names and error text wrap instead of pushing Mark read off screen. */
+.notifications-table td:nth-child(3),
+.notifications-table td:nth-child(4) {
+  overflow-wrap: anywhere;
+}
+
+.notifications-table button {
+  white-space: nowrap;
+}
+
+/* On a phone each notification becomes a short stacked entry (date and
+   severity on one line, then title, message and the two buttons) instead of a
+   table squeezed into narrow columns. */
+@media (max-width: 640px) {
+  .admin-body .notifications-table,
+  .notifications-table tbody,
+  .notifications-table tr,
+  .notifications-table td {
+    display: block;
+    overflow-x: visible;
+  }
+  .notifications-table thead {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip: rect(0 0 0 0);
+  }
+  .notifications-table tr {
+    padding: var(--space-3) 0;
+    border-bottom: 1px solid var(--border);
+  }
+  .notifications-table td {
+    padding: 2px 0;
+    border: 0;
+  }
+  .notifications-table td:nth-child(1),
+  .notifications-table td:nth-child(2) {
+    display: inline;
+    font-size: var(--font-sm);
+    color: var(--muted);
+  }
+  .notifications-table td:nth-child(2)::before {
+    content: " · ";
+  }
+  .notifications-table td:nth-child(3) {
+    font-weight: 600;
+    margin-top: var(--space-1);
+  }
+  .notifications-table td:nth-child(5),
+  .notifications-table td:nth-child(6) {
+    display: inline-block;
+    margin: var(--space-2) var(--space-2) 0 0;
+  }
+}
+
 /* Admin Websites: a multi-status filter in a plain <details>. Closed, it is
    one control in the bar; open, it takes its own full-width row below. */
 .status-filter {
