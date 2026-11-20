@@ -463,10 +463,9 @@ def drain_categorization_queue(
         # per tick already stays inside the rate limit. Fail fast on a 429 (0
         # retries) so the tick's cooldown kicks in instead of burning quota.
         with make_categorizer(min_interval_seconds=0.0, max_retries=0) as categorizer:
-            if provider == "groq":
-                to_classify = fit_to_token_budget(
-                    categorizer, options, to_classify, get_settings().groq_max_prompt_tokens
-                )
+            max_tokens = get_settings().groq_max_prompt_tokens
+            if provider == "groq" and max_tokens > 0:
+                to_classify = fit_to_token_budget(categorizer, options, to_classify, max_tokens)
                 kept = {item.id for item in to_classify}
                 events = [event for event in events if event.id in kept]
             try:

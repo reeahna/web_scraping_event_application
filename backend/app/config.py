@@ -195,10 +195,11 @@ class Settings(BaseSettings):
     # rate limits); "single" is the original one-message layout.
     ai_description_chars: int = 600
     groq_prompt_layout: str = "single"
-    # A batch is cut down until its prompt is estimated below this many
-    # tokens, so a larger groq_batch_size can never exceed the per-minute
-    # token limit (8K for gpt-oss on the Free plan) once the answer is added.
-    groq_max_prompt_tokens: int = 6500
+    # When above 0, a batch is cut down until its prompt is estimated below
+    # this many tokens, so a larger groq_batch_size can never exceed the
+    # per-minute token limit (8K for gpt-oss on the Free plan) once the answer
+    # is added. 0 (the default) leaves batches as they are; 6500 suits 8K.
+    groq_max_prompt_tokens: int = 0
     # The cheaper model an administrator can compare with groq_model from the
     # AI labeling page (it has its own free-tier quota on Groq).
     groq_eval_candidate_model: str = "openai/gpt-oss-20b"
