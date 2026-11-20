@@ -164,9 +164,13 @@ def select_sample(
     quotas = {name: PER_BUCKET for name in [*BUCKETS, "little_information", "hidden_by_ai"]}
     quotas["admin_override"] = MAX_OVERRIDES
     for bucket, quota in quotas.items():
-        members = [e for e in by_bucket.get(bucket, []) if e.id not in chosen]
-        rng.shuffle(members)
-        for event in members[:quota]:
+        members = by_bucket.get(bucket, [])
+        # An event already chosen for an earlier bucket counts toward this one
+        # too, so only the shortfall is drawn from the bucket's other events.
+        already = sum(1 for e in members if e.id in chosen)
+        fresh = [e for e in members if e.id not in chosen]
+        rng.shuffle(fresh)
+        for event in fresh[: max(0, quota - already)]:
             chosen[event.id] = event
     rest = [e for e in pool if e.id not in chosen]
     rng.shuffle(rest)

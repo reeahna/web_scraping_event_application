@@ -121,6 +121,27 @@ def test_sample_spreads_over_kinds_of_event(db_session, make_city, make_event):
     assert fixed["override_category"] == "music"
 
 
+def test_events_in_several_buckets_count_toward_each(db_session, make_city, make_event):
+    city = make_city()
+    titles = (
+        ["Jazz Club Online Concert Night"] * 14  # performances, student_orgs, online
+        + ["Chess Club Weekly Gathering Evening"] * 5  # student_orgs only
+        + ["Zoom Webinar About Local Gardens"] * 5  # online only
+    )
+    for i, title in enumerate(titles):
+        make_event(city, title=title, canonical_url=f"https://x/o{i}", start_date=SOON,
+                   description="A long enough description of the event for sampling." * 2)
+    sample = ai_label_eval.select_sample(db_session, size=10)
+    ids = [item["id"] for item in sample]
+    assert len(ids) == len(set(ids))
+    for bucket in ("performances", "student_orgs", "online"):
+        members = [item for item in sample if bucket in item["buckets"]]
+        assert len(members) >= ai_label_eval.PER_BUCKET, bucket
+    # The 12 overlapping events already fill all three buckets, so nothing more
+    # is drawn for student_orgs or online.
+    assert len(sample) == ai_label_eval.PER_BUCKET
+
+
 def test_evaluation_needs_a_groq_key(db_session, monkeypatch):
     monkeypatch.setattr(get_settings(), "groq_api_key", None)
     with pytest.raises(ValueError):
