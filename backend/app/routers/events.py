@@ -21,6 +21,7 @@ from app.models.website import Website
 from app.repositories.event_provenance import get_latest_provenance_for_event
 from app.services.audit import record_audit
 from app.services.categorization import apply_categorization, categorize_event
+from app.services.event_freshness import mark_if_changed, visitor_snapshot
 from app.services.rbac import get_effective_permissions, require_permission, user_has_permission
 
 router = APIRouter(prefix="/admin/events", tags=["admin-events"])
@@ -340,10 +341,12 @@ async def override_category(
         "override_category_id": event.category_override_id,
         "effective_category_id": event.effective_category.id if event.effective_category else None,
     }
+    snapshot = visitor_snapshot(event)
     event.category_override_id = category.id
     event.category_overridden_by_user_id = current_user.id
     event.category_overridden_at = datetime.now(UTC)
     event.category_override_reason = reason.strip() or None
+    mark_if_changed(event, snapshot)
     db.commit()
     _audit(
         db,
@@ -373,10 +376,12 @@ async def clear_category_override(
     _require(db, current_user, "events.override_category")
     event = _event_or_404(db, event_id)
     before = {"override_category_id": event.category_override_id}
+    snapshot = visitor_snapshot(event)
     event.category_override_id = None
     event.category_overridden_by_user_id = None
     event.category_overridden_at = None
     event.category_override_reason = None
+    mark_if_changed(event, snapshot)
     db.commit()
     _audit(
         db,
@@ -430,6 +435,7 @@ async def correct_location(
         "latitude": event.corrected_latitude,
         "longitude": event.corrected_longitude,
     }
+    snapshot = visitor_snapshot(event)
     event.corrected_venue = venue.strip() or None
     event.corrected_address = address.strip() or None
     corrected_latitude = _coordinate(latitude, latitude=True)
@@ -440,6 +446,7 @@ async def correct_location(
     event.corrected_longitude = corrected_longitude
     event.location_corrected_by_user_id = current_user.id
     event.location_corrected_at = datetime.now(UTC)
+    mark_if_changed(event, snapshot)
     db.commit()
     after = {
         "venue": event.corrected_venue,
@@ -480,12 +487,14 @@ async def clear_location_correction(
         "latitude": event.corrected_latitude,
         "longitude": event.corrected_longitude,
     }
+    snapshot = visitor_snapshot(event)
     event.corrected_venue = None
     event.corrected_address = None
     event.corrected_latitude = None
     event.corrected_longitude = None
     event.location_corrected_by_user_id = None
     event.location_corrected_at = None
+    mark_if_changed(event, snapshot)
     db.commit()
     _audit(
         db,

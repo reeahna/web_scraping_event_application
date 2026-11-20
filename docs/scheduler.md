@@ -110,3 +110,26 @@ act):
 
 `interval_minutes` is floored at 15 minutes regardless of what a form submits,
 so a misconfiguration cannot poll a third-party site aggressively.
+
+## Freshness shown to visitors
+
+`app/services/event_freshness.py` turns run records into two public timestamps.
+
+- **Town pages** ("Listings checked ..."): the oldest of each public source's
+  latest successful persistent run (`manual`/`scheduled`, status `success` or
+  `partial`). Only sources whose events can be public count (active, not
+  archived, approved). A source that has never completed a successful check is
+  left out, a source whose latest run failed keeps its last good time and is
+  mentioned on the page, and preview or detection runs never count. Page views
+  never change it.
+- **Event pages** ("Event information last updated ..."): `Event.content_updated_at`,
+  set when an event is first listed and moved only when what a visitor sees
+  changes (`visitor_snapshot`): from a check, an admin correction or a new AI
+  category. It is not `scraped_at` (last seen by a check) or `updated_at` (last
+  database write). Events listed before it existed have no value and show no line.
+
+Both are formatted in the town's (or event's) IANA zone with the abbreviation in
+force at that instant, so EST and EDT are right on either side of a DST change.
+Each persistent run also records `events_changed`, `events_cancelled` and
+`events_missing` (upcoming events this source no longer listed; counted only,
+never hidden) next to `events_inserted` and `events_updated`.
