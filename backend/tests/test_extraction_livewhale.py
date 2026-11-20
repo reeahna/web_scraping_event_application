@@ -157,7 +157,7 @@ def test_html_sanitized_out_of_description():
 
 
 def test_missing_location_is_none_not_fabricated():
-    candidate = _extract_page1()[1]  # Guest Lecture: no location/address/city/state/zip
+    candidate = _extract_page1()[1]  # Guest Artist Talk: no location/address/city/state/zip
     normalized = normalize_candidate(candidate, CONFIG)
     assert normalized.venue is None
     assert normalized.address is None
