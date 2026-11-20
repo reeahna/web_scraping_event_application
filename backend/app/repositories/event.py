@@ -1,11 +1,11 @@
-from datetime import UTC, datetime
+from datetime import UTC, datetime, time
 
 from sqlalchemy import and_, or_
 from sqlalchemy.orm import Session
 
 from app.extraction.dedup import candidate_fingerprint
 from app.extraction.locations import has_venue
-from app.extraction.normalize import ALL_DAY_MARKER, plain_text
+from app.extraction.normalize import ALL_DAY_MARKER, END_ABSENT_MARKER, plain_text
 from app.extraction.types import EventCandidate
 from app.models.event import Event
 from app.schemas.event import EventCreate
@@ -65,6 +65,17 @@ def event_urls_with_venue(db: Session, website_id: int) -> frozenset[str]:
         for url, venue, corrected in rows
         if url and has_venue({"venue": corrected if corrected else venue})
     )
+
+
+def event_urls_with_time(db: Session, website_id: int) -> frozenset[str]:
+    """Canonical URLs of this website's events stored with a real clock time
+    (not a bare 12:00 AM), so extraction doesn't re-fetch their pages for one."""
+    rows = db.query(Event.canonical_url).filter(
+        Event.website_id == website_id,
+        Event.start_time.is_not(None),
+        Event.start_time != time(0),
+    )
+    return frozenset(url for (url,) in rows if url)
 
 
 def find_existing_event_for_candidate(
@@ -184,14 +195,20 @@ def update_event(
         event.source_category = candidate.source_category
     if candidate.timezone is not None:
         event.timezone = candidate.timezone
+    keep_stored_time = _midnight_placeholder(event, candidate)
     if candidate.start_date is not None:
         event.start_date = candidate.start_date
     if candidate.end_date is not None:
         event.end_date = candidate.end_date
-    if candidate.start_time is not None:
+    if candidate.start_time is not None and not keep_stored_time:
         event.start_time = candidate.start_time
     if candidate.end_time is not None:
         event.end_time = candidate.end_time
+    if END_ABSENT_MARKER in candidate.transformation_history and candidate.start_date is not None:
+        # The source says the event has no end. An end stored by an earlier
+        # run (a UTC reading of the start's hour, say) is stale, not data.
+        event.end_date = None
+        event.end_time = None
     if ALL_DAY_MARKER in candidate.transformation_history and candidate.start_date is not None:
         # The source says this is an all-day event, so a time stored by an
         # earlier run (a UTC midnight read as "5:00 AM") is stale, not data.
@@ -233,6 +250,21 @@ def update_event(
     update_fingerprint_and_duplicates(db, event)
     db.refresh(event)
     return event
+
+
+def _midnight_placeholder(event: Event, candidate: EventCandidate) -> bool:
+    """True when a re-scrape offers 12:00 AM, with no end, for the day the
+    event already has a real clock time on. A bare midnight with nothing else
+    is how many listings write "no time given"; it never replaces a time the
+    source stated before. (A midnight start is still stored for a new event,
+    and an all-day event is handled by its own flag, never by midnight.)"""
+    return (
+        candidate.start_time == time(0)
+        and candidate.end_time is None
+        and candidate.start_date is not None
+        and candidate.start_date == event.start_date
+        and event.start_time not in (None, time(0))
+    )
 
 
 _DECODED_FIELDS = ("title", "venue", "address")

@@ -57,6 +57,7 @@ from app.services.audit import record_audit
 from app.services.auto_onboarding_execution import effective_decision
 from app.services.auto_onboarding_reevaluation import reevaluate_website
 from app.services.browser_recovery import browser_retry_recovery
+from app.services.event_recheck import recheck_website_events, supports_recheck
 from app.services.extraction_runs import preview_extraction, run_detection, run_extraction
 from app.services.onboarding_automation import detect_and_configure
 from app.services.rbac import require_permission, user_has_permission
@@ -524,6 +525,7 @@ def website_detail(website_id: int, request: Request, current_user: ViewSites, d
             "schedule_view": build_website_schedule_view(db, website),
             "interval_presets": INTERVAL_PRESETS,
             "format_interval": format_interval,
+            "can_recheck": supports_recheck(website),
         },
     )
 
@@ -1149,6 +1151,50 @@ async def run_extraction_view(
     response = RedirectResponse(url=f"/admin/websites/{website.id}", status_code=303)
     _extraction_result_flash(response, "Extraction run", result)
     return response
+
+
+@router.post("/{website_id}/recheck-events", response_class=HTMLResponse)
+async def recheck_events_view(
+    website_id: int,
+    request: Request,
+    db: DbSession,
+    correlation_id: CorrelationId,
+    ip_address: ClientIp,
+    current_user: TestSites,
+    csrf_token: str = Form(...),
+    apply: str = Form("0"),
+):
+    """Preview (apply=0) or make (apply=1) corrections to stored events read
+    back from the source; see app.services.event_recheck."""
+    verify_csrf(request, csrf_token)
+    website = get_website(db, website_id)
+    if website is None:
+        raise NotFoundError("Website not found")
+    applying = apply == "1"
+    report = await recheck_website_events(
+        db, website, apply=applying, triggered_by_user_id=current_user.id
+    )
+    if applying:
+        record_audit(
+            db,
+            actor_id=current_user.id,
+            action="events_rechecked",
+            entity_type="website",
+            entity_id=website.id,
+            after={
+                "run_id": report.run_id,
+                "corrected": len(report.changes),
+                "needs_review": len(report.reviews),
+                "event_ids": [change.event_id for change in report.changes],
+            },
+            correlation_id=correlation_id,
+            ip_address=ip_address,
+        )
+    return render(
+        request,
+        "admin/websites/recheck.html",
+        {"current_user": current_user, "website": website, "report": report},
+    )
 
 
 @router.post("/{website_id}/schedule")

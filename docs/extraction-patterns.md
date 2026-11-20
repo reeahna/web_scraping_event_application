@@ -77,10 +77,31 @@ Every stored event date and time is the event's **local wall clock**, and
   matching the listing's own is treated as site boilerplate and dropped.
   `scripts/description_coverage.py [--field venue]` reports which sources still
   lack descriptions or venues.
+  The same lookup reads a LiveWhale page's own detail block
+  (`#lw_cal_event_detail_meta`) for the venue when the JSON-LD names only an
+  online stream, and fills a missing time: an event listed at a bare 12:00 AM
+  with no offset (or date-only, when its page is fetched anyway) takes the
+  JSON-LD `startDate`/`endDate` (else `og:start_time`), only when that falls on
+  the listing's own day in the town's zone. All-day events are never looked up.
 - **Locations** (`app/extraction/locations.py`): reads a schema.org `location`
   of any shape. The `json_ld_event` pattern uses it when `location.name` finds
-  nothing, and `livewhale_json` falls back to `location_title` (a Place-linked
-  event) when the free-text `location` is empty.
+  nothing, and `livewhale_json` falls back to `location_title`, `location_name`,
+  `place_title`, `place` or a nested place object when the free-text `location`
+  is empty or a placeholder ("TBD", "Location TBA").
+- **LiveWhale times**: `date_iso`/`date2_iso` (the event's local time with its
+  offset) are always preferred, even when a saved json_path names `date_ts`; a
+  timestamp that names a different instant is reported as
+  `livewhale_time_mismatch` and not used. Start and end are read independently,
+  and an empty `date2_iso` means "no end", which clears a stale stored end.
+- **UTC fields**: a naive date-time read from a path ending in `_gmt` or `_utc`
+  (WordPress `date_gmt`, LiveWhale `date_utc`) is read as UTC and moved to the
+  town's clock.
+- **Recheck** (`app/services/event_recheck.py`, Advanced tools on a LiveWhale
+  website's admin page): reads current and upcoming events that show 12:00 AM,
+  have no venue, or were not refreshed by the latest import back from the
+  source by their own id, previews the corrections, and applies them in place
+  only when asked. Rows it can't match to exactly one record and session are
+  listed for review, never changed.
 
 ## Fetch strategies
 

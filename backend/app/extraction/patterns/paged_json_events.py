@@ -320,6 +320,11 @@ def local_datetime_string(value: Any, timezone: str | None) -> Any:
         return value
     if zone is not None:
         return moment.astimezone(zone).replace(tzinfo=None).isoformat()
+    if moment.utcoffset() != UTC.utcoffset(None):
+        # No zone to convert to: keep the instant with its offset, so
+        # normalize can place it once the town's zone is known instead of
+        # storing UTC's wall clock as if it were local.
+        return moment.isoformat()
     return moment.astimezone(UTC).replace(tzinfo=None).isoformat()
 
 
