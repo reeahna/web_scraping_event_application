@@ -22,7 +22,7 @@
     {% for batch in batches %}
     {% set counts = counts_by_batch[batch.id] %}
     <tr>
-      <td>{{ batch.created_at }}</td>
+      <td>{{ batch.created_at | admin_datetime }}</td>
       <td>{{ batch.submitted_by.email if batch.submitted_by else "—" }}</td>
       <td>{{ batch.default_city.name if batch.default_city else "—" }}</td>
       <td>{{ batch.valid_count }}{% if batch.invalid_count %} (+{{ batch.invalid_count }} rejected){% endif %}</td>

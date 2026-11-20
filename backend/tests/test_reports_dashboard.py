@@ -53,7 +53,11 @@ def test_no_raw_iso_timestamps_anywhere(dashboard_html):
 
 
 def test_generated_at_is_formatted(dashboard_html):
-    assert re.search(r"Generated \w{3} \d+, \d{4} at ", dashboard_html)
+    # Wrapped in a <time> element that local-time.js shows in the viewer's zone.
+    assert re.search(
+        r'Generated <time datetime="[\dT:-]+Z" data-local-time>\w{3} \d+, \d{4} at ',
+        dashboard_html,
+    )
 
 
 def test_source_states_read_as_words(dashboard_html):

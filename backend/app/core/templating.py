@@ -22,7 +22,7 @@ from app.paths import TEMPLATES_DIR
 from app.services.changelog import APP_VERSION, render_note
 from app.services.home_town import state_abbreviation
 from app.services.quality_presentation import format_percent, quality_view
-from app.services.schedule_admin import format_admin_datetime
+from app.services.schedule_admin import admin_time_html
 from app.services.seo import absolute_url
 
 templates = Jinja2Templates(directory=str(TEMPLATES_DIR))
@@ -83,7 +83,7 @@ templates.env.globals["current_year"] = lambda: datetime.now(UTC).year
 templates.env.filters["onboarding_label"] = onboarding_label
 # Registered globally so no template has to render a naive UTC string with
 # microseconds; several were doing exactly that.
-def _admin_datetime(value: Any) -> str:
+def _admin_datetime(value: Any) -> Any:
     """Template-safe wrapper around format_admin_datetime.
 
     Several places hold a timestamp that came back out of a JSON column, where
@@ -103,7 +103,9 @@ def _admin_datetime(value: Any) -> str:
             return value
     if not isinstance(value, datetime):
         return str(value)
-    return format_admin_datetime(value)
+    # A <time> element that static/js/local-time.js shows in the viewer's own
+    # timezone, with the server-side text as the no-script fallback.
+    return admin_time_html(value)
 
 
 templates.env.filters["admin_datetime"] = _admin_datetime
