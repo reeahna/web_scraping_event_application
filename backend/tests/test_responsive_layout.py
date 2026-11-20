@@ -15,6 +15,7 @@ every size, for a person to look over.
 from __future__ import annotations
 
 import os
+import re
 import socket
 import threading
 import time
@@ -273,7 +274,9 @@ def test_pages_fit_every_screen(browser_name, live_server, layout_data, client, 
                                 f"{result['width']}px screen ({'; '.join(result['culprits'])})"
                             )
                         if shot_dir:
-                            slug = path.strip("/").replace("/", "_") or "home"
+                            # Query strings become part of the name; "?" and "&" are not
+                            # allowed in uploaded CI artifact file names.
+                            slug = re.sub(r"[/?&=]", "_", path.strip("/")) or "home"
                             page.screenshot(
                                 path=str(shot_dir / f"{vp_name}--{who}--{slug}.png"),
                                 full_page=True,
