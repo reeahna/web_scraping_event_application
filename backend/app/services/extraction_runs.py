@@ -565,6 +565,33 @@ def _total_from_response(response: FetchResponse, total_path: str | None) -> int
     return node if isinstance(node, int) and not isinstance(node, bool) else None
 
 
+# Run warnings meaning the listing was not read to its end: a page or event
+# cap stopped the walk, or a later page was blocked. A run carrying any of
+# them is incomplete, and its absences say nothing about what the source
+# still lists.
+PAGE_CAP_WARNING = "pagination_max_pages_reached"
+INCOMPLETE_LISTING_WARNINGS = (
+    PAGE_CAP_WARNING,
+    "recipe_max_pages_reached",
+    "max_events_reached",
+    "pagination_stopped_at_block",
+)
+
+
+def listing_incomplete(warnings) -> bool:
+    """Whether a run's warnings say it stopped before the end of the listing."""
+    return any(
+        str(w).split(":", 1)[0] in INCOMPLETE_LISTING_WARNINGS for w in (warnings or ())
+    )
+
+
+def _one_more_page(config: SiteConfiguration) -> SiteConfiguration:
+    pagination = config.pagination.model_copy(
+        update={"max_pages": config.pagination.max_pages + 1}
+    )
+    return config.model_copy(update={"pagination": pagination})
+
+
 async def _fetch_legacy_pages(
     config: SiteConfiguration,
     pattern,
@@ -627,13 +654,26 @@ async def _fetch_legacy_pages(
             visited_urls.add(response.final_url)
             seen_hashes.add(response.body_hash)
             break
+        # A numbered query-parameter feed has ended when a page comes back
+        # with no records; asking for page after empty page up to the cap
+        # only spends requests (IU's feed answered pages 16 to 25 empty).
+        if config.pagination.strategy == "query_param" and not page_candidates:
+            break
+        # Ask the strategy for the next page as if the cap allowed one more,
+        # so the walk can tell "the listing ended" apart from "we stopped at
+        # the cap while the source still had pages". Only the second is a
+        # truncation, and it is said out loud instead of passing as complete.
+        at_page_cap = page_index + 1 >= config.pagination.max_pages
         next_request = pagination.next_request(
-            response, page_index, config,
+            response, page_index, _one_more_page(config) if at_page_cap else config,
             visited_urls=frozenset(visited_urls), seen_body_hashes=frozenset(seen_hashes),
         )
         visited_urls.add(response.final_url)
         seen_hashes.add(response.body_hash)
         if next_request is None:
+            break
+        if at_page_cap:
+            warnings.append(f"{PAGE_CAP_WARNING}:{config.pagination.max_pages}")
             break
         current_request = next_request
         page_index += 1
@@ -1357,9 +1397,34 @@ async def run_extraction(
     run.events_changed = events_changed
     run.events_cancelled = events_cancelled
     run.duplicates_skipped = dedup_outcome.duplicates_skipped + collapsed
-    if status in ("success", "partial"):
+    # An incomplete run (a cap or a block stopped it early) cannot say what
+    # the source no longer lists, so it counts nothing as missing. Absence
+    # never hides or removes an event in any case.
+    if status in ("success", "partial") and not listing_incomplete(warnings):
         run.events_missing = count_upcoming_events_not_seen(
             db, website, seen_event_ids=claimed
+        )
+    cap = next((w for w in warnings if str(w).startswith(f"{PAGE_CAP_WARNING}:")), None)
+    if cap is not None:
+        notify(
+            db,
+            notification_type="extraction_page_cap_reached",
+            severity=SEVERITY_WARNING,
+            title=f"{website.name}: stopped at the page limit",
+            message=(
+                f"Run #{run.id} of '{website.name}' read {cap.split(':', 1)[1]} pages, the "
+                "configured limit, and the source still had more. Events past that page "
+                "were not checked, and none were treated as removed. Raise the page limit "
+                "if the listing has grown."
+            ),
+            recipients=_review_recipients(db),
+            related_resource_type="website",
+            related_resource_id=website.id,
+            action_url=f"/admin/websites/{website.id}/runs/{run.id}",
+            dedup_fingerprint=build_dedup_fingerprint(
+                "extraction_page_cap_reached", str(website.id), cap
+            ),
+            correlation_id=correlation_id,
         )
     db.commit()
 
