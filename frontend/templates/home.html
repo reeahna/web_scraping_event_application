@@ -181,9 +181,10 @@
   </div>
   {#- When the town's sources were last checked: the time by which every source
       on this page had completed a successful check (a source that failed since
-      keeps its last good time, so the town never looks newer than it is). -#}
+      keeps its last good time, so the town never looks newer than it is, and
+      a source with no successful check yet is mentioned rather than ignored). -#}
   {% if town.checked %}
-  <p class="listings-checked">Listings checked <time datetime="{{ town.checked_iso }}">{{ town.checked }}</time>{% if town.checked_failing %}<span class="listings-checked-note">. {{ town.checked_failing }} source{{ 's' if town.checked_failing != 1 else '' }} could not be checked on the latest try</span>{% endif %}</p>
+  <p class="listings-checked">Listings checked <time datetime="{{ town.checked_iso }}">{{ town.checked }}</time>{% for note in town.checked_notes %}<span class="listings-checked-note">. {{ note }}</span>{% endfor %}</p>
   {% endif %}
   {% if events %}
   {#- Events already running (shown as "Until" a date) sort ahead of the rest.

@@ -430,6 +430,7 @@ def test_disabled_archived_unapproved_and_new_sources_are_left_out(
     freshness = town_listings_checked(db_session, town.id, now=T0)
     assert freshness.checked_at == T0
     assert freshness.sources == 1
+    assert freshness.pending == 1  # the newly approved source is not ignored
 
 
 def test_a_check_is_never_shown_in_the_future(db_session, make_website, town):
@@ -532,3 +533,32 @@ def test_event_page_with_unknown_change_time_says_nothing(
     page = client.get(f"/events/{event.id}")
     assert page.status_code == 200
     assert "last updated" not in page.text
+
+
+def test_new_source_without_a_first_check_is_counted_not_ignored(
+    client, db_session, make_website, town
+):
+    established = _source(make_website, town, "established")
+    _run(db_session, established, T0)
+    new = _source(make_website, town, "new")
+    _run(db_session, new, T0 + timedelta(minutes=5), status="failed")  # first import failed
+
+    freshness = town_listings_checked(db_session, town.id, now=T0 + timedelta(hours=1))
+    assert freshness.checked_at == T0  # dated by the established source only
+    assert (freshness.sources, freshness.failing, freshness.pending) == (1, 0, 1)
+
+    text = _text(client.get("/city/bloomington").text)
+    assert "Listings checked November 19, 2026 at 8:45 PM EST" in text
+    assert "1 source has not completed a first check yet" in text
+    assert "could not be checked" not in text
+
+
+def test_town_page_lists_every_note(client, db_session, make_website, town):
+    broken = _source(make_website, town, "broken")
+    _run(db_session, broken, T0)
+    _run(db_session, broken, T0 + timedelta(hours=1), status="failed")
+    _source(make_website, town, "new-1")
+    _source(make_website, town, "new-2")
+    text = _text(client.get("/city/bloomington").text)
+    assert "1 source could not be checked on the latest try" in text
+    assert "2 sources have not completed a first check yet" in text

@@ -118,9 +118,10 @@ so a misconfiguration cannot poll a third-party site aggressively.
 - **Town pages** ("Listings checked ..."): the oldest of each public source's
   latest successful persistent run (`manual`/`scheduled`, status `success` or
   `partial`). Only sources whose events can be public count (active, not
-  archived, approved). A source that has never completed a successful check is
-  left out, a source whose latest run failed keeps its last good time and is
-  mentioned on the page, and preview or detection runs never count. Page views
+  archived, approved). A source that has never completed a successful check
+  can't date the town, so the page says how many have not completed a first
+  check yet; a source whose latest run failed keeps its last good time and is
+  mentioned on the page too, and preview or detection runs never count. Page views
   never change it.
 - **Event pages** ("Event information last updated ..."): `Event.content_updated_at`,
   set when an event is first listed and moved only when what a visitor sees

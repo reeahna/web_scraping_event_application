@@ -81,11 +81,14 @@ class TownFreshness:
     after this instant (the oldest of their latest successes). ``sources`` is
     how many sources were counted, and ``failing`` how many of them failed
     their most recent check, so their listings date from ``checked_at`` or
-    earlier rather than from their last attempt."""
+    earlier rather than from their last attempt. ``pending`` counts public
+    sources that have not completed a first successful check, which
+    ``checked_at`` cannot speak for, so the page says so."""
 
     checked_at: datetime
     sources: int
     failing: int
+    pending: int = 0
 
 
 def _public_sources_query(db: Session, city_id: int):
@@ -111,9 +114,10 @@ def town_listings_checked(
     successful check: the oldest of each source's latest successful completed
     run. One source checked a minute ago and another that has failed since
     yesterday reads as yesterday, so a failing source never makes the whole
-    town look current. A source that has never completed a successful check
-    (just onboarded) has nothing on the page yet and is not counted. Only run
-    records count: page views and failed or preview runs never move it."""
+    town look current. A public source that has never completed a successful
+    check (just approved) cannot be dated, so it is counted in ``pending``
+    rather than silently left out. Only run records count: page views and
+    failed or preview runs never move it."""
     source_ids = [row.id for row in _public_sources_query(db, city_id)]
     if not source_ids:
         return None
@@ -149,7 +153,12 @@ def town_listings_checked(
     # A clock skew between the scheduler and the web process must never show a
     # check that has not happened yet.
     checked_at = min(min(successes.values()), now or datetime.now(UTC))
-    return TownFreshness(checked_at=checked_at, sources=len(successes), failing=failing)
+    return TownFreshness(
+        checked_at=checked_at,
+        sources=len(successes),
+        failing=failing,
+        pending=len(set(source_ids) - set(successes)),
+    )
 
 
 # --- Formatting --------------------------------------------------------------
