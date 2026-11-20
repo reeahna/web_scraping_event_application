@@ -497,3 +497,85 @@ def test_recheck_admin_preview_then_apply(
     assert applied.status_code == 200 and "Corrected" in applied.text
     db_session.refresh(row)
     assert row.start_time == time(19)
+
+
+@pytest.mark.asyncio
+async def test_recheck_never_starts_a_browser(db_session, iu_source, make_event, monkeypatch):
+    city, website = iu_source
+    website.approved_pattern = CONFIG.model_copy(
+        update={"execution_strategy": "browser"}
+    ).model_dump(mode="json")
+    db_session.commit()
+    row = _stored_like_31925(make_event, city, website)
+
+    def no_browser(*args, **kwargs):
+        raise AssertionError("recheck must not use a browser transport")
+
+    from app.services import extraction_runs
+
+    for name in (
+        "BrowserStructuredResponseFetchStrategy", "BrowserRenderFetchStrategy",
+        "_DisabledBrowserFetchStrategy", "_build_fetch_strategy",
+    ):
+        monkeypatch.setattr(extraction_runs, name, no_browser)
+    seen: list[str] = []
+    with patched_http_fetch(_id_handler({"2410954": RECITAL}, seen)):
+        report = await recheck_website_events(
+            db_session, website, apply=True, today=date(2026, 11, 20)
+        )
+    assert seen == [record_url(FEED, "2410954")]
+    db_session.refresh(row)
+    assert (row.start_date, row.start_time) == (date(2026, 11, 19), time(19))
+    assert report.reviews == []
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("returned", "reason"),
+    [
+        # The endpoint answered with another event's record.
+        ({"id": 2410955}, "the source returned a different event id"),
+        # Same id, but a different page (or title) than the stored row.
+        ({"url": "https://events.iu.edu/musiciub/event/2410954-another-recital"},
+         "the source's title or page for this id differs"),
+        ({"title": "Doctoral Recital"}, "the source's title or page for this id differs"),
+        # Stored as one event, but the source says it repeats.
+        ({"repeats": "weekly"}, "a repeating series stored as one row"),
+    ],
+)
+async def test_recheck_requires_every_identity_to_match(
+    db_session, iu_source, make_event, returned, reason
+):
+    city, website = iu_source
+    row = _stored_like_31925(make_event, city, website)
+    with patched_http_fetch(_id_handler({"2410954": _event(**returned)}, [])):
+        report = await recheck_website_events(
+            db_session, website, apply=True, today=date(2026, 11, 20)
+        )
+    assert report.changes == []
+    assert [(r.event_id, r.reason) for r in report.reviews] == [(row.id, reason)]
+    db_session.refresh(row)
+    assert (row.start_date, row.start_time) == (date(2026, 11, 20), time(0))
+
+
+@pytest.mark.asyncio
+async def test_recheck_session_must_match_series_page_and_date(
+    db_session, iu_source, make_event
+):
+    city, website = iu_source
+    weekly = _event(id=2500001, repeats="weekly", title="Weekly Jam",
+                    url="https://events.iu.edu/x/event/2500001-weekly-jam")
+    # Right series and date, but stored under another page.
+    wrong_page = make_event(
+        city, website=website, title="Weekly Jam", external_source_id="2500001@2026-11-19",
+        recurrence_parent_id="2500001", canonical_url="https://events.iu.edu/x/event/999-other",
+        start_date=date(2026, 11, 19), start_time=time(0),
+    )
+    with patched_http_fetch(_id_handler({"2500001": weekly}, [])):
+        report = await recheck_website_events(
+            db_session, website, apply=True, today=date(2026, 11, 20)
+        )
+    assert report.changes == []
+    assert [r.event_id for r in report.reviews] == [wrong_page.id]
+    db_session.refresh(wrong_page)
+    assert wrong_page.start_time == time(0)

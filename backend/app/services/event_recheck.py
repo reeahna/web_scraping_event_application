@@ -177,29 +177,39 @@ def _same_title(a: str | None, b: str | None) -> bool:
     return bool(a and b) and (plain_text(a) or "").casefold() == (plain_text(b) or "").casefold()
 
 
-def _match(event: Event, candidates: list[EventCandidate]) -> EventCandidate | str:
-    """The one source record and occurrence this row is, or why not."""
+def _match(event: Event, source_id: str, candidates: list[EventCandidate]) -> EventCandidate | str:
+    """The one source record and occurrence this row is, or why not. Every
+    identity the record carries must agree with the stored row: the LiveWhale
+    id asked for, the title, the event's page and, for a session row, the
+    series id and the session's own date. Anything ambiguous is left for a
+    person."""
     stored_id = event.external_source_id or ""
     if not candidates:
         return "the source no longer returns this event"
-    same_title = [c for c in candidates if _same_title(c.title, event.title)]
-    if not same_title:
-        return "the source's title for this id differs"
+    own = [c for c in candidates if str(c.raw.get("event_id") or "") == source_id]
+    if not own:
+        return "the source returned a different event id"
+    same = [
+        c for c in own
+        if _same_title(c.title, event.title) and _same_page(c.canonical_url, event.canonical_url)
+    ]
+    if not same:
+        return "the source's title or page for this id differs"
     if "@" in stored_id:
-        day = stored_id.split("@", 1)[1]
         sessions = [
-            c for c in same_title
-            if c.start_date is not None and c.start_date.isoformat() == day
+            c for c in same
+            if c.external_source_id == stored_id
+            and c.recurrence_parent_id == source_id
+            and (event.recurrence_parent_id in (None, source_id))
+            and c.start_date is not None
+            and c.start_date.isoformat() == stored_id.split("@", 1)[1]
         ]
         if len(sessions) != 1:
             return "the source did not return this session"
         return sessions[0]
-    if any(c.raw.get("recurrence_parent_id") for c in same_title) or len(same_title) != 1:
+    if len(same) != 1 or same[0].recurrence_parent_id or same[0].external_source_id != source_id:
         return "a repeating series stored as one row"
-    candidate = same_title[0]
-    if not _same_page(candidate.canonical_url, event.canonical_url):
-        return "the source's page for this id differs"
-    return candidate
+    return same[0]
 
 
 def _proposed(event: Event, candidate: EventCandidate) -> dict[str, tuple[Any, Any]]:
@@ -242,7 +252,7 @@ async def recheck_website_events(
     """Read suspect events back from the source and report (or, with
     `apply`, make) the corrections. At most `limit` source requests, one per
     distinct source id, through the import's own fetch layer."""
-    from app.services.extraction_runs import _build_fetch_strategy
+    from app.services import extraction_runs
 
     report = RecheckReport(applied=apply)
     config = _config(website)
@@ -253,7 +263,10 @@ async def recheck_website_events(
     if zone_name and zone_name != config.timezone:
         config = config.model_copy(update={"timezone": zone_name})
     pattern = livewhale_json.LiveWhalePattern()
-    fetch = _build_fetch_strategy(config)
+    # The single-record endpoint is plain JSON: always the ordinary HTTP
+    # client (SSRF-checked), never a browser, whatever the source's listing
+    # uses, so a recheck can't start Chromium on a small instance.
+    fetch = extraction_runs.HttpFetchStrategy()
 
     events = suspect_events(db, website, zone_name=zone_name, today=today)
     report.selected = len(events)
@@ -294,7 +307,7 @@ async def recheck_website_events(
                 )
                 continue
             report.checked += 1
-            candidate = _match(event, result[0])
+            candidate = _match(event, source_id, result[0])
             if isinstance(candidate, str):
                 report.reviews.append(RecheckReview(event.id, event.title, candidate))
                 continue
