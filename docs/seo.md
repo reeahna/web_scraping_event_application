@@ -40,7 +40,20 @@ For each of those pages:
   bare URL in results, and Event data can make an event eligible for richer results.
 - **Location signals:** the town's coordinates in the `City` data, each event's venue
   coordinates, and links between neighbouring towns ("Events near Ann Arbor", any
-  active town within 250 miles, from the towns' default latitude and longitude).
+  active town within 250 miles). A town's position is its default latitude and
+  longitude from Admin > Cities; when those are empty it is the median of its own
+  public events' coordinates (`seo.town_centers`, at least 3 events, cached for half
+  an hour). States are always spelled out ("Ann Arbor, Michigan"), whether the town
+  was entered as "MI" or "Michigan" (`app/core/us_states.py`).
+- **Where the listings come from:** each town page names and links the sites its
+  events are gathered from (the site's root, never a feed or API address). It is
+  accurate, different for every town, and credits the local calendars.
+- **Event structured data** follows Google's Event rules: every event has a
+  `location` with a `PostalAddress` (the venue and its street when the source gives
+  them, otherwise the town, which Google's guidelines allow), times carry their UTC
+  offset from the event's or town's zone, and nothing is invented: no organizer
+  (the only name on record is the source's), price, venue or image the source did
+  not give. The event page repeats the times in `<time datetime>` tags.
 - **Indexing rules:** a town with fewer than `MIN_INDEXABLE_TOWN_EVENTS` upcoming
   events is `noindex` and left out of the sitemap, and so are its weekend and today
   pages. Filtered views (`?q=`, `?category_id=`, `?preset=`) point their canonical
@@ -48,7 +61,8 @@ For each of those pages:
   pages are real paths for that reason: a query string variant can never rank on
   its own.
 - **Sitemap and robots:** `/sitemap.xml` lists every indexable town's three pages and
-  every upcoming event; `/robots.txt` points to it and keeps crawlers out of `/admin`
+  every upcoming event (up to 45,000 URLs in one file; past that it needs a sitemap
+  index), with `<lastmod>` from when an event's details last changed; `/robots.txt` points to it and keeps crawlers out of `/admin`
   and `/account`. `/llms.txt` describes the site for AI tools.
 
 ## What only the owner can do
@@ -61,7 +75,10 @@ These matter more than anything in the code, and none can be done from the repos
    `PUBLIC_BASE_URL` to it, so canonical links and the sitemap name the new address.
    Do this before anything below, because search engines remember addresses.
 2. **Verify the site in Google Search Console** (`search.google.com/search-console`),
-   as a Domain property, then submit `https://<domain>/sitemap.xml`. This is how
+   as a Domain property, then submit `https://<domain>/sitemap.xml`. While the site is
+   still on the Render address (which takes no DNS record), add a URL prefix property,
+   choose "HTML tag", and set the `GOOGLE_SITE_VERIFICATION` environment variable to
+   the tag's `content` value (`BING_SITE_VERIFICATION` does the same for Bing). This is how
    Google learns about new pages quickly, and the only place that shows which
    searches the site appears for, which pages are indexed, and any structured data
    errors. Do the same in **Bing Webmaster Tools** (it can import from Search Console);
@@ -81,6 +98,6 @@ or service area, and Bulletin is a website.
 
 ## Checking a change
 
-- `python -m pytest tests/test_seo.py tests/test_ai_discovery.py -q`
+- `python -m pytest tests/test_seo.py tests/test_seo_event_structured_data.py tests/test_seo_town_pages.py tests/test_seo_sitemap_and_verification.py tests/test_ai_discovery.py -q`
 - Google's Rich Results Test (`search.google.com/test/rich-results`) on a live town
   page and event page shows how Google reads the JSON-LD.

@@ -92,3 +92,18 @@ def time_ago(value: datetime | None, now: datetime | None = None) -> str:
     if days < 7:
         return f"{days} days ago"
     return human_date(value.date())
+
+
+def site_root(url: str | None) -> str:
+    """ "https://calendar.example.edu/" for any http(s) address on that site,
+    so a public page links to a source's site rather than to the feed or API
+    address its events are read from. Empty for anything else."""
+    from urllib.parse import urlsplit
+
+    try:
+        parts = urlsplit((url or "").strip())
+    except ValueError:
+        return ""
+    if parts.scheme not in ("http", "https") or not parts.hostname:
+        return ""
+    return f"{parts.scheme}://{parts.netloc.rsplit('@', 1)[-1]}/"

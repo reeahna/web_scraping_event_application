@@ -94,7 +94,12 @@ async def enrich_with_detail_pages(
         if extra_warning:
             new_warnings.append(extra_warning)
         for field_name, selector_config in detail_selectors.items():
-            result = resolve_css(soup, selector_config.selector, selector_config.attribute)
+            result = resolve_css(
+                soup,
+                selector_config.selector,
+                selector_config.attribute,
+                visible_only=field_name == "title",
+            )
             if result.value is not None:
                 new_raw[field_name] = result.value
                 if result.source_path:

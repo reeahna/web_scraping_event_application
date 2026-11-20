@@ -15,6 +15,48 @@ from app.extraction.types import FieldExtractionResult
 
 _JSON_PATH_SEGMENT_RE = re.compile(r"([^.\[\]]+)|\[(\d+)\]")
 
+# Class names the common CSS frameworks and CMSs use for text that is read out
+# to screen readers but never shown ("Guadalupe Maravilla<span
+# class="sr-only">, article</span>"). A title is what a visitor sees, so this
+# text is left out of it.
+SCREEN_READER_ONLY_CLASSES = frozenset(
+    {
+        "sr-only",
+        "visually-hidden",
+        "visuallyhidden",
+        "screen-reader-text",
+        "screen-reader-only",
+        "screenreader-only",
+        "element-invisible",
+        "show-for-sr",
+        "u-visually-hidden",
+    }
+)
+
+
+def _is_screen_reader_only(tag: Tag) -> bool:
+    classes = tag.get("class") or []
+    return any(str(name).lower() in SCREEN_READER_ONLY_CLASSES for name in classes)
+
+
+def visible_text(target: Tag) -> str:
+    """The element's text without its screen-reader-only parts. When the
+    element holds nothing else (its whole text is screen-reader-only), the full
+    text is returned instead, so a field is never emptied by this."""
+    parts: list[str] = []
+    for piece in target.strings:
+        hidden = False
+        for parent in piece.parents:
+            if isinstance(parent, Tag) and _is_screen_reader_only(parent):
+                hidden = True
+                break
+            if parent is target:
+                break
+        if not hidden and piece.strip():
+            parts.append(piece.strip())
+    text = " ".join(parts)
+    return text or target.get_text(" ", strip=True)
+
 
 class InvalidSelectorError(ValueError):
     pass
@@ -38,7 +80,11 @@ def validate_css_selector(selector: str) -> str:
     return selector
 
 
-def resolve_css(node: Tag, selector: str, attribute: str | None = None) -> FieldExtractionResult:
+def resolve_css(
+    node: Tag, selector: str, attribute: str | None = None, *, visible_only: bool = False
+) -> FieldExtractionResult:
+    """`visible_only` drops screen-reader-only text (see visible_text) from an
+    element's text; it has no effect on an attribute value."""
     warnings: list[str] = []
     # ":scope" resolves to the card element itself, so a field can be read off
     # the container — e.g. a whole-card `<a href>`'s own href, or an attribute
@@ -66,7 +112,7 @@ def resolve_css(node: Tag, selector: str, attribute: str | None = None) -> Field
             warnings.append(f"attribute '{attribute}' not present")
         return FieldExtractionResult(value=value, source_path=source_path, warnings=tuple(warnings))
 
-    text = target.get_text(" ", strip=True)
+    text = visible_text(target) if visible_only else target.get_text(" ", strip=True)
     return FieldExtractionResult(value=text or None, source_path=f"css:{selector}", warnings=())
 
 

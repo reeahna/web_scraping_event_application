@@ -89,6 +89,7 @@ def event_detail(event_id: int, request: Request, current_user: OptionalCurrentU
             "is_saved": is_saved,
             "is_following_city": is_following_city,
             "structured_data": seo.event_structured_data(event),
+            "event_times": seo.event_datetimes(event),
             "breadcrumb_structured_data": seo.breadcrumb_structured_data(
                 [("Towns", "/")]
                 + ([(event.city.name, seo.town_path(event.city))] if event.city else [])

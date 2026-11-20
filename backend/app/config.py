@@ -242,6 +242,12 @@ class Settings(BaseSettings):
     # Public UI (Phase 12). A configurable fallback image shown on event cards
     # and detail pages that have no image; None uses the built-in inline icon.
     public_fallback_image_url: str | None = None
+    # Search engine ownership checks. The content value of the meta tag Google
+    # Search Console ("HTML tag" method) or Bing Webmaster Tools gives, which
+    # the page head then carries. These are public tokens, not secrets: they
+    # only prove who controls the site. Unset adds no tag.
+    google_site_verification: str | None = None
+    bing_site_verification: str | None = None
     # Unsplash Access Key (Client-ID) for the category-photo placeholder pool.
     # Only the Access Key is needed (read-only search); the Secret Key is not
     # used. When unset, imageless events fall back to the gradient placeholders.
