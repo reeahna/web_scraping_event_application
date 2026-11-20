@@ -26,6 +26,9 @@ from app.schemas.extraction import SiteConfiguration, TransformationRuleConfig
 
 # In transformation_history when the source marks the event as all-day.
 ALL_DAY_MARKER = "all_day"
+# In transformation_history when the source states the event has no end (a
+# feed field present and empty), as opposed to the end simply not being read.
+END_ABSENT_MARKER = "end:absent_in_source"
 
 _ISO_DATETIME_SPLIT_RE = re.compile(r"^(\d{4}-\d{2}-\d{2})T(.*)$")
 
@@ -65,6 +68,24 @@ def _rules_for_field(
     rules: list[TransformationRuleConfig], field_name: str
 ) -> list[TransformationRuleConfig]:
     return [r for r in rules if r.field == field_name]
+
+
+_NAIVE_DATETIME_RE = re.compile(r"^\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}(:\d{2}(\.\d+)?)?$")
+_UTC_PATH_SUFFIXES = ("_gmt", "_utc")
+
+
+def _mark_utc(value: object, source_path: str | None) -> object:
+    """A naive date-time read from a field the source names as UTC
+    (WordPress `date_gmt`, LiveWhale `date_utc`) as an explicit UTC instant,
+    so it is moved to the event's own clock instead of being read as local
+    time (8 PM Eastern stored as "1 AM the next day")."""
+    if not isinstance(value, str) or not source_path:
+        return value
+    key = source_path.rsplit(".", 1)[-1].split("[", 1)[0].lower()
+    text = value.strip()
+    if key.endswith(_UTC_PATH_SUFFIXES) and _NAIVE_DATETIME_RE.match(text):
+        return text.replace(" ", "T", 1) + "+00:00"
+    return value
 
 
 _ISO_OFFSET_RE = re.compile(r"^\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}.*(Z|[+-]\d{2}:?\d{2})$")
@@ -190,11 +211,19 @@ def normalize_candidate(
     # With no real zone (a town still on the UTC default) an offset-carrying
     # time keeps the source's own wall clock rather than being moved to UTC.
     zone = None if is_unset_zone(timezone) else ZoneInfo(timezone)
+    paths = candidate.field_source_paths
     start_date_part, start_time_from_dt = _split_iso_datetime(
-        _to_local(apply("start_datetime", raw.get("start_datetime")), zone)
+        _to_local(
+            _mark_utc(apply("start_datetime", raw.get("start_datetime")),
+                      paths.get("start_datetime")),
+            zone,
+        )
     )
     end_date_part, end_time_from_dt = _split_iso_datetime(
-        _to_local(apply("end_datetime", raw.get("end_datetime")), zone)
+        _to_local(
+            _mark_utc(apply("end_datetime", raw.get("end_datetime")), paths.get("end_datetime")),
+            zone,
+        )
     )
     start_time_raw = apply("start_time", raw.get("start_time")) or start_time_from_dt
     end_time_raw = apply("end_time", raw.get("end_time")) or end_time_from_dt
@@ -252,6 +281,8 @@ def normalize_candidate(
         # (see app.repositories.event.update_event).
         start_time = end_time = None
         history.append(ALL_DAY_MARKER)
+    if raw.get("end_absent") is True and end_date is None and end_time is None:
+        history.append(END_ABSENT_MARKER)
 
     latitude = _parse_coordinate(raw.get("latitude"), warnings, "latitude")
     longitude = _parse_coordinate(raw.get("longitude"), warnings, "longitude")

@@ -1,4 +1,4 @@
-"""Fills in an event's missing description and venue from the event's own page.
+"""Fills in an event's missing description, venue and time from its own page.
 
 Many listings (calendar grids, card pages, feeds) carry only a title, date and
 link, so the event's description and venue live on its detail page. Unlike
@@ -13,6 +13,19 @@ Description:
 Venue (and address, when the event has none):
 1. the JSON-LD Event's `location` (a Place, a plain string, or a list), then
 2. schema.org microdata: the page's single `itemprop="location"` element.
+
+LiveWhale calendars state an event's venue in their own detail block
+(`#lw_cal_event_detail_meta`) and often leave it out of the JSON-LD, which
+names only the online stream for a hybrid event; that block is read third,
+on pages LiveWhale generated.
+
+Time, for an event whose listing gives a bare 12:00 AM with no offset, or
+only a date when the page is fetched for a description or venue anyway (and
+is not marked all-day):
+1. the JSON-LD Event's `startDate`/`endDate`, then
+2. the page's `og:start_time` / `og:end_time`.
+Only a value with a clock time on the same local day as the listing's date
+is used, so a page about another occurrence never moves an event.
 
 Bounded and conservative:
 
@@ -36,9 +49,12 @@ from __future__ import annotations
 
 import dataclasses
 import json
+import re
 from collections import Counter
+from datetime import date, datetime
 from typing import Any
 from urllib.parse import urljoin, urlsplit
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from bs4 import BeautifulSoup
 
@@ -195,9 +211,39 @@ def _venue(
         venue, address = venue_from_location(event.get("location"))
         if venue is not None and title and venue.casefold() == title.strip().casefold():
             venue = None
-        if venue is not None or address is not None:
+        if venue is not None:
             return PageVenue(venue, address, "detail:jsonld.location")
-    return _microdata_venue(soup, title)
+    found = _microdata_venue(soup, title) or _livewhale_venue(soup, title)
+    if found is None and event is not None:
+        venue, address = venue_from_location(event.get("location"))
+        if address is not None:
+            return PageVenue(None, address, "detail:jsonld.location")
+    return found
+
+
+def _is_livewhale(soup: BeautifulSoup) -> bool:
+    tag = soup.find("meta", attrs={"name": "generator"})
+    return tag is not None and str(tag.get("content", "")).lower().startswith("livewhale")
+
+
+def _livewhale_venue(soup: BeautifulSoup, title: str | None) -> PageVenue | None:
+    """The place line of a LiveWhale event page's detail block: the one item
+    there that is not the event's time. Trusted only when there is exactly
+    one such item."""
+    if not _is_livewhale(soup):
+        return None
+    block = soup.find(id="lw_cal_event_detail_meta")
+    if block is None:
+        return None
+    items = [
+        item
+        for item in block.find_all(class_="lw_cal_event_detail_meta_item")
+        if item.find("time") is None
+    ]
+    if len(items) != 1:
+        return None
+    venue = clean_venue(items[0].get_text(" "), title)
+    return PageVenue(venue, None, "detail:livewhale.event_detail_meta") if venue else None
 
 
 def venue_from_page(html: str, page_url: str, title: str | None = None) -> PageVenue | None:
@@ -206,10 +252,122 @@ def venue_from_page(html: str, page_url: str, title: str | None = None) -> PageV
     return _venue(soup, _page_event(soup, page_url), title)
 
 
+_DATE_ONLY_RE = re.compile(r"^\s*\d{4}-\d{2}-\d{2}\s*$")
+_NAIVE_MIDNIGHT_RE = re.compile(r"^\s*\d{4}-\d{2}-\d{2}[T ]00:00(:00(\.0+)?)?\s*$")
+_CLOCK_RE = re.compile(r"^\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}")
+
+
+def time_gap(raw: dict[str, Any]) -> str | None:
+    """Why an event's listing gives its date but no usable clock time:
+    "placeholder" for a bare midnight with no offset and no end, "date_only"
+    for a start with no time at all, None otherwise. All-day events and
+    starts that carry an offset are left alone (an explicit UTC midnight is
+    7 PM Eastern, not a placeholder)."""
+    if raw.get("all_day") is True:
+        return None
+    if raw.get("start_time") not in (None, ""):
+        return None
+    start = raw.get("start_datetime")
+    if not isinstance(start, str):
+        return None
+    if _NAIVE_MIDNIGHT_RE.match(start) and not raw.get("end_datetime"):
+        return "placeholder"
+    if _DATE_ONLY_RE.match(start):
+        return "date_only"
+    return None
+
+
+@dataclasses.dataclass(frozen=True)
+class PageTime:
+    start: str
+    end: str | None
+    source: str
+
+
+def _zone(name: str | None) -> ZoneInfo | None:
+    if not name:
+        return None
+    try:
+        return ZoneInfo(name)
+    except (ZoneInfoNotFoundError, ValueError):
+        return None
+
+
+def _local_day(value: str, zone: ZoneInfo | None) -> date | None:
+    """The calendar day a page's date-time falls on in the event's zone."""
+    try:
+        moment = datetime.fromisoformat(value.strip().replace("Z", "+00:00"))
+    except ValueError:
+        return None
+    if moment.tzinfo is not None and zone is not None:
+        moment = moment.astimezone(zone)
+    return moment.date()
+
+
+def _timed(value: Any) -> str | None:
+    """A date-time with a real clock time, or None (date-only values and
+    naive midnights say no more than the listing did)."""
+    if not isinstance(value, str) or not _CLOCK_RE.match(value.strip()):
+        return None
+    text = value.strip()
+    if _NAIVE_MIDNIGHT_RE.match(text):
+        return None
+    try:
+        datetime.fromisoformat(text.replace("Z", "+00:00"))
+    except ValueError:
+        return None
+    return text
+
+
+def _page_time(soup: BeautifulSoup, event: dict[str, Any] | None) -> PageTime | None:
+    if event is not None:
+        start = _timed(event.get("startDate"))
+        if start is not None:
+            return PageTime(start, _timed(event.get("endDate")), "detail:jsonld.startDate")
+    starts = soup.find_all("meta", attrs={"property": "og:start_time"})
+    if len(starts) == 1:
+        start = _timed(starts[0].get("content"))
+        if start is not None:
+            end_tag = soup.find("meta", attrs={"property": "og:end_time"})
+            end = _timed(end_tag.get("content")) if end_tag is not None else None
+            return PageTime(start, end, "detail:meta.og:start_time")
+    return None
+
+
+def time_from_page(html: str, page_url: str) -> PageTime | None:
+    """The start (and end) date-time an event page states for itself."""
+    soup = BeautifulSoup(html, "html.parser")
+    return _page_time(soup, _page_event(soup, page_url))
+
+
+def _same_occurrence(raw: dict[str, Any], page_time: PageTime, zone: ZoneInfo | None) -> bool:
+    """The page's start falls on the listing's own day in the event's zone,
+    and its end (if any) does not come before its start."""
+    listed = raw.get("start_datetime")
+    if not isinstance(listed, str) or len(listed) < 10:
+        return False
+    try:
+        listed_day = date.fromisoformat(listed.strip()[:10])
+    except ValueError:
+        return False
+    if _local_day(page_time.start, zone) != listed_day:
+        return False
+    if page_time.end is not None:
+        try:
+            start = datetime.fromisoformat(page_time.start.replace("Z", "+00:00"))
+            end = datetime.fromisoformat(page_time.end.replace("Z", "+00:00"))
+            if (start.tzinfo is None) != (end.tzinfo is None) or end < start:
+                return False
+        except ValueError:
+            return False
+    return True
+
+
 @dataclasses.dataclass(frozen=True)
 class _PageFindings:
     description: tuple[str, str] | None
     venue: PageVenue | None
+    time: PageTime | None = None
 
 
 def _lookup_url(candidate: EventCandidate) -> tuple[str | None, str | None]:
@@ -232,15 +390,24 @@ def _needs(
     canonical_url: str | None,
     known_described_urls: frozenset[str],
     known_venue_urls: frozenset[str],
-) -> tuple[bool, bool]:
-    """(needs a description, needs a venue) for this candidate's page."""
+    known_timed_urls: frozenset[str] = frozenset(),
+) -> tuple[bool, bool, bool]:
+    """(needs a description, needs a venue, needs a time) for this page."""
 
     def known(urls: frozenset[str]) -> bool:
         return canonical_url in urls or page in urls
 
     wants_description = not has_description(candidate.raw) and not known(known_described_urls)
     wants_venue = not has_venue(candidate.raw) and not known(known_venue_urls)
-    return wants_description, wants_venue
+    gap = time_gap(candidate.raw)
+    # A placeholder midnight is worth a page of its own. A date-only listing
+    # is often a genuinely date-only event, so its page is only read for a
+    # time when it is being fetched for a description or venue anyway: a
+    # source that never gives times doesn't spend the budget every run.
+    wants_time = not known(known_timed_urls) and (
+        gap == "placeholder" or (gap == "date_only" and (wants_description or wants_venue))
+    )
+    return wants_description, wants_venue, wants_time
 
 
 async def fill_from_event_pages(
@@ -251,10 +418,15 @@ async def fill_from_event_pages(
     listing_html: str | None = None,
     known_described_urls: frozenset[str] = frozenset(),
     known_venue_urls: frozenset[str] = frozenset(),
+    known_timed_urls: frozenset[str] = frozenset(),
+    timezone: str | None = None,
     max_fetches: int = DEFAULT_MAX_FETCHES,
 ) -> tuple[list[EventCandidate], list[str]]:
-    """Returns the candidates (those that gained a description or venue
-    replaced, the rest unchanged, order kept) and run-level warnings."""
+    """Returns the candidates (those that gained a description, venue or time
+    replaced, the rest unchanged, order kept) and run-level warnings.
+    `timezone` is the events' zone, used to check that a page's time falls
+    on the listing's own day."""
+    zone = _zone(timezone)
     site_boilerplate: str | None = None
     if listing_html:
         site_boilerplate = meta_description(BeautifulSoup(listing_html, "html.parser"))
@@ -268,7 +440,10 @@ async def fill_from_event_pages(
         if page is None or page in found:
             continue
         if not any(
-            _needs(candidate, page, canonical_url, known_described_urls, known_venue_urls)
+            _needs(
+                candidate, page, canonical_url,
+                known_described_urls, known_venue_urls, known_timed_urls,
+            )
         ):
             continue
         if len(found) >= max_fetches:
@@ -285,6 +460,7 @@ async def fill_from_event_pages(
         found[page] = _PageFindings(
             description=_description(soup, event, title),
             venue=_venue(soup, event, title),
+            time=_page_time(soup, event),
         )
 
     # A meta description repeated across different pages describes the site,
@@ -296,7 +472,7 @@ async def fill_from_event_pages(
         if f is not None and f.description is not None and f.description[1] != _SOURCE_JSONLD
     )
 
-    described = venued = 0
+    described = venued = timed = 0
     result: list[EventCandidate] = []
     for candidate in candidates:
         page, canonical_url = _lookup_url(candidate)
@@ -304,8 +480,9 @@ async def fill_from_event_pages(
         if findings is None:
             result.append(candidate)
             continue
-        wants_description, wants_venue = _needs(
-            candidate, page, canonical_url, known_described_urls, known_venue_urls
+        wants_description, wants_venue, wants_time = _needs(
+            candidate, page, canonical_url,
+            known_described_urls, known_venue_urls, known_timed_urls,
         )
         raw = dict(candidate.raw)
         paths = dict(candidate.field_source_paths)
@@ -330,6 +507,19 @@ async def fill_from_event_pages(
                 paths["address"] = page_venue.source
                 changed = True
             venued += changed
+        if (
+            wants_time
+            and findings.time is not None
+            and _same_occurrence(raw, findings.time, zone)
+        ):
+            raw["start_datetime"] = findings.time.start
+            paths["start_datetime"] = findings.time.source
+            if findings.time.end is not None and not raw.get("end_datetime"):
+                raw["end_datetime"] = findings.time.end
+                paths["end_datetime"] = findings.time.source.replace("startDate", "endDate")
+                if paths["end_datetime"].endswith("og:start_time"):
+                    paths["end_datetime"] = "detail:meta.og:end_time"
+            timed += 1
         if raw != candidate.raw:
             candidate = dataclasses.replace(candidate, raw=raw, field_source_paths=paths)
         result.append(candidate)
@@ -338,6 +528,8 @@ async def fill_from_event_pages(
     if found:
         warnings.append(f"description_lookup:{described}_filled_of_{len(found)}_pages")
         warnings.append(f"venue_lookup:{venued}_filled_of_{len(found)}_pages")
+        if timed:
+            warnings.append(f"time_lookup:{timed}_filled_of_{len(found)}_pages")
     if skipped:
         warnings.append(f"event_page_lookup_budget_reached:{skipped}_events_not_looked_up")
     return result, warnings
