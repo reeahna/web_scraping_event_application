@@ -91,7 +91,8 @@ active Super Administrator cannot be removed.
   are never edited by hand; corrections are stored alongside them.
 - *Categories and rules*: 14 seeded categories and keyword/venue/source rules
   that assign them. With a Groq or Gemini key, the scheduler also labels new
-  events with AI.
+  events with AI; *AI labeling* (`/admin/ai-labeling`) shows the queue, events
+  the AI could not label, and the tokens and rate limits of recent requests.
 - *Scheduler*, *Reports*, *Notifications*: run status, failures, and the health
   of each source.
 

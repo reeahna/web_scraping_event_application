@@ -66,15 +66,61 @@ class GeminiOverloaded(GeminiError):
     off rather than asking again straight away."""
 
 
+class GeminiTransportError(GeminiError):
+    """The request never got an answer (network failure or timeout). Says
+    nothing about the events in it, so they are not charged an attempt."""
+
+
+class GeminiBadOutput(GeminiError):
+    """The provider answered, but not with usable labels: a body that is not
+    the JSON asked for, or a 400 such as Groq's json_validate_failed. Counted
+    as an unsuccessful attempt for each event in the batch."""
+
+
 class GeminiQuotaExceeded(GeminiError):
     """The API returned 429 after retries: the rate or daily-quota limit is
     reached. Callers stop cleanly and resume later — the free-tier daily quota
     resets on its own, and already-labeled events are skipped on the next run.
     retry_after_seconds is how long Google says to wait, when it says."""
 
-    def __init__(self, message: str, retry_after_seconds: float | None = None) -> None:
+    def __init__(
+        self,
+        message: str,
+        retry_after_seconds: float | None = None,
+        limit_kind: str | None = None,
+    ) -> None:
         super().__init__(message)
         self.retry_after_seconds = retry_after_seconds
+        # Which limit was hit ("TPD", "TPM", "RPD", "RPM") when the provider says.
+        self.limit_kind = limit_kind
+
+
+@dataclass
+class CallStats:
+    """What one labeling request cost and what the provider said about its
+    limits, for monitoring (app.models.ai_label_batch). Filled in by every
+    request, successful or not. Holds no key and no request body."""
+
+    model: str
+    http_status: int | None = None
+    duration_ms: int | None = None
+    prompt_tokens: int | None = None
+    completion_tokens: int | None = None
+    total_tokens: int | None = None
+    cached_tokens: int | None = None
+    reasoning_tokens: int | None = None
+    limit_requests: int | None = None
+    remaining_requests: int | None = None
+    reset_requests: str | None = None
+    limit_tokens: int | None = None
+    remaining_tokens: int | None = None
+    reset_tokens: str | None = None
+    retry_after_seconds: float | None = None
+    limit_kind: str | None = None
+    limit_value: int | None = None
+    limit_used: int | None = None
+    limit_requested: int | None = None
+    error: str | None = None
 
 
 @dataclass(frozen=True)
@@ -260,6 +306,82 @@ def _error_message(response: httpx.Response) -> str:
     return _clean(str(message), limit=500)
 
 
+_SECRET_LIKE = re.compile(
+    r"\b(?:org_[A-Za-z0-9]+|gsk_[A-Za-z0-9]+|sk-[A-Za-z0-9_-]+|AIza[0-9A-Za-z_-]{20,})\b"
+)
+
+
+def sanitize_error(text: str | None, *, limit: int = 300) -> str | None:
+    """An error message safe to store and log: organization ids and anything
+    shaped like an API key are masked, whitespace collapsed, length capped."""
+    if not text:
+        return None
+    return _clean(_SECRET_LIKE.sub("[redacted]", str(text)), limit=limit)
+
+
+# Groq names the limit in its 429 message: "... on tokens per day (TPD): Limit
+# 200000, Used 199102, Requested 4015. Please try again in 27m41.5s ..."
+_LIMIT_DETAIL = re.compile(
+    r"\((?P<kind>[A-Z]{3,4})\):\s*Limit\s+(?P<limit>\d+),\s*Used\s+(?P<used>\d+)"
+    r"(?:,\s*Requested\s+(?P<requested>\d+))?",
+)
+
+
+def parse_limit_detail(message: str | None) -> dict[str, int | str | None]:
+    """{"kind", "limit", "used", "requested"} from a rate-limit message, with
+    None for whatever it does not say."""
+    match = _LIMIT_DETAIL.search(message or "")
+    if not match:
+        return {"kind": None, "limit": None, "used": None, "requested": None}
+    requested = match.group("requested")
+    return {
+        "kind": match.group("kind"),
+        "limit": int(match.group("limit")),
+        "used": int(match.group("used")),
+        "requested": int(requested) if requested else None,
+    }
+
+
+def _int_or_none(value: object) -> int | None:
+    try:
+        return int(value)  # type: ignore[arg-type]
+    except (TypeError, ValueError):
+        return None
+
+
+def _read_rate_headers(stats: CallStats, response: httpx.Response) -> None:
+    headers = response.headers
+    stats.limit_requests = _int_or_none(headers.get("x-ratelimit-limit-requests"))
+    stats.remaining_requests = _int_or_none(headers.get("x-ratelimit-remaining-requests"))
+    stats.reset_requests = (headers.get("x-ratelimit-reset-requests") or "")[:32] or None
+    stats.limit_tokens = _int_or_none(headers.get("x-ratelimit-limit-tokens"))
+    stats.remaining_tokens = _int_or_none(headers.get("x-ratelimit-remaining-tokens"))
+    stats.reset_tokens = (headers.get("x-ratelimit-reset-tokens") or "")[:32] or None
+
+
+def _read_usage(stats: CallStats, body: dict) -> None:
+    """Token counts from an OpenAI-style "usage" or Gemini "usageMetadata"."""
+    usage = body.get("usage")
+    if isinstance(usage, dict):
+        stats.prompt_tokens = _int_or_none(usage.get("prompt_tokens"))
+        stats.completion_tokens = _int_or_none(usage.get("completion_tokens"))
+        stats.total_tokens = _int_or_none(usage.get("total_tokens"))
+        prompt_details = usage.get("prompt_tokens_details") or {}
+        if isinstance(prompt_details, dict):
+            stats.cached_tokens = _int_or_none(prompt_details.get("cached_tokens"))
+        completion_details = usage.get("completion_tokens_details") or {}
+        if isinstance(completion_details, dict):
+            stats.reasoning_tokens = _int_or_none(completion_details.get("reasoning_tokens"))
+        return
+    meta = body.get("usageMetadata")
+    if isinstance(meta, dict):
+        stats.prompt_tokens = _int_or_none(meta.get("promptTokenCount"))
+        stats.completion_tokens = _int_or_none(meta.get("candidatesTokenCount"))
+        stats.total_tokens = _int_or_none(meta.get("totalTokenCount"))
+        stats.cached_tokens = _int_or_none(meta.get("cachedContentTokenCount"))
+        stats.reasoning_tokens = _int_or_none(meta.get("thoughtsTokenCount"))
+
+
 _RETRY_IN = re.compile(r"(?:retry|try again) in ((?:\d+(?:\.\d+)?[hms])+)", re.IGNORECASE)
 _DURATION_PART = re.compile(r"(\d+(?:\.\d+)?)([hms])")
 
@@ -327,6 +449,7 @@ class GeminiCategorizer:
             else None
         )
         self._last_request_at = 0.0
+        self.last_stats = CallStats(model=model)
         # The key rides as a query parameter per Google AI Studio's REST API; it
         # never goes in a logged header.
         self._client = httpx.Client(timeout=timeout, params={"key": api_key})
@@ -363,17 +486,25 @@ class GeminiCategorizer:
         payload = self._payload(prompt)
         url = self._url
         attempt = 0
+        stats = CallStats(model=self.model)
+        self.last_stats = stats
         while True:
             self._throttle()
             self._last_request_at = time.monotonic()
+            started = time.monotonic()
             try:
                 response = self._client.post(url, json=payload)
             except httpx.HTTPError as exc:
+                stats.duration_ms = int((time.monotonic() - started) * 1000)
+                stats.error = sanitize_error(f"request failed: {type(exc).__name__}")
                 if attempt >= self._max_retries:
-                    raise GeminiError(f"request failed: {exc}") from exc
+                    raise GeminiTransportError(f"request failed: {exc}") from exc
                 attempt += 1
                 time.sleep(min(2**attempt, 30))
                 continue
+            stats.duration_ms = int((time.monotonic() - started) * 1000)
+            stats.http_status = response.status_code
+            _read_rate_headers(stats, response)
             if response.status_code in _RETRYABLE_STATUSES and attempt < self._max_retries:
                 attempt += 1
                 # Honour Retry-After when present, else exponential backoff.
@@ -386,13 +517,34 @@ class GeminiCategorizer:
                 attempt = 0
                 continue
             if response.status_code != 200:
-                message = f"HTTP {response.status_code}: {_error_message(response)}"
+                detail = _error_message(response)
+                message = f"HTTP {response.status_code}: {sanitize_error(detail, limit=500)}"
+                stats.error = sanitize_error(message)
                 if response.status_code == 429:
-                    raise GeminiQuotaExceeded(message, _retry_after_seconds(response))
+                    limit = parse_limit_detail(detail)
+                    stats.retry_after_seconds = _retry_after_seconds(response)
+                    stats.limit_kind = limit["kind"]  # type: ignore[assignment]
+                    stats.limit_value = limit["limit"]  # type: ignore[assignment]
+                    stats.limit_used = limit["used"]  # type: ignore[assignment]
+                    stats.limit_requested = limit["requested"]  # type: ignore[assignment]
+                    raise GeminiQuotaExceeded(
+                        message, stats.retry_after_seconds, stats.limit_kind
+                    )
                 if response.status_code >= 500:
                     raise GeminiOverloaded(message)
+                if response.status_code == 400:
+                    # A request the model could not answer in the asked-for
+                    # shape (Groq: json_validate_failed). Configuration errors
+                    # (401, 403, 404, 413) are not the events' fault.
+                    raise GeminiBadOutput(message)
                 raise GeminiError(message)
-            return response.json()
+            try:
+                body = response.json()
+            except ValueError as exc:
+                stats.error = "response body was not JSON"
+                raise GeminiBadOutput("response body was not JSON") from exc
+            _read_usage(stats, body)
+            return body
 
     def classify_batch(
         self, categories: list[CategoryOption], events: list[EventToClassify]
@@ -406,7 +558,14 @@ class GeminiCategorizer:
         valid = {option.slug for option in categories}
         prompt = build_prompt(categories, events)
         body = self._post(prompt)
-        labels = _parse_labels(self._response_text(body))
+        try:
+            labels = _parse_labels(self._response_text(body))
+        except GeminiError as exc:
+            self.last_stats.error = sanitize_error(str(exc))
+            raise GeminiBadOutput(str(exc)) from exc
+        except ValueError as exc:  # json.JSONDecodeError from the fallback parse
+            self.last_stats.error = sanitize_error(f"unparseable labels: {exc}")
+            raise GeminiBadOutput(f"unparseable labels: {exc}") from exc
         requested = {event.id for event in events}
         return {
             event_id: label
@@ -438,6 +597,7 @@ class GroqCategorizer(GeminiCategorizer):
         self._url = _GROQ_ENDPOINT
         self._fallback_url = None
         self._last_request_at = 0.0
+        self.last_stats = CallStats(model=model)
         self._client = httpx.Client(
             timeout=timeout, headers={"Authorization": f"Bearer {api_key}"}
         )
