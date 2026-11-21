@@ -13,7 +13,7 @@ from __future__ import annotations
 import dataclasses
 import html
 import re
-from datetime import date, datetime, time
+from datetime import UTC, date, datetime, time
 from urllib.parse import urljoin
 from zoneinfo import ZoneInfo
 
@@ -150,6 +150,22 @@ def _split_iso_datetime(value: object) -> tuple[object | None, str | None]:
     return value, None
 
 
+def _utc_now() -> datetime:
+    return datetime.now(UTC)
+
+
+def local_today(zone_name: str | None) -> date:
+    """Today's date in `zone_name` (an IANA zone). A town still on the UTC
+    default, or an unknown zone, uses the UTC date."""
+    now = _utc_now()
+    if zone_name and not is_unset_zone(zone_name):
+        try:
+            return now.astimezone(ZoneInfo(zone_name)).date()
+        except (KeyError, ValueError):
+            pass
+    return now.date()
+
+
 def normalize_candidate(
     candidate: EventCandidate,
     config: SiteConfiguration,
@@ -163,13 +179,16 @@ def normalize_candidate(
     raw = candidate.raw
     history: list[str] = list(candidate.transformation_history)
     warnings: list[str] = list(candidate.warnings)
+    # Year-less dates ("Nov 20") resolve against the town's own date, not the
+    # server's UTC date, which is already tomorrow during a US evening.
+    town_today = local_today(resolve_zone_name(config.timezone, fallback_timezone))
 
     def apply(field_name: str, value: object) -> object:
         rules = _rules_for_field(config.transformations, field_name)
         if not rules:
             return value
         try:
-            result, applied = apply_transformations(value, rules)
+            result, applied = apply_transformations(value, rules, reference_date=town_today)
         except ValueError as exc:
             # A rule that cannot run (an unsafe or invalid regex saved before
             # it was checked) leaves the value as extracted and says why,

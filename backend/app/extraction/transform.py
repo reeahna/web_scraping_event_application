@@ -13,7 +13,7 @@ import re
 import unicodedata
 import warnings
 from collections.abc import Callable
-from datetime import date, datetime, time
+from datetime import date, datetime, time, timedelta
 from typing import Any
 from urllib.parse import urljoin
 
@@ -165,16 +165,27 @@ def _twelve_hour_time(text: str) -> time | None:
     return time(hour, minute)
 
 
-def _next_occurrence(month: int, day: int, reference: date) -> date | None:
-    """The next calendar occurrence of month/day on or after `reference`
-    (this year if still upcoming, otherwise next year). Handles Feb 29 by
+# A year-less date this many days before the reference is read as a day that
+# just passed (a listing that has not taken it down yet), not as the same day
+# next year: "Nov 20" seen on Nov 21 is yesterday's event, never 2027's.
+RECENT_PAST_DAYS = 7
+
+
+def _next_occurrence(
+    month: int, day: int, reference: date, *, recent_past_days: int = RECENT_PAST_DAYS
+) -> date | None:
+    """The first calendar occurrence of month/day on or after `reference`
+    minus `recent_past_days`: this year if still upcoming or only just past,
+    otherwise next year. Works across the new year ("Dec 30" seen on Jan 2 is
+    three days ago; "Jan 2" seen on Dec 30 is next week). Handles Feb 29 by
     skipping non-leap years."""
-    for year in (reference.year, reference.year + 1):
+    earliest = reference - timedelta(days=max(0, recent_past_days))
+    for year in (reference.year - 1, reference.year, reference.year + 1):
         try:
             candidate = date(year, month, day)
         except ValueError:
             continue
-        if candidate >= reference:
+        if candidate >= earliest:
             return candidate
     try:
         return date(reference.year, month, day)
@@ -198,6 +209,8 @@ def _parse_date(value: Any, params: dict[str, Any]) -> date | None:
     # Year-less card dates (e.g. "Aug 07") parse to strptime's default year
     # (1900). When a config opts in, resolve them to the next occurrence from a
     # reference date — general, off by default, never changes dated values.
+    # The reference is the source town's own date (EventNormalizer passes it),
+    # so a run late in the evening does not see tomorrow's UTC date.
     if parsed is not None and params.get("assume_next_occurrence") and parsed.year == 1900:
         reference = _coerce_reference(params.get("reference_date"))
         return _next_occurrence(parsed.month, parsed.day, reference)
@@ -278,15 +291,29 @@ _TRANSFORMS: dict[str, Callable[[Any, dict[str, Any]], Any]] = {
 
 
 def apply_transformations(
-    value: Any, rules: list[TransformationRuleConfig]
+    value: Any,
+    rules: list[TransformationRuleConfig],
+    *,
+    reference_date: date | None = None,
 ) -> tuple[Any, list[str]]:
     """Applies `rules` in order; returns (final_value, history) where history
     is a list of "kind" strings recording which transformations actually ran
-    — used to populate EventCandidate.transformation_history for provenance."""
+    — used to populate EventCandidate.transformation_history for provenance.
+
+    `reference_date` is "today" where the source's town is. A `parse_date`
+    rule that assumes the next occurrence of a year-less date uses it unless
+    the rule names its own reference_date."""
     history: list[str] = []
     current = value
     for rule in rules:
         transform = _TRANSFORMS[rule.kind]
-        current = transform(current, rule.params)
+        params = rule.params
+        if (
+            rule.kind == "parse_date"
+            and reference_date is not None
+            and not params.get("reference_date")
+        ):
+            params = {**params, "reference_date": reference_date}
+        current = transform(current, params)
         history.append(rule.kind)
     return current, history
