@@ -203,6 +203,12 @@ class Settings(BaseSettings):
     # The cheaper model an administrator can compare with groq_model from the
     # AI labeling page (it has its own free-tier quota on Groq).
     groq_eval_candidate_model: str = "openai/gpt-oss-20b"
+    # A second Groq model (its own free quota) to label with only while
+    # groq_model is rate limited. Off unless set. Its labels are provisional:
+    # it never hides an event, never replaces a groq_model label or an admin
+    # override, and every event it labels stays queued for groq_model to
+    # verify. Not enabled until the evaluation results are reviewed.
+    groq_fallback_model: str | None = None
 
     # Asynchronous geocoding (app.services.geocoding). Disabled by default: the
     # application is fully functional without it and no live third-party

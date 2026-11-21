@@ -9,6 +9,7 @@ from app.core.safe_regex import validate_safe_regex
 from app.models.categorization_rule import CategorizationRule
 from app.models.event import Event
 from app.models.event_category import EventCategory
+from app.services.ai_label_state import PROVISIONAL_SOURCE
 from app.services.event_freshness import mark_if_changed, visitor_snapshot
 
 RULE_TYPES = (
@@ -185,8 +186,10 @@ def assign_category(db: Session, event: Event) -> CategorizationResult | None:
 
     An event already labeled by the AI categorizer (category_source == "ai") is
     left alone: the Gemini label is more accurate than the keyword rules, so a
-    re-scrape must never downgrade it back to a keyword guess."""
-    if event.category_source == "ai" and event.category_id is not None:
+    re-scrape must never downgrade it back to a keyword guess. A provisional
+    label from the backup model is kept the same way until the main model
+    verifies it."""
+    if event.category_source in ("ai", PROVISIONAL_SOURCE) and event.category_id is not None:
         return None
     if not _active_rules_exist(db):
         return None
@@ -208,6 +211,20 @@ def set_ai_category(
     event.categorization_rule_id = None
     event.category_source = "ai"
     event.ai_prompt_version = prompt_version
+    mark_if_changed(event, before)
+
+
+def set_provisional_category(event: Event, category: EventCategory) -> None:
+    """Apply a category chosen by the backup labeling model. It is marked
+    PROVISIONAL_SOURCE (never "ai") and carries no prompt version, so the
+    event stays queued for the main model and nothing reads it as a final AI
+    label. Visibility and the admin override are not touched. Does not
+    commit."""
+    before = visitor_snapshot(event)
+    event.category_id = category.id
+    event.categorization_rule_id = None
+    event.category_source = PROVISIONAL_SOURCE
+    event.ai_prompt_version = None
     mark_if_changed(event, before)
 
 

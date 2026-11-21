@@ -11,6 +11,11 @@ pipeline.
   change to its words does so automatically, and the drain gives it one more
   try every NEEDS_REVIEW_RETRY_AFTER when nothing else is waiting, so no event
   is dropped for good.
+* "provisional": only the backup model (GROQ_FALLBACK_MODEL) has labeled the
+  event. Its category_source is then PROVISIONAL_SOURCE, never "ai", so
+  nothing that reads AI labels takes it for a final one. It stays in the main
+  model's queue until that model verifies it, and the backup never hides an
+  event. Backup failures count in ai_fallback_attempts, never ai_attempts.
 
 Kept free of HTTP and provider code so the import path can use it cheaply.
 """
@@ -25,9 +30,15 @@ from typing import Any
 LABELED = "labeled"
 STALE = "stale"
 NEEDS_REVIEW = "needs_review"
+PROVISIONAL = "provisional"
+# category_source of a category only the backup model has given.
+PROVISIONAL_SOURCE = "ai_provisional"
 
 # Unsuccessful answers in a row before an event stops being sent automatically.
 AI_MAX_ATTEMPTS = 2
+# Unusable backup-model answers before the backup stops asking about an event
+# (it then simply waits for the main model, which it was doing anyway).
+FALLBACK_MAX_ATTEMPTS = 1
 NEEDS_REVIEW_RETRY_AFTER = timedelta(days=7)
 
 
@@ -58,18 +69,42 @@ def requeue_if_inputs_changed(event: Any) -> bool:
         event.ai_label_status = None
     elif event.category_source == "ai":
         event.ai_label_status = STALE
+    # A provisional event stays provisional: it is already waiting for the
+    # main model, which reads the new words when it gets there.
     event.ai_attempts = 0
+    event.ai_fallback_attempts = 0
     event.ai_last_error = None
     return True
 
 
-def record_label(event: Any, *, now: datetime | None = None) -> None:
-    """Bookkeeping for an event the AI just labeled."""
+def record_label(
+    event: Any, *, now: datetime | None = None, model: str | None = None
+) -> None:
+    """Bookkeeping for an event the main model just labeled (final)."""
     event.ai_label_status = LABELED
+    event.ai_model = model[:100] if model else None
     event.ai_attempts = 0
+    event.ai_fallback_attempts = 0
     event.ai_last_error = None
     event.ai_last_attempt_at = now or datetime.now(UTC)
     event.ai_input_hash = ai_input_hash(event)
+
+
+def record_provisional_label(event: Any, *, model: str, now: datetime | None = None) -> None:
+    """Bookkeeping for an event the backup model just gave a provisional
+    category. ai_attempts is left as it is: it belongs to the main model."""
+    event.ai_label_status = PROVISIONAL
+    event.ai_model = model[:100]
+    event.ai_last_attempt_at = now or datetime.now(UTC)
+    event.ai_input_hash = ai_input_hash(event)
+
+
+def record_fallback_failure(event: Any, reason: str, *, now: datetime | None = None) -> None:
+    """The backup model gave the event no usable category. Nothing about the
+    event's category, visibility or main-model attempts changes."""
+    event.ai_fallback_attempts = (event.ai_fallback_attempts or 0) + 1
+    event.ai_last_error = f"backup model: {reason}"[:300]
+    event.ai_last_attempt_at = now or datetime.now(UTC)
 
 
 def record_unsuccessful_attempt(
@@ -89,6 +124,12 @@ def record_unsuccessful_attempt(
 
 def reset_for_retry(event: Any) -> None:
     """An administrator asked for the event to be labeled again."""
-    event.ai_label_status = STALE if event.category_source == "ai" else None
+    if event.category_source == "ai":
+        event.ai_label_status = STALE
+    elif event.category_source == PROVISIONAL_SOURCE:
+        event.ai_label_status = PROVISIONAL
+    else:
+        event.ai_label_status = None
     event.ai_attempts = 0
+    event.ai_fallback_attempts = 0
     event.ai_last_error = None

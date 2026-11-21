@@ -24,6 +24,8 @@ from app.models.ai_label_evaluation import AiLabelEvaluation
 from app.models.event import Event
 from app.models.user import User
 from app.services.ai_categorization import (
+    label_models,
+    model_cooldown_until,
     needs_review_events,
     queue_counts,
     queue_status,
@@ -49,9 +51,22 @@ RECENT_BATCHES = 50
 NEEDS_REVIEW_SHOWN = 100
 
 
+def _models(db: DbSession) -> list[dict]:
+    rows = []
+    for position, model in enumerate(label_models()):
+        until = model_cooldown_until(db, model)
+        rows.append({
+            "model": model,
+            "role": "main" if position == 0 else "backup",
+            "waiting_until": until.isoformat() if until else None,
+        })
+    return rows
+
+
 def _overview(db: DbSession) -> dict:
     waiting, labeled = queue_counts(db)
     return {
+        "models": _models(db),
         "status": queue_status(db),
         "waiting": waiting,
         "labeled": labeled,

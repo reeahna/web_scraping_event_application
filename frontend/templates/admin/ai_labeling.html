@@ -25,12 +25,18 @@
 <div class="metrics-grid">
   <div class="metric-tile">
     <div class="metric-value">{{ overview.waiting | thousands }}</div>
-    <div class="metric-label">Waiting</div>
+    <div class="metric-label">Waiting for the main model</div>
+    {% if status.provisional %}<div class="metric-note">{{ status.provisional | thousands }} of these have a provisional category</div>{% endif %}
+    {% if status.new_last_24h is not none %}<div class="metric-note">{{ status.new_last_24h | thousands }} new in the last 24 h</div>{% endif %}
     {% if status.oldest_waiting_hours is not none %}<div class="metric-note">Oldest waiting {{ status.oldest_waiting_hours }} h</div>{% endif %}
   </div>
   <div class="metric-tile">
     <div class="metric-value">{{ overview.labeled | thousands }}</div>
-    <div class="metric-label">Labeled</div>
+    <div class="metric-label">Labeled (verified)</div>
+  </div>
+  <div class="metric-tile">
+    <div class="metric-value">{{ (status.provisional or 0) | thousands }}</div>
+    <div class="metric-label">Provisional (backup model, not verified)</div>
   </div>
   <div class="metric-tile">
     <div class="metric-value">{{ overview.needs_review_total | thousands }}</div>
@@ -39,12 +45,30 @@
 </div>
 
 <section class="wf-card">
+  <h2>Models</h2>
+  <p class="audit-meta">Each model has its own free quota. The main model is always tried first. A
+    backup model (off unless GROQ_FALLBACK_MODEL is set) is used only while the main model is rate
+    limited. It only gives a provisional category to events the main model has never labeled: it never
+    hides an event, never replaces a main-model label or an administrator's choice, and every event it
+    labels stays in the main model's queue to be verified.</p>
+  <table>
+    <thead><tr><th>Model</th><th>Role</th><th>Available</th></tr></thead>
+    <tbody>
+      {% for row in overview.models %}
+      <tr><td>{{ row.model }}</td><td>{{ row.role }}</td><td>{% if row.waiting_until %}Rate limited until {{ row.waiting_until | admin_datetime }}{% else %}Now{% endif %}</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</section>
+
+<section class="wf-card">
   <h2>Last 24 hours</h2>
   {% set u = overview.usage %}
   <table>
     <tbody>
       <tr><th>Requests</th><td>{{ num(u.requests) }} ({{ num(u.ok) }} answered, {{ num(u.rate_limited) }} rate limited)</td></tr>
-      <tr><th>Events labeled</th><td>{{ num(u.events_labeled) }}</td></tr>
+      <tr><th>Events labeled (verified, main model)</th><td>{{ num(u.events_labeled) }}</td></tr>
+      <tr><th>Provisional categories (backup model)</th><td>{{ num(u.events_provisional) }}</td></tr>
       <tr><th>Events left without a label</th><td>{{ num(u.events_skipped) }} skipped by the model, {{ num(u.events_failed) }} in requests that failed</td></tr>
       <tr><th>Events hidden as not for students</th><td>{{ num(u.events_hidden) }}</td></tr>
       <tr><th>Tokens</th><td>{{ num(u.total_tokens) }} total ({{ num(u.prompt_tokens) }} in, {{ num(u.completion_tokens) }} out, {{ num(u.cached_tokens) }} cached)</td></tr>
@@ -133,7 +157,7 @@
       {% for b in batches %}
       <tr>
         <td>{{ b.created_at | admin_datetime }}</td>
-        <td>{{ b.model }}</td>
+        <td>{{ b.model }}{% if b.provisional %} <span class="audit-meta">(backup, provisional)</span>{% endif %}</td>
         <td>{{ outcome_labels.get(b.outcome, b.outcome) }}{% if b.http_status and b.http_status != 200 %} ({{ b.http_status }}){% endif %}</td>
         <td>{{ b.events_submitted }}</td>
         <td>{{ b.events_labeled }}</td>
