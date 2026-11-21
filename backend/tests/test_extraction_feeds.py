@@ -16,7 +16,7 @@ from app.extraction.patterns.rss_atom_events import RssAtomEventsPattern
 from app.extraction.registry import REGISTRY
 from app.extraction.validate import validate_candidate
 from app.schemas.extraction import SiteConfiguration
-from tests.extraction_helpers import make_response_from_fixture
+from tests.extraction_helpers import make_response, make_response_from_fixture
 
 URL = "https://venue.example.org/events"
 
@@ -140,6 +140,45 @@ def test_rss_extraction_uses_configured_event_date_not_pubdate():
     assert first.start_date.isoformat() == "2026-10-06"  # the event date, not pubDate 2025
     assert first.canonical_url == "https://venue.example.org/events/autumn-quartet"
     assert validate_candidate(first, config).is_valid
+
+
+_BARE_AMPERSAND_RSS = """<?xml version="1.0" encoding="utf-8"?>
+<rss version="2.0" xmlns:ev="http://purl.org/rss/1.0/modules/event/">
+  <channel>
+    <title>Arts Center</title>
+    <item>
+      <title>Disney&apos;s The Lion King</title>
+      <link>https://venue.example.org/events/lion-king</link>
+      <guid>https://venue.example.org/events/lion-king</guid>
+      <ev:startdate>2026-11-22T00:30:00Z</ev:startdate>
+      <ev:type>Broadway & Theatre</ev:type>
+    </item>
+  </channel>
+</rss>
+"""
+
+
+def test_rss_with_a_bare_ampersand_is_still_read():
+    """Some feeds write "&" unescaped, which is not well-formed XML."""
+    response = make_response(_BARE_AMPERSAND_RSS, final_url=URL, content_type="text/xml")
+    config = SiteConfiguration(
+        pattern_name="rss_atom_events",
+        listing_url=URL,
+        json_paths={"start_datetime": "startdate", "source_category": "type"},
+        required_fields=["title", "start_date"],
+    )
+    candidates = RssAtomEventsPattern().extract(response, config)
+    assert len(candidates) == 1
+    first = normalize_candidate(candidates[0], config)
+    assert first.title == "Disney's The Lion King"
+    assert first.source_category == "Broadway & Theatre"
+    assert first.start_date is not None
+
+
+def test_rss_that_is_not_xml_at_all_still_yields_nothing():
+    response = make_response("<html><body>Not a feed & more</body>", content_type="text/xml")
+    config = SiteConfiguration(pattern_name="rss_atom_events", listing_url=URL)
+    assert RssAtomEventsPattern().extract(response, config) == []
 
 
 def test_atom_extraction_reads_link_href():
