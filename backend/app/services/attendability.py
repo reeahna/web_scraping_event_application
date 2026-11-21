@@ -146,8 +146,16 @@ _AUDIENCE_TITLE = _rx(
     # "Zumba Gold", "Senior Ballet Programming", "Chair Yoga".
     r"baby ?play|babytime|toddler ?time|wonderful ones|terrific twos|play (&|and) learn|"
     r"^\s*kids\b|kids (edition|art workshop)|tweens?|children['’]s learn to swim|"
-    r"youth martial arts?|after-school|4-h|\d{1,2}u (coed )?division|cuentos familiares|"
-    r"zumba gold|senior ballet|(therapy|fitness|yoga|exercise) for seniors|"
+    r"youth martial arts?|4-h|\d{1,2}u (coed )?division|cuentos familiares|"
+    r"zumba gold|senior ballet|(therapy|fitness|yoga|exercise|tech help) for seniors|"
+    # "Baby Laptime", "Talk With Your Baby", "Saturday Baby Movers", "Mama & Baby
+    # Flow", "Children's International Story Hour", "Stay-n-Play", "TK-5th
+    # Playtime", "Littlest Sewists", "Wee-One Wednesdays", "Made by Me & My
+    # Grown-up", "Unbooked Kids", "DIY Kids | Yarn Weaving", "Ready for
+    # Kindergarten", "After School Snack", "Chair Aerobics".
+    r"baby (laptime|lapsit|movers)|with your baby|mama (&|and) baby|story hour|"
+    r"stay[- ]?(n|and|&)[- ]?play|\btk-\d+(st|nd|rd|th)?|littlest|wee[- ]ones?|my grown-?up|"
+    r"\bkids(?=\s*(\||:|$))|kindergarten|younger listeners|after[- ]school|chair aerobics|"
     r"chair yoga|ageless grace|"
     r"(trunk|trick)[- ]or[- ]treats?|prospective (\w+ )?students?|"
     r"senior (expo|citizens?|center)|seniors (55|60|62|65)|older adults|retirees|"
@@ -157,6 +165,8 @@ _AUDIENCE_TITLE = _rx(
     r"ages?:? \d{1,2}\s*(-|–|to)\s*(1[0-7]|[1-9])\b|"
     r"(alumni|iuaa)\b.*\b(game watch|chapter|reception|happy hour|weekend|reunion)|"
     r"game watch\b.*\b(alumni|iuaa)|iuaa|"
+    # A school's alumni club for another region: "Brown Club of Greater Miami".
+    r"\bclub of greater\b|"
     r"\balumni (association|chapter|club|reception|game watch|awards?))\b|"
     # "Art Hive for 50+": the "+" ends the title, so no word boundary follows.
     r"\b(50|55|60|62|65)\s*\+"
@@ -190,6 +200,15 @@ _SERVICE_TITLE = _rx(
     # "Drop-in Academic Coaching", "Study Abroad Walk-In Hours", "Adult Tutoring",
     # "Veteran Services Drop In".
     r"\bacademic coaching\b|\bwalk[- ]in hours\b|^\s*adult tutoring\b|\bservices drop[- ]in\b|"
+    # Library and campus help desks: "Technology Help @Central", "Tiger Tech
+    # Help", "College & Career Drop In", "Free Legal Clinic", "Time/Task
+    # Management Coaching (one-on-one appointments)", "Connect with Your Area
+    # Coordinator: Kim!", "Digital Skills for Life - Google Apps", "ESOL Class".
+    r"\btech(nology)? help\b|\bcareer drop[- ]in\b|\bfree legal (help|clinic)\b|"
+    r"\bone-on-one appointments?\b|^\s*connect with your area coordinator\b|"
+    r"^\s*digital skills for life\b|\bneighborhood social worker\b|"
+    r"\bpeer recovery supporter\b|\bhome energy assistance\b|"
+    r"^\s*(citizenship|esol) class\b|^\s*school help\s*$|"
     # A study group's own booking: "Motor Speech Study Session", "LGSA Study Hour".
     r"\bstudy (sesh\w*|sessions?|hours?|nights?|days?)\b|^\s*study groups?\b|"
     # A course's exam review: "Introduction to IP Review Session: Patents".
@@ -260,7 +279,24 @@ _DEADLINE_TITLE = _rx(
     r"last day of (open |late )?registration|refund (period|deadline)|"
     r"grade of w|e-?drop|e-?add|schedule adjustment)\b|"
     # Registrar entries come labelled with the term: "Spring 2027: ..."
-    r"^\s*(fall|spring|summer|winter)\s+(20\d\d|session)\s*:"
+    r"^\s*(fall|spring|summer|winter)\s+(20\d\d|session)\s*:|"
+    # Closures and holiday notices: "Library Early Closure", "Closed – Main Library",
+    # "Walter Center Closed", "Close at 5:00 p.m. for Thanksgiving", "UNIVERSITY
+    # HOLIDAY - Thanksgiving Day", "Thanksgiving Holiday - City Facilities Closed".
+    r"^\s*closed\b|^[\w .'’-]{0,40}\bclosed\s*$|\b(early )?closures?\b|"
+    r"\bclos(e|es|ing) early\b|^\s*close at [\w:. ]+ for\b|"
+    r"\b(library|center|building|office) closes\b|"
+    r"\bclosed for\b|\bis closed\b|\bfacilities closed\b|"
+    r"^\s*(academic and administrative|university|town|city) holiday\b|"
+    r"^\s*(thanksgiving( day| holidays?)?|friday after thanksgiving|labor thanksgiving)\s*$|"
+    r"\bthanksgiving hours\b|"
+    # Calls and sign-ups: "Women's Week 2027 Call for Proposals", "Register for
+    # OFA Dance Community Courses", "Involvement Fair [Tuesday Sign-Ups]", "Apply
+    # to West House", "Rotaract Club Membership Application", "Thanksgiving To
+    # Go Order Pick Up".
+    r"\bcall for (proposals|artists|papers|submissions|entries)\b|^\s*register for\b|"
+    r"\[\w+ sign-?ups\]|^\s*apply (to|for)\b|\bmembership application\b|"
+    r"\bapply\b.*\btoday!?\s*$|\border pick ?-?up\b|^\s*\[class full\]"
 )
 # Bare academic-calendar entries: the whole title is the break or exam period,
 # so "Spring Break Bash" or "Finals Week Pancake Breakfast" still get through.
@@ -373,7 +409,8 @@ _INTERNAL_TITLE = _rx(
     # "Join SOCHI Email List!".
     r"^\s*no [\w ]{1,40}\btoday\b|^\s*join (our |the )?[\w ]{0,30}(email|mailing) list\b|"
     # Team and staff bookings: "VB Visiting Team Practice", "Staff Garden Volunteer Day".
-    r"\bvisiting team practice\b|^\s*staff (garden|appreciation|holiday party|potluck)\b"
+    r"\bvisiting team practice\b|\bvt (practice|shootarounds?)\b|\battendance\s*$|"
+    r"^\s*staff (garden|appreciation|holiday party|potluck)\b"
 )
 # Case-sensitive: a course section ("SWK-S 502 0001", "NURS-B 444", "ANAT-D502")
 # or a room code ("Rm IB 317") at the front of a title is a class or a booking.

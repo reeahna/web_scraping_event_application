@@ -108,8 +108,8 @@ def test_timestamps_alone_are_converted_to_local_time():
 
 def test_each_session_of_a_repeating_event_is_its_own_listing():
     events = _events()
-    first = events[("Closed for Thanksgiving Holiday", "2026-11-25")]
-    second = events[("Closed for Thanksgiving Holiday", "2026-11-26")]
+    first = events[("Holiday Open Studio", "2026-11-25")]
+    second = events[("Holiday Open Studio", "2026-11-26")]
     assert first.external_source_id == "1866784@2026-11-25"
     assert second.external_source_id == "1866784@2026-11-26"
     assert first.recurrence_parent_id == second.recurrence_parent_id == "1866784"
@@ -168,7 +168,7 @@ async def test_rerun_repairs_old_records_without_duplicates(
     )
     # A repeating series stored as one row under its bare id.
     series = make_event(
-        city, website=website, title="Closed for Thanksgiving Holiday",
+        city, website=website, title="Holiday Open Studio",
         external_source_id="1866784", start_date=date(2026, 11, 25), start_time=time(5),
         canonical_url="https://events.iu.edu/iukartgallery/event/1866784-closed",
     )
@@ -199,7 +199,7 @@ async def test_rerun_repairs_old_records_without_duplicates(
     assert series.external_source_id == "1866784@2026-11-25"
     assert series.start_time is None
     sessions = db_session.query(Event).filter(
-        Event.title == "Closed for Thanksgiving Holiday"
+        Event.title == "Holiday Open Studio"
     ).order_by(Event.start_date).all()
     assert [s.start_date for s in sessions] == [date(2026, 11, 25), date(2026, 11, 26)]
 
