@@ -14,6 +14,7 @@ from app.services.extraction_runs import preview_extraction, run_extraction
 from app.services.home_town import (
     address_town,
     at_other_school_event,
+    campus_named_elsewhere,
     from_other_campus_calendar,
     hide_out_of_town_events,
     is_away_game,
@@ -546,3 +547,41 @@ def test_venue_at_other_school(venue, away):
 def test_title_names_other_town(title, outside):
     city = SimpleNamespace(name="Bethlehem", state_or_region="PA")
     assert title_names_other_town(title, city) is outside
+
+
+@pytest.mark.parametrize(
+    ("venue", "source_category", "other"),
+    [
+        # IU Northwest's student-activities feed, cross-posted to IU's shared calendar.
+        ("Hawthorn Hall 400", "IU Northwest Student Activities Calendar", True),
+        ("Indiana University Northwest", None, True),
+        ("Community Project", "IU Northwest Student Activities Calendar", True),
+        ("IUPUI Campus Center", None, True),
+        # Bloomington's own, and names that are not a campus.
+        ("Indiana Memorial Union", "IU Bloomington Featured Events", False),
+        ("Global & International Studies Building", "Culture and languages", False),
+        ("East Asian Studies Center", None, False),
+        # A building or a school says nothing certain: the School of Medicine
+        # teaches in Bloomington too. Left for a person to check.
+        ("Medical Education and Research Building", "Health and wellness", False),
+        ("IUSM-FW", "Health and wellness", False),
+    ],
+)
+def test_campus_named_in_venue_or_source_category(venue, source_category, other):
+    assert campus_named_elsewhere(venue, source_category, "Bloomington") is other
+    assert campus_named_elsewhere(venue, source_category, "Iowa City") is False
+
+
+def test_sweep_takes_down_an_event_whose_source_category_names_another_campus(
+    db_session, make_city, make_event
+):
+    city = make_city(name="Bloomington", slug="bloomington", state_or_region="Indiana")
+    gary = make_event(city, title="IUNited Meetings [Fall 2026]", venue="Hawthorn Hall 400",
+                      canonical_url="https://events.iu.edu/live/events/2400428-iunited")
+    gary.source_category = "IU Northwest Student Activities Calendar"
+    make_event(city, title="Pilates Club", venue="Medical Education and Research Building",
+               canonical_url="https://events.iu.edu/medicine/event/2368339-pilates-club")
+    db_session.commit()
+
+    found = hide_out_of_town_events(db_session, apply=False)
+    assert [e.title for e in found] == ["IUNited Meetings [Fall 2026]"]
