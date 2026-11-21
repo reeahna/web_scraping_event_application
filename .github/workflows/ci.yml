@@ -1,15 +1,78 @@
 name: CI
 
-# Lint + full test suite for backend/ (which also covers the frontend/ templates) on every push and PR. This is CI only —
-# it never deploys (Render deploys from render.yaml).
+# Lint, dependency audit, migrations and the full test suite for backend/
+# (which also covers the frontend/ templates) on SQLite and PostgreSQL, plus
+# layout checks in Chromium, Firefox and WebKit. This is CI only: it never
+# deploys (Render deploys from render.yaml).
+#
+# To save Actions minutes without dropping checks a change needs:
+# - A newer push to the same PR cancels that PR's older, unfinished run.
+#   Runs on main are never cancelled.
+# - The `scope` job (.github/scripts/ci_scope.sh) looks at what changed and
+#   skips jobs the change cannot affect: docs-only changes run nothing,
+#   PostgreSQL is skipped for template/CSS/JS-only changes, and the three
+#   browser jobs run only when something a browser renders changed. CI,
+#   dependency and test-harness changes always run everything.
+# - On main, a merge of a PR that was up to date with main and already passed
+#   CI on exactly that code runs only `test`. Any other push to main runs the
+#   full set its files need, always including PostgreSQL.
+# - Skipped jobs report as "skipped", which GitHub treats as passing for
+#   required checks, so nothing is left pending. If `scope` itself fails,
+#   every job runs.
+# Run everything by hand: Actions > CI > Run workflow.
 on:
   push:
     branches: [main]
   pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  # One group per PR (newer pushes cancel older runs of that PR only). Pushes
+  # to main get a group per commit, so one merge never cancels another's run.
+  group: ${{ github.workflow }}-${{ github.event_name == 'pull_request' && format('pr-{0}', github.event.pull_request.number) || format('{0}-{1}', github.ref, github.sha) }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
-  test:
+  scope:
     runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      pull-requests: read
+      actions: read
+    outputs:
+      test: ${{ steps.scope.outputs.test }}
+      postgres: ${{ steps.scope.outputs.postgres }}
+      browsers: ${{ steps.scope.outputs.browsers }}
+      verified_merge: ${{ steps.scope.outputs.verified_merge }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # Full history without file contents: enough for git diff and
+          # ancestry checks, and only a few MB.
+          fetch-depth: 0
+          filter: blob:none
+      - name: Decide which jobs this change needs
+        id: scope
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          EVENT_NAME: ${{ github.event_name }}
+          PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          PUSH_BEFORE: ${{ github.event.before }}
+          PUSH_AFTER: ${{ github.sha }}
+        run: bash .github/scripts/ci_scope.sh
+
+  test:
+    needs: scope
+    if: ${{ !cancelled() && (needs.scope.result != 'success' || needs.scope.outputs.test == 'true') }}
+    runs-on: ubuntu-latest
+    # Usually 3 to 5 minutes.
+    timeout-minutes: 15
     defaults:
       run:
         working-directory: backend
@@ -18,11 +81,21 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.13"
+          cache: pip
+          cache-dependency-path: backend/pyproject.toml
       - name: Install
         run: |
           python -m pip install --upgrade pip
           pip install ".[dev]"
-          python -m playwright install --with-deps chromium
+          echo "PLAYWRIGHT_VERSION=$(pip show playwright | sed -n 's/^Version: //p')" >> "$GITHUB_ENV"
+      - name: Cache Playwright browsers
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ runner.os }}-${{ env.PLAYWRIGHT_VERSION }}-chromium
+      - name: Install Chromium
+        # The suite drives Chromium itself (layout and browser-fetch tests).
+        run: python -m playwright install --with-deps chromium
       - name: Ruff
         run: ruff check .
       # Fails the build when an installed package has a published security
@@ -44,7 +117,11 @@ jobs:
   # uses. The default `test` job runs on SQLite; this one asserts the app is
   # Postgres-clean.
   postgres:
+    needs: scope
+    if: ${{ !cancelled() && (needs.scope.result != 'success' || needs.scope.outputs.postgres == 'true') }}
     runs-on: ubuntu-latest
+    # Usually 5 to 7 minutes; one slow install took 14.
+    timeout-minutes: 20
     defaults:
       run:
         working-directory: backend
@@ -66,11 +143,20 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.13"
+          cache: pip
+          cache-dependency-path: backend/pyproject.toml
       - name: Install
         run: |
           python -m pip install --upgrade pip
           pip install ".[dev]" "psycopg[binary]>=3.1"
-          python -m playwright install --with-deps chromium
+          echo "PLAYWRIGHT_VERSION=$(pip show playwright | sed -n 's/^Version: //p')" >> "$GITHUB_ENV"
+      - name: Cache Playwright browsers
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ runner.os }}-${{ env.PLAYWRIGHT_VERSION }}-chromium
+      - name: Install Chromium
+        run: python -m playwright install --with-deps chromium
       - name: Migrations against PostgreSQL
         run: |
           python -m alembic upgrade head
@@ -86,12 +172,20 @@ jobs:
   # Firefox and WebKit (Safari's engine) and fails if any page scrolls
   # sideways (tests/test_responsive_layout.py). Screenshots of every page are
   # kept as a build artifact for a person to look over.
-  browsers:
+  #
+  # Three separate jobs rather than a matrix on purpose: when a matrix job is
+  # skipped, GitHub reports it under the bare job name instead of
+  # "browsers (chromium)" etc., which would leave those required checks
+  # pending forever. Keep the three jobs identical apart from the browser name.
+  browsers-chromium:
+    name: browsers (chromium)
+    needs: scope
+    if: ${{ !cancelled() && (needs.scope.result != 'success' || needs.scope.outputs.browsers == 'true') }}
     runs-on: ubuntu-latest
-    strategy:
-      fail-fast: false
-      matrix:
-        browser: [chromium, firefox, webkit]
+    # Usually 1 to 3 minutes.
+    timeout-minutes: 10
+    env:
+      BROWSER: chromium
     defaults:
       run:
         working-directory: backend
@@ -100,21 +194,120 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.13"
+          cache: pip
+          cache-dependency-path: backend/pyproject.toml
       - name: Install
         run: |
           python -m pip install --upgrade pip
           pip install ".[dev]"
-          python -m playwright install --with-deps ${{ matrix.browser }}
-      - name: Layout check in ${{ matrix.browser }}
+          echo "PLAYWRIGHT_VERSION=$(pip show playwright | sed -n 's/^Version: //p')" >> "$GITHUB_ENV"
+      - name: Cache Playwright browsers
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ runner.os }}-${{ env.PLAYWRIGHT_VERSION }}-${{ env.BROWSER }}
+      - name: Install ${{ env.BROWSER }}
+        run: python -m playwright install --with-deps "$BROWSER"
+      - name: Layout check in ${{ env.BROWSER }}
         env:
-          LAYOUT_BROWSERS: ${{ matrix.browser }}
+          LAYOUT_BROWSERS: ${{ env.BROWSER }}
           LAYOUT_SCREENSHOT_DIR: ${{ runner.temp }}/layout-screenshots
         run: python -m pytest tests/test_responsive_layout.py -q -rs
       - name: Keep the screenshots
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: layout-screenshots-${{ matrix.browser }}
+          name: layout-screenshots-${{ env.BROWSER }}
+          path: ${{ runner.temp }}/layout-screenshots
+          if-no-files-found: ignore
+          retention-days: 14
+
+  browsers-firefox:
+    name: browsers (firefox)
+    needs: scope
+    if: ${{ !cancelled() && (needs.scope.result != 'success' || needs.scope.outputs.browsers == 'true') }}
+    runs-on: ubuntu-latest
+    # Usually 2 to 3 minutes.
+    timeout-minutes: 10
+    env:
+      BROWSER: firefox
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+          cache: pip
+          cache-dependency-path: backend/pyproject.toml
+      - name: Install
+        run: |
+          python -m pip install --upgrade pip
+          pip install ".[dev]"
+          echo "PLAYWRIGHT_VERSION=$(pip show playwright | sed -n 's/^Version: //p')" >> "$GITHUB_ENV"
+      - name: Cache Playwright browsers
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ runner.os }}-${{ env.PLAYWRIGHT_VERSION }}-${{ env.BROWSER }}
+      - name: Install ${{ env.BROWSER }}
+        run: python -m playwright install --with-deps "$BROWSER"
+      - name: Layout check in ${{ env.BROWSER }}
+        env:
+          LAYOUT_BROWSERS: ${{ env.BROWSER }}
+          LAYOUT_SCREENSHOT_DIR: ${{ runner.temp }}/layout-screenshots
+        run: python -m pytest tests/test_responsive_layout.py -q -rs
+      - name: Keep the screenshots
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: layout-screenshots-${{ env.BROWSER }}
+          path: ${{ runner.temp }}/layout-screenshots
+          if-no-files-found: ignore
+          retention-days: 14
+
+  browsers-webkit:
+    name: browsers (webkit)
+    needs: scope
+    if: ${{ !cancelled() && (needs.scope.result != 'success' || needs.scope.outputs.browsers == 'true') }}
+    runs-on: ubuntu-latest
+    # Usually 2 to 3 minutes. One stuck install ran 37 minutes; this stops that.
+    timeout-minutes: 10
+    env:
+      BROWSER: webkit
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+          cache: pip
+          cache-dependency-path: backend/pyproject.toml
+      - name: Install
+        run: |
+          python -m pip install --upgrade pip
+          pip install ".[dev]"
+          echo "PLAYWRIGHT_VERSION=$(pip show playwright | sed -n 's/^Version: //p')" >> "$GITHUB_ENV"
+      - name: Cache Playwright browsers
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ runner.os }}-${{ env.PLAYWRIGHT_VERSION }}-${{ env.BROWSER }}
+      - name: Install ${{ env.BROWSER }}
+        run: python -m playwright install --with-deps "$BROWSER"
+      - name: Layout check in ${{ env.BROWSER }}
+        env:
+          LAYOUT_BROWSERS: ${{ env.BROWSER }}
+          LAYOUT_SCREENSHOT_DIR: ${{ runner.temp }}/layout-screenshots
+        run: python -m pytest tests/test_responsive_layout.py -q -rs
+      - name: Keep the screenshots
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: layout-screenshots-${{ env.BROWSER }}
           path: ${{ runner.temp }}/layout-screenshots
           if-no-files-found: ignore
           retention-days: 14
