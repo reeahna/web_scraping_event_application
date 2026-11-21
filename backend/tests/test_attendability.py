@@ -653,3 +653,49 @@ def test_academic_programming_is_left_out(title, reason):
 )
 def test_activities_people_take_part_in_are_kept(title):
     assert not_attendable_reason(title=title) is None
+
+
+# The four All-Ages Day listings seen in production: the library's Teen Space
+# is the room, and the title says the day is for everyone.
+@pytest.mark.parametrize(
+    "title",
+    [
+        "All-Ages Day at the Southwest Teen Space",
+        "All-Ages Day at the Ellettsville Teen Space",
+        "All-Ages Day at the Downtown Teen Space",
+        "All Ages Day at the Southwest Teen Space",
+    ],
+)
+def test_all_ages_day_at_a_teen_space_is_kept(title):
+    assert not_attendable_reason(title=title) is None
+
+
+@pytest.mark.parametrize(
+    "title",
+    [
+        # Teen-only programs are still left out.
+        "Introduction to Wheelthrowing for Teens with Nasia Palaios",
+        "FFY Teen Halloween Night",
+        "Fall 2026 Teen Takeover",
+        "Teen Space Open Hours",
+        # A title that says "all ages" but still sets an age limit.
+        "All Ages Welcome: Teen Night, Ages 13-18",
+        "All-Ages Teen Art Club (Teens Only)",
+        "All Ages Story Time for Kids Under 5",
+        "All-Ages Senior Social 55+",
+    ],
+)
+def test_teen_only_and_contradictory_titles_stay_out(title):
+    assert not_attendable_reason(title=title) == AUDIENCE
+
+
+def test_only_the_title_can_open_an_event_to_all_ages():
+    # A venue or description saying "all ages" doesn't override the title.
+    assert (
+        not_attendable_reason(
+            title="Teen Craft Night",
+            venue="All Ages Room, Downtown Library",
+            description="All ages welcome.",
+        )
+        == AUDIENCE
+    )

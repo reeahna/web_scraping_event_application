@@ -162,6 +162,21 @@ _AUDIENCE_TITLE = _rx(
     r"\b(50|55|60|62|65)\s*\+"
 )
 
+# "All-Ages Day at the Southwest Teen Space", "Board Games for All Ages": the
+# title itself says everyone is welcome, so a word like "teen" (here the room's
+# name) doesn't make it a program for one age group. Only the title counts.
+_ALL_AGES_TITLE = _rx(r"\ball[- ]ages\b")
+
+# A title that says "all ages" but still states an age limit ("All Ages Teen
+# Night, ages 13-18", "All-Ages Show (21+)", "Teens Only") is still limited.
+_AGE_LIMIT_TITLE = _rx(
+    r"\bages?:? \d{1,2}\s*(-|–|to|\+|and)|\b\d{1,2}\s*(\+|and (up|over|older))|"
+    r"\b(teens?|tweens?|kids|children|adults|seniors?|youth|students) only\b|"
+    r"\bonly for (teens?|tweens?|kids|children|adults|seniors?|youth|students)\b|"
+    r"\bunder \d{1,2}\b"
+)
+
+
 # A joint social for two residence-hall floors: "Smith 2 & Ed 3: Lucky Charms".
 _FLOOR_PAIR_TITLE = _rx(r"^\s*[a-z]+ \d\s*(&|and)\s*[a-z]+ \d\s*:")
 
@@ -488,7 +503,9 @@ def not_attendable_reason(
         return INTERNAL
     if _THEME_PERIOD_TITLE.search(title):
         return DEADLINE
-    if _AUDIENCE_TITLE.search(title) or _FLOOR_PAIR_TITLE.search(title):
+    if (
+        _AUDIENCE_TITLE.search(title) and not _open_to_all_ages(title)
+    ) or _FLOOR_PAIR_TITLE.search(title):
         return AUDIENCE
     if _ACADEMIC_TALK_TITLE.search(title) and not _PERFORMANCE_OR_HANDS_ON.search(title):
         return CONFERENCE
@@ -504,6 +521,11 @@ def not_attendable_reason(
                 return reason
     return None
 
+
+
+def _open_to_all_ages(title: str) -> bool:
+    """The title says "all ages" and states no age limit of its own."""
+    return bool(_ALL_AGES_TITLE.search(title)) and not _AGE_LIMIT_TITLE.search(title)
 
 def candidate_not_attendable_reason(candidate) -> str | None:
     """not_attendable_reason for an in-flight EventCandidate."""
