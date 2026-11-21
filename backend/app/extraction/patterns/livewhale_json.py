@@ -32,7 +32,9 @@ is why IU events used to show "Venue TBD" although the event pages had one.
 Sessions. LiveWhale lists every session of a repeating event as its own
 object sharing the event `id`. Keying them all by that id collapsed a series
 to one row; a repeating event's sessions are keyed `<id>@<local date>` and
-share `recurrence_parent_id`, so each session stays its own listing.
+share `recurrence_parent_id`, so each session stays its own listing. An event
+counts as repeating when the feed flags it so or lists it with more than one
+start time. The same record listed twice (feed pages that overlap) is one event.
 """
 
 from __future__ import annotations
@@ -363,29 +365,7 @@ class LiveWhalePattern:
         series whose sessions straddle two feed pages would otherwise be keyed
         by its bare id on one page and "<id>@<date>" on the other, and both
         would match the same stored row."""
-        counts: dict[str, int] = {}
-        for candidate in candidates:
-            session = candidate.raw.get(_SESSION_KEY)
-            if session:
-                counts[session[0]] = counts.get(session[0], 0) + 1
-        finalized: list[EventCandidate] = []
-        for candidate in candidates:
-            session = candidate.raw.get(_SESSION_KEY)
-            if not session:
-                finalized.append(candidate)
-                continue
-            event_id, day, repeats = session
-            raw = dict(candidate.raw)
-            if repeats or counts[event_id] > 1:
-                raw["external_source_id"] = f"{event_id}@{day}"
-                raw["recurrence_parent_id"] = event_id
-            else:
-                raw["external_source_id"] = event_id
-                raw["recurrence_parent_id"] = None
-            finalized.append(
-                replace(candidate, raw=raw, recurrence_parent_id=raw["recurrence_parent_id"])
-            )
-        return finalized
+        return _key_sessions(candidates)
 
     def extract(self, response: FetchResponse, config: SiteConfiguration) -> list[EventCandidate]:
         try:
@@ -402,11 +382,6 @@ class LiveWhalePattern:
             **{k: v for k, v in config.json_paths.items() if k in _RAW_FIELDS},
         }
 
-        id_counts: dict[str, int] = {}
-        for event in events:
-            if isinstance(event, dict) and event.get("id") is not None:
-                key = str(event["id"])
-                id_counts[key] = id_counts.get(key, 0) + 1
         overridden = set(config.json_paths)
 
         candidates: list[EventCandidate] = []
@@ -452,23 +427,19 @@ class LiveWhalePattern:
                 # time, so one stored by an earlier, misread run is stale.
                 raw["end_absent"] = True
 
-            # Every session of a repeating event shares its `id`: key each
-            # session by id and local date so none is collapsed into another.
+            # Every session of a repeating event shares its `id`: each session
+            # is keyed by id and local date (see _key_sessions) so none is
+            # collapsed into another.
             event_id = raw.get("event_id")
-            repeating = bool(event.get("repeats")) or (
-                event_id is not None and id_counts.get(str(event_id), 0) > 1
-            )
             if (
                 event.get("occur_id") is None
                 and event_id is not None
                 and isinstance(start, str)
                 and len(start) >= 10
             ):
-                # Kept so finalize_candidates can key the whole run consistently.
-                raw[_SESSION_KEY] = [str(event_id), start[:10], bool(event.get("repeats"))]
-                if repeating:
-                    raw["external_source_id"] = f"{event_id}@{start[:10]}"
-                    raw["recurrence_parent_id"] = str(event_id)
+                raw[_SESSION_KEY] = [
+                    str(event_id), start[:10], bool(event.get("repeats")), start,
+                ]
 
             raw["image"] = _extract_image(raw.get("image") or event.get("thumbnail"))
             raw["source_category"] = (
@@ -518,4 +489,38 @@ class LiveWhalePattern:
                     warnings=tuple(warnings),
                 )
             )
-        return candidates
+        return _key_sessions(candidates)
+
+
+def _key_sessions(candidates: list[EventCandidate]) -> list[EventCandidate]:
+    """Key each session of a repeating event "<id>@<local date>"; a single
+    event keeps its bare id. Repeating means the feed says so, or the same id
+    has more than one start time among these records. The same record listed
+    twice (overlapping feed pages) has one start time, so it stays one event
+    under its bare id instead of becoming a one-session series."""
+    starts: dict[str, set[str]] = {}
+    for candidate in candidates:
+        session = candidate.raw.get(_SESSION_KEY)
+        if session:
+            starts.setdefault(session[0], set()).add(_session_start(session))
+    keyed: list[EventCandidate] = []
+    for candidate in candidates:
+        session = candidate.raw.get(_SESSION_KEY)
+        if not session:
+            keyed.append(candidate)
+            continue
+        event_id, day, repeats = session[0], session[1], session[2]
+        raw = dict(candidate.raw)
+        if repeats or len(starts[event_id]) > 1:
+            raw["external_source_id"] = f"{event_id}@{day}"
+            raw["recurrence_parent_id"] = event_id
+        else:
+            raw["external_source_id"] = event_id
+            raw["recurrence_parent_id"] = None
+        keyed.append(replace(candidate, raw=raw, recurrence_parent_id=raw["recurrence_parent_id"]))
+    return keyed
+
+
+def _session_start(session: list) -> str:
+    # Older session markers carried only the date.
+    return str(session[3]) if len(session) > 3 else str(session[1])

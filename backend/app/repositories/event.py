@@ -117,7 +117,9 @@ def find_existing_event_for_candidate(
     )
     if existing is not None:
         return existing
-    return _row_keyed_by_series(db, candidate, website_id=website_id)
+    return _row_keyed_by_series(db, candidate, website_id=website_id) or _session_row_for_event(
+        db, candidate, website_id=website_id
+    )
 
 
 def _row_keyed_by_series(
@@ -139,6 +141,37 @@ def _row_keyed_by_series(
         .first()
     )
 
+
+
+def _session_row_for_event(
+    db: Session, candidate: EventCandidate, *, website_id: int
+) -> Event | None:
+    """The reverse of _row_keyed_by_series: a single event (bare id) whose one
+    occurrence was stored as a session "<id>@<date>", for instance when a run
+    saw the record twice on overlapping feed pages. That row is taken over
+    (update_event rewrites its id), keeping its id, history and corrections,
+    instead of a second row being created beside it. Only when exactly one
+    row has that key for the candidate's own date."""
+    own_id = candidate.external_source_id
+    if (
+        not own_id
+        or "@" in own_id
+        or candidate.recurrence_parent_id
+        or candidate.start_date is None
+    ):
+        return None
+    rows = (
+        db.query(Event)
+        .filter(
+            Event.website_id == website_id,
+            Event.external_source_id == f"{own_id}@{candidate.start_date.isoformat()}",
+            Event.start_date == candidate.start_date,
+        )
+        .order_by(Event.id)
+        .limit(2)
+        .all()
+    )
+    return rows[0] if len(rows) == 1 else None
 
 def create_event_from_candidate(
     db: Session,
@@ -261,6 +294,13 @@ def update_event(
         event.occurrence_id = candidate.occurrence_id
     if candidate.recurrence_parent_id is not None:
         event.recurrence_parent_id = candidate.recurrence_parent_id
+    elif (
+        candidate.external_source_id is not None
+        and event.recurrence_parent_id == candidate.external_source_id
+    ):
+        # A one-session "series" row taken over by the single event it really
+        # is (see _session_row_for_event) no longer belongs to a series.
+        event.recurrence_parent_id = None
     # An occurrence that has become cancelled is hidden safely on re-scrape:
     # deactivated and flagged, never deleted, and never silently reactivated
     # once cancelled.
