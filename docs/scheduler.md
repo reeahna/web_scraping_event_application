@@ -58,6 +58,14 @@ This is a safety net, not a substitute for running a single instance.
   site waits a fraction of a second at most. SQLite runs with
   `synchronous=NORMAL`, which syncs the disk at checkpoints instead of on every
   commit; a killed process loses nothing.
+- **Daily clean-up sweeps, one at a time**: the home-town and attendability
+  sweeps (which take down events their filters now leave out) run on start and
+  then daily. They read the active events in batches of `SWEEP_BATCH_SIZE`
+  (500, `app/services/event_sweeps.py`) and commit each batch, so their memory
+  stays at a few tens of MB however large the events table is (about 300 MB
+  each with 50,000 events before batching). After a start or a takeover they
+  wait 2 and 7 minutes, so they do not land on top of the new process's first
+  ticks, and a lock makes the second one wait if the first is still running.
 - **Retries**: each run retries up to `schedule_config.max_retries` with bounded
   exponential backoff. Repeated failure advances the site toward the `FAILING`
   state through the existing extraction-health logic.

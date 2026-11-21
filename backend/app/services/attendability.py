@@ -556,17 +556,20 @@ def hide_unattendable_events(db: Session, *, apply: bool) -> list[tuple[Any, str
     """Find active, unarchived events that are not attendable; deactivate them
     when `apply` is set. Returns (event, reason) for each one found, so a dry
     run can be reviewed first. Used to clean up events imported before the
-    import-time filter existed."""
-    from app.models.event import Event
+    import-time filter existed. Reads the events in batches
+    (app.services.event_sweeps), so memory stays flat as the table grows."""
+    from app.services.event_sweeps import active_event_batches
 
     found: list[tuple[Any, str]] = []
-    query = db.query(Event).filter(Event.is_active.is_(True), Event.archived_at.is_(None))
-    for event in query.order_by(Event.id):
-        reason = event_not_attendable_reason(event)
-        if reason:
-            found.append((event, reason))
-            if apply:
-                event.is_active = False
-    if apply:
-        db.commit()
+    for batch in active_event_batches(db):
+        for event in batch:
+            reason = event_not_attendable_reason(event)
+            if reason:
+                found.append((event, reason))
+                if apply:
+                    event.is_active = False
+        # Committing each batch keeps its work if the process is stopped part
+        # way, and lets the unchanged events of the batch be freed.
+        if apply:
+            db.commit()
     return found
