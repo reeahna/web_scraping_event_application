@@ -85,6 +85,10 @@ class SchedulerRuntime:
         self._categorization_error_cooldown = timedelta(minutes=15)
         self._categorization_error_cooldown_max = timedelta(hours=4)
         self._categorization_failures = 0
+        # The home-town and attendability sweeps each read every active event.
+        # They take turns under this lock, so a deploy (which schedules both
+        # for the same moment) never has two of them in memory at once.
+        self._sweep_lock = asyncio.Lock()
 
     def start(self) -> None:
         db = self._session_factory()
@@ -172,7 +176,7 @@ class SchedulerRuntime:
             self._scheduler.add_job(
                 self._home_town_sweep_tick, "interval", hours=24,
                 id="home_town_sweep", max_instances=1, coalesce=True,
-                next_run_time=datetime.now(UTC),
+                next_run_time=datetime.now(UTC) + self._ON_START_DELAYS["home_town_sweep"],
             )
         # The same for the attendability filter (online-only, conferences,
         # internal business, class lectures, ...): a rule added after an event
@@ -181,7 +185,7 @@ class SchedulerRuntime:
             self._scheduler.add_job(
                 self._attendability_sweep_tick, "interval", hours=24,
                 id="attendability_sweep", max_instances=1, coalesce=True,
-                next_run_time=datetime.now(UTC),
+                next_run_time=datetime.now(UTC) + self._ON_START_DELAYS["attendability_sweep"],
             )
         # College towns and their sources committed under data/college_towns/:
         # imported on start, so a deploy that adds a day's file onboards it,
@@ -228,12 +232,24 @@ class SchedulerRuntime:
         "attendability_sweep",
         "college_towns",
     )
+    # How long after start (or takeover) each on-start job waits. The two
+    # sweeps read the whole events table, so they wait until the new process
+    # has settled (the web worker, the first dispatch and AI ticks) and start
+    # five minutes apart; the sweep lock still keeps them from overlapping
+    # when one runs long.
+    _ON_START_DELAYS: dict[str, timedelta] = {
+        "category_photos": timedelta(0),
+        "college_towns": timedelta(0),
+        "home_town_sweep": timedelta(minutes=2),
+        "attendability_sweep": timedelta(minutes=7),
+    }
 
     def _run_on_start_jobs_now(self) -> None:
         now = datetime.now(UTC)
         for job_id in self._ON_START_JOB_IDS:
             if self._scheduler.get_job(job_id) is not None:
-                self._scheduler.modify_job(job_id, next_run_time=now)
+                delay = self._ON_START_DELAYS.get(job_id, timedelta(0))
+                self._scheduler.modify_job(job_id, next_run_time=now + delay)
 
     def _due_website_ids(self, now: datetime) -> list[int]:
         db = self._session_factory()
@@ -424,7 +440,8 @@ class SchedulerRuntime:
                 db.close()
 
         try:
-            hidden = await asyncio.to_thread(sweep)
+            async with self._sweep_lock:
+                hidden = await asyncio.to_thread(sweep)
             if hidden:
                 logger.info("took down %d out-of-town event(s)", hidden)
         except Exception as exc:  # noqa: BLE001 - a tick must never kill the loop
@@ -445,7 +462,8 @@ class SchedulerRuntime:
                 db.close()
 
         try:
-            hidden = await asyncio.to_thread(sweep)
+            async with self._sweep_lock:
+                hidden = await asyncio.to_thread(sweep)
             for title, reason in hidden:
                 logger.info("took down %s event: %s", reason, title)
             if hidden:

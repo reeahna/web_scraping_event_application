@@ -595,18 +595,22 @@ def source_has_own_geographic_filter(website) -> bool:
 def hide_out_of_town_events(db: Session, *, apply: bool) -> list[Any]:
     """Active events whose address names another town; deactivated when
     `apply` is set. Sources with their own geographic filter are skipped.
-    Clears what was imported before the import-time check existed."""
-    from app.models.event import Event
+    Clears what was imported before the import-time check existed. Reads the
+    events in batches (app.services.event_sweeps), so memory stays flat as the
+    events table grows."""
+    from app.services.event_sweeps import active_event_batches
 
     found: list[Any] = []
-    query = db.query(Event).filter(Event.is_active.is_(True), Event.archived_at.is_(None))
-    for event in query.order_by(Event.id):
-        if event.website is not None and source_has_own_geographic_filter(event.website):
-            continue
-        if event_outside_home_town(event):
-            found.append(event)
-            if apply:
-                event.is_active = False
-    if apply:
-        db.commit()
+    for batch in active_event_batches(db):
+        for event in batch:
+            if event.website is not None and source_has_own_geographic_filter(event.website):
+                continue
+            if event_outside_home_town(event):
+                found.append(event)
+                if apply:
+                    event.is_active = False
+        # Committing each batch keeps its work if the process is stopped part
+        # way, and lets the unchanged events of the batch be freed.
+        if apply:
+            db.commit()
     return found
