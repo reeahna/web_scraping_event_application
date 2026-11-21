@@ -1,6 +1,6 @@
 from datetime import datetime
 
-from sqlalchemy import DateTime, Float, Integer, String
+from sqlalchemy import Boolean, DateTime, Float, Integer, String, false
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.database import Base
@@ -22,6 +22,8 @@ class AiLabelBatch(Base):
     )
     provider: Mapped[str] = mapped_column(String(16))
     model: Mapped[str] = mapped_column(String(100))
+    # Sent to the backup model: its labels are provisional, not final.
+    provisional: Mapped[bool] = mapped_column(Boolean, default=False, server_default=false())
     # "ok", "rate_limited", "unavailable" (5xx or network) or "error".
     outcome: Mapped[str] = mapped_column(String(16))
     http_status: Mapped[int | None] = mapped_column(Integer, default=None)

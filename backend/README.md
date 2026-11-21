@@ -160,6 +160,7 @@ without any of it.
 | `GROQ_BATCH_SIZE` | `25` | Events per labeling request (trimmed further when `GROQ_MAX_PROMPT_TOKENS` is set) |
 | `GROQ_MAX_PROMPT_TOKENS` | `0` (off) | Estimated prompt size a labeling request is cut down to (`6500` suits an 8K tokens-per-minute limit) |
 | `GROQ_EVAL_CANDIDATE_MODEL` | `openai/gpt-oss-20b` | Model the AI labeling page's evaluation compares with `GROQ_MODEL` |
+| `GROQ_FALLBACK_MODEL` | unset (off) | Backup Groq model (its own free quota) used only while `GROQ_MODEL` is rate limited. It gives provisional categories to events `GROQ_MODEL` has never labeled, never hides an event or replaces a label or override, and every event it labels stays queued for `GROQ_MODEL` to verify |
 | `GEMINI_API_KEY` | unset | AI categorization with Gemini, when no Groq key is set |
 | `GEMINI_FALLBACK_MODEL` | unset | Second Gemini model to try when the main one answers 503 "overloaded" |
 | `GEOCODING_ENABLED`, `GEOCODING_PROVIDER` | off | Fill in map coordinates from addresses |
