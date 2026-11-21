@@ -28,21 +28,10 @@ from urllib.parse import urlsplit
 
 from sqlalchemy.orm import Session
 
-_STATES = {
-    "AL": "alabama", "AK": "alaska", "AZ": "arizona", "AR": "arkansas",
-    "CA": "california", "CO": "colorado", "CT": "connecticut", "DE": "delaware",
-    "DC": "district of columbia", "FL": "florida", "GA": "georgia", "HI": "hawaii",
-    "ID": "idaho", "IL": "illinois", "IN": "indiana", "IA": "iowa", "KS": "kansas",
-    "KY": "kentucky", "LA": "louisiana", "ME": "maine", "MD": "maryland",
-    "MA": "massachusetts", "MI": "michigan", "MN": "minnesota", "MS": "mississippi",
-    "MO": "missouri", "MT": "montana", "NE": "nebraska", "NV": "nevada",
-    "NH": "new hampshire", "NJ": "new jersey", "NM": "new mexico", "NY": "new york",
-    "NC": "north carolina", "ND": "north dakota", "OH": "ohio", "OK": "oklahoma",
-    "OR": "oregon", "PA": "pennsylvania", "RI": "rhode island", "SC": "south carolina",
-    "SD": "south dakota", "TN": "tennessee", "TX": "texas", "UT": "utah",
-    "VT": "vermont", "VA": "virginia", "WA": "washington", "WV": "west virginia",
-    "WI": "wisconsin", "WY": "wyoming",
-}
+from app.core.us_states import US_STATES
+
+# Postal code -> lower-case name, from the one table in app.core.us_states.
+_STATES = {abbr: name.lower() for abbr, name in US_STATES.items()}
 _STATE_NAMES = {name: abbr for abbr, name in _STATES.items()}
 
 def state_abbreviation(value: str | None) -> str:
@@ -440,12 +429,26 @@ def is_outside_home_town(
     *, address: str | None, venue: str | None, town: str | None, state: str | None
 ) -> bool:
     """True only when the event's own address names a town other than `town`
-    (or the same town name in another state)."""
+    (or the same town name in another state).
+
+    The venue is read when the address names no town. It is also read when
+    the address names the home town but the venue itself names another town
+    *and its state* ("Athens, Ga."): some aggregators fill every event's
+    address with their own town, while the venue says where the event is."""
     if not town:
         return False
-    found = address_town(address) or address_town(venue)
-    if found is None:
+    found_address = address_town(address)
+    if found_address is not None and _names_other_town(found_address, town, state):
+        return True
+    found_venue = address_town(venue)
+    if found_venue is None:
         return False
+    if found_address is None:
+        return _names_other_town(found_venue, town, state)
+    return found_venue[1] is not None and _names_other_town(found_venue, town, state)
+
+
+def _names_other_town(found: tuple[str, str | None], town: str, state: str | None) -> bool:
     found_town, found_state = found
     home_state = _state_code(state)
     if home_state and found_state and found_state != home_state:
@@ -592,18 +595,22 @@ def source_has_own_geographic_filter(website) -> bool:
 def hide_out_of_town_events(db: Session, *, apply: bool) -> list[Any]:
     """Active events whose address names another town; deactivated when
     `apply` is set. Sources with their own geographic filter are skipped.
-    Clears what was imported before the import-time check existed."""
-    from app.models.event import Event
+    Clears what was imported before the import-time check existed. Reads the
+    events in batches (app.services.event_sweeps), so memory stays flat as the
+    events table grows."""
+    from app.services.event_sweeps import active_event_batches
 
     found: list[Any] = []
-    query = db.query(Event).filter(Event.is_active.is_(True), Event.archived_at.is_(None))
-    for event in query.order_by(Event.id):
-        if event.website is not None and source_has_own_geographic_filter(event.website):
-            continue
-        if event_outside_home_town(event):
-            found.append(event)
-            if apply:
-                event.is_active = False
-    if apply:
-        db.commit()
+    for batch in active_event_batches(db):
+        for event in batch:
+            if event.website is not None and source_has_own_geographic_filter(event.website):
+                continue
+            if event_outside_home_town(event):
+                found.append(event)
+                if apply:
+                    event.is_active = False
+        # Committing each batch keeps its work if the process is stopped part
+        # way, and lets the unchanged events of the batch be freed.
+        if apply:
+            db.commit()
     return found

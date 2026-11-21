@@ -609,7 +609,14 @@ def list_public_sources(
     query = _base_public_query(db, today=today)
     if city_id is not None:
         query = query.filter(Event.city_id == city_id)
-    website_ids = {event.website_id for event in query.all() if event.website_id is not None}
+    # Only the ids: loading every public event as a full row just to collect
+    # their websites took most of a busy town page's time (Bloomington has
+    # about 950 upcoming events).
+    website_ids = {
+        website_id
+        for (website_id,) in query.with_entities(Event.website_id).distinct()
+        if website_id is not None
+    }
     if not website_ids:
         return []
     return (
@@ -618,6 +625,42 @@ def list_public_sources(
         .order_by(Website.source_display_name, Website.name)
         .all()
     )
+
+
+def public_event_sitemap_rows(
+    db: Session, *, today: DateBound, limit: int
+) -> list[tuple[int, datetime | None]]:
+    """(id, content_updated_at) for the events public_event_ids lists, in the
+    same order, for the sitemap's <loc> and <lastmod>."""
+    today = _with_clocks(db, today)
+    return [
+        (row.id, row.content_updated_at)
+        for row in _without_repeat_listings(_base_public_query(db, today=today), today=today)
+        .with_entities(Event.id, Event.content_updated_at)
+        .order_by(*_chronological())
+        .limit(limit)
+        .all()
+    ]
+
+
+def public_event_coordinates(
+    db: Session, *, today: DateBound
+) -> list[tuple[int, float, float]]:
+    """(city_id, latitude, longitude) for every public event with a known
+    position, in the order an event page prefers them: an admin correction,
+    then the source's own, then a geocoded one. Used to place a town on the
+    map when its admin coordinates are empty."""
+    latitude = func.coalesce(Event.corrected_latitude, Event.latitude, Event.geocoded_latitude)
+    longitude = func.coalesce(
+        Event.corrected_longitude, Event.longitude, Event.geocoded_longitude
+    )
+    rows = (
+        _base_public_query(db, today=today)
+        .with_entities(Event.city_id, latitude, longitude)
+        .filter(latitude.isnot(None), longitude.isnot(None))
+        .all()
+    )
+    return [(city_id, float(lat), float(lon)) for city_id, lat, lon in rows]
 
 
 def get_public_event(db: Session, event_id: int, *, today: DateBound) -> Event | None:

@@ -20,8 +20,11 @@
     <tr><th>Correlation ID</th><td>{{ run.correlation_id or "—" }}</td></tr>
     <tr><th>Events found / valid / rejected</th><td>{{ run.events_found }} / {{ run.events_valid }} / {{ run.events_rejected }}</td></tr>
     <tr><th>Events inserted / updated / duplicates skipped</th><td>{{ run.events_inserted }} / {{ run.events_updated }} / {{ run.duplicates_skipped }}</td></tr>
+    {% if listing_incomplete %}
+    <tr><th>Listing read to the end</th><td><span class="badge badge-danger">No</span> This run stopped before the end of the source's listing (see the warnings). Events it did not reach were left as they were.</td></tr>
+    {% endif %}
     {% if run.run_type in ('manual', 'scheduled') and run.status in ('success', 'partial') %}
-    <tr><th>What the check found</th><td>{{ run.events_inserted }} new, {{ run.events_changed or 0 }} with changed details, {{ (run.events_updated or 0) - (run.events_changed or 0) }} unchanged, {{ run.events_cancelled or 0 }} newly cancelled, {{ run.events_missing or 0 }} upcoming not in this listing</td></tr>
+    <tr><th>What the check found</th><td>{{ run.events_inserted }} new, {{ run.events_changed or 0 }} with changed details, {{ (run.events_updated or 0) - (run.events_changed or 0) }} unchanged, {{ run.events_cancelled or 0 }} newly cancelled, {% if listing_incomplete %}upcoming events not in this listing not counted (incomplete run){% else %}{{ run.events_missing or 0 }} upcoming not in this listing{% endif %}</td></tr>
     {% endif %}
     <tr><th>Error summary</th><td>{{ run.error_summary or "—" }}</td></tr>
   </tbody>

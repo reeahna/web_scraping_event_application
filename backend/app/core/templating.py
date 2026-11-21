@@ -13,6 +13,7 @@ from app.core.formatting import (
     human_date,
     human_date_long,
     human_time,
+    site_root,
     time_ago,
 )
 from app.core.onboarding import onboarding_label
@@ -30,6 +31,7 @@ templates = Jinja2Templates(directory=str(TEMPLATES_DIR))
 templates.env.filters["human_date"] = human_date
 templates.env.filters["state_abbr"] = state_abbreviation
 # 12345 -> "12,345" for admin counts.
+templates.env.filters["site_root"] = site_root
 templates.env.filters["thousands"] = lambda value: f"{value or 0:,}"
 templates.env.filters["human_date_long"] = human_date_long
 templates.env.filters["human_time"] = human_time
@@ -112,6 +114,10 @@ templates.env.filters["admin_datetime"] = _admin_datetime
 templates.env.filters["report_status_label"] = report_status_label
 templates.env.globals["absolute_url"] = absolute_url
 templates.env.globals["site_name"] = get_settings().app_name
+templates.env.globals["site_verification"] = lambda: {
+    "google-site-verification": get_settings().google_site_verification,
+    "msvalidate.01": get_settings().bing_site_verification,
+}
 # The running version (newest release in CHANGELOG.md), shown in the footer.
 templates.env.globals["app_version"] = APP_VERSION
 templates.env.filters["release_note"] = render_note

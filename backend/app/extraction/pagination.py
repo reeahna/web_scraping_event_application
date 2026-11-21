@@ -80,8 +80,13 @@ class QueryParamPagination:
     ) -> FetchRequest | None:
         if _stop_conditions_met(response, page_index, config, visited_urls, seen_body_hashes):
             return None
-        page_param = config.pagination.page_param or "page"
         next_page = page_index + 2  # page_index is 0-based; humans count from 1
+        # A JSON feed that states its own page count (LiveWhale's
+        # `meta.total_pages`) has ended once that page is read.
+        total_pages = _stated_total_pages(response)
+        if total_pages is not None and next_page > total_pages:
+            return None
+        page_param = config.pagination.page_param or "page"
         next_url = _next_url_with_param(response.final_url, page_param, str(next_page))
         safe_url = _safe_or_none(next_url)
         if safe_url is None or safe_url in visited_urls:
@@ -357,6 +362,17 @@ class PageMetadataPagination:
         if safe_url is None or safe_url in visited_urls:
             return None
         return FetchRequest(url=safe_url)
+
+
+def _stated_total_pages(response: FetchResponse) -> int | None:
+    """The page count a JSON response states about itself, or None."""
+    try:
+        payload = json.loads(response.text)
+    except (json.JSONDecodeError, ValueError, TypeError):
+        return None
+    if not isinstance(payload, dict):
+        return None
+    return _metadata_int(page_metadata(payload), _TOTAL_PAGES_KEYS)
 
 
 def _next_url_with_param(url: str, param: str, value: str) -> str:

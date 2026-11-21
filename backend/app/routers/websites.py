@@ -58,7 +58,12 @@ from app.services.auto_onboarding_execution import effective_decision
 from app.services.auto_onboarding_reevaluation import reevaluate_website
 from app.services.browser_recovery import browser_retry_recovery
 from app.services.event_recheck import recheck_website_events, supports_recheck
-from app.services.extraction_runs import preview_extraction, run_detection, run_extraction
+from app.services.extraction_runs import (
+    listing_incomplete,
+    preview_extraction,
+    run_detection,
+    run_extraction,
+)
 from app.services.onboarding_automation import detect_and_configure
 from app.services.rbac import require_permission, user_has_permission
 from app.services.schedule_admin import (
@@ -548,6 +553,7 @@ def extraction_run_detail(
             "current_user": current_user,
             "website": website,
             "run": run,
+            "listing_incomplete": listing_incomplete(run.warnings),
             "detector_evidence_json": json.dumps(run.detector_evidence, indent=2)
             if run.detector_evidence
             else None,
@@ -912,6 +918,14 @@ def onboarding_result_view(
 
     inference = (website.proposed_pattern or {}).get("inference")
     decision = latest_decision_for_website(db, website.id)
+    latest_preview_run = next(
+        (
+            r
+            for r in list_extraction_runs_for_website(db, website.id, limit=20)
+            if r.run_type == "preview"
+        ),
+        None,
+    )
     return render(
         request,
         "admin/websites/onboarding.html",
@@ -926,6 +940,7 @@ def onboarding_result_view(
             "can_update": user_has_permission(db, current_user, "sites.update"),
             "can_test": user_has_permission(db, current_user, "sites.test"),
             "ready_outcome": INFERENCE_READY,
+            "latest_preview_run": latest_preview_run,
         },
     )
 

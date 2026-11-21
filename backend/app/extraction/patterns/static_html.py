@@ -29,7 +29,14 @@ def _resolve_field(
     selector_config = config.field_selectors.get(field_name)
     if selector_config is None:
         return None, None, ()
-    result = resolve_css(card, selector_config.selector, selector_config.attribute)
+    # A title is what a visitor sees: text kept only for screen readers
+    # ("<span class="sr-only">, article</span>") is left out of it.
+    result = resolve_css(
+        card,
+        selector_config.selector,
+        selector_config.attribute,
+        visible_only=field_name == "title",
+    )
     return result.value, result.source_path, result.warnings
 
 

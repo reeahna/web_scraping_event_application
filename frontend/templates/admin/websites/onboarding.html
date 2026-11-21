@@ -22,7 +22,10 @@
 {% set inference = result.inference %}
 {# Normalized so older snapshots (missing Phase 8G range/geo metrics) render
    safely — absent metrics stay distinguishable from evaluated zeros. #}
-{% set quality = quality_view(result.quality) %}
+{# The latest preview run's own quality when it was recorded; otherwise the
+   snapshot automatic onboarding took. #}
+{% set quality = quality_view(latest_preview_run.quality if latest_preview_run and latest_preview_run.quality else result.quality) %}
+{% set quality_from_run = latest_preview_run is not none and latest_preview_run.quality %}
 
 <h2>Result</h2>
 <table>
@@ -144,7 +147,8 @@
 
 {% if quality %}
 <h2>Preview quality</h2>
-<p class="audit-meta">Preview never creates events — these are extracted candidates only.</p>
+<p class="audit-meta">Preview never creates events. These are extracted candidates only.</p>
+<p class="audit-meta">{% if quality_from_run %}From the latest preview, <a href="/admin/websites/{{ website.id }}/runs/{{ latest_preview_run.id }}">run #{{ latest_preview_run.id }}</a> (configuration v{{ latest_preview_run.configuration_version }}, {{ latest_preview_run.started_at.strftime("%b %d, %Y %H:%M UTC") }}).{% else %}From automatic onboarding.{% endif %}</p>
 <table>
   <tbody>
     <tr><th>Candidates found</th><td>{{ quality.candidates_found }}</td></tr>
@@ -183,6 +187,7 @@
 
 {% if result.samples %}
 <h2>Sample events</h2>
+{% if quality_from_run %}<p class="audit-meta">Samples are from automatic onboarding, not from run #{{ latest_preview_run.id }}.</p>{% endif %}
 <h3>Valid</h3>
 {% if result.samples.valid %}
 <table>

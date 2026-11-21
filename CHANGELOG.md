@@ -77,6 +77,9 @@ lines. Lines may use `**bold**`, `` `code` `` and `[links](https://...)`.
 
 ### Admin and behind the scenes
 - **Preview recheck** on a LiveWhale source's admin page (under Advanced tools): reads current events that show 12:00 AM, have no venue or were missed by the latest import back from the source one by one, lists the corrections it would make, and applies them only when you choose to. (#104)
+- Admins can open **Events > AI labeling** to see what AI event labeling is doing: how many events are waiting, the tokens each request used, which free-tier limit is slowing it down, and the events the AI couldn't label, with a button to ask it again. (#105)
+- From **Events > AI labeling**, admins can run a model evaluation that labels about 100 sample events with the current AI setup, a leaner one and a cheaper model, then shows side by side where they agree on category and on hiding an event, which events a setup would wrongly hide, and how many tokens each uses. It never changes an event. (#107)
+- AI event labeling can use a backup model (`GROQ_FALLBACK_MODEL`, off unless set) while the main model's free daily quota is used up. The backup only gives provisional categories to events that have none from the main model yet: it never hides an event or changes one the main model or an admin has already decided, and the main model checks every one later. **Events > AI labeling** and each event's page show which categories are provisional. (#121)
 
 ## [1.11.0] - 2026-11-20
 

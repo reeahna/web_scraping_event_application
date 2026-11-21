@@ -86,6 +86,10 @@ RELIABILITY_ORDER: tuple[str, ...] = (
     # BiblioCommons library events: keyed on the gateway API's id-list plus
     # `entities` shape, or a library page on the platform.
     "bibliocommons_events",
+    # AudienceView box-office listing: a searchHeaders/searchResults column
+    # table in a script. Keyed on that distinctive shape, so it sits with the
+    # vendor patterns, above the generic inline-JSON resort.
+    "audienceview_events",
     # Event data embedded as a plain JS variable (window.x = [...]). Parsed,
     # never executed. Last structured resort before HTML-card scraping.
     "inline_json_events",
@@ -772,6 +776,49 @@ class InlineJsonEventsDetector:
         )
 
 
+class AudienceViewEventsDetector:
+    """An AudienceView box-office listing: the page carries its performances as
+    a `searchHeaders` / `searchResults` column table inside a script. Parsed
+    with json.loads only, never executed. A match needs the identifying columns
+    ("Id", "Start Date") and at least one performance row."""
+
+    def detect(self, response: FetchResponse) -> PatternDetectionResult:
+        if _access_denied_detected(response):
+            return _blocked_result("access denied or challenge page detected")
+        from app.extraction.patterns.audienceview_events import find_audienceview_listing
+
+        listing = find_audienceview_listing(response.text)
+        if listing is None or not listing.records:
+            return PatternDetectionResult(
+                pattern_name=None,
+                confidence=0.0,
+                evidence={"audienceview_table": listing is not None},
+                discovered_endpoints=(),
+                browser_required=False,
+                warnings=(),
+                detector_version=DETECTOR_VERSION,
+                needs_review=False,
+            )
+        dated = sum(1 for r in listing.records if r["event"]["start"])
+        titled = sum(1 for r in listing.records if r["event"]["title"])
+        rate = min(dated, titled) / len(listing.records)
+        confidence = round(min(0.9, 0.6 + 0.3 * rate), 4)
+        return PatternDetectionResult(
+            pattern_name="audienceview_events",
+            confidence=confidence,
+            evidence={
+                "audienceview_table": True,
+                "performances": len(listing.records),
+                "dated_and_titled_rate": round(rate, 4),
+            },
+            discovered_endpoints=(),
+            browser_required=False,
+            warnings=(),
+            detector_version=DETECTOR_VERSION,
+            needs_review=confidence < MIN_PATTERN_CONFIDENCE,
+        )
+
+
 class NextDataDetector:
     def detect(self, response: FetchResponse) -> PatternDetectionResult:
         if _access_denied_detected(response):
@@ -1192,6 +1239,7 @@ def run_all_detectors(response: FetchResponse) -> dict[str, PatternDetectionResu
         "nuxt_payload": NuxtPayloadDetector(),
         "embedded_json": EmbeddedJsonDetector(),
         "inline_json_events": InlineJsonEventsDetector(),
+        "audienceview_events": AudienceViewEventsDetector(),
         "ics_calendar": IcsCalendarDetector(),
         "rss_atom_events": RssAtomDetector(),
         "algolia_search": AlgoliaSearchDetector(),

@@ -251,7 +251,8 @@ def test_mark_all_read_keeps_unread_only_filter(client, make_super_admin, db_ses
         follow_redirects=False,
     )
     assert resp.status_code == 303
-    assert resp.headers["location"] == "/admin/notifications?unread_only=true"
+    # Unread is now the default view, so the old parameter needs no echo.
+    assert resp.headers["location"] == "/admin/notifications"
 
 
 def test_mark_all_read_requires_csrf_and_admin(client, make_user, login):

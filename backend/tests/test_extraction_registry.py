@@ -69,6 +69,8 @@ def test_default_registry_has_the_expected_patterns():
         "campus_labs_engage",
         # BiblioCommons library events gateway API
         "bibliocommons_events",
+        # AudienceView box-office listing table
+        "audienceview_events",
     }
     # Every registered pattern is automatically configurable.
     assert all(registry.get(name).proposer is not None for name in registry.names())

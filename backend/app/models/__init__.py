@@ -1,3 +1,5 @@
+from app.models.ai_label_batch import AiLabelBatch
+from app.models.ai_label_evaluation import AiLabelEvaluation
 from app.models.audit_log import AuditLog
 from app.models.auto_onboarding_action_result import AutoOnboardingActionResult
 from app.models.auto_onboarding_decision import AutoOnboardingDecision
@@ -40,6 +42,8 @@ from app.models.user_session import UserSession
 from app.models.website import Website
 
 __all__ = [
+    "AiLabelBatch",
+    "AiLabelEvaluation",
     "CityUniversity",
     "AuditLog",
     "BulkImportItem",

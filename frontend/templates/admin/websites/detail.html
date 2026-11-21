@@ -209,8 +209,10 @@
         <ul>{% for message, count in workflow.preview_error_groups %}<li>{{ count }} candidate{{ "s" if count != 1 else "" }} — {{ message }}.</li>{% endfor %}</ul>
       </td></tr>
       {% endif %}
-      {% if inference and inference.quality %}
-      <tr><th>Quality</th><td class="audit-meta">valid {{ "%.0f"|format((inference.quality.valid_percentage or 0) * 100) }}%, date-parse {{ "%.0f"|format((inference.quality.date_parse_success_rate or 0) * 100) }}%, URLs {{ "%.0f"|format((inference.quality.url_validity_rate or 0) * 100) }}%</td></tr>
+      {% set run_quality = latest_preview_run.quality %}
+      {% set shown_quality = run_quality or (inference.quality if inference else none) %}
+      {% if shown_quality %}
+      <tr><th>Quality</th><td class="audit-meta">valid {{ "%.0f"|format((shown_quality.valid_percentage or 0) * 100) }}%, date-parse {{ "%.0f"|format((shown_quality.date_parse_success_rate or 0) * 100) }}%, URLs {{ "%.0f"|format((shown_quality.url_validity_rate or 0) * 100) }}%{% if not run_quality %} (from automatic onboarding, not this run){% endif %}</td></tr>
       {% endif %}
     </tbody>
   </table>

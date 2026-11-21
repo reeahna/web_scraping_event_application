@@ -18,7 +18,8 @@
     <tr><th>Extracted address</th><td>{{ event.address or '—' }}</td></tr>
     <tr><th>Public address</th><td>{{ event.public_address or '—' }}</td></tr>
     <tr><th>Category</th><td>{{ event.effective_category.name if event.effective_category else 'Uncategorized' }}</td></tr>
-    <tr><th>Category source</th><td>{{ 'administrator override' if event.category_override_id else event.category_source }}</td></tr>
+    <tr><th>Category source</th><td>{% if event.category_override_id %}administrator override{% elif event.category_source == 'ai_provisional' %}AI, provisional (backup model){% else %}{{ event.category_source }}{% endif %}</td></tr>
+    <tr><th>AI label</th><td>{% if event.category_override_id %}Not needed (category set by an administrator){% elif event.ai_label_status == 'needs_review' %}Needs review: no usable answer after {{ event.ai_attempts }} tries{% elif event.ai_label_status == 'stale' %}Waiting for a new label (details changed){% elif event.category_source == 'ai_provisional' %}Provisional: category from the backup model, not verified yet. Waiting for the main model, which decides the final category and visibility{% elif event.category_source == 'ai' %}Labeled{% else %}Waiting{% endif %}{% if event.ai_model %} <span class="audit-meta">({{ event.ai_model }})</span>{% endif %}{% if event.ai_last_error %} <span class="audit-meta">Last problem: {{ event.ai_last_error }}</span>{% endif %}</td></tr>
     <tr><th>Matching deterministic rule</th><td>{{ categorization_result.rule_name or 'No matching rule' }}</td></tr>
     <tr><th>Categorization explanation</th><td>{{ categorization_result.explanation }}</td></tr>
     <tr><th>Confidence</th><td>{{ categorization_result.confidence_type }}</td></tr>
@@ -60,6 +61,14 @@
   <input type="hidden" name="csrf_token" value="{{ csrf_token }}" />
   <input type="hidden" name="action" value="{{ 'restore' if event.archived_at else 'archive' }}" />
   <button type="submit">{{ 'Restore' if event.archived_at else 'Archive' }}</button>
+</form>
+{% endif %}
+
+{% if 'events.override_category' in permissions and not event.category_override_id and (event.ai_label_status == 'needs_review' or event.category_source in ('ai', 'ai_provisional')) %}
+<form method="post" action="/admin/ai-labeling/events/{{ event.id }}/retry" class="inline-form">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token }}" />
+  <input type="hidden" name="next" value="/admin/events/{{ event.id }}" />
+  <button type="submit">Ask the AI again</button>
 </form>
 {% endif %}
 

@@ -31,6 +31,7 @@ from app.paths import STATIC_DIR
 from app.routers import (
     account,
     admin,
+    ai_labeling,
     auth,
     auto_onboarding_policies,
     categorization_rules,
@@ -143,6 +144,7 @@ app.include_router(cities.router)
 app.include_router(onboarding.router)
 app.include_router(websites.router)
 app.include_router(events.router)
+app.include_router(ai_labeling.router)
 app.include_router(event_categories.router)
 app.include_router(categorization_rules.router)
 app.include_router(unsupported_reports.router)

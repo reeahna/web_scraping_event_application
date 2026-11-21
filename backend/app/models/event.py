@@ -94,6 +94,31 @@ class Event(Base, TimestampMixin):
     # older version means the label predates the current prompt and is queued
     # for a re-check (see app.services.ai_categorization.pending_events).
     ai_prompt_version: Mapped[str | None] = mapped_column(String(16), default=None)
+    # AI label bookkeeping (app.services.ai_label_state). ai_label_status is NULL
+    # until the AI has answered for the event, then "labeled"; "stale" when the
+    # words the model reads have changed since, and "needs_review" after
+    # AI_MAX_ATTEMPTS answers in a row gave no usable label, and "provisional"
+    # when only the backup model has labeled it (category_source is then
+    # "ai_provisional" until the main model verifies it). ai_input_hash is a
+    # digest of those words at the last AI attempt, so a re-scrape can tell
+    # whether they changed.
+    ai_label_status: Mapped[str | None] = mapped_column(String(16), default=None, index=True)
+    ai_attempts: Mapped[int] = mapped_column(Integer, default=0)
+    ai_last_attempt_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), default=None
+    )
+    ai_last_error: Mapped[str | None] = mapped_column(String(300), default=None)
+    ai_input_hash: Mapped[str | None] = mapped_column(String(64), default=None)
+    # The model that produced the current AI category.
+    ai_model: Mapped[str | None] = mapped_column(String(100), default=None)
+    # Backup-model answers that gave no usable provisional category. Separate
+    # from ai_attempts: a backup failure never counts against the main model.
+    ai_fallback_attempts: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
+    # When an administrator last activated or deactivated the event by hand.
+    # Automatic hiding (the AI's "keep" verdict) never overrules that decision.
+    visibility_set_by_admin_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), default=None
+    )
     categorization_rule_id: Mapped[int | None] = mapped_column(
         ForeignKey("categorization_rules.id", ondelete="SET NULL"), default=None
     )

@@ -28,6 +28,7 @@ def create_extraction_run(
     error_summary: str | None = None,
     detector_evidence: dict[str, Any] | None = None,
     response_metadata: dict[str, Any] | None = None,
+    quality: dict[str, Any] | None = None,
     initiating_user_id: int | None = None,
     correlation_id: str | None = None,
 ) -> ExtractionRun:
@@ -49,6 +50,7 @@ def create_extraction_run(
         error_summary=error_summary,
         detector_evidence=detector_evidence,
         response_metadata=response_metadata,
+        quality=quality,
         started_at=started_at,
         completed_at=completed_at,
         initiating_user_id=initiating_user_id,

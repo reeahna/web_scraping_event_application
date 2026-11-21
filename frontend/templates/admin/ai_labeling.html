@@ -1,0 +1,179 @@
+{% extends "admin_base.html" %}
+
+{% block title %}AI labeling{% endblock %}
+
+{% set outcome_labels = {
+  "ok": "Answered",
+  "rate_limited": "Rate limited",
+  "unavailable": "Provider unavailable",
+  "error": "Error",
+} %}
+
+{% macro num(value) %}{% if value is none %}-{% else %}{{ "{:,}".format(value) }}{% endif %}{% endmacro %}
+
+{% block admin_content %}
+<h1>AI labeling</h1>
+<p class="audit-meta">The AI picks each upcoming event's category and decides whether a student would
+  want to go. It runs in the background, one batch at a time, and never sees events whose category an
+  administrator set. <a href="/admin/ai-labeling/status">Raw data</a></p>
+
+{% set status = overview.status %}
+{% if not status.enabled %}
+<p>AI labeling is switched off (no API key is configured).</p>
+{% endif %}
+
+<div class="metrics-grid">
+  <div class="metric-tile">
+    <div class="metric-value">{{ overview.waiting | thousands }}</div>
+    <div class="metric-label">Waiting for the main model</div>
+    {% if status.provisional %}<div class="metric-note">{{ status.provisional | thousands }} of these have a provisional category</div>{% endif %}
+    {% if status.new_last_24h is not none %}<div class="metric-note">{{ status.new_last_24h | thousands }} new in the last 24 h</div>{% endif %}
+    {% if status.oldest_waiting_hours is not none %}<div class="metric-note">Oldest waiting {{ status.oldest_waiting_hours }} h</div>{% endif %}
+  </div>
+  <div class="metric-tile">
+    <div class="metric-value">{{ overview.labeled | thousands }}</div>
+    <div class="metric-label">Labeled (verified)</div>
+  </div>
+  <div class="metric-tile">
+    <div class="metric-value">{{ (status.provisional or 0) | thousands }}</div>
+    <div class="metric-label">Provisional (backup model, not verified)</div>
+  </div>
+  <div class="metric-tile">
+    <div class="metric-value">{{ overview.needs_review_total | thousands }}</div>
+    <div class="metric-label">Needs review</div>
+  </div>
+</div>
+
+<section class="wf-card">
+  <h2>Models</h2>
+  <p class="audit-meta">Each model has its own free quota. The main model is always tried first. A
+    backup model (off unless GROQ_FALLBACK_MODEL is set) is used only while the main model is rate
+    limited. It only gives a provisional category to events the main model has never labeled: it never
+    hides an event, never replaces a main-model label or an administrator's choice, and every event it
+    labels stays in the main model's queue to be verified.</p>
+  <table>
+    <thead><tr><th>Model</th><th>Role</th><th>Available</th></tr></thead>
+    <tbody>
+      {% for row in overview.models %}
+      <tr><td>{{ row.model }}</td><td>{{ row.role }}</td><td>{% if row.waiting_until %}Rate limited until {{ row.waiting_until | admin_datetime }}{% else %}Now{% endif %}</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</section>
+
+<section class="wf-card">
+  <h2>Last 24 hours</h2>
+  {% set u = overview.usage %}
+  <table>
+    <tbody>
+      <tr><th>Requests</th><td>{{ num(u.requests) }} ({{ num(u.ok) }} answered, {{ num(u.rate_limited) }} rate limited)</td></tr>
+      <tr><th>Events labeled (verified, main model)</th><td>{{ num(u.events_labeled) }}</td></tr>
+      <tr><th>Provisional categories (backup model)</th><td>{{ num(u.events_provisional) }}</td></tr>
+      <tr><th>Events left without a label</th><td>{{ num(u.events_skipped) }} skipped by the model, {{ num(u.events_failed) }} in requests that failed</td></tr>
+      <tr><th>Events hidden as not for students</th><td>{{ num(u.events_hidden) }}</td></tr>
+      <tr><th>Tokens</th><td>{{ num(u.total_tokens) }} total ({{ num(u.prompt_tokens) }} in, {{ num(u.completion_tokens) }} out, {{ num(u.cached_tokens) }} cached)</td></tr>
+      <tr><th>Tokens per labeled event</th><td>{{ num(u.tokens_per_labeled_event) }}</td></tr>
+    </tbody>
+  </table>
+</section>
+
+<section class="wf-card">
+  <h2>Needs review</h2>
+  <p class="audit-meta">The AI gave no usable answer for these after two tries, so they are no longer
+    sent automatically. They keep their current category and stay visible. Each gets one more try a
+    week when nothing else is waiting, and goes back in the queue on its own if its source details change.</p>
+  {% if needs_review %}
+  <form method="post" action="/admin/ai-labeling/retry-all" class="inline-form">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}" />
+    <button type="submit">Ask the AI again for all {{ overview.needs_review_total | thousands }}</button>
+  </form>
+  {% endif %}
+  <table>
+    <thead><tr><th>Event</th><th>Starts</th><th>Tries</th><th>Last problem</th><th><span class="visually-hidden">Action</span></th></tr></thead>
+    <tbody>
+      {% for event in needs_review %}
+      <tr>
+        <td><a href="/admin/events/{{ event.id }}">{{ event.title }}</a></td>
+        <td>{{ event.start_date or "-" }}</td>
+        <td>{{ event.ai_attempts }}</td>
+        <td>{{ event.ai_last_error or "-" }}</td>
+        <td>
+          <form method="post" action="/admin/ai-labeling/events/{{ event.id }}/retry" class="inline-form">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token }}" />
+            <button type="submit">Ask again</button>
+          </form>
+        </td>
+      </tr>
+      {% else %}
+      <tr><td colspan="5">None.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</section>
+
+<section class="wf-card">
+  <h2>Model evaluations</h2>
+  <p class="audit-meta">Labels about 100 sample events with the current setup, a leaner prompt
+    (shorter descriptions, cacheable instructions, bigger batches) and the cheaper model
+    ({{ candidate_model }}), and compares their categories and keep decisions. It only reads events and
+    changes nothing. While it runs, the label queue pauses; it makes about one request a minute and
+    usually finishes within a few hours, depending on how much daily quota is left.</p>
+  {% set busy = evaluations | selectattr("status", "equalto", "running") | list %}
+  {% if not busy %}
+  <form method="post" action="/admin/ai-labeling/evaluations" class="inline-form">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}" />
+    <button type="submit">Start an evaluation</button>
+  </form>
+  {% endif %}
+  <table>
+    <thead><tr><th>Started</th><th>Status</th><th>Requests</th><th>Report</th></tr></thead>
+    <tbody>
+      {% for evaluation in evaluations %}
+      <tr>
+        <td>{{ evaluation.created_at | admin_datetime }}</td>
+        <td>{{ evaluation.status }}</td>
+        <td>{{ evaluation.requests_made }}</td>
+        <td><a href="/admin/ai-labeling/evaluations/{{ evaluation.id }}">Open</a></td>
+      </tr>
+      {% else %}
+      <tr><td colspan="4">None yet.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</section>
+
+<section class="wf-card">
+  <h2>Recent requests</h2>
+  <p class="audit-meta">Groq's "requests" figures are per day and its "tokens" figures per minute. A
+    rate-limited request names the limit it hit (TPD is tokens per day).</p>
+  <div class="table-scroll">
+  <table>
+    <thead>
+      <tr><th>When</th><th>Model</th><th>Result</th><th>Events</th><th>Labeled</th><th>Skipped</th>
+        <th>Tokens in / out / total</th><th>Cached</th><th>Requests left today</th><th>Tokens left this minute</th>
+        <th>Limit hit</th><th>Wait</th></tr>
+    </thead>
+    <tbody>
+      {% for b in batches %}
+      <tr>
+        <td>{{ b.created_at | admin_datetime }}</td>
+        <td>{{ b.model }}{% if b.provisional %} <span class="audit-meta">(backup, provisional)</span>{% endif %}</td>
+        <td>{{ outcome_labels.get(b.outcome, b.outcome) }}{% if b.http_status and b.http_status != 200 %} ({{ b.http_status }}){% endif %}</td>
+        <td>{{ b.events_submitted }}</td>
+        <td>{{ b.events_labeled }}</td>
+        <td>{{ b.events_skipped }}</td>
+        <td>{{ num(b.prompt_tokens) }} / {{ num(b.completion_tokens) }} / {{ num(b.total_tokens) }}</td>
+        <td>{{ num(b.cached_tokens) }}</td>
+        <td>{{ num(b.remaining_requests) }}</td>
+        <td>{{ num(b.remaining_tokens) }}</td>
+        <td>{% if b.limit_kind %}{{ b.limit_kind }}{% if b.limit_used is not none %}: {{ num(b.limit_used) }} of {{ num(b.limit_value) }} used{% endif %}{% else %}-{% endif %}</td>
+        <td>{% if b.retry_after_seconds %}{{ (b.retry_after_seconds / 60) | round(1) }} min{% else %}-{% endif %}</td>
+      </tr>
+      {% else %}
+      <tr><td colspan="12">No requests recorded yet.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  </div>
+</section>
+{% endblock %}

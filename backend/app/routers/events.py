@@ -209,12 +209,14 @@ async def update_lifecycle(
         if event.archived_at is not None or event.is_active:
             raise AppError("Only inactive, unarchived events can be activated", status_code=409)
         event.is_active = True
+        event.visibility_set_by_admin_at = datetime.now(UTC)
         audit_action = "event_activated"
     elif action == "deactivate":
         _require(db, current_user, "events.activate")
         if not event.is_active:
             raise AppError("Event is already inactive", status_code=409)
         event.is_active = False
+        event.visibility_set_by_admin_at = datetime.now(UTC)
         audit_action = "event_deactivated"
     elif action == "archive":
         _require(db, current_user, "events.archive")

@@ -7,7 +7,7 @@ executable content). The pipeline is: fetch → detect → extract → normalize
 validate → dedup, and it is deterministic (identical input + config → identical
 output).
 
-## Registered patterns (15)
+## Registered patterns (17)
 
 | Pattern | Source shape |
 |---------|--------------|
@@ -26,6 +26,8 @@ output).
 | `campus_labs_engage` | Campus Labs Engage discovery API (`value` records; recipe with `endsAfter`/`skip`/`take`) |
 | `paged_json_events` | Paged JSON API (`content` + page metadata, Spring-style); fields inferred |
 | `bibliocommons_events` | BiblioCommons library events gateway (`events.items` ids looked up in `entities`) |
+| `audienceview_events` | AudienceView box-office listing (`searchHeaders` / `searchResults` table in a script) |
+| `inline_json_events` | JSON event list assigned to a JS variable (`window.x = [...]`) |
 
 ## Dates, times and timezones
 
@@ -133,6 +135,25 @@ that mentions the platform in its markup, and the proposer stores the gateway
 URL with `limit=100` and walks it with `path_page` pagination
 (`...&page={page}`). Event links follow the platform's `/events/<id>` route.
 Cancelled events are skipped.
+
+**`audienceview_events`.** Box offices on AudienceView Unlimited (for example
+a performing-arts center whose `/upcoming-events` redirects to
+`/Online/default.asp?...permalink=upcoming-events`) server-render the whole
+listing into a script as `articleContext = { searchHeaders : [...],
+searchResults : [[...], ...] }` and draw the cards with JavaScript. A plain HTTP
+fetch already holds that table, so no browser is needed. The pattern finds both
+literals textually and parses them with `json.loads` (only the JS `\'` escape is
+rewritten first; nothing is executed). Each row is keyed by header name.
+Title is `Short Description` (else `Data 1`); start comes from the display
+column ("Thursday, December 3, 2026 / 7:00 PM"), falling back to the split
+`Start Date year/month/date/time` columns, whose month is zero-based. The event
+URL is the "MORE INFO" link in `Description`; venue is `Venue Description`,
+address `Venue Data 10`, description `Meta Description` or the `Data 1` /
+`Data 2` subtitle lines, category `filter1`. The performance `Id` is the dedup
+identity, so a 7 PM and a 9 PM set of the same show stay separate events.
+Rows whose `Object Type` is not `P` (packages, bundles) are skipped. Defaults
+point at a derived `event.*` object; `json_paths` can point any field at a raw
+column instead (`"description": "Data 2"`).
 
 **`simpleview_events`.** Simpleview DMO sites expose a first-party event API
 (e.g. `…/includes/rest_v2/plugins_events_events_by_date/find/`) returning a

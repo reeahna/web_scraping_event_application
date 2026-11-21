@@ -91,7 +91,8 @@ active Super Administrator cannot be removed.
   are never edited by hand; corrections are stored alongside them.
 - *Categories and rules*: 14 seeded categories and keyword/venue/source rules
   that assign them. With a Groq or Gemini key, the scheduler also labels new
-  events with AI.
+  events with AI; *AI labeling* (`/admin/ai-labeling`) shows the queue, events
+  the AI could not label, and the tokens and rate limits of recent requests.
 - *Scheduler*, *Reports*, *Notifications*: run status, failures, and the health
   of each source.
 
@@ -154,6 +155,12 @@ without any of it.
 | `UNSPLASH_ACCESS_KEY` | unset | Placeholder photos for imageless events |
 | `GROQ_API_KEY` | unset | AI categorization of new events with Groq (used instead of Gemini when set) |
 | `GROQ_MODEL` | `openai/gpt-oss-120b` | Groq model for categorization |
+| `AI_DESCRIPTION_CHARS` | `600` | How much of each event's description the AI labeler reads |
+| `GROQ_PROMPT_LAYOUT` | `single` | `split` sends the fixed instructions as their own message so Groq can cache them |
+| `GROQ_BATCH_SIZE` | `25` | Events per labeling request (trimmed further when `GROQ_MAX_PROMPT_TOKENS` is set) |
+| `GROQ_MAX_PROMPT_TOKENS` | `0` (off) | Estimated prompt size a labeling request is cut down to (`6500` suits an 8K tokens-per-minute limit) |
+| `GROQ_EVAL_CANDIDATE_MODEL` | `openai/gpt-oss-20b` | Model the AI labeling page's evaluation compares with `GROQ_MODEL` |
+| `GROQ_FALLBACK_MODEL` | unset (off) | Backup Groq model (its own free quota) used only while `GROQ_MODEL` is rate limited. It gives provisional categories to events `GROQ_MODEL` has never labeled, never hides an event or replaces a label or override, and every event it labels stays queued for `GROQ_MODEL` to verify |
 | `GEMINI_API_KEY` | unset | AI categorization with Gemini, when no Groq key is set |
 | `GEMINI_FALLBACK_MODEL` | unset | Second Gemini model to try when the main one answers 503 "overloaded" |
 | `GEOCODING_ENABLED`, `GEOCODING_PROVIDER` | off | Fill in map coordinates from addresses |
