@@ -275,3 +275,57 @@ async def test_a_single_event_becoming_a_series_still_takes_over_its_row(
     db_session.refresh(plain)
     assert plain.external_source_id == "3301@2026-12-01"
     assert db_session.query(Event).filter(Event.website_id == website.id).count() == 2
+
+
+@pytest.mark.asyncio
+async def test_a_different_session_on_the_same_date_is_not_reused(
+    db_session, iu_source, make_event
+):
+    # A 10 AM session was stored; the feed now lists only a 2 PM record under
+    # the plain id. That may be another session, so the stored row is left.
+    city, website = iu_source
+    morning = _stored_session(db_session, make_event, city, website, 3302, date(2026, 12, 1))
+    morning.start_time = time(10)
+    update_fingerprint_and_duplicates(db_session, morning)
+    db_session.commit()
+    with patched_http_fetch(_handler([_record(3302, "2026-12-01", hour=14)])):
+        result = await run_extraction(db_session, website, triggered_by_user_id=None)
+    db_session.refresh(morning)
+
+    assert result.events_inserted == 1
+    assert morning.external_source_id == "3302@2026-12-01"
+    assert morning.start_time == time(10)
+
+
+@pytest.mark.asyncio
+async def test_two_stored_sessions_on_one_date_are_not_reused(
+    db_session, iu_source, make_event
+):
+    # Two rows share the key "3302@2026-12-01": which one is meant can't be
+    # told, so neither is taken over.
+    city, website = iu_source
+    first = _stored_session(db_session, make_event, city, website, 3302, date(2026, 12, 1))
+    second = _stored_session(db_session, make_event, city, website, 3302, date(2026, 12, 1))
+    with patched_http_fetch(_handler([_record(3302, "2026-12-01")])):
+        result = await run_extraction(db_session, website, triggered_by_user_id=None)
+    for row in (first, second):
+        db_session.refresh(row)
+        assert row.external_source_id == "3302@2026-12-01"
+    assert result.events_inserted == 1
+
+
+@pytest.mark.asyncio
+async def test_a_hidden_session_row_stays_hidden_when_reused(
+    db_session, iu_source, make_event
+):
+    city, website = iu_source
+    stored = _stored_session(db_session, make_event, city, website, 2441880, date(2026, 12, 1))
+    stored.is_active = False
+    db_session.commit()
+    with patched_http_fetch(_handler([_record(2441880, "2026-12-01")])):
+        result = await run_extraction(db_session, website, triggered_by_user_id=None)
+    db_session.refresh(stored)
+
+    assert result.events_inserted == 0
+    assert stored.external_source_id == "2441880"
+    assert stored.is_active is False

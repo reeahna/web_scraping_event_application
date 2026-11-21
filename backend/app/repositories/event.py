@@ -151,7 +151,9 @@ def _session_row_for_event(
     saw the record twice on overlapping feed pages. That row is taken over
     (update_event rewrites its id), keeping its id, history and corrections,
     instead of a second row being created beside it. Only when exactly one
-    row has that key for the candidate's own date."""
+    row has that key for the candidate's own date and it starts at the same
+    clock time (or neither has a time), so a different session on that date is
+    never taken."""
     own_id = candidate.external_source_id
     if (
         not own_id
@@ -171,7 +173,9 @@ def _session_row_for_event(
         .limit(2)
         .all()
     )
-    return rows[0] if len(rows) == 1 else None
+    if len(rows) != 1 or rows[0].start_time != candidate.start_time:
+        return None
+    return rows[0]
 
 def create_event_from_candidate(
     db: Session,
