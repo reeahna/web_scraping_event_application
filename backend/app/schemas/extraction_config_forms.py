@@ -103,6 +103,7 @@ class ConfigFormInput:
     required_fields: list[str] = field(default_factory=list)
     allow_page_url_as_canonical_fallback: bool = False
     allow_offers_url_as_event_url: bool = False
+    date_only_means_time_tbd: bool = False
     field_selectors: str = ""
     json_paths: str = ""
     transformations: str = ""
@@ -239,6 +240,7 @@ def build_site_configuration(
         "required_fields": form.required_fields or ["title", "start_date", "canonical_url"],
         "allow_page_url_as_canonical_fallback": form.allow_page_url_as_canonical_fallback,
         "allow_offers_url_as_event_url": form.allow_offers_url_as_event_url,
+        "date_only_means_time_tbd": form.date_only_means_time_tbd,
         **parsed_scoped,
     }
 
@@ -291,6 +293,7 @@ def configuration_to_form(config: SiteConfiguration) -> ConfigFormInput:
         required_fields=data.get("required_fields") or [],
         allow_page_url_as_canonical_fallback=bool(data.get("allow_page_url_as_canonical_fallback")),
         allow_offers_url_as_event_url=bool(data.get("allow_offers_url_as_event_url")),
+        date_only_means_time_tbd=bool(data.get("date_only_means_time_tbd")),
         field_selectors=json.dumps(data.get("field_selectors") or {}, indent=2),
         json_paths=json.dumps(data.get("json_paths") or {}, indent=2),
         transformations=json.dumps(data.get("transformations") or [], indent=2),

@@ -26,6 +26,10 @@ from app.schemas.extraction import SiteConfiguration, TransformationRuleConfig
 
 # In transformation_history when the source marks the event as all-day.
 ALL_DAY_MARKER = "all_day"
+# The source flags the event all-day, but the site's configuration says a
+# date with no time means "time not announced" (see
+# SiteConfiguration.date_only_means_time_tbd). The event reads "Time TBD".
+TIME_TBD_MARKER = "all_day_flag_means_time_tbd"
 # In transformation_history when the source states the event has no end (a
 # feed field present and empty), as opposed to the end simply not being read.
 END_ABSENT_MARKER = "end:absent_in_source"
@@ -328,9 +332,15 @@ def normalize_candidate(
             history.append("end_time:converted_to_event_timezone")
         end_time = end_time.replace(tzinfo=None) if end_time else None
 
-    if start_date is not None and _says_all_day(
+    says_all_day = start_date is not None and _says_all_day(
         raw.get("all_day"), start_time, end_time, start_date, end_date
-    ):
+    )
+    if says_all_day and config.date_only_means_time_tbd and raw.get("all_day") is True:
+        # Only the bare flag (a date with no time) is reread as "time not
+        # announced". Explicit "All day" wording from the source still counts.
+        start_time = end_time = None
+        history.append(TIME_TBD_MARKER)
+    elif says_all_day:
         # An all-day event has no clock time; a re-scrape clears a stale one
         # (see app.repositories.event.update_event).
         start_time = end_time = None

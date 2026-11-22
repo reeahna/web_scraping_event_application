@@ -5,7 +5,12 @@ from sqlalchemy.orm import Session
 
 from app.extraction.dedup import candidate_fingerprint
 from app.extraction.locations import has_venue
-from app.extraction.normalize import ALL_DAY_MARKER, END_ABSENT_MARKER, plain_text
+from app.extraction.normalize import (
+    ALL_DAY_MARKER,
+    END_ABSENT_MARKER,
+    TIME_TBD_MARKER,
+    plain_text,
+)
 from app.extraction.types import EventCandidate
 from app.models.event import Event
 from app.repositories.public_events import town_today
@@ -286,6 +291,11 @@ def update_event(
         event.start_time = None
         event.end_time = None
         event.all_day = True
+    elif TIME_TBD_MARKER in candidate.transformation_history:
+        # The source's all-day flag means "time not announced" for this site.
+        event.start_time = None
+        event.end_time = None
+        event.all_day = False
     elif candidate.start_time is not None and not keep_stored_time:
         # The source now gives a clock time, so the event is no longer all-day.
         event.all_day = False

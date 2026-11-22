@@ -1486,6 +1486,7 @@ def configure_website_submit(
     required_fields: list[str] | None = Form(None),  # noqa: B008
     allow_page_url_as_canonical_fallback: str | None = Form(None),
     allow_offers_url_as_event_url: str | None = Form(None),
+    date_only_means_time_tbd: str | None = Form(None),
     field_selectors: str = Form(""),
     json_paths: str = Form(""),
     transformations: str = Form(""),
@@ -1520,6 +1521,7 @@ def configure_website_submit(
         required_fields=required_fields or [],
         allow_page_url_as_canonical_fallback=allow_page_url_as_canonical_fallback is not None,
         allow_offers_url_as_event_url=allow_offers_url_as_event_url is not None,
+        date_only_means_time_tbd=date_only_means_time_tbd is not None,
         field_selectors=field_selectors,
         json_paths=json_paths,
         transformations=transformations,

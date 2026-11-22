@@ -49,6 +49,7 @@ from app.extraction.locations import has_venue
 from app.extraction.normalize import (
     ALL_DAY_MARKER,
     END_ABSENT_MARKER,
+    TIME_TBD_MARKER,
     normalize_candidate,
     plain_text,
 )
@@ -276,7 +277,9 @@ def _proposed(event: Event, candidate: EventCandidate) -> dict[str, tuple[Any, A
         new["end_time"] = None if all_day else candidate.end_time
     elif candidate.end_time is not None:
         new["end_time"] = candidate.end_time
-    if all_day or candidate.start_time is not None:
+    if all_day or candidate.start_time is not None or TIME_TBD_MARKER in (
+        candidate.transformation_history
+    ):
         new["all_day"] = all_day
     if candidate.timezone:
         new["timezone"] = candidate.timezone

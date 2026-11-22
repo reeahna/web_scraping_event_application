@@ -571,3 +571,188 @@ def test_admin_backfill_needs_admin(client, db_session, make_user, login):
     make_user(email="viewer@example.com")
     login("viewer@example.com")
     assert client.get("/admin/events/all-day-backfill").status_code in (302, 303, 403)
+
+
+# --- sources whose date-only entries mean "time not announced" -----------------
+
+ATHLETICS_ICS = """BEGIN:VCALENDAR
+VERSION:2.0
+PRODID:-//Athletics//Schedule//EN
+BEGIN:VEVENT
+UID:game-1@athletics.example.org
+SUMMARY:Women's Tennis vs Rival College
+DTSTART;VALUE=DATE:20270425
+DTEND;VALUE=DATE:20270426
+URL:https://athletics.example.org/game/1
+END:VEVENT
+BEGIN:VEVENT
+UID:game-2@athletics.example.org
+SUMMARY:Softball vs Rival College
+DTSTART;TZID=America/New_York:20270424T150000
+DTEND;TZID=America/New_York:20270424T170000
+URL:https://athletics.example.org/game/2
+END:VEVENT
+END:VCALENDAR
+"""
+ATHLETICS_URL = "https://athletics.example.org/calendar.ics"
+
+
+def _athletics_candidates(**config_values):
+    from app.extraction.patterns.ics_calendar import IcsCalendarPattern
+
+    config = SiteConfiguration(
+        pattern_name="ics_calendar",
+        api_endpoint=ATHLETICS_URL,
+        timezone="America/New_York",
+        **config_values,
+    )
+    response = make_response(ATHLETICS_ICS, final_url=ATHLETICS_URL, content_type="text/calendar")
+    candidates = IcsCalendarPattern().extract(response, config)
+    return {
+        c.title: c
+        for c in (
+            normalize_candidate(n, config, fallback_timezone="America/New_York")
+            for n in candidates
+        )
+    }
+
+
+def test_ics_all_day_date_is_all_day_by_default():
+    game = _athletics_candidates()["Women's Tennis vs Rival College"]
+    assert ALL_DAY_MARKER in game.transformation_history
+
+
+def test_time_not_announced_setting_keeps_date_only_games_time_tbd():
+    from app.extraction.normalize import TIME_TBD_MARKER
+
+    games = _athletics_candidates(date_only_means_time_tbd=True)
+    tennis = games["Women's Tennis vs Rival College"]
+    assert ALL_DAY_MARKER not in tennis.transformation_history
+    assert TIME_TBD_MARKER in tennis.transformation_history
+    assert tennis.start_time is None and tennis.end_time is None
+    softball = games["Softball vs Rival College"]
+    assert softball.start_time == time(15)
+    assert TIME_TBD_MARKER not in softball.transformation_history
+
+
+def test_time_not_announced_setting_clears_a_stored_all_day_flag(db_session, make_city, make_event):
+    city = make_city(name="Princeton", slug="princeton-nj", timezone="America/New_York")
+    event = make_event(city, start_date=date(2027, 4, 25), all_day=True)
+    tennis = _athletics_candidates(date_only_means_time_tbd=True)[
+        "Women's Tennis vs Rival College"
+    ]
+    update_event(db_session, event, tennis)
+    assert event.all_day is False
+    assert event.start_time is None
+
+
+def test_time_not_announced_games_create_as_time_tbd(db_session, make_city, make_website):
+    city = make_city(name="Princeton", slug="princeton-nj", timezone="America/New_York")
+    website = make_website(city, name="Athletics")
+    tennis = _athletics_candidates(date_only_means_time_tbd=True)[
+        "Women's Tennis vs Rival College"
+    ]
+    event = create_event_from_candidate(
+        db_session, tennis, source="Athletics", city_id=city.id, website_id=website.id
+    )
+    assert event.all_day is False and event.start_time is None
+
+
+def test_backfill_leaves_time_not_announced_sources_as_time_tbd(
+    db_session, make_city, make_website, make_event
+):
+    city = make_city(name="Princeton", slug="princeton-nj", timezone="America/New_York")
+    athletics = make_website(
+        city,
+        name="Athletics",
+        approved_pattern={
+            "configuration": {
+                "pattern_name": "ics_calendar",
+                "api_endpoint": ATHLETICS_URL,
+                "date_only_means_time_tbd": True,
+            }
+        },
+    )
+    campus = make_website(city, name="Campus", approved_pattern={"configuration": {}})
+    game = make_event(city, website=athletics, title="Game", start_date=date(2027, 4, 25))
+    holiday = make_event(city, website=campus, title="Holiday", start_date=date(2027, 4, 25))
+    _provenance(db_session, game, athletics, [ALL_DAY_MARKER])
+    _provenance(db_session, holiday, campus, [ALL_DAY_MARKER])
+
+    report = backfill_all_day(db_session, apply=True)
+    assert report.marked_ids == [holiday.id]
+    assert sum(report.time_tbd_sources.values()) == 1
+    db_session.refresh(game)
+    assert game.all_day is False
+
+
+def test_configure_form_round_trips_the_time_not_announced_setting():
+    from app.schemas.extraction_config_forms import (
+        build_site_configuration,
+        configuration_to_form,
+    )
+
+    config = SiteConfiguration(
+        pattern_name="ics_calendar", api_endpoint=ATHLETICS_URL, date_only_means_time_tbd=True
+    )
+    form = configuration_to_form(config)
+    assert form.date_only_means_time_tbd is True
+    rebuilt = build_site_configuration(form, config).configuration
+    assert rebuilt.date_only_means_time_tbd is True
+    form.date_only_means_time_tbd = False
+    assert build_site_configuration(form, config).configuration.date_only_means_time_tbd is False
+
+
+def test_explicit_all_day_wording_still_counts_with_the_setting():
+    """The setting rereads a bare date as "time not announced"; a source that
+    says "All day" in words still gets "All day"."""
+    config = LIBRARY_CONFIG.model_copy(update={"date_only_means_time_tbd": True})
+    response = make_response(
+        json.dumps([_library_record()]), final_url=ENDPOINT, content_type="application/json"
+    )
+    [candidate] = [
+        normalize_candidate(c, config, fallback_timezone=TZ)
+        for c in SimpleviewEventsPattern().extract(response, config)
+    ]
+    assert ALL_DAY_MARKER in candidate.transformation_history
+
+
+def test_genuine_all_day_athletics_meet_with_the_setting_reads_time_tbd_not_all_day():
+    """Sidearm .ics feeds write a three-day swim invitational (listed "All Day"
+    on the school's schedule page) and a game whose time is TBA the same way:
+    DTSTART;VALUE=DATE. With nothing in the feed to tell them apart, the
+    setting shows both as "Time TBD", never a game as "All day"."""
+    from app.extraction.patterns.ics_calendar import IcsCalendarPattern
+
+    ics = """BEGIN:VCALENDAR
+VERSION:2.0
+PRODID:-//Athletics//Schedule//EN
+BEGIN:VEVENT
+UID:vcal_1-admin.athletics.example.org
+SUMMARY:Women's Swimming and Diving at Invitational
+DTSTART;VALUE=DATE:20261203
+DTEND;VALUE=DATE:20261206
+URL:https://athletics.example.org/calendar.aspx?game_id=1
+END:VEVENT
+BEGIN:VEVENT
+UID:vcal_2-admin.athletics.example.org
+SUMMARY:Fencing at Ivy League
+DTSTART;VALUE=DATE:20270206
+DTEND;VALUE=DATE:20270207
+URL:https://athletics.example.org/calendar.aspx?game_id=2
+END:VEVENT
+END:VCALENDAR
+"""
+    config = SiteConfiguration(
+        pattern_name="ics_calendar", api_endpoint=ATHLETICS_URL,
+        timezone="America/New_York", date_only_means_time_tbd=True,
+    )
+    response = make_response(ics, final_url=ATHLETICS_URL, content_type="text/calendar")
+    candidates = [
+        normalize_candidate(c, config, fallback_timezone="America/New_York")
+        for c in IcsCalendarPattern().extract(response, config)
+    ]
+    assert len(candidates) == 2
+    for candidate in candidates:
+        assert ALL_DAY_MARKER not in candidate.transformation_history
+        assert candidate.start_time is None
