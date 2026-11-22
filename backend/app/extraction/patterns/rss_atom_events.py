@@ -17,6 +17,7 @@ usable link still deduplicates.
 from __future__ import annotations
 
 import hashlib
+import re
 from typing import Any
 from xml.etree.ElementTree import Element
 
@@ -27,6 +28,27 @@ from app.schemas.extraction import SiteConfiguration
 
 NAME = "rss_atom_events"
 PATTERN_VERSION = "1"
+
+# An "&" that does not start an entity or character reference. Some feeds
+# (Carbonhouse sites, e.g. "Broadway & Theatre" in an event type) write it
+# bare, which is not well-formed XML.
+_BARE_AMPERSAND = re.compile(r"&(?!#\d+;|#x[0-9A-Fa-f]+;|[A-Za-z][A-Za-z0-9]*;)")
+
+
+def _parse(text: str) -> Element | None:
+    """Parse the feed, retrying once with bare ampersands escaped."""
+    try:
+        return fromstring(text)
+    except (ParseError, ValueError):
+        pass
+    repaired = _BARE_AMPERSAND.sub("&amp;", text)
+    if repaired == text:
+        return None
+    try:
+        return fromstring(repaired)
+    except (ParseError, ValueError):
+        return None
+
 
 # Our field name -> the feed element local names to read, in order. The event
 # date is intentionally absent: it must be configured, never assumed.
@@ -81,9 +103,8 @@ class RssAtomEventsPattern:
     name = NAME
 
     def extract(self, response: FetchResponse, config: SiteConfiguration) -> list[EventCandidate]:
-        try:
-            root = fromstring(response.text)
-        except (ParseError, ValueError):
+        root = _parse(response.text)
+        if root is None:
             return []
 
         # A configured element supplies the event date; publication date is
