@@ -72,6 +72,8 @@ lines. Lines may use `**bold**`, `` `code` `` and `[links](https://...)`.
 
 ## [Unreleased]
 
+## [1.12.0] - 2026-11-22
+
 ### For everyone
 - Town pages, including Today and This weekend, now say when their listings were last checked, in the town's own time (for example "Listings checked November 19, 2026 at 8:45 PM EST"), and event pages say when that event's details last changed. (#100)
 
