@@ -46,29 +46,62 @@
       </div>
     </div>
   </details>
+  {# Sources that should be checked daily but are overdue, failing, or not
+     on a daily schedule. #}
+  <label class="checkbox-label"><input type="checkbox" name="freshness" value="attention"{% if attention_only %} checked{% endif %} /> Needs attention only</label>
   <button type="submit">Search</button>
-  {% if q or city_id or statuses %}<a href="/admin/websites" class="filter-clear-link">Clear filters</a>{% endif %}
+  {% if q or city_id or statuses or attention_only %}<a href="/admin/websites" class="filter-clear-link">Clear filters</a>{% endif %}
+  <a href="/admin/websites/daily-checks">Daily checks</a>
   <a href="/admin/websites/new">+ New website</a>
 </form>
 
 {{ pagination(page, per_page, total, base_url) }}
 
-<table>
+{# Freshness per source: every active, approved source should complete a
+   successful check at least every 24 hours. "Overdue" means more than 12 hours
+   past its expected interval. "Holds back town time" marks the source that
+   sets its town's public "Listings checked" time while failing or overdue. #}
+<div class="table-scroll">
+<table class="websites-table">
   <thead>
-    <tr><th>Name</th><th>City</th><th>Base URL</th><th>Status</th><th>Active</th></tr>
+    <tr>
+      <th>Name</th><th>City</th><th>Status</th>
+      <th>Last successful check</th><th>Next check</th><th>Latest failure</th>
+      <th>Daily check</th>
+    </tr>
   </thead>
   <tbody>
   {% for site in websites %}
-    <tr>
-      <td><a href="/admin/websites/{{ site.id }}">{{ site.name }}</a></td>
+    {% set fresh = freshness.get(site.id) %}
+    <tr{% if fresh and fresh.needs_attention %} class="row-attention"{% endif %}>
+      <td><a href="/admin/websites/{{ site.id }}">{{ site.name }}</a><br /><code class="websites-base-url">{{ site.base_url }}</code></td>
       <td>{{ site.city.name if site.city else "—" }}</td>
-      <td><code>{{ site.base_url }}</code></td>
-      <td>{{ onboarding_badge(site.onboarding_status) }}</td>
-      <td>{{ "Yes" if site.is_active else "No" }}</td>
+      <td>{{ onboarding_badge(site.onboarding_status) }}{% if not site.is_active %} <span class="muted">(not active)</span>{% endif %}</td>
+      <td>{% if fresh and fresh.last_success_at %}{{ admin_time(fresh.last_success_at) }}{% else %}<span class="muted">Never</span>{% endif %}</td>
+      <td>
+        {%- if fresh and fresh.running %}Running now
+        {%- elif fresh and fresh.next_check_at %}{{ admin_time(fresh.next_check_at) }}
+        {%- else %}<span class="muted">Not scheduled</span>{% endif -%}
+      </td>
+      <td>
+        {%- if fresh and fresh.latest_failure_at %}
+        {%- if fresh.failing %}<span class="badge badge-danger">{{ fresh.latest_failure_status | replace("_", " ") | capitalize }}</span>{% else %}<span class="muted">{{ fresh.latest_failure_status | replace("_", " ") | capitalize }}, since recovered</span>{% endif %}
+        <br /><small>{{ admin_time(fresh.latest_failure_at) }}{% if fresh.failing and fresh.consecutive_failures > 1 %}, {{ fresh.consecutive_failures }} in a row{% endif %}</small>
+        {%- if fresh.failing and fresh.latest_failure_summary %}<br /><small class="muted" title="{{ fresh.latest_failure_summary }}">{{ fresh.latest_failure_summary | truncate(80) }}</small>{% endif %}
+        {%- else %}<span class="muted">None</span>{% endif -%}
+      </td>
+      <td>
+        {%- if fresh and fresh.should_be_checked %}
+        {%- if fresh.meets_target %}{{ format_interval(fresh.expected_interval_minutes) }}{% else %}<span class="badge badge-pending">{{ fresh.target_label }}</span>{% endif %}
+        {%- if fresh.overdue %}<br /><span class="badge badge-danger">Overdue</span> <small>{{ format_age(fresh.overdue_by) }} since {% if fresh.last_success_at %}last check{% else %}approval{% endif %}</small>{% endif %}
+        {%- if site.id in town_holders %}<br /><span class="badge badge-danger">Holds back town time</span>{% endif %}
+        {%- else %}<span class="muted">Not scheduled</span>{% endif -%}
+      </td>
     </tr>
   {% else %}
-    <tr><td colspan="5">No websites found.</td></tr>
+    <tr><td colspan="7">No websites found.</td></tr>
   {% endfor %}
   </tbody>
 </table>
+</div>
 {% endblock %}

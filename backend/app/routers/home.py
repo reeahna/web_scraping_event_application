@@ -27,7 +27,7 @@ from app.repositories.public_events import (
 )
 from app.services import seo
 from app.services.event_freshness import local_timestamp, town_listings_checked
-from app.services.rbac import can_access_admin
+from app.services.rbac import can_access_admin, user_has_permission
 
 router = APIRouter()
 
@@ -360,7 +360,7 @@ def _town_page(
         "nearby": nearby,
         "centers": centers,
         "breadcrumb_structured_data": seo.breadcrumb_structured_data(crumbs),
-        **_listings_checked(db, city),
+        **_listings_checked(db, city, current_user),
     }
     return _render_events(
         request,
@@ -376,17 +376,44 @@ def _town_page(
     )
 
 
-def _listings_checked(db, city) -> dict:
+def _listings_checked(db, city, current_user=None) -> dict:
     """The town's "Listings checked ..." line, from its sources' run records
     (see app.services.event_freshness.town_listings_checked). Empty when no
-    source has completed a successful check."""
+    source has completed a successful check.
+
+    When one source is holding the time back (its latest check failed, or it
+    is overdue) while the others are current, the line names that source and
+    says when every other source was checked, so a single stuck source is
+    easy to spot. Administrators get a link to the source."""
     freshness = town_listings_checked(db, city.id)
     if freshness is None:
-        return {"checked": "", "checked_iso": "", "checked_notes": []}
+        return {"checked": "", "checked_iso": "", "checked_notes": [], "checked_holder": None}
     notes = []
-    if freshness.failing:
+    holder = None
+    other_failing = freshness.failing
+    if freshness.held_back:
+        if freshness.held_back_by == "failing":
+            other_failing -= 1
+            rest = (
+                "could not be checked on the latest try, so this is the time of its "
+                "last successful check"
+            )
+        else:
+            rest = "has not been checked since then"
+        others = local_timestamp(freshness.others_checked_at, city.timezone)
+        can_view = bool(current_user) and user_has_permission(db, current_user, "sites.view")
+        holder = {
+            "name": freshness.oldest_source_name,
+            "rest": rest,
+            "others": f"Every other source was checked by {others}",
+            "admin_url": (
+                f"/admin/websites/{freshness.oldest_website_id}" if can_view else ""
+            ),
+        }
+    if other_failing:
+        other = " other" if holder else ""
         notes.append(
-            f"{_sources(freshness.failing)} could not be checked on the latest try"
+            f"{_sources(other_failing, other)} could not be checked on the latest try"
         )
     if freshness.pending:
         has = "has" if freshness.pending == 1 else "have"
@@ -395,11 +422,12 @@ def _listings_checked(db, city) -> dict:
         "checked": local_timestamp(freshness.checked_at, city.timezone),
         "checked_iso": freshness.checked_at.isoformat(timespec="seconds"),
         "checked_notes": notes,
+        "checked_holder": holder,
     }
 
 
-def _sources(count: int) -> str:
-    return f"{count} source{'s' if count != 1 else ''}"
+def _sources(count: int, adjective: str = "") -> str:
+    return f"{count}{adjective} source{'s' if count != 1 else ''}"
 
 
 @router.get("/city/{slug}", response_class=HTMLResponse)

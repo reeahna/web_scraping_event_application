@@ -182,9 +182,11 @@
   {#- When the town's sources were last checked: the time by which every source
       on this page had completed a successful check (a source that failed since
       keeps its last good time, so the town never looks newer than it is, and
-      a source with no successful check yet is mentioned rather than ignored). -#}
+      a source with no successful check yet is mentioned rather than ignored).
+      When one failing or overdue source sets the time, it is named, with the
+      time every other source was checked by. -#}
   {% if town.checked %}
-  <p class="listings-checked">Listings checked <time datetime="{{ town.checked_iso }}">{{ town.checked }}</time>{% for note in town.checked_notes %}<span class="listings-checked-note">. {{ note }}</span>{% endfor %}</p>
+  <p class="listings-checked">Listings checked <time datetime="{{ town.checked_iso }}">{{ town.checked }}</time>{% if town.checked_holder %}{% set holder = town.checked_holder %}<span class="listings-checked-note listings-checked-holder">. {% if holder.admin_url %}<a href="{{ holder.admin_url }}">{{ holder.name }}</a>{% else %}{{ holder.name }}{% endif %} {{ holder.rest }}. {{ holder.others }}</span>{% endif %}{% for note in town.checked_notes %}<span class="listings-checked-note">. {{ note }}</span>{% endfor %}</p>
   {% endif %}
   {% if events %}
   {#- Events already running (shown as "Until" a date) sort ahead of the rest.
