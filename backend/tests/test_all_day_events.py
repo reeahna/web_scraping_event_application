@@ -701,3 +701,58 @@ def test_configure_form_round_trips_the_time_not_announced_setting():
     assert rebuilt.date_only_means_time_tbd is True
     form.date_only_means_time_tbd = False
     assert build_site_configuration(form, config).configuration.date_only_means_time_tbd is False
+
+
+def test_explicit_all_day_wording_still_counts_with_the_setting():
+    """The setting rereads a bare date as "time not announced"; a source that
+    says "All day" in words still gets "All day"."""
+    config = LIBRARY_CONFIG.model_copy(update={"date_only_means_time_tbd": True})
+    response = make_response(
+        json.dumps([_library_record()]), final_url=ENDPOINT, content_type="application/json"
+    )
+    [candidate] = [
+        normalize_candidate(c, config, fallback_timezone=TZ)
+        for c in SimpleviewEventsPattern().extract(response, config)
+    ]
+    assert ALL_DAY_MARKER in candidate.transformation_history
+
+
+def test_genuine_all_day_athletics_meet_with_the_setting_reads_time_tbd_not_all_day():
+    """Sidearm .ics feeds write a three-day swim invitational (listed "All Day"
+    on the school's schedule page) and a game whose time is TBA the same way:
+    DTSTART;VALUE=DATE. With nothing in the feed to tell them apart, the
+    setting shows both as "Time TBD", never a game as "All day"."""
+    from app.extraction.patterns.ics_calendar import IcsCalendarPattern
+
+    ics = """BEGIN:VCALENDAR
+VERSION:2.0
+PRODID:-//Athletics//Schedule//EN
+BEGIN:VEVENT
+UID:vcal_1-admin.athletics.example.org
+SUMMARY:Women's Swimming and Diving at Invitational
+DTSTART;VALUE=DATE:20261203
+DTEND;VALUE=DATE:20261206
+URL:https://athletics.example.org/calendar.aspx?game_id=1
+END:VEVENT
+BEGIN:VEVENT
+UID:vcal_2-admin.athletics.example.org
+SUMMARY:Fencing at Ivy League
+DTSTART;VALUE=DATE:20270206
+DTEND;VALUE=DATE:20270207
+URL:https://athletics.example.org/calendar.aspx?game_id=2
+END:VEVENT
+END:VCALENDAR
+"""
+    config = SiteConfiguration(
+        pattern_name="ics_calendar", api_endpoint=ATHLETICS_URL,
+        timezone="America/New_York", date_only_means_time_tbd=True,
+    )
+    response = make_response(ics, final_url=ATHLETICS_URL, content_type="text/calendar")
+    candidates = [
+        normalize_candidate(c, config, fallback_timezone="America/New_York")
+        for c in IcsCalendarPattern().extract(response, config)
+    ]
+    assert len(candidates) == 2
+    for candidate in candidates:
+        assert ALL_DAY_MARKER not in candidate.transformation_history
+        assert candidate.start_time is None

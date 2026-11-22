@@ -335,7 +335,9 @@ def normalize_candidate(
     says_all_day = start_date is not None and _says_all_day(
         raw.get("all_day"), start_time, end_time, start_date, end_date
     )
-    if says_all_day and config.date_only_means_time_tbd:
+    if says_all_day and config.date_only_means_time_tbd and raw.get("all_day") is True:
+        # Only the bare flag (a date with no time) is reread as "time not
+        # announced". Explicit "All day" wording from the source still counts.
         start_time = end_time = None
         history.append(TIME_TBD_MARKER)
     elif says_all_day:

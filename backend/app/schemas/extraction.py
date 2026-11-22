@@ -254,7 +254,8 @@ class SiteConfiguration(BaseModel):
     allow_offers_url_as_event_url: bool = False
     # The source writes a date with no time for an event whose start time is
     # not announced yet (athletics schedules list "TBA" games this way, as an
-    # iCalendar all-day date). Such events read "Time TBD", never "All day".
+    # iCalendar all-day date). Such events read "Time TBD", not "All day".
+    # Explicit "All day" wording from the source is still read as all-day.
     date_only_means_time_tbd: bool = False
     # Optional captured request recipe for structured endpoints that need the
     # full request (nested JSON query params, public token, Referer, dynamic
