@@ -24,7 +24,8 @@ class AiLabelBatch(Base):
     model: Mapped[str] = mapped_column(String(100))
     # Sent to the backup model: its labels are provisional, not final.
     provisional: Mapped[bool] = mapped_column(Boolean, default=False, server_default=false())
-    # "ok", "rate_limited", "unavailable" (5xx or network) or "error".
+    # "ok", "rate_limited", "blocked" (the provider's spend limit stopped
+    # API access), "unavailable" (5xx or network) or "error".
     outcome: Mapped[str] = mapped_column(String(16))
     http_status: Mapped[int | None] = mapped_column(Integer, default=None)
     duration_ms: Mapped[int | None] = mapped_column(Integer, default=None)

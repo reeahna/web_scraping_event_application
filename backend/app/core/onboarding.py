@@ -20,7 +20,8 @@ UNSUPPORTED = "unsupported"
 FAILING = "failing"
 # The site refuses our requests (403 or a bot wall). Kept apart from
 # UNSUPPORTED so an administrator can later decide whether a paid scraping
-# service is worth it for these sources. Only ever set by hand.
+# service is worth it for these sources. Set by hand, or by bulk onboarding
+# when the pre-flight fetch of a new source is refused.
 BLOCKED = "blocked"
 ARCHIVED = "archived"
 

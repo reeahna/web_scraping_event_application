@@ -5,6 +5,7 @@
 {% set outcome_labels = {
   "ok": "Answered",
   "rate_limited": "Rate limited",
+  "blocked": "Blocked by spend limit",
   "unavailable": "Provider unavailable",
   "error": "Error",
 } %}
@@ -55,7 +56,7 @@
     <thead><tr><th>Model</th><th>Role</th><th>Available</th></tr></thead>
     <tbody>
       {% for row in overview.models %}
-      <tr><td>{{ row.model }}</td><td>{{ row.role }}</td><td>{% if row.waiting_until %}Rate limited until {{ row.waiting_until | admin_datetime }}{% else %}Now{% endif %}</td></tr>
+      <tr><td>{{ row.model }}</td><td>{{ row.role }}</td><td>{% if row.waiting_until %}Waiting (rate or spend limit) until {{ row.waiting_until | admin_datetime }}{% else %}Now{% endif %}</td></tr>
       {% endfor %}
     </tbody>
   </table>
@@ -66,7 +67,7 @@
   {% set u = overview.usage %}
   <table>
     <tbody>
-      <tr><th>Requests</th><td>{{ num(u.requests) }} ({{ num(u.ok) }} answered, {{ num(u.rate_limited) }} rate limited)</td></tr>
+      <tr><th>Requests</th><td>{{ num(u.requests) }} ({{ num(u.ok) }} answered, {{ num(u.rate_limited) }} rate limited{% if u.blocked %}, {{ num(u.blocked) }} blocked by the spend limit{% endif %})</td></tr>
       <tr><th>Events labeled (verified, main model)</th><td>{{ num(u.events_labeled) }}</td></tr>
       <tr><th>Provisional categories (backup model)</th><td>{{ num(u.events_provisional) }}</td></tr>
       <tr><th>Events left without a label</th><td>{{ num(u.events_skipped) }} skipped by the model, {{ num(u.events_failed) }} in requests that failed</td></tr>
@@ -145,7 +146,7 @@
 <section class="wf-card">
   <h2>Recent requests</h2>
   <p class="audit-meta">Groq's "requests" figures are per day and its "tokens" figures per minute. A
-    rate-limited request names the limit it hit (TPD is tokens per day).</p>
+    rate-limited request names the limit it hit (TPD is tokens per day; SPEND is the account's spend limit).</p>
   <div class="table-scroll">
   <table>
     <thead>

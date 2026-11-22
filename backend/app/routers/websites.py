@@ -18,6 +18,8 @@ from app.core.onboarding import (
     TRANSITION_PERMISSIONS,
     onboarding_label,
 )
+from app.core.onboarding_jobs import BLOCKED as ONBOARDING_JOB_BLOCKED
+from app.core.onboarding_jobs import FAILED as ONBOARDING_JOB_FAILED
 from app.core.templating import render
 from app.core.timezones import dst_warning
 from app.dependencies import ClientIp, CorrelationId, CurrentUser, DbSession
@@ -25,6 +27,7 @@ from app.extraction.detection import MIN_PATTERN_CONFIDENCE, RELIABILITY_ORDER
 from app.extraction.inference.policy import READY_FOR_APPROVAL as INFERENCE_READY
 from app.extraction.registry import REGISTRY, pattern_options
 from app.models.event import Event
+from app.models.onboarding_job import OnboardingJob
 from app.models.user import User
 from app.repositories.auto_onboarding import (
     latest_decision_for_website,
@@ -560,6 +563,21 @@ def website_detail(website_id: int, request: Request, current_user: ViewSites, d
     # never invents a winner or tie-break story when nothing qualified.
     detection_winner = (detection_evidence or {}).get("winner")
     reports = list_reports_for_website(db, website.id, limit=20)
+    # When the latest onboarding job for this source stopped at the pre-flight
+    # fetch, show its exact reason (and HTTP status) on the source itself.
+    latest_job = (
+        db.query(OnboardingJob)
+        .filter(OnboardingJob.website_id == website.id)
+        .order_by(OnboardingJob.id.desc())
+        .first()
+    )
+    preflight_failure = (
+        latest_job
+        if latest_job is not None
+        and latest_job.status in (ONBOARDING_JOB_BLOCKED, ONBOARDING_JOB_FAILED)
+        and (latest_job.failure_reason or "").startswith("The source could not be fetched:")
+        else None
+    )
     latest_browser_recovery = next(
         (r.browser_recovery for r in reports if r.browser_recovery), None
     ) or (website.proposed_pattern or {}).get("browser_recovery")
@@ -595,6 +613,7 @@ def website_detail(website_id: int, request: Request, current_user: ViewSites, d
             "can_test": permissions["test"],
             "extraction_runs": extraction_runs,
             "unsupported_reports": reports,
+            "preflight_failure": preflight_failure,
             "latest_detection_run": latest_detection_run,
             "latest_preview_run": latest_preview_run,
             "inference": (website.proposed_pattern or {}).get("inference"),

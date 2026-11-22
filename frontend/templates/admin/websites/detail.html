@@ -32,6 +32,11 @@
       · Last successful import: {% if website.last_success_at %}{{ website.last_success_at | admin_datetime }}{% else %}never{% endif %}
     </p>
     <p class="wf-summary"><strong>{{ workflow.headline }}.</strong></p>
+    {% if preflight_failure %}
+    <p class="audit-meta">Onboarding stopped before setup:
+      {{ preflight_failure.failure_reason }}
+      (<a href="/admin/onboarding/jobs/{{ preflight_failure.id }}">onboarding job #{{ preflight_failure.id }}</a>{% if preflight_failure.completed_at %}, {{ preflight_failure.completed_at | admin_datetime }}{% endif %}).</p>
+    {% endif %}
   </div>
   <div class="wf-header-actions">
     {% if workflow.primary_action %}{{ action_button(workflow.primary_action, csrf_token) }}{% endif %}
