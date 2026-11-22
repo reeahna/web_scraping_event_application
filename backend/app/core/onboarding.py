@@ -57,6 +57,8 @@ ALLOWED_TRANSITIONS: dict[str, frozenset[str]] = {
     UNSUPPORTED: frozenset({DRAFT, NEEDS_REVIEW, BLOCKED, ARCHIVED}),
     BLOCKED: frozenset({DRAFT, NEEDS_REVIEW, ARCHIVED}),
     FAILING: frozenset({ACTIVE, INACTIVE, BLOCKED, ARCHIVED}),
+    # Leaving ARCHIVED is not a lifecycle move: an administrator restores the
+    # website explicitly (app.services.websites.restore_website).
     ARCHIVED: frozenset(),
 }
 
