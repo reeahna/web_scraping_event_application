@@ -128,6 +128,31 @@ def names_other_campus(title: str | None, town: str | None) -> bool:
     return bool(title and pattern and pattern.search(title))
 
 
+# Town -> the names of its university's other campuses, as a venue or a
+# source's own category writes them out: IU's shared calendar carries IU
+# Northwest's student-activities feed ("IU Northwest Student Activities
+# Calendar", venue "Indiana University Northwest"). Only a campus named in full
+# counts: a building name or a school (the School of Medicine teaches in
+# Bloomington too) says nothing certain, so those are left for a person.
+_OTHER_CAMPUS_NAMES_BY_TOWN = {
+    "bloomington": re.compile(
+        r"\b(IU|Indiana University) (Indy|Indianapolis|Southeast|South Bend|Kokomo|Northwest|"
+        r"East(?! Asian)|Fort Wayne|Columbus)\b|\b(IUPUI|IUPUC|Purdue Fort Wayne)\b"
+    ),
+}
+
+
+def campus_named_elsewhere(
+    venue: str | None, source_category: str | None, town: str | None
+) -> bool:
+    """True when the venue or the source's category names another campus of
+    the home town's university."""
+    pattern = _OTHER_CAMPUS_NAMES_BY_TOWN.get((town or "").casefold())
+    if pattern is None:
+        return False
+    return any(pattern.search(value) for value in (venue, source_category) if value)
+
+
 # Town -> nearby towns a venue or a trailing title part can name without a state:
 # "Regal Greenwood & RPX", "Mini Professional Trip - Cedar Rapids".
 _NEARBY_TOWNS = {
@@ -529,6 +554,10 @@ def candidate_outside_home_town(candidate, city) -> bool:
         return True
     if names_other_campus(candidate.title, city.name if city is not None else None):
         return True
+    if campus_named_elsewhere(
+        candidate.venue, candidate.source_category, city.name if city is not None else None
+    ):
+        return True
     if names_other_county(candidate.title, city.name if city is not None else None):
         return True
     if names_nearby_town(
@@ -558,6 +587,10 @@ def event_outside_home_town(event) -> bool:
     if from_other_campus_calendar(event.canonical_url, event.title):
         return True
     if names_other_campus(event.title, city.name if city is not None else None):
+        return True
+    if campus_named_elsewhere(
+        event.public_venue, event.source_category, city.name if city is not None else None
+    ):
         return True
     if names_other_county(event.title, city.name if city is not None else None):
         return True
