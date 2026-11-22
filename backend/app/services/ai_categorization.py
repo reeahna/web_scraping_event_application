@@ -37,6 +37,7 @@ from app.services.ai_categorizer import (
     GeminiQuotaExceeded,
     GeminiTransportError,
     GroqCategorizer,
+    ProviderAccessBlocked,
     SplitPrompt,
 )
 from app.services.ai_label_state import (
@@ -58,6 +59,10 @@ logger = logging.getLogger(__name__)
 
 # Batch records older than this are pruned by the drain.
 BATCH_HISTORY = timedelta(days=30)
+# ai_label_batches.outcome of a request the provider's spend limit refused.
+BLOCKED = "blocked"
+# Outcomes after which a model waits before it is asked again.
+WAITING_OUTCOMES = ("rate_limited", BLOCKED)
 
 
 def scheduled_categorization_enabled() -> bool:
@@ -290,6 +295,7 @@ def queue_status(db: Session, *, now: datetime | None = None) -> dict:
     status["last_24h"] = {
         "requests": usage["requests"],
         "rate_limited": usage["rate_limited"],
+        "blocked": usage["blocked"],
         "events_labeled": usage["events_labeled"],
         "events_provisional": usage["events_provisional"],
         "total_tokens": usage["total_tokens"],
@@ -496,6 +502,7 @@ def usage_summary(db: Session, *, now: datetime | None = None, hours: int = 24) 
         func.count(AiLabelBatch.id),
         func.sum(case((AiLabelBatch.outcome == "rate_limited", 1), else_=0)),
         func.sum(case((AiLabelBatch.outcome == "ok", 1), else_=0)),
+        func.sum(case((AiLabelBatch.outcome == BLOCKED, 1), else_=0)),
         func.coalesce(
             func.sum(case((AiLabelBatch.provisional.is_(True), 0),
                           else_=AiLabelBatch.events_labeled)), 0),
@@ -510,7 +517,7 @@ def usage_summary(db: Session, *, now: datetime | None = None, hours: int = 24) 
         func.coalesce(func.sum(AiLabelBatch.total_tokens), 0),
         func.coalesce(func.sum(AiLabelBatch.cached_tokens), 0),
     ).filter(AiLabelBatch.created_at >= since).one()
-    (requests, rate_limited, ok, labeled, provisional, skipped, failed, hidden,
+    (requests, rate_limited, ok, blocked, labeled, provisional, skipped, failed, hidden,
      prompt, completion, total, cached) = rows
     labeled = int(labeled or 0)
     total = int(total or 0)
@@ -519,6 +526,7 @@ def usage_summary(db: Session, *, now: datetime | None = None, hours: int = 24) 
         "requests": int(requests or 0),
         "ok": int(ok or 0),
         "rate_limited": int(rate_limited or 0),
+        "blocked": int(blocked or 0),
         "events_labeled": labeled,
         "events_provisional": int(provisional or 0),
         "events_skipped": int(skipped or 0),
@@ -538,8 +546,9 @@ def usage_summary(db: Session, *, now: datetime | None = None, hours: int = 24) 
 def model_cooldown_until(
     db: Session, model: str, *, now: datetime | None = None
 ) -> datetime | None:
-    """When `model` may be asked again, from its latest rate-limited request
-    (stored, so a scheduler restart remembers it). None when it is free now.
+    """When `model` may be asked again, from its latest request when that was
+    rate limited or blocked by the provider's spend limit (stored, so a
+    scheduler restart remembers it). None when it is free now.
     Each model's quota is tracked on its own."""
     now = now or datetime.now(UTC)
     row = (
@@ -548,7 +557,7 @@ def model_cooldown_until(
         .order_by(AiLabelBatch.created_at.desc(), AiLabelBatch.id.desc())
         .first()
     )
-    if row is None or row.outcome != "rate_limited":
+    if row is None or row.outcome not in WAITING_OUTCOMES:
         return None
     created = row.created_at
     if created.tzinfo is None:  # SQLite hands back naive UTC
@@ -685,7 +694,11 @@ def _classify(
         try:
             labels = categorizer.classify_batch(options, to_classify)
         except GeminiError as exc:
-            if isinstance(exc, GeminiQuotaExceeded):
+            if isinstance(exc, ProviderAccessBlocked):
+                # A spend-limit block: billing, not the events. Counted as
+                # nothing against them (only GeminiBadOutput is).
+                outcome = BLOCKED
+            elif isinstance(exc, GeminiQuotaExceeded):
                 outcome = "rate_limited"
             elif isinstance(exc, GeminiOverloaded | GeminiTransportError):
                 outcome = "unavailable"
