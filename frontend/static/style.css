@@ -2922,6 +2922,13 @@ a.metric-tile-link:hover .metric-label {
   color: var(--accent);
 }
 
+/* All-day events at a venue point to the listing for its hours. */
+.event-venue-hours {
+  align-self: flex-start;
+  font-size: var(--font-sm);
+  font-weight: var(--weight-regular);
+}
+
 .event-detail-venue {
   display: flex;
   flex-direction: column;

@@ -51,7 +51,7 @@
   {% for event in events %}
   <tr>
     <td><a href="/admin/events/{{ event.id }}">{{ event.title }}</a><br><span class="audit-meta">{{ event.source }}</span></td>
-    <td>{{ event.start_date or '—' }} {{ event.start_time or '' }}</td>
+    <td>{{ event.start_date or 'TBD' }} {% if event.all_day %}All day{% else %}{{ event.start_time or '' }}{% endif %}</td>
     <td>{{ event.city.name if event.city else '—' }}</td>
     <td>{{ event.effective_category.name if event.effective_category else 'Uncategorized' }}</td>
     <td>{{ event.review_status | replace('_', ' ') }}</td>

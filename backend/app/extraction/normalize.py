@@ -125,6 +125,39 @@ def _localize_time(
     return local.date(), local.time().replace(tzinfo=None)
 
 
+_ALL_DAY_TEXT_RE = re.compile(r"^\s*all[\s-]?day\s*$", re.IGNORECASE)
+_DAY_END_TIMES = (time(23, 59), time(23, 59, 59))
+
+
+def _says_all_day(
+    flag: object,
+    start_time: time | None,
+    end_time: time | None,
+    start_date: date | None,
+    end_date: date | None,
+) -> bool:
+    """True when the source itself says the event lasts the whole day.
+
+    A boolean flag (iCalendar VALUE=DATE, a platform's `is_all_day`) is the
+    source's word and is taken as given. A text value ("All day", the display
+    string some library calendars send next to 00:00 and 23:59) counts only
+    when the clock times agree with it: no time, or a start at midnight that
+    ends at midnight or 11:59 PM on the same day. A time range on its own is
+    never enough, so a real 12:00 AM to 11:59 PM listing with no all-day
+    wording, a midnight start, or a 10 PM to 2 AM event keeps its times."""
+    if flag is True:
+        return True
+    if not isinstance(flag, str) or not _ALL_DAY_TEXT_RE.match(flag):
+        return False
+    if start_time is None:
+        return end_time is None
+    if start_time != time(0):
+        return False
+    if end_date is not None and start_date is not None and end_date != start_date:
+        return False
+    return end_time is None or end_time == time(0) or end_time in _DAY_END_TIMES
+
+
 def _split_iso_datetime(value: object) -> tuple[object | None, str | None]:
     """Only splits on "T" when it's the actual ISO 8601 date/time separator
     (immediately after a YYYY-MM-DD date) — a naive `"T" in value` substring
@@ -295,7 +328,9 @@ def normalize_candidate(
             history.append("end_time:converted_to_event_timezone")
         end_time = end_time.replace(tzinfo=None) if end_time else None
 
-    if raw.get("all_day") is True and start_date is not None:
+    if start_date is not None and _says_all_day(
+        raw.get("all_day"), start_time, end_time, start_date, end_date
+    ):
         # An all-day event has no clock time; a re-scrape clears a stale one
         # (see app.repositories.event.update_event).
         start_time = end_time = None

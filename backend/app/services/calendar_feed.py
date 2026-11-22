@@ -40,7 +40,7 @@ def _event_component(event: Event, *, host: str, tz: ZoneInfo, now: datetime) ->
     item.add("summary", event.title)
     item.add("url", page)
 
-    if event.start_time is not None:
+    if event.start_time is not None and not event.all_day:
         start = datetime.combine(event.start_date, event.start_time, tzinfo=tz)
         item.add("dtstart", start)
         end = None

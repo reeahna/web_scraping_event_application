@@ -18,6 +18,7 @@ class EventBase(BaseModel):
     end_date: date | None = None
     start_time: time | None = None
     end_time: time | None = None
+    all_day: bool = False
     venue: str | None = None
     address: str | None = None
     image_url: str | None = None

@@ -276,6 +276,8 @@ def _proposed(event: Event, candidate: EventCandidate) -> dict[str, tuple[Any, A
         new["end_time"] = None if all_day else candidate.end_time
     elif candidate.end_time is not None:
         new["end_time"] = candidate.end_time
+    if all_day or candidate.start_time is not None:
+        new["all_day"] = all_day
     if candidate.timezone:
         new["timezone"] = candidate.timezone
     if candidate.venue is not None and has_venue({"venue": candidate.venue}):
