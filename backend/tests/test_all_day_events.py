@@ -252,6 +252,22 @@ def test_a_bare_midnight_rescrape_does_not_undo_all_day(db_session, town, make_e
     assert event.start_time is None
 
 
+def test_a_full_day_span_rescrape_without_the_wording_keeps_all_day(
+    db_session, town, make_event
+):
+    """00:00 to 23:59 with no "All day" text is a placeholder for an event the
+    source already called all-day, not a clock time."""
+    city, website = town
+    event = make_event(
+        city, website=website, start_date=date(2026, 11, 22), all_day=True, timezone=TZ
+    )
+    [candidate] = _library_candidates(_library_record(time_string="12:00am - 11:59pm"))
+    assert (candidate.start_time, candidate.end_time) == (time(0), time(23, 59))
+    update_event(db_session, event, candidate)
+    assert event.all_day is True
+    assert event.start_time is None and event.end_time is None
+
+
 # --- what visitors see ----------------------------------------------------------
 
 
@@ -315,7 +331,9 @@ def test_detail_page_says_all_day_and_points_to_venue_hours(
     assert "All day" in when
     assert "12:00 AM" not in when and "11:59 PM" not in when
     assert "event-tz" not in when
-    assert 'class="event-venue-hours external-link" href="https://e.org/show"' in when
+    link = re.search(r'<a class="event-venue-hours[^>]*>', when).group(0)
+    assert 'href="https://e.org/show"' in link
+    assert 'rel="noopener noreferrer"' in link and 'target="_blank"' in link
     assert "Check venue hours" in when
     # No hours are stated anywhere.
     assert not re.search(r"\d{1,2}:\d\d [AP]M", when)

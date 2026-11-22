@@ -264,14 +264,16 @@ def update_event(
         event.source_category = candidate.source_category
     if candidate.timezone is not None:
         event.timezone = candidate.timezone
-    keep_stored_time = _midnight_placeholder(event, candidate)
+    keep_stored_time = _midnight_placeholder(event, candidate) or _full_day_placeholder(
+        event, candidate
+    )
     if candidate.start_date is not None:
         event.start_date = candidate.start_date
     if candidate.end_date is not None:
         event.end_date = candidate.end_date
     if candidate.start_time is not None and not keep_stored_time:
         event.start_time = candidate.start_time
-    if candidate.end_time is not None:
+    if candidate.end_time is not None and not keep_stored_time:
         event.end_time = candidate.end_time
     if END_ABSENT_MARKER in candidate.transformation_history and candidate.start_date is not None:
         # The source says the event has no end. An end stored by an earlier
@@ -340,6 +342,21 @@ def is_all_day_candidate(candidate: EventCandidate) -> bool:
     """The source says this candidate lasts the whole day (normalize records
     that as ALL_DAY_MARKER and drops its clock times)."""
     return ALL_DAY_MARKER in candidate.transformation_history and candidate.start_date is not None
+
+
+def _full_day_placeholder(event: Event, candidate: EventCandidate) -> bool:
+    """True when an all-day event is re-scraped as 12:00 AM to 11:59 PM (or to
+    midnight) on the same day without the source's all-day wording. That span
+    says nothing new: it never turns an all-day event into a timed one. A real
+    clock time (9:00 AM, say) does."""
+    return bool(
+        event.all_day
+        and candidate.start_time == time(0)
+        and candidate.end_time in (None, time(0), time(23, 59), time(23, 59, 59))
+        and candidate.start_date is not None
+        and candidate.start_date == event.start_date
+        and candidate.end_date in (None, candidate.start_date)
+    )
 
 
 def _midnight_placeholder(event: Event, candidate: EventCandidate) -> bool:
