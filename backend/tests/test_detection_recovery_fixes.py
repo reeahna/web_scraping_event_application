@@ -108,6 +108,17 @@ def test_ordinary_page_loading_vendor_scripts_is_not_blocked():
     assert "blocked" not in run_detection(response).evidence
 
 
+def test_json_data_that_mentions_a_challenge_word_is_not_blocked():
+    body = b'{"items": [{"name": "Intro to Cloudflare Workers", "description": "Access denied?"}]}'
+    headers = {"content-type": "application/json; charset=utf-8"}
+    assert _blocked_marker(200, body, headers) is None
+    assert _blocked_marker(200, body, {"Content-Type": "application/json"}) is None
+    # The same words in an HTML page are still a challenge.
+    assert _blocked_marker(200, CHALLENGE_PAGE.encode(), {"content-type": "text/html"}) == (
+        "challenge_marker:cloudflare"
+    )
+
+
 def test_real_challenge_page_is_still_blocked():
     assert _blocked_marker(200, CHALLENGE_PAGE.encode(), {}) == "challenge_marker:cloudflare"
     assert _challenge_reason(CHALLENGE_PAGE, 200) is not None
