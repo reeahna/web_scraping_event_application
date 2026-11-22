@@ -62,6 +62,25 @@ _VIRTUAL_PLACE = _rx(
     r"teams|webex|google meet|livestream|web(inar)?|internet|tbd online|to be announced online)"
     r"\s*\.?$"
 )
+# A venue that names only platforms, in two or more parts: "Online - Zoom",
+# "Virtual - Teams", "Zoom - Online", "Online via Zoom". A part naming a place
+# ("300 N Eagleson & Online", "NS 245 and Online") makes it hybrid, so it is kept.
+_PLATFORM_PART = _rx(
+    r"^(online|virtual|remote|zoom( meeting| webinar)?|microsoft teams|ms teams|teams|webex|"
+    r"google meet|livestream(ed)?|live[- ]stream(ed)?|webinar|internet)$"
+)
+_VENUE_PARTS = re.compile(r"\s*(?:[-–—/|,:()]|\bvia\b|\bon\b)\s*", re.IGNORECASE)
+# Who an online session is for, from its title or description: instructors
+# working on their own courses ("place an order before materials are delivered
+# to Canvas"), faculty, postdocs. A public webinar or an online club meeting
+# names none of these and stays listed.
+_INSTRUCTOR_AUDIENCE = _rx(
+    r"\b(instructors?|faculty( members)?|postdocs?|postdoctoral|"
+    r"teaching (portfolios?|practices|apprentice\w*|assistants?)|"
+    r"your (own )?(courses?|class(es)?|syllabus|syllabi)|"
+    r"(course|instructional) (materials|design|maps?)|canvas (course|site)s?|"
+    r"delivered to canvas)\b"
+)
 _VIRTUAL_DESCRIPTION = _rx(
     r"\b(this (is|will be) an? (virtual|online)( only)? (event|session|program|meeting)|"
     r"(held|hosted|offered|taking place) (entirely |exclusively )?(virtually|online)|"
@@ -478,6 +497,12 @@ _PROFESSIONAL_CALENDARS = {
 _LECTURESHIP = _rx(r"\blecture(ship)?s?\b")
 
 
+def _platforms_only(value: str) -> bool:
+    """True when a venue names two or more platforms and nothing else."""
+    parts = [p.strip(" .") for p in _VENUE_PARTS.split(value) if p and p.strip(" .")]
+    return len(parts) >= 2 and all(_PLATFORM_PART.match(p) for p in parts)
+
+
 def _on_calendar(url: str | None, calendars: dict[str, re.Pattern[str]]) -> bool:
     if not url:
         return False
@@ -523,6 +548,12 @@ def not_attendable_reason(
     if _VIRTUAL_TITLE.search(title) or _VIRTUAL_DESCRIPTION.search(description):
         return VIRTUAL
     if any(_VIRTUAL_PLACE.match(v) for v in (venue, address) if v):
+        return VIRTUAL
+    # A platform-only venue in several parts says the session is online, but
+    # that alone does not hide it: only when it is also aimed at instructors.
+    if any(_platforms_only(v) for v in (venue, address) if v) and _INSTRUCTOR_AUDIENCE.search(
+        f"{title}\n{description}"
+    ):
         return VIRTUAL
 
     if _DEADLINE_TITLE.search(title) or _ACADEMIC_PERIOD_TITLE.search(title):

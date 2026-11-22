@@ -748,3 +748,46 @@ def test_only_the_title_can_open_an_event_to_all_ages():
         )
         == AUDIENCE
     )
+
+
+_COURSE_PREP = (
+    "Each session begins with a guided walkthrough, followed by open work time to work on "
+    "your own course. This session is your last opportunity to place an order before "
+    "materials are delivered to Canvas and students are billed."
+)
+
+
+@pytest.mark.parametrize("venue", ["Online - Zoom", "Virtual - Teams", "Zoom - Online",
+                                   "Online via Zoom", "Virtual (Zoom)", "Online / Webex"])
+def test_platform_only_venue_for_instructors_is_left_out(venue):
+    assert (
+        not_attendable_reason(
+            title="Course Prep with IU eTexts: Last Call for Spring Orders",
+            description=_COURSE_PREP,
+            venue=venue,
+        )
+        == VIRTUAL
+    )
+
+
+@pytest.mark.parametrize(
+    ("title", "description"),
+    [
+        # A public talk and an online club meeting name no instructor audience.
+        ("Climate Science Public Talk", "Join researchers for a talk open to everyone."),
+        ("Chess Club Weekly Meetup", "All students welcome, beginners too."),
+    ],
+)
+def test_platform_only_venue_without_an_instructor_audience_is_kept(title, description):
+    assert not_attendable_reason(title=title, description=description, venue="Online - Zoom") \
+        is None
+
+
+@pytest.mark.parametrize("venue", ["300 N Eagleson & Online", "NS 245 and Online",
+                                   "Wells Library - Zoom Room", "Online Learning Center"])
+def test_a_venue_naming_a_place_is_not_platform_only(venue):
+    assert not_attendable_reason(
+        title="From Chaos to Cohesion with Course Maps",
+        description="Course maps can help you see how your courses fit together.",
+        venue=venue,
+    ) is None
