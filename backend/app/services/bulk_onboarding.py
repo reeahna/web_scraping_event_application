@@ -37,6 +37,7 @@ from datetime import UTC, datetime
 from sqlalchemy.orm import Session
 
 from app.core import auto_onboarding as auto_policy
+from app.core.onboarding import BLOCKED as WEBSITE_BLOCKED
 from app.core.onboarding_jobs import (
     AUTOMATICALLY_ACTIVATED,
     AUTOMATICALLY_APPROVED,
@@ -66,6 +67,7 @@ from app.extraction.types import FetchRequest
 from app.models.city import City
 from app.models.onboarding_batch import OnboardingBatch
 from app.models.onboarding_job import OnboardingJob
+from app.models.website import Website
 from app.repositories.city import get_city_by_slug
 from app.repositories.onboarding import (
     WebsiteMatch,
@@ -97,6 +99,7 @@ from app.services.notifications import (
 from app.services.onboarding_automation import detect_and_configure
 from app.services.onboarding_submission import ParsedSubmission
 from app.services.rbac import users_with_permission
+from app.services.websites import transition_website
 
 # Phase 8B outcome -> job status. The vocabularies are intentionally the same
 # words, but they are different enums owned by different layers, so the
@@ -328,6 +331,85 @@ async def _resolve_document(url: str) -> _PreflightResult:
     return _PreflightResult(response.final_url, response.text)
 
 
+def _is_unsafe_url(preflight: _PreflightResult) -> bool:
+    return (preflight.blocked_reason or "").startswith("ssrf_blocked")
+
+
+def _record_preflight_failure(
+    db: Session,
+    job: OnboardingJob,
+    website: Website | None,
+    preflight: _PreflightResult,
+    *,
+    actor_id: int | None,
+    correlation_id: str | None,
+) -> OnboardingJob:
+    """The page could not be read before detection (edge protection, an HTTP
+    error, a connection failure). The source still gets a Website, so it is
+    visible in Admin > Websites and a later retry or diagnostic finds it
+    instead of creating a duplicate. It stays inactive and unscheduled and is
+    never configured, approved or activated here: a blocked source is moved
+    to BLOCKED, any other failure stays in DRAFT. The job keeps the exact
+    reason, including the HTTP status."""
+    blocked = preflight.blocked_reason is not None
+    detail = preflight.blocked_reason if blocked else preflight.failure_reason
+    reason = f"The source could not be fetched: {detail}"
+
+    if website is None:
+        job.current_step = CREATING_WEBSITE
+        metadata = infer_site_metadata(
+            document=None,
+            final_url=preflight.final_url or job.submitted_url,
+            submitted_url=job.submitted_url,
+            supplied_name=job.submitted_name,
+            supplied_source_display_name=job.submitted_source_display_name,
+        )
+        job.inferred_metadata = metadata.as_dict()
+        try:
+            website = create_website(
+                db,
+                WebsiteCreate(
+                    name=metadata.name,
+                    source_display_name=metadata.source_display_name,
+                    city_id=job.city_id,
+                    base_url=metadata.base_url,
+                    event_listing_url=metadata.event_listing_url,
+                    timezone_override=job.timezone_override,
+                ),
+            )
+            if blocked:
+                transition_website(db, website, WEBSITE_BLOCKED)
+        except Exception as exc:  # pydantic validation or DB error
+            db.rollback()
+            _fail(job, f"{reason}; the website record could not be created: {exc}")
+            db.commit()
+            return job
+        record_audit(
+            db,
+            actor_id=actor_id,
+            action="website_created_from_onboarding",
+            entity_type="website",
+            entity_id=website.id,
+            after={
+                "name": website.name,
+                "base_url": website.base_url,
+                "event_listing_url": website.event_listing_url,
+                "city_id": website.city_id,
+                "onboarding_job_id": job.id,
+                "onboarding_status": website.onboarding_status,
+                "preflight_failure": reason[:500],
+            },
+            correlation_id=correlation_id,
+        )
+
+    job.website_id = website.id
+    job.status = BLOCKED if blocked else FAILED
+    job.failure_reason = reason[:500]
+    job.completed_at = _now()
+    db.commit()
+    return job
+
+
 def _resolve_city(db: Session, job: OnboardingJob) -> City | None:
     return db.get(City, job.city_id) if job.city_id is not None else None
 
@@ -395,14 +477,12 @@ async def process_job(
     preflight = await _resolve_document(job.submitted_url)
     final_url, document = preflight.final_url, preflight.document
     job.final_url = final_url
-    if preflight.blocked_reason is not None:
+    if _is_unsafe_url(preflight):
+        # An SSRF refusal (private address, unresolvable host) is not a
+        # source anyone can onboard, so no Website is created for it.
         job.status = BLOCKED
         job.failure_reason = f"The source could not be fetched: {preflight.blocked_reason}"
         job.completed_at = _now()
-        db.commit()
-        return job
-    if preflight.failure_reason is not None:
-        _fail(job, f"The source could not be fetched: {preflight.failure_reason}")
         db.commit()
         return job
 
@@ -429,6 +509,12 @@ async def process_job(
         return job
 
     website = match.website if match is not None else None
+
+    # --- pre-flight failed: keep the source visible, never configure it ---
+    if preflight.blocked_reason is not None or preflight.failure_reason is not None:
+        return _record_preflight_failure(
+            db, job, website, preflight, actor_id=actor_id, correlation_id=correlation_id
+        )
 
     # --- locate or create the Website -------------------------------------
     if website is None:

@@ -43,6 +43,17 @@ A persisted queue (`onboarding_jobs`) accepts many URLs; the scheduler process
 drains it. Existing-website matching prefers non-archived matches; duplicates
 are prevented.
 
+Each job first fetches the page once (the pre-flight fetch). If that fetch is
+refused by edge protection or answers with an HTTP error or a connection
+failure, the source still gets a Website so it shows in Admin > Websites: a
+blocked source is moved to Blocked, any other failure stays in Draft. It stays
+inactive and unscheduled and is never configured, approved or activated. The
+job keeps the exact reason (for example `HTTP 405` or
+`edge_protection:http_403`), and the Website page shows it with a link to the
+job. Submitting or retrying the same URL later reuses that Website rather than
+creating another. A URL refused by the SSRF check (a private address or a host
+that does not resolve) is not a source, so no Website is created for it.
+
 ## Re-onboarding after failure
 
 Repeated structural failures re-run detection and refresh the draft + preview,
