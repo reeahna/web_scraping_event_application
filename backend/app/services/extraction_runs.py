@@ -46,6 +46,10 @@ from app.extraction.browser import (
 from app.extraction.dedup import dedupe_within_run
 from app.extraction.detail_pages import enrich_with_detail_pages
 from app.extraction.detection import run_detection as detect_patterns
+from app.extraction.diagnostics import (
+    describe_zero_event_response,
+    log_zero_event_diagnostics,
+)
 from app.extraction.event_page_fallback import fill_from_event_pages
 from app.extraction.feed_links import feed_links
 from app.extraction.fetch import (
@@ -279,6 +283,22 @@ def _response_metadata(response: FetchResponse) -> dict:
         # Token-free browser-pagination diagnostics (pages, total, stop reason,
         # per-page rows) for the run detail view.
         metadata["pagination"] = response.pagination
+    return metadata
+
+
+def _run_response_metadata(
+    website: Website, config: SiteConfiguration, outcome: _PipelineOutcome, *, run_type: str
+) -> dict | None:
+    """The last response's metadata, plus, when the run read no events, a
+    sanitized description of what the source sent (app.extraction.diagnostics)
+    so the run shows whether it was blocked, empty or a different page."""
+    if outcome.last_response is None:
+        return None
+    metadata = _response_metadata(outcome.last_response)
+    if not outcome.outcomes:
+        diagnostics = describe_zero_event_response(outcome.last_response, config)
+        metadata["zero_event_diagnostics"] = diagnostics
+        log_zero_event_diagnostics(website.id, run_type, diagnostics)
     return metadata
 
 
@@ -1105,9 +1125,7 @@ async def preview_extraction_detailed(
         events_rejected=len(rejected),
         warnings=warnings,
         error_summary="; ".join(errors[:5]) or None,
-        response_metadata=_response_metadata(outcome.last_response)
-        if outcome.last_response
-        else None,
+        response_metadata=_run_response_metadata(website, config, outcome, run_type="preview"),
         started_at=started_at,
         completed_at=completed_at,
         correlation_id=correlation_id,
@@ -1326,9 +1344,7 @@ async def run_extraction(
         events_rejected=len(rejected),
         warnings=warnings,
         error_summary="; ".join(errors[:5]) or None,
-        response_metadata=_response_metadata(outcome.last_response)
-        if outcome.last_response
-        else None,
+        response_metadata=_run_response_metadata(website, config, outcome, run_type="import"),
         started_at=started_at,
         completed_at=completed_at,
         initiating_user_id=triggered_by_user_id,

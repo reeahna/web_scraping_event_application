@@ -49,6 +49,15 @@ and `docs/scheduler.md`. The scheduler is the single owner of all background wor
   sent at most once every 30 minutes per process. No IP addresses, cookies or
   user details are sent. Unset `SENTRY_DSN` and nothing is sent anywhere. Setup
   steps are in `docs/deploy-render.md`.
+- **Zero-event diagnostics**: when a preview or import reads no events, the run
+  records what the source sent (`app/extraction/diagnostics.py`): status, final
+  URL and redirects, content type and size, a verdict (`blocked`, `empty`,
+  `different_page`, `listing_found_but_not_read`, `error_status`, `unclear`),
+  how many elements each configured selector matched, and an outline of the
+  page's elements and classes. It is shown on the run page under "What the
+  source sent" and logged as one `zero events for website ...` line. Structure
+  only: no page text but the title, an allowlist of headers (never cookies or
+  authorization), no query-string values, and JSON keys without values.
 - **Metrics**: derive from `/admin/reports` counts and `/health/ready`; none
   expose secrets.
 
