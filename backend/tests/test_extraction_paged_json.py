@@ -255,6 +255,20 @@ def test_page_metadata_stops_on_empty_page():
     assert _next(_page([], number=0, total_pages=5)) is None
 
 
+def test_page_metadata_stops_on_a_page_with_no_record_array():
+    # Some APIs answer a page past the end with only their page metadata.
+    config = _config(events_root="events")
+    assert _next({"page": {"current": 8, "size": 100, "total": 8}}, config=config) is None
+
+
+def test_page_metadata_finds_an_unconfigured_record_root():
+    config = SiteConfiguration(
+        pattern_name=NAME, api_endpoint=API, pagination={"strategy": "page_metadata"}
+    )
+    body = {"items": [{"title": "x"}], "page": 1, "pageCount": 3}
+    assert _next(body, config=config).url == f"{API}?page=2"
+
+
 def test_page_metadata_handles_one_based_page_numbers():
     body = {"items": [{"title": "x"}], "page": 1, "pageCount": 2}
     config = _config(events_root="items")

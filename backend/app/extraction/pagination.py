@@ -23,7 +23,7 @@ from urllib.parse import parse_qs, urljoin, urlsplit
 from bs4 import BeautifulSoup
 
 from app.extraction.network_safety import BlockedHostError, validate_request_url
-from app.extraction.patterns.paged_json_events import page_metadata
+from app.extraction.patterns.paged_json_events import page_metadata, record_root
 from app.extraction.types import FetchRequest, FetchResponse
 from app.schemas.extraction import SiteConfiguration
 
@@ -327,9 +327,12 @@ class PageMetadataPagination:
         if flags.get("last") is True or flags.get("hasNext") is False:
             return None
 
-        root = (config.json_paths or {}).get("events_root") or "content"
+        root = (config.json_paths or {}).get("events_root") or record_root(payload) or "content"
         records = payload.get(root)
-        if isinstance(records, list) and not records:
+        # An empty record array ends the walk, and so does a page with no
+        # record array at all: some APIs answer a page past the end with only
+        # their page metadata.
+        if not isinstance(records, list) or not records:
             return None
 
         metadata = page_metadata(payload)

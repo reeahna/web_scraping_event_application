@@ -92,6 +92,14 @@ def _is_edge_denied(body_sample: bytes, headers: dict[str, str]) -> bool:
     return any(fragment in header_blob for fragment in _EDGE_HEADER_FRAGMENTS)
 
 
+def _header(headers: dict[str, str], name: str) -> str:
+    """A response header's value regardless of the key's case, or ""."""
+    for key, value in headers.items():
+        if key.lower() == name:
+            return value or ""
+    return ""
+
+
 def _blocked_marker(status_code: int, body_sample: bytes, headers: dict[str, str]) -> str | None:
     if status_code in (403, 429):
         # An edge/WAF denial is reported distinctly: a normalized HTTP client
@@ -100,6 +108,11 @@ def _blocked_marker(status_code: int, body_sample: bytes, headers: dict[str, str
         if _is_edge_denied(body_sample, headers):
             return f"edge_protection:http_{status_code}"
         return f"http_{status_code}"
+    # A bot check or access-denied notice is an HTML page. A successful JSON
+    # response is the site's own data, and its event text can mention these
+    # words (a talk about Cloudflare, a "captcha" club), so it is not scanned.
+    if 200 <= status_code < 300 and "json" in _header(headers, "content-type").lower():
+        return None
     marker = find_marker(body_sample.decode("utf-8", errors="replace"), _BLOCK_MARKERS)
     return f"challenge_marker:{marker}" if marker else None
 
