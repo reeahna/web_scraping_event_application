@@ -7,6 +7,7 @@ so the whole production path runs against fixtures with no live network.
 from __future__ import annotations
 
 import asyncio
+import json
 
 import httpx
 import pytest
@@ -176,8 +177,127 @@ def test_blocked_source_is_classified_as_blocked(db_session, city, listing_page)
 
     blocked_job = next(j for j in batch.jobs if j.submitted_url == SECOND_URL)
     assert blocked_job.status == BLOCKED
-    assert blocked_job.website_id is None  # nothing created for a blocked URL
     assert "could not be fetched" in blocked_job.failure_reason
+    assert "403" in blocked_job.failure_reason
+
+
+# --- a failed pre-flight fetch keeps the source visible -----------------------
+
+
+def _schedulable(website):
+    from app.services.scheduler import evaluate_eligibility
+
+    return evaluate_eligibility(website).eligible
+
+
+def test_a_blocked_source_gets_an_inactive_blocked_website(db_session, city):
+    batch = _submit(db_session, SECOND_URL, city)
+    _process(db_session, batch, {}, blocked={SECOND_URL})
+    job = batch.jobs[0]
+
+    assert job.status == BLOCKED
+    assert job.website_id is not None
+    website = db_session.get(Website, job.website_id)
+    assert website.onboarding_status == "blocked"
+    assert website.is_active is False
+    assert website.city_id == city.id
+    assert website.configuration is None and website.approved_pattern is None
+    assert website.schedule_config is None
+    assert not _schedulable(website)
+
+
+def test_a_failed_source_gets_an_inactive_draft_website_with_the_http_status(
+    db_session, city
+):
+    batch = _submit(db_session, SECOND_URL, city)
+    _process(db_session, batch, {})  # every URL answers 404
+    job = batch.jobs[0]
+
+    assert job.status == FAILED
+    assert job.failure_reason == "The source could not be fetched: HTTP 404"
+    website = db_session.get(Website, job.website_id)
+    assert website.onboarding_status == "draft"
+    assert website.is_active is False
+    assert website.approved_pattern is None
+    assert not _schedulable(website)
+    actions = [
+        json.loads(row.after_state or "{}")
+        for row in db_session.query(AuditLog).filter(
+            AuditLog.action == "website_created_from_onboarding"
+        )
+    ]
+    assert any(a.get("preflight_failure") == job.failure_reason for a in actions)
+
+
+def test_resubmitting_a_failed_source_does_not_create_a_second_website(db_session, city):
+    first = _submit(db_session, SECOND_URL, city)
+    _process(db_session, first, {}, blocked={SECOND_URL})
+    website_id = first.jobs[0].website_id
+    before = db_session.query(Website).count()
+
+    second = create_batch_from_submission(
+        db_session,
+        parse_url_lines(SECOND_URL, LIMITS),
+        submitted_by_user_id=None,
+        default_city_id=city.id,
+        default_timezone=None,
+        redetect_existing=False,
+        source_kind="paste",
+        correlation_id="test-correlation-2",
+    )
+    _process(db_session, second, {}, blocked={SECOND_URL})
+
+    assert db_session.query(Website).count() == before
+    assert second.jobs[0].status == DUPLICATE
+    assert second.jobs[0].website_id == website_id
+
+
+def test_retrying_a_failed_source_reuses_its_website(db_session, city, listing_page):
+    batch = _submit(db_session, GOOD_URL, city)
+    _process(db_session, batch, {})  # 404 at the pre-flight fetch
+    job = batch.jobs[0]
+    website_id = job.website_id
+    assert job.status == FAILED and website_id is not None
+    before = db_session.query(Website).count()
+
+    with patched_http_fetch(_handler({GOOD_URL: listing_page})):
+        asyncio.run(retry_job(db_session, job))
+    db_session.refresh(job)
+
+    assert db_session.query(Website).count() == before
+    assert job.website_id == website_id
+    assert job.status == READY_FOR_APPROVAL
+    assert db_session.get(Website, website_id).is_active is False
+
+
+def test_an_unsafe_url_still_creates_no_website(db_session, city, monkeypatch):
+    from app.services import bulk_onboarding as bo
+
+    async def refused(url):
+        return bo._PreflightResult(url, None, blocked_reason="ssrf_blocked:private address")
+
+    monkeypatch.setattr(bo, "_resolve_document", refused)
+    batch = _submit(db_session, SECOND_URL, city)
+    asyncio.run(process_batch(db_session, batch, limit=10))
+    job = batch.jobs[0]
+    assert job.status == BLOCKED
+    assert job.website_id is None
+
+
+def test_the_website_page_shows_the_preflight_reason(
+    db_session, client, city, make_super_admin, login
+):
+    make_super_admin(email="pre@example.com", password="pre-pass-1234")
+    batch = _submit(db_session, SECOND_URL, city)
+    _process(db_session, batch, {})
+    job = batch.jobs[0]
+    login("pre@example.com", "pre-pass-1234")
+
+    page = client.get(f"/admin/websites/{job.website_id}")
+    assert page.status_code == 200
+    assert "Onboarding stopped before setup" in page.text
+    assert "HTTP 404" in page.text
+    assert f"/admin/onboarding/jobs/{job.id}" in page.text
 
 
 def test_unsupported_source_is_classified_as_unsupported(db_session, city):
