@@ -123,6 +123,28 @@ class CallStats:
     error: str | None = None
 
 
+class ProviderAccessBlocked(GeminiQuotaExceeded):
+    """The provider refused the request because the account may not use the
+    API right now: in practice Groq's spend limit, which answers HTTP 400 with
+    error code "blocked_api_access" once the monthly cap is reached. This is a
+    billing block, not an answer about the events, so it is handled like a
+    quota (the caller waits and asks again later) and is never counted as an
+    unusable answer: no event gains a failed attempt or moves to needs-review
+    because of it. It subclasses GeminiQuotaExceeded so every existing quota
+    path (scheduler cooldown, per-model wait, evaluation cooldown) applies."""
+
+
+# The error code Groq returns when an organization's spend limit blocks API
+# access (https://console.groq.com/docs/spend-limits).
+ACCESS_BLOCKED_CODE = "blocked_api_access"
+# How long to wait before asking again after a spend-limit block. The block
+# lasts until the monthly reset or until an administrator raises the limit,
+# so once an hour is enough and keeps blocked requests to about 24 a day.
+ACCESS_BLOCKED_RETRY_SECONDS = 3600.0
+# Recorded as the limit hit (ai_label_batches.limit_kind holds 8 characters).
+SPEND_LIMIT_KIND = "SPEND"
+
+
 @dataclass(frozen=True)
 class CategoryOption:
     slug: str
@@ -330,6 +352,19 @@ def _parse_labels(text: str) -> dict[int, EventLabel]:
             # Only an explicit false drops an event; a missing or odd value keeps it.
             labels[event_id] = EventLabel(category=slug, keep=item.get("keep") is not False)
     return labels
+
+
+def _is_access_blocked(response: httpx.Response) -> bool:
+    """Whether an error response is Groq's spend-limit block. Groq names it in
+    error.code; the message is checked too in case the code moves."""
+    try:
+        error = response.json().get("error") or {}
+    except (ValueError, AttributeError):
+        return ACCESS_BLOCKED_CODE in response.text[:2000]
+    if not isinstance(error, dict):
+        return False
+    fields = (error.get("code"), error.get("type"), error.get("message"))
+    return any(isinstance(f, str) and ACCESS_BLOCKED_CODE in f for f in fields)
 
 
 def _error_message(response: httpx.Response) -> str:
@@ -581,6 +616,14 @@ class GeminiCategorizer:
                     stats.limit_requested = limit["requested"]  # type: ignore[assignment]
                     raise GeminiQuotaExceeded(
                         message, stats.retry_after_seconds, stats.limit_kind
+                    )
+                if 400 <= response.status_code < 500 and _is_access_blocked(response):
+                    # The account's spend limit is reached: a billing block,
+                    # not the events' fault. Wait as for a quota.
+                    stats.limit_kind = SPEND_LIMIT_KIND
+                    stats.retry_after_seconds = ACCESS_BLOCKED_RETRY_SECONDS
+                    raise ProviderAccessBlocked(
+                        message, ACCESS_BLOCKED_RETRY_SECONDS, SPEND_LIMIT_KIND
                     )
                 if response.status_code >= 500:
                     raise GeminiOverloaded(message)
