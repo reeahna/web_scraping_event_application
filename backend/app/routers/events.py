@@ -10,6 +10,7 @@ from app.core.csrf import verify_csrf
 from app.core.exceptions import AppError, NotFoundError
 from app.core.flash import set_flash
 from app.core.forms import OptionalId, reject_unexpected_form_fields
+from app.core.permissions import SUPER_ADMINISTRATOR
 from app.core.search import LIKE_ESCAPE, contains_pattern
 from app.core.templating import render
 from app.dependencies import ClientIp, CorrelationId, DbSession
@@ -19,10 +20,16 @@ from app.models.event_category import EventCategory
 from app.models.user import User
 from app.models.website import Website
 from app.repositories.event_provenance import get_latest_provenance_for_event
+from app.services.all_day_backfill import backfill_all_day
 from app.services.audit import record_audit
 from app.services.categorization import apply_categorization, categorize_event
 from app.services.event_freshness import mark_if_changed, visitor_snapshot
-from app.services.rbac import get_effective_permissions, require_permission, user_has_permission
+from app.services.rbac import (
+    get_effective_permissions,
+    require_permission,
+    user_has_permission,
+    user_has_role,
+)
 
 router = APIRouter(prefix="/admin/events", tags=["admin-events"])
 
@@ -158,6 +165,50 @@ def list_events(
                 + "&"
             ),
         },
+    )
+
+
+@router.get("/all-day-backfill", response_class=HTMLResponse)
+def all_day_backfill_preview(request: Request, current_user: ViewEvents, db: DbSession):
+    """What marking stored events all-day would change. Read-only: nothing is
+    written until the form below is submitted (see app.services.all_day_backfill)."""
+    _require(db, current_user, "events.review")
+    report = backfill_all_day(db, apply=False)
+    return render(
+        request,
+        "admin/events/all_day_backfill.html",
+        {"current_user": current_user, "report": report},
+    )
+
+
+@router.post("/all-day-backfill", response_class=HTMLResponse)
+def all_day_backfill_apply(
+    request: Request,
+    db: DbSession,
+    correlation_id: CorrelationId,
+    ip_address: ClientIp,
+    current_user: ViewEvents,
+    csrf_token: str = Form(...),
+):
+    verify_csrf(request, csrf_token)
+    # A bulk change to stored events: Super Administrators only.
+    if not user_has_role(db, current_user, SUPER_ADMINISTRATOR):
+        raise AppError("Forbidden: Super Administrator only", status_code=403)
+    report = backfill_all_day(db, apply=True)
+    record_audit(
+        db,
+        actor_id=current_user.id,
+        action="events_all_day_backfilled",
+        entity_type="event",
+        entity_id=None,
+        after={"marked": report.total_to_mark, "event_ids": report.marked_ids},
+        correlation_id=correlation_id,
+        ip_address=ip_address,
+    )
+    return render(
+        request,
+        "admin/events/all_day_backfill.html",
+        {"current_user": current_user, "report": report},
     )
 
 

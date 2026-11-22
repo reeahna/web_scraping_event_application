@@ -1,0 +1,57 @@
+{% extends "admin_base.html" %}
+
+{% block title %}All-day backfill{% endblock %}
+
+{% macro by_source(counter) %}
+{% if counter %}
+<table>
+  <thead><tr><th>Source</th><th>Events</th></tr></thead>
+  <tbody>
+    {% for source, n in counter.most_common() %}
+    <tr><td>{{ source }}</td><td>{{ n }}</td></tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% else %}
+<p>None.</p>
+{% endif %}
+{% endmacro %}
+
+{% block admin_content %}
+<p><a href="/admin/events">&laquo; Back to events</a></p>
+<h1>Mark stored all-day events</h1>
+<p class="audit-meta">Sets "All day" on stored events whose latest extraction says the source flags them all-day. Only that flag changes: times, categories, visibility, overrides and history stay as they are.</p>
+
+<table>
+  <tbody>
+    <tr><th>Mode</th><td>{% if report.applied %}Applied{% else %}Preview only, nothing changed{% endif %}</td></tr>
+    <tr><th>{% if report.applied %}Marked all-day{% else %}Would mark all-day{% endif %}</th><td>{{ report.total_to_mark }}</td></tr>
+    <tr><th>Already all-day</th><td>{{ report.already_all_day }}</td></tr>
+    <tr><th>Date only, no all-day signal (stay "Time TBD")</th><td>{{ report.date_only_unmarked.values() | sum }}</td></tr>
+    <tr><th>Stored as 12:00 AM to 11:59 PM (left for the next import)</th><td>{{ report.full_day_span.values() | sum }}</td></tr>
+    <tr><th>Flagged all-day but holding a clock time (left unchanged)</th><td>{{ report.marker_with_time | length }}</td></tr>
+  </tbody>
+</table>
+
+{% if report.total_to_mark and not report.applied %}
+<form method="post" action="/admin/events/all-day-backfill" class="inline-form"
+      data-confirm="Mark {{ report.total_to_mark }} event(s) as all-day?">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token }}" />
+  <button type="submit" class="wf-secondary">Mark these {{ report.total_to_mark }} events all-day</button>
+</form>
+{% endif %}
+
+<h2>{% if report.applied %}Marked{% else %}Would mark{% endif %}, by source</h2>
+{{ by_source(report.to_mark) }}
+
+<h2>Left as "Time TBD", by source</h2>
+<p class="audit-meta">These have a date but no time, and nothing in their history says the source calls them all-day, so the time may simply be unknown.</p>
+{{ by_source(report.date_only_unmarked) }}
+
+<h2>Stored as 12:00 AM to 11:59 PM, by source</h2>
+<p class="audit-meta">A time range alone is not treated as all-day. The next import reads the source's own wording (such as "All day") and decides.</p>
+{{ by_source(report.full_day_span) }}
+{% if report.full_day_span_ids %}
+<p class="audit-meta">Events: {% for id in report.full_day_span_ids %}<a href="/admin/events/{{ id }}">#{{ id }}</a>{% if not loop.last %}, {% endif %}{% endfor %}</p>
+{% endif %}
+{% endblock %}

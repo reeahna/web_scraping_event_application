@@ -207,6 +207,7 @@ def create_event_from_candidate(
         end_date=candidate.end_date,
         start_time=candidate.start_time,
         end_time=candidate.end_time,
+        all_day=is_all_day_candidate(candidate),
         venue=candidate.venue,
         address=candidate.address,
         image_url=candidate.image_url,
@@ -282,6 +283,10 @@ def update_event(
         # earlier run (a UTC midnight read as "5:00 AM") is stale, not data.
         event.start_time = None
         event.end_time = None
+        event.all_day = True
+    elif candidate.start_time is not None and not keep_stored_time:
+        # The source now gives a clock time, so the event is no longer all-day.
+        event.all_day = False
     if candidate.venue is not None:
         event.venue = candidate.venue
     if candidate.address is not None:
@@ -331,18 +336,25 @@ def update_event(
     return event
 
 
+def is_all_day_candidate(candidate: EventCandidate) -> bool:
+    """The source says this candidate lasts the whole day (normalize records
+    that as ALL_DAY_MARKER and drops its clock times)."""
+    return ALL_DAY_MARKER in candidate.transformation_history and candidate.start_date is not None
+
+
 def _midnight_placeholder(event: Event, candidate: EventCandidate) -> bool:
     """True when a re-scrape offers 12:00 AM, with no end, for the day the
     event already has a real clock time on. A bare midnight with nothing else
     is how many listings write "no time given"; it never replaces a time the
-    source stated before. (A midnight start is still stored for a new event,
-    and an all-day event is handled by its own flag, never by midnight.)"""
+    source stated before, nor turns an all-day event into a 12:00 AM one. (A
+    midnight start is still stored for a new event, and an all-day event is
+    handled by its own flag, never by midnight.)"""
     return (
         candidate.start_time == time(0)
         and candidate.end_time is None
         and candidate.start_date is not None
         and candidate.start_date == event.start_date
-        and event.start_time not in (None, time(0))
+        and (event.start_time not in (None, time(0)) or event.all_day)
     )
 
 

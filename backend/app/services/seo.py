@@ -106,14 +106,18 @@ def event_schema(event: Event) -> dict:
     }
 
     zone = _event_zone(event)
-    start = _combine(event.start_date, event.start_time, zone)
+    # An all-day event is a calendar date (or dates), never 00:00 to 23:59 at
+    # an offset: that would tell Google it runs around the clock.
+    start_clock = None if event.all_day else event.start_time
+    end_clock = None if event.all_day else event.end_time
+    start = _combine(event.start_date, start_clock, zone)
     if start:
         data["startDate"] = start
     # Only when an end is actually recorded. Falling back to the start date
     # emitted a date-only endDate for a timed event, which reads as "ends at
     # midnight" rather than "end unknown".
-    if event.end_date is not None or event.end_time is not None:
-        end = _combine(event.end_date or event.start_date, event.end_time, zone)
+    if event.end_date is not None or end_clock is not None:
+        end = _combine(event.end_date or event.start_date, end_clock, zone)
         if end and end != start:
             data["endDate"] = end
 
@@ -139,11 +143,13 @@ def event_datetimes(event: Event) -> dict[str, str | None]:
     ones the structured data uses."""
     zone = _event_zone(event)
     end_day = event.end_date or event.start_date
+    start_clock = None if event.all_day else event.start_time
+    end_clock = None if event.all_day else event.end_time
     return {
         "start_date": event.start_date.isoformat() if event.start_date else None,
         "end_date": event.end_date.isoformat() if event.end_date else None,
-        "start": _combine(event.start_date, event.start_time, zone),
-        "end": _combine(end_day, event.end_time, zone) if event.end_time else None,
+        "start": _combine(event.start_date, start_clock, zone),
+        "end": _combine(end_day, end_clock, zone) if end_clock else None,
     }
 
 

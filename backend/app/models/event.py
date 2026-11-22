@@ -1,7 +1,18 @@
 from datetime import date, datetime, time
 from typing import TYPE_CHECKING
 
-from sqlalchemy import Boolean, Date, DateTime, Float, ForeignKey, Integer, String, Text, Time
+from sqlalchemy import (
+    Boolean,
+    Date,
+    DateTime,
+    Float,
+    ForeignKey,
+    Integer,
+    String,
+    Text,
+    Time,
+    false,
+)
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.database import Base
@@ -39,6 +50,11 @@ class Event(Base, TimestampMixin):
     end_date: Mapped[date | None] = mapped_column(Date, default=None)
     start_time: Mapped[time | None] = mapped_column(Time, default=None)
     end_time: Mapped[time | None] = mapped_column(Time, default=None)
+    # The source says the event lasts the whole day (an iCalendar VALUE=DATE,
+    # a platform's all-day flag, a listing that reads "All day"). Its times
+    # are then None. A None start_time without this flag means the time is
+    # unknown ("Time TBD"), which is a different thing to tell a visitor.
+    all_day: Mapped[bool] = mapped_column(Boolean, default=False, server_default=false())
 
     # Recurrence (Phase 8G). Populated only for events produced by the shared
     # recurrence expander. `occurrence_id` is the deterministic per-occurrence
@@ -172,6 +188,14 @@ class Event(Base, TimestampMixin):
     @property
     def effective_category(self) -> "EventCategory | None":
         return self.category_override or self.category
+
+    @property
+    def suggests_venue_hours(self) -> bool:
+        """An all-day event at a named place (an exhibit in a library gallery,
+        a display in a museum) is in practice open only while that place is.
+        The page then points to the original listing for those hours rather
+        than stating any: Bulletin never knows or invents opening hours."""
+        return bool(self.all_day and self.public_venue and self.canonical_url)
 
     @property
     def public_venue(self) -> str | None:

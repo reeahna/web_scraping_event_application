@@ -61,7 +61,14 @@ _DEFAULT_PATHS: dict[str, str] = {
     "image": "media_raw",
     "recurrence": "recurrence",
     "recur_type": "recurType",
+    # A whole-day flag, or display text that says so ("All day").
+    "all_day": "allDay",
 }
+# Where an all-day signal sits when `allDay` is absent. Some calendar APIs with
+# this record shape (library calendars among them) send no flag, only a
+# display string reading "All day" next to a 00:00 to 23:59 span. normalize
+# decides what counts (see app.extraction.normalize._says_all_day).
+_ALL_DAY_FALLBACK_PATHS = ("all_day", "is_all_day", "isAllDay", "time_string")
 _RAW_FIELDS = ("events_root", *_DEFAULT_PATHS.keys())
 
 # Simpleview describes recurrence only as an English sentence ("Recurring
@@ -279,6 +286,14 @@ class SimpleviewEventsPattern:
                 result = resolve_json_path(record, path)
                 raw[field_name] = result.value
                 field_source_paths[field_name] = f"{NAME}.{events_root}[{index}].{path}"
+
+            if raw.get("all_day") is None and "all_day" not in config.json_paths:
+                for path in _ALL_DAY_FALLBACK_PATHS:
+                    value = resolve_json_path(record, path).value
+                    if value is not None:
+                        raw["all_day"] = value
+                        field_source_paths["all_day"] = f"{NAME}.{events_root}[{index}].{path}"
+                        break
 
             # Stable platform id (recid -> _id -> id), never title+date.
             raw["external_source_id"] = _stable_id(record)

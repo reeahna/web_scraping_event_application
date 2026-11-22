@@ -12,7 +12,7 @@
     <tr><th>Source website</th><td>{{ event.website.name if event.website else event.source }}</td></tr>
     <tr><th>City</th><td>{{ event.city.name if event.city else '—' }}</td></tr>
     <tr><th>Dates</th><td>{{ event.start_date or '—' }} to {{ event.end_date or event.start_date or '—' }}</td></tr>
-    <tr><th>Times</th><td>{{ event.start_time or '—' }} to {{ event.end_time or '—' }} {{ event.timezone or '' }}</td></tr>
+    <tr><th>Times</th><td>{% if event.all_day %}All day (the source says so) {{ event.timezone or '' }}{% else %}{{ event.start_time or 'TBD' }} to {{ event.end_time or 'TBD' }} {{ event.timezone or '' }}{% endif %}</td></tr>
     <tr><th>Extracted venue</th><td>{{ event.venue or '—' }}</td></tr>
     <tr><th>Public venue</th><td>{{ event.public_venue or '—' }}</td></tr>
     <tr><th>Extracted address</th><td>{{ event.address or '—' }}</td></tr>
