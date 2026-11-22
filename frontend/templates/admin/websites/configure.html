@@ -104,6 +104,11 @@
   </label>
   {% endif %}
 
+  <label class="checkbox-label">
+    <input type="checkbox" name="date_only_means_time_tbd" {% if form.date_only_means_time_tbd %}checked{% endif %} />
+    A date with no time means the time is not announced yet ("Time TBD", not "All day")
+  </label>
+
   <h3>Field selectors, mappings, and transformations (JSON)</h3>
   <p class="audit-meta">Each section below is validated independently — leave blank for the default.</p>
 

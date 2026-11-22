@@ -252,6 +252,10 @@ class SiteConfiguration(BaseModel):
     required_fields: list[str] = ["title", "start_date", "canonical_url"]
     allow_page_url_as_canonical_fallback: bool = False
     allow_offers_url_as_event_url: bool = False
+    # The source writes a date with no time for an event whose start time is
+    # not announced yet (athletics schedules list "TBA" games this way, as an
+    # iCalendar all-day date). Such events read "Time TBD", never "All day".
+    date_only_means_time_tbd: bool = False
     # Optional captured request recipe for structured endpoints that need the
     # full request (nested JSON query params, public token, Referer, dynamic
     # date window, pagination). When present, preview and import render and send

@@ -31,6 +31,7 @@ from sqlalchemy.orm import Session
 from app.extraction.normalize import ALL_DAY_MARKER
 from app.models.event import Event
 from app.models.event_provenance import EventProvenance
+from app.models.website import Website
 
 DAY_END_TIMES = (time(23, 59), time(23, 59, 59))
 
@@ -44,6 +45,9 @@ class AllDayBackfillReport:
     already_all_day: int = 0
     # Date-only events without an all-day marker: left as "Time TBD".
     date_only_unmarked: Counter = field(default_factory=Counter)
+    # The source's approved configuration says a date with no time means
+    # "time not announced" (athletics "TBA" games): left as "Time TBD".
+    time_tbd_sources: Counter = field(default_factory=Counter)
     # Marker present but a clock time is stored (an admin entry, say): left.
     marker_with_time: list[int] = field(default_factory=list)
     # Stored as 00:00 to 23:59 on one day: left for the next import to decide.
@@ -70,9 +74,21 @@ def _latest_histories(db: Session) -> dict[int, list[str]]:
     return {event_id: list(history or []) for event_id, history in rows}
 
 
+def _time_tbd_website_ids(db: Session) -> set[int]:
+    """Websites whose approved configuration (what imports run on) sets
+    date_only_means_time_tbd."""
+    ids = set()
+    for website_id, approved in db.execute(select(Website.id, Website.approved_pattern)):
+        config = approved.get("configuration", approved) if isinstance(approved, dict) else {}
+        if isinstance(config, dict) and config.get("date_only_means_time_tbd"):
+            ids.add(website_id)
+    return ids
+
+
 def backfill_all_day(db: Session, *, apply: bool = False) -> AllDayBackfillReport:
     report = AllDayBackfillReport(applied=apply)
     histories = _latest_histories(db)
+    time_tbd_sites = _time_tbd_website_ids(db)
     events = db.execute(
         select(
             Event.id,
@@ -82,6 +98,7 @@ def backfill_all_day(db: Session, *, apply: bool = False) -> AllDayBackfillRepor
             Event.start_time,
             Event.end_time,
             Event.all_day,
+            Event.website_id,
         )
     ).all()
     for row in events:
@@ -90,7 +107,9 @@ def backfill_all_day(db: Session, *, apply: bool = False) -> AllDayBackfillRepor
             continue
         marked = ALL_DAY_MARKER in histories.get(row.id, [])
         if row.start_time is None and row.end_time is None and row.start_date is not None:
-            if marked:
+            if marked and row.website_id in time_tbd_sites:
+                report.time_tbd_sources[row.source] += 1
+            elif marked:
                 report.to_mark[row.source] += 1
                 report.marked_ids.append(row.id)
             else:
