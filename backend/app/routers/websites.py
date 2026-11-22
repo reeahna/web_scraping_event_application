@@ -87,7 +87,7 @@ from app.services.website_configuration import (
     select_pattern,
 )
 from app.services.website_workflow import build_website_workflow
-from app.services.websites import get_deletion_impact, transition_website
+from app.services.websites import get_deletion_impact, restore_website, transition_website
 
 router = APIRouter(prefix="/admin/websites", tags=["admin-websites"])
 
@@ -97,6 +97,7 @@ UpdateSites = Annotated[User, Depends(require_permission("sites.update"))]
 DeleteSites = Annotated[User, Depends(require_permission("sites.delete"))]
 TestSites = Annotated[User, Depends(require_permission("sites.test"))]
 ApproveSites = Annotated[User, Depends(require_permission("sites.approve"))]
+ArchiveSites = Annotated[User, Depends(require_permission("sites.archive"))]
 
 PER_PAGE = 20
 
@@ -588,6 +589,7 @@ def website_detail(website_id: int, request: Request, current_user: ViewSites, d
         "delete": user_has_permission(db, current_user, "sites.delete"),
         "approve": user_has_permission(db, current_user, "sites.approve"),
         "test": user_has_permission(db, current_user, "sites.test"),
+        "archive": user_has_permission(db, current_user, "sites.archive"),
     }
     workflow = build_website_workflow(
         website=website,
@@ -863,6 +865,55 @@ def change_website_status(
     )
     response = RedirectResponse(url=f"/admin/websites/{website.id}", status_code=303)
     set_flash(response, f"Website status changed to '{to_status}'.")
+    return response
+
+
+@router.post("/{website_id}/restore")
+def restore_archived_website(
+    website_id: int,
+    request: Request,
+    db: DbSession,
+    correlation_id: CorrelationId,
+    ip_address: ClientIp,
+    current_user: ArchiveSites,
+    csrf_token: str = Form(...),
+):
+    """Bring an archived website back as inactive, with automatic imports off.
+    Nothing is approved, activated, scheduled or imported."""
+    verify_csrf(request, csrf_token)
+    website = get_website(db, website_id)
+    if website is None:
+        raise NotFoundError("Website not found")
+
+    before = {
+        "onboarding_status": website.onboarding_status,
+        "is_active": website.is_active,
+        "archived_at": website.archived_at.isoformat() if website.archived_at else None,
+        "schedule_config": website.schedule_config,
+    }
+    restore_website(db, website)
+    record_audit(
+        db,
+        actor_id=current_user.id,
+        action="website_restored",
+        entity_type="website",
+        entity_id=website.id,
+        before=before,
+        after={
+            "onboarding_status": website.onboarding_status,
+            "is_active": website.is_active,
+            "archived_at": None,
+            "schedule_config": website.schedule_config,
+        },
+        correlation_id=correlation_id,
+        ip_address=ip_address,
+    )
+    response = RedirectResponse(url=f"/admin/websites/{website.id}", status_code=303)
+    set_flash(
+        response,
+        f"Website restored as '{website.onboarding_status}'. It is inactive and automatic "
+        "imports are off.",
+    )
     return response
 
 

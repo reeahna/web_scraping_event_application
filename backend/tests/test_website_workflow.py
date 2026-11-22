@@ -423,7 +423,8 @@ def test_detail_renders_archived(
 
     body = client.get(f"/admin/websites/{website.id}").text
     assert "Archived" in body
-    assert "No workflow action is available" in body
+    # The only workflow action on an archived source is the administrator's Restore.
+    assert "Restore website" in body
 
 
 def test_detail_renders_with_sparse_data(

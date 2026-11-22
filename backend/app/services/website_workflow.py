@@ -187,7 +187,7 @@ def build_website_workflow(
     browser_extraction_enabled: bool,
 ) -> WebsiteWorkflow:
     """Compute the presentation workflow. `permissions` carries the already
-    server-checked booleans (update/test/approve/delete); `next_states` is the
+    server-checked booleans (update/test/approve/delete/archive); `next_states` is the
     already permission-filtered set of valid lifecycle transitions."""
     wid = website.id
     status = website.onboarding_status
@@ -196,6 +196,7 @@ def build_website_workflow(
     can_test = permissions.get("test", False)
     can_approve = permissions.get("approve", False)
     can_delete = permissions.get("delete", False)
+    can_restore = permissions.get("archive", False)
 
     proposed = website.proposed_pattern or {}
     detection = proposed.get("detection") or {}
@@ -290,6 +291,17 @@ def build_website_workflow(
         explanation = (
             "This source is archived. Normal processing is disabled and its history is preserved."
         )
+        if can_restore:
+            explanation += (
+                " Restoring brings it back inactive, with automatic imports off; nothing is "
+                "approved, activated or imported."
+            )
+            primary = action(
+                "Restore website", "restore", style="primary",
+                confirmation_text=(
+                    f"Restore {website.name}? It comes back inactive with automatic imports off."
+                ),
+            )
     elif status in ("draft", "detecting") and not has_draft and not has_detection:
         current_step = "detect"
         headline = "Not detected yet"
