@@ -41,6 +41,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import re
 from dataclasses import replace
 from datetime import UTC, datetime
 from typing import Any
@@ -269,6 +270,40 @@ def _first_name(value: Any) -> Any:
     return _first_group_name(value)
 
 
+# LiveWhale event types are broad labels, and an event can carry several. IU's
+# "Lectures, talks, seminars, and conferences" covers every kind of talk, so a
+# concert tagged with it and with "Performances, shows, and films" is not a
+# conference. When both kinds are listed, the title decides: a pre-show talk
+# keeps the talk label, the performance itself gets the performance label.
+_TALK_TYPE = re.compile(r"\b(lectures?|talks?|seminars?|conferences?|symposi(a|ums?))\b", re.I)
+_PERFORMANCE_TYPE = re.compile(
+    r"\b(performances?|concerts?|recitals?|shows?|films?)\b", re.I
+)
+_TALK_TITLE = re.compile(
+    r"\b(talks?|lectures?|seminars?|colloquium|symposi(a|um)|conferences?|panel|"
+    r"discussion|keynote|workshop)\b",
+    re.I,
+)
+
+
+def _event_type_name(value: Any, title: Any) -> Any:
+    """The event type to use as the event's category: the first one listed,
+    unless a talk label comes before a performance label on an event whose
+    title does not name a talk."""
+    first = _first_name(value)
+    if not isinstance(value, list) or not isinstance(first, str):
+        return first
+    if not _TALK_TYPE.search(first) or _PERFORMANCE_TYPE.search(first):
+        return first
+    if isinstance(title, str) and _TALK_TITLE.search(title):
+        return first
+    for item in value[1:]:
+        name = _first_group_name([item])
+        if isinstance(name, str) and _PERFORMANCE_TYPE.search(name):
+            return name
+    return first
+
+
 def _first_group_name(value: Any) -> Any:
     if not isinstance(value, list) or not value:
         return None
@@ -444,7 +479,7 @@ class LiveWhalePattern:
             raw["image"] = _extract_image(raw.get("image") or event.get("thumbnail"))
             raw["source_category"] = (
                 _first_group_name(raw.get("groups"))
-                or _first_name(event.get("event_types"))
+                or _event_type_name(event.get("event_types"), raw.get("title"))
                 or _first_name(event.get("group_title"))
             )
 
