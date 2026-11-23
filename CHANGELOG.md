@@ -72,6 +72,8 @@ lines. Lines may use `**bold**`, `` `code` `` and `[links](https://...)`.
 
 ## [Unreleased]
 
+## [1.12.1] - 2026-11-23
+
 ### Admin and behind the scenes
 - Administrators can **restore an archived website** from its admin page. It comes back inactive with automatic imports off, keeping its id, configurations, events and history; nothing is approved, activated or imported until you do it. (#135)
 
