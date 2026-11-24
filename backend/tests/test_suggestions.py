@@ -221,3 +221,141 @@ def test_editor_can_view_but_not_change(client, make_user, login, db_session):
         follow_redirects=False,
     )
     assert response.status_code == 403
+
+
+# --- "New features / bug fixes" (/feedback) ---------------------------------------
+
+
+def _post_feedback(client, **fields):
+    data = {"csrf_token": client.cookies.get("csrf_token"), **fields}
+    return client.post("/feedback", data=data, follow_redirects=False)
+
+
+def test_feedback_requires_sign_in(client):
+    response = client.get(
+        "/feedback", headers={"accept": "text/html"}, follow_redirects=False
+    )
+    assert response.status_code == 303
+    assert response.headers["location"].startswith("/auth/login?next=%2Ffeedback")
+
+
+def test_footer_links_to_feedback(client, make_user, login):
+    html = client.get("/").text
+    assert 'href="/auth/login?next=%2Ffeedback">New features / bug fixes' in html
+    make_user(email="foot@example.com", role_name=REGISTERED_USER)
+    login("foot@example.com")
+    html = client.get("/account/saved").text
+    footer = html[html.index('class="site-footer"'):]
+    assert 'href="/feedback">New features / bug fixes' in footer
+
+
+def test_feedback_page_has_feature_and_bug_forms(client, make_user, login):
+    make_user(email="fb-page@example.com", role_name=REGISTERED_USER)
+    login("fb-page@example.com")
+    page = client.get("/feedback")
+    assert page.status_code == 200
+    assert "<h1>New features / bug fixes</h1>" in page.text
+    assert "Send idea" in page.text
+    bug = client.get("/feedback?kind=bug").text
+    assert "Send bug report" in bug
+    assert 'name="university"' not in bug
+    # An unknown kind shows the feature form, never the town form.
+    odd = client.get("/feedback?kind=town").text
+    assert "Send idea" in odd and 'name="university"' not in odd
+
+
+def test_bug_report_is_saved_notified_and_shown_back(client, make_user, login, db_session):
+    user = make_user(email="bug@example.com", role_name=REGISTERED_USER)
+    make_user(email="boss-b@example.com", role_name=ADMINISTRATOR)
+    login("bug@example.com")
+    assert _post_feedback(client, kind="bug", title="Map is blank").status_code == 422
+
+    response = _post_feedback(
+        client,
+        kind="bug",
+        title="  Map is   blank ",
+        details="On /city/bloomington-in the map never loads.\nSafari on iPhone.",
+    )
+    assert response.status_code == 303
+    assert response.headers["location"] == "/feedback?kind=bug"
+    row = db_session.query(Suggestion).one()
+    assert (row.kind, row.title, row.user_id, row.status) == (
+        "bug", "Map is blank", user.id, "new"
+    )
+    assert "\nSafari on iPhone." in row.details
+
+    note = (
+        db_session.query(Notification)
+        .filter_by(notification_type="suggestion_submitted")
+        .one()
+    )
+    assert note.title == "New bug reported"
+    assert note.action_url == "/admin/suggestions?kind=bug"
+
+    html = client.get("/feedback").text
+    assert "What you&#39;ve sent" in html or "What you've sent" in html
+    assert "Map is blank" in html
+
+    row.status = "done"
+    db_session.commit()
+    assert "Fixed" in client.get("/feedback").text
+
+
+def test_feature_idea_from_feedback_page(client, make_user, login, db_session):
+    make_user(email="fb-feat@example.com", role_name=REGISTERED_USER)
+    login("fb-feat@example.com")
+    response = _post_feedback(
+        client, kind="town", title="Dark mode", details="Easier at night."
+    )
+    assert response.status_code == 303
+    assert response.headers["location"] == "/feedback?kind=feature"
+    assert db_session.query(Suggestion).one().kind == "feature"
+
+
+def test_feedback_shares_the_daily_limit(client, make_user, login, db_session, monkeypatch):
+    monkeypatch.setattr(svc, "DAILY_LIMIT", 2)
+    make_user(email="fb-spam@example.com", role_name=REGISTERED_USER)
+    login("fb-spam@example.com")
+    assert _post(client, kind="town", title="Ames", university="ISU").status_code == 303
+    assert _post_feedback(client, kind="bug", title="b", details="d").status_code == 303
+    response = _post_feedback(client, kind="feature", title="f", details="d")
+    assert response.status_code == 429
+    assert "try again tomorrow" in response.text
+    assert db_session.query(Suggestion).count() == 2
+
+
+def test_feedback_post_requires_csrf(client, make_user, login, db_session):
+    make_user(email="fb-csrf@example.com", role_name=REGISTERED_USER)
+    login("fb-csrf@example.com")
+    response = client.post(
+        "/feedback",
+        data={"kind": "bug", "title": "t", "details": "d", "csrf_token": "wrong"},
+        follow_redirects=False,
+    )
+    assert response.status_code in (400, 403)
+    assert db_session.query(Suggestion).count() == 0
+
+
+def test_old_feature_tab_moves_to_feedback(client, make_user, login):
+    make_user(email="fb-old@example.com", role_name=REGISTERED_USER)
+    login("fb-old@example.com")
+    response = client.get("/suggest?kind=feature", follow_redirects=False)
+    assert response.status_code == 303
+    assert response.headers["location"] == "/feedback?kind=feature"
+    assert 'href="/feedback?kind=feature"' in client.get("/suggest").text
+
+
+def test_admin_filters_bug_reports(client, make_user, login, db_session):
+    db_session.add_all(
+        [
+            Suggestion(kind="bug", title="Map is blank", details="d"),
+            Suggestion(kind="feature", title="Dark mode", details="d"),
+        ]
+    )
+    db_session.commit()
+    make_user(email="fb-admin@example.com", role_name=ADMINISTRATOR)
+    login("fb-admin@example.com")
+    bugs = client.get("/admin/suggestions?kind=bug").text
+    assert "Map is blank" in bugs and "Dark mode" not in bugs
+    assert "<td>Bug</td>" in bugs
+    assert ">Fixed</option>" in bugs

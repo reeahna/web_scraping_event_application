@@ -1,0 +1,80 @@
+{% extends "base.html" %}
+
+{% block title %}New features / bug fixes | {{ site_name }}{% endblock %}
+{% block meta_description %}Suggest a new feature for {{ site_name }} or tell us about something that isn't working.{% endblock %}
+{% block robots %}noindex, follow{% endblock %}
+
+{% macro field_error(name) %}
+{% if errors.get(name) %}<p class="suggest-error" id="{{ name }}-error">{{ errors[name] }}</p>{% endif %}
+{% endmacro %}
+
+{% macro described(name, hint="") %}{% set ids = [hint] if hint else [] %}{% if errors.get(name) %}{% set ids = ids + [name ~ "-error"] %} aria-invalid="true"{% endif %}{% if ids %} aria-describedby="{{ ids | join(' ') }}"{% endif %}{% endmacro %}
+
+{% block content %}
+<div class="page-container suggest-page">
+  <h1>New features / bug fixes</h1>
+  <p class="hero-subtext">Have an idea that would make {{ site_name }} more useful, or found something that isn't working? Tell us. Every message is read.</p>
+
+  <nav class="suggest-tabs" aria-label="What would you like to send?">
+    <a href="/feedback?kind=feature" class="suggest-tab"{% if form.kind == "feature" %} aria-current="page"{% endif %}>Suggest a feature</a>
+    <a href="/feedback?kind=bug" class="suggest-tab"{% if form.kind == "bug" %} aria-current="page"{% endif %}>Report a bug</a>
+  </nav>
+
+  {% if errors.get("form") %}
+  <div class="flash flash-error" role="alert">{{ errors["form"] }}</div>
+  {% elif errors %}
+  <div class="flash flash-error" role="alert">Please fix the highlighted fields.</div>
+  {% endif %}
+
+  <form method="post" action="/feedback" class="suggest-form">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}" />
+    <input type="hidden" name="kind" value="{{ form.kind }}" />
+
+    {% if form.kind == "bug" %}
+    <div class="suggest-field">
+      <label for="title">What went wrong, in a few words <span class="suggest-required">(required)</span></label>
+      <input type="text" id="title" name="title" value="{{ form.title }}" maxlength="{{ limits.title }}" required{{ described("title") }} />
+      {{ field_error("title") }}
+    </div>
+    <div class="suggest-field">
+      <label for="details">What happened? <span class="suggest-required">(required)</span></label>
+      <p class="suggest-hint" id="details-hint">Tell us what you expected instead. A link to the page and the device or browser you were using help us find it faster.</p>
+      <textarea id="details" name="details" rows="6" maxlength="{{ limits.details }}" required{{ described("details", "details-hint") }}>{{ form.details }}</textarea>
+      {{ field_error("details") }}
+    </div>
+    <button type="submit">Send bug report</button>
+    {% else %}
+    <div class="suggest-field">
+      <label for="title">Your idea in a few words <span class="suggest-required">(required)</span></label>
+      <input type="text" id="title" name="title" value="{{ form.title }}" maxlength="{{ limits.title }}" required{{ described("title") }} />
+      {{ field_error("title") }}
+    </div>
+    <div class="suggest-field">
+      <label for="details">How would it help you? <span class="suggest-required">(required)</span></label>
+      <textarea id="details" name="details" rows="5" maxlength="{{ limits.details }}" required{{ described("details") }}>{{ form.details }}</textarea>
+      {{ field_error("details") }}
+    </div>
+    <button type="submit">Send idea</button>
+    {% endif %}
+  </form>
+
+  <p class="suggest-hint feedback-town-note">Missing your town? <a href="/suggest?kind=town">Suggest a town</a> instead.</p>
+
+  {% if mine %}
+  <section class="suggest-mine" aria-labelledby="suggest-mine-heading">
+    <h2 id="suggest-mine-heading">What you've sent</h2>
+    <ul class="suggest-list">
+      {% for s in mine %}
+      <li class="suggest-item">
+        <div class="suggest-item-main">
+          <span class="suggest-item-kind">{{ kind_labels.get(s.kind, s.kind) }}</span>
+          <span class="suggest-item-title">{{ s.title }}</span>
+        </div>
+        <span class="suggest-status suggest-status-{{ s.status }}">{{ status_label(s.kind, s.status) }}</span>
+      </li>
+      {% endfor %}
+    </ul>
+  </section>
+  {% endif %}
+</div>
+{% endblock %}

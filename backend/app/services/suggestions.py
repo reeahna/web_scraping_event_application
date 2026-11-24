@@ -1,6 +1,8 @@
-"""Visitor suggestions: new towns (with their university) and new features.
+"""Visitor suggestions: new towns (with their university), new features and
+bug reports.
 
-Signed-in visitors submit them from /suggest; admins holding reports.view see
+Signed-in visitors suggest towns from /suggest and send feature ideas and bug
+reports from /feedback ("New features / bug fixes"); admins holding reports.view see
 them in /admin/suggestions and those holding reports.manage change their status.
 """
 
@@ -18,7 +20,16 @@ from app.services.rbac import users_with_permission
 
 KIND_TOWN = "town"
 KIND_FEATURE = "feature"
-SUGGESTION_KINDS: tuple[str, ...] = (KIND_TOWN, KIND_FEATURE)
+KIND_BUG = "bug"
+SUGGESTION_KINDS: tuple[str, ...] = (KIND_TOWN, KIND_FEATURE, KIND_BUG)
+# The kinds sent from the "New features / bug fixes" page.
+FEEDBACK_KINDS: tuple[str, ...] = (KIND_FEATURE, KIND_BUG)
+
+KIND_LABELS: dict[str, str] = {
+    KIND_TOWN: "Town",
+    KIND_FEATURE: "Feature",
+    KIND_BUG: "Bug",
+}
 
 SUGGESTION_STATUSES: dict[str, str] = {
     "new": "New",
@@ -26,6 +37,14 @@ SUGGESTION_STATUSES: dict[str, str] = {
     "done": "Added",
     "declined": "Not planned",
 }
+
+
+def status_label(kind: str, status: str) -> str:
+    """The status as the person reads it: a bug that was dealt with is
+    "Fixed", not "Added"."""
+    if kind == KIND_BUG and status == "done":
+        return "Fixed"
+    return SUGGESTION_STATUSES.get(status, status)
 
 TITLE_MAX = 200
 REGION_MAX = 100
@@ -78,6 +97,13 @@ def parse_suggestion(
             errors["title"] = "Enter the town or city."
         if not data.university:
             errors["university"] = "Enter the college or university there."
+    elif kind == KIND_BUG:
+        data.region = ""
+        data.university = ""
+        if not data.title:
+            errors["title"] = "Say in a few words what went wrong."
+        if not data.details:
+            errors["details"] = "Tell us what happened and what you expected instead."
     else:
         data.region = ""
         data.university = ""
@@ -126,6 +152,9 @@ def create_suggestion(
     if data.kind == KIND_TOWN:
         what = f"New town suggested: {suggestion.title}"
         message = f"{suggestion.title} ({suggestion.university})"
+    elif data.kind == KIND_BUG:
+        what = "New bug reported"
+        message = suggestion.title
     else:
         what = "New feature suggested"
         message = suggestion.title
@@ -145,10 +174,18 @@ def create_suggestion(
     return suggestion
 
 
-def list_for_user(db: Session, user_id: int, *, limit: int = 50) -> list[Suggestion]:
+def list_for_user(
+    db: Session,
+    user_id: int,
+    *,
+    kinds: tuple[str, ...] | None = None,
+    limit: int = 50,
+) -> list[Suggestion]:
+    query = db.query(Suggestion).filter(Suggestion.user_id == user_id)
+    if kinds is not None:
+        query = query.filter(Suggestion.kind.in_(kinds))
     return (
-        db.query(Suggestion)
-        .filter(Suggestion.user_id == user_id)
+        query
         .order_by(Suggestion.created_at.desc(), Suggestion.id.desc())
         .limit(limit)
         .all()
