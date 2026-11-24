@@ -34,16 +34,72 @@
   </tbody>
 </table>
 
-{% if report.total_to_mark and not report.applied %}
+<h2>Apply to a reviewed list of event ids</h2>
+<p class="audit-meta">Only the ids pasted here are ever marked. Each one is checked again immediately before it changes, and it is skipped (with the reason) if it is archived, already all-day, now has a time, is no longer flagged all-day by its latest extraction, comes from a source set to "time not announced", or had its details changed after the review time below.</p>
+
+{% if error %}<p class="form-error" role="alert">{{ error }}</p>{% endif %}
+
+{% if id_report %}
+<table>
+  <tbody>
+    <tr><th>Mode</th><td>{% if id_report.applied %}Applied{% else %}Checked only, nothing changed{% endif %}</td></tr>
+    <tr><th>Reviewed at</th><td>{{ id_report.reviewed_at.isoformat() }}</td></tr>
+    <tr><th>Ids listed</th><td>{{ id_report.requested }}</td></tr>
+    <tr><th>{% if id_report.applied %}Marked all-day{% else %}Would mark all-day{% endif %}</th><td>{{ id_report.changed_ids | length }}</td></tr>
+    <tr><th>Skipped</th><td>{{ id_report.skipped | length }}</td></tr>
+  </tbody>
+</table>
+{% if id_report.skipped %}
+<h3>Skipped, with reasons</h3>
+<table>
+  <thead><tr><th>Event</th><th>Reason</th></tr></thead>
+  <tbody>
+    {% for event_id, reason in id_report.skipped %}
+    <tr><td><a href="/admin/events/{{ event_id }}">#{{ event_id }}</a></td><td>{{ reason }}</td></tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% endif %}
+{% if id_report.changed_ids %}
+<details>
+  <summary>{% if id_report.applied %}Marked{% else %}Would mark{% endif %}: {{ id_report.changed_ids | length }} event ids</summary>
+  <p class="audit-meta">{% for id in id_report.changed_ids %}<a href="/admin/events/{{ id }}">#{{ id }}</a>{% if not loop.last %}, {% endif %}{% endfor %}</p>
+</details>
+{% endif %}
+{% if not id_report.applied and id_report.changed_ids %}
 <form method="post" action="/admin/events/all-day-backfill" class="inline-form"
-      data-confirm="Mark {{ report.total_to_mark }} event(s) as all-day?">
+      data-confirm="Mark {{ id_report.changed_ids | length }} listed event(s) as all-day? Ids that no longer qualify are skipped.">
   <input type="hidden" name="csrf_token" value="{{ csrf_token }}" />
-  <button type="submit" class="wf-secondary">Mark these {{ report.total_to_mark }} events all-day</button>
+  <input type="hidden" name="mode" value="apply" />
+  <input type="hidden" name="reviewed_at" value="{{ id_report.reviewed_at.isoformat() }}" />
+  <input type="hidden" name="event_ids" value="{{ event_ids_text }}" />
+  <button type="submit" class="wf-secondary">Apply to these {{ id_report.changed_ids | length }} events (Super Administrators)</button>
+</form>
+{% endif %}
+{% endif %}
+
+{% if not id_report or id_report.applied %}
+<form method="post" action="/admin/events/all-day-backfill">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token }}" />
+  <input type="hidden" name="mode" value="check" />
+  <label>Reviewed at (UTC; ids whose details changed after this are skipped)
+    <input type="text" name="reviewed_at" value="{{ reviewed_at }}" required />
+  </label>
+  <label>Event ids (commas, spaces or one per line)
+    <textarea name="event_ids" rows="6">{{ event_ids_text if not (id_report and id_report.applied) else '' }}</textarea>
+  </label>
+  <button type="submit">Check these ids</button>
 </form>
 {% endif %}
 
 <h2>{% if report.applied %}Marked{% else %}Would mark{% endif %}, by source</h2>
 {{ by_source(report.to_mark) }}
+{% if report.marked_ids %}
+<details>
+  <summary>All {{ report.marked_ids | length }} candidate event ids</summary>
+  <p class="audit-meta">{{ report.marked_ids | join(", ") }}</p>
+</details>
+{% endif %}
 
 <h2>Flagged all-day, but the source is set to "time not announced"</h2>
 <p class="audit-meta">The source's configuration says a date with no time means the start time is not announced yet (athletics "TBA" games), so these stay "Time TBD".</p>

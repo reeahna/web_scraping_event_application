@@ -20,7 +20,11 @@ from app.models.event_category import EventCategory
 from app.models.user import User
 from app.models.website import Website
 from app.repositories.event_provenance import get_latest_provenance_for_event
-from app.services.all_day_backfill import backfill_all_day
+from app.services.all_day_backfill import (
+    apply_all_day_to_ids,
+    backfill_all_day,
+    parse_event_ids,
+)
 from app.services.audit import record_audit
 from app.services.categorization import apply_categorization, categorize_event
 from app.services.event_freshness import mark_if_changed, visitor_snapshot
@@ -171,14 +175,30 @@ def list_events(
 @router.get("/all-day-backfill", response_class=HTMLResponse)
 def all_day_backfill_preview(request: Request, current_user: ViewEvents, db: DbSession):
     """What marking stored events all-day would change. Read-only: nothing is
-    written until the form below is submitted (see app.services.all_day_backfill)."""
+    written until a reviewed list of event ids is submitted below (see
+    app.services.all_day_backfill)."""
     _require(db, current_user, "events.review")
     report = backfill_all_day(db, apply=False)
     return render(
         request,
         "admin/events/all_day_backfill.html",
-        {"current_user": current_user, "report": report},
+        {
+            "current_user": current_user,
+            "report": report,
+            "reviewed_at": datetime.now(UTC).replace(microsecond=0).isoformat(),
+            "id_report": None,
+            "event_ids_text": "",
+            "error": None,
+        },
     )
+
+
+def _parse_reviewed_at(value: str) -> datetime:
+    try:
+        parsed = datetime.fromisoformat(value.strip())
+    except ValueError as exc:
+        raise AppError("The review time is missing or not a valid date and time.") from exc
+    return parsed if parsed.tzinfo else parsed.replace(tzinfo=UTC)
 
 
 @router.post("/all-day-backfill", response_class=HTMLResponse)
@@ -189,26 +209,62 @@ def all_day_backfill_apply(
     ip_address: ClientIp,
     current_user: ViewEvents,
     csrf_token: str = Form(...),
+    event_ids: str = Form(""),
+    reviewed_at: str = Form(""),
+    mode: str = Form("check"),
 ):
+    """Checks, or applies, an explicit list of reviewed event ids. It never
+    marks events that are not on the list."""
     verify_csrf(request, csrf_token)
+    _require(db, current_user, "events.review")
+    apply = mode == "apply"
     # A bulk change to stored events: Super Administrators only.
-    if not user_has_role(db, current_user, SUPER_ADMINISTRATOR):
+    if apply and not user_has_role(db, current_user, SUPER_ADMINISTRATOR):
         raise AppError("Forbidden: Super Administrator only", status_code=403)
-    report = backfill_all_day(db, apply=True)
-    record_audit(
-        db,
-        actor_id=current_user.id,
-        action="events_all_day_backfilled",
-        entity_type="event",
-        entity_id=None,
-        after={"marked": report.total_to_mark, "event_ids": report.marked_ids},
-        correlation_id=correlation_id,
-        ip_address=ip_address,
-    )
+    reviewed = _parse_reviewed_at(reviewed_at)
+    error = None
+    id_report = None
+    try:
+        ids = parse_event_ids(event_ids)
+    except ValueError as exc:
+        ids, error = [], str(exc)
+    if not ids and error is None:
+        error = "Paste the reviewed event ids first."
+    if error is None:
+        id_report = apply_all_day_to_ids(db, ids, reviewed_at=reviewed, apply=apply)
+        if apply:
+            record_audit(
+                db,
+                actor_id=current_user.id,
+                action="events_all_day_applied_by_id",
+                entity_type="event",
+                entity_id=None,
+                after={
+                    "reviewed_at": reviewed.isoformat(),
+                    "requested": id_report.requested,
+                    "changed": len(id_report.changed_ids),
+                    "changed_ids": id_report.changed_ids,
+                    "skipped": [
+                        {"event_id": event_id, "reason": reason}
+                        for event_id, reason in id_report.skipped
+                    ],
+                },
+                correlation_id=correlation_id,
+                ip_address=ip_address,
+            )
+    report = backfill_all_day(db, apply=False)
     return render(
         request,
         "admin/events/all_day_backfill.html",
-        {"current_user": current_user, "report": report},
+        {
+            "current_user": current_user,
+            "report": report,
+            "reviewed_at": reviewed.isoformat(),
+            "id_report": id_report,
+            "event_ids_text": event_ids,
+            "error": error,
+        },
+        status_code=422 if error else 200,
     )
 
 

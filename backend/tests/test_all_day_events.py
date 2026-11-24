@@ -28,7 +28,20 @@ from app.repositories.event import create_event_from_candidate, update_event
 from app.repositories.public_events import current_public_date
 from app.schemas.extraction import SiteConfiguration, TransformationRuleConfig
 from app.services import seo
-from app.services.all_day_backfill import backfill_all_day
+from app.services.all_day_backfill import (
+    SKIP_ALREADY_ALL_DAY,
+    SKIP_ARCHIVED,
+    SKIP_CHANGED,
+    SKIP_CHANGED_DURING_APPLY,
+    SKIP_DUPLICATE_ID,
+    SKIP_HAS_TIME,
+    SKIP_NOT_FLAGGED,
+    SKIP_NOT_FOUND,
+    SKIP_TIME_TBD_SOURCE,
+    apply_all_day_to_ids,
+    backfill_all_day,
+    parse_event_ids,
+)
 from app.services.calendar_feed import town_calendar
 
 from .extraction_helpers import make_response
@@ -560,17 +573,198 @@ def test_admin_backfill_preview_is_read_only_and_apply_needs_csrf(
 
     assert 'action="/admin/events/all-day-backfill"' in page.text
     token = client.cookies.get("csrf_token")
-    applied = client.post("/admin/events/all-day-backfill", data={"csrf_token": token})
-    assert applied.status_code == 200
-    assert "Applied" in applied.text
+    # Without a reviewed id list nothing is marked, even by a Super Administrator.
+    bare = client.post(
+        "/admin/events/all-day-backfill",
+        data={"csrf_token": token, "mode": "apply", "reviewed_at": REVIEWED_AT},
+    )
+    assert bare.status_code == 422
     db_session.refresh(event)
-    assert event.all_day is True
+    assert event.all_day is False
 
 
 def test_admin_backfill_needs_admin(client, db_session, make_user, login):
     make_user(email="viewer@example.com")
     login("viewer@example.com")
     assert client.get("/admin/events/all-day-backfill").status_code in (302, 303, 403)
+
+
+# --- applying a reviewed list of event ids --------------------------------------
+
+REVIEWED_AT = "2026-11-24T23:20:00+00:00"
+REVIEWED = datetime(2026, 11, 24, 23, 20, tzinfo=UTC)
+
+
+def _flagged(db_session, make_event, city, website, title, **values):
+    event = make_event(
+        city, website=website, title=title, start_date=values.pop("start_date", date(2026, 12, 1)),
+        content_updated_at=values.pop("content_updated_at", datetime(2026, 11, 1, tzinfo=UTC)),
+        **values,
+    )
+    _provenance(db_session, event, website, [ALL_DAY_MARKER])
+    return event
+
+
+def test_id_apply_marks_only_listed_events_and_keeps_everything_else(
+    db_session, town, make_event, make_category
+):
+    city, website = town
+    category = make_category()
+    override = make_category(name="Override category", slug="override-category")
+    listed = _flagged(
+        db_session, make_event, city, website, "Listed", category=category,
+        category_override_id=override.id, is_active=False, duplicate_status="not_duplicate",
+        end_date=date(2026, 12, 3),
+    )
+    unlisted = _flagged(db_session, make_event, city, website, "Unlisted")
+    before = (
+        listed.start_date, listed.end_date, listed.start_time, listed.end_time,
+        listed.is_active, listed.category_id, listed.category_override_id,
+        listed.duplicate_status, listed.canonical_url,
+    )
+
+    report = apply_all_day_to_ids(db_session, [listed.id], reviewed_at=REVIEWED, apply=True)
+    assert report.applied and report.changed_ids == [listed.id] and report.skipped == []
+    db_session.refresh(listed)
+    db_session.refresh(unlisted)
+    assert listed.all_day is True
+    assert unlisted.all_day is False
+    assert (
+        listed.start_date, listed.end_date, listed.start_time, listed.end_time,
+        listed.is_active, listed.category_id, listed.category_override_id,
+        listed.duplicate_status, listed.canonical_url,
+    ) == before
+    assert listed.content_updated_at.replace(tzinfo=UTC) == datetime(2026, 11, 1, tzinfo=UTC)
+    assert db_session.query(EventProvenance).filter_by(event_id=listed.id).count() == 1
+
+
+def test_id_check_changes_nothing(db_session, town, make_event):
+    city, website = town
+    event = _flagged(db_session, make_event, city, website, "Holiday")
+    report = apply_all_day_to_ids(db_session, [event.id], reviewed_at=REVIEWED)
+    assert not report.applied and report.changed_ids == [event.id]
+    db_session.refresh(event)
+    assert event.all_day is False
+
+
+def test_id_apply_rechecks_and_skips_with_reasons(
+    db_session, make_city, make_website, make_event
+):
+    city = make_city(name="Princeton", slug="princeton-nj", timezone="America/New_York")
+    campus = make_website(city, name="Campus", approved_pattern={"configuration": {}})
+    athletics = make_website(
+        city, name="Athletics",
+        approved_pattern={"configuration": {"pattern_name": "ics_calendar",
+                                            "api_endpoint": ATHLETICS_URL,
+                                            "date_only_means_time_tbd": True}},
+    )
+    good = _flagged(db_session, make_event, city, campus, "Good")
+    archived = _flagged(db_session, make_event, city, campus, "Archived", archived=True)
+    timed = _flagged(db_session, make_event, city, campus, "Timed", start_time=time(15))
+    already = _flagged(db_session, make_event, city, campus, "Already", all_day=True)
+    edited = _flagged(
+        db_session, make_event, city, campus, "Edited",
+        content_updated_at=datetime(2026, 11, 25, tzinfo=UTC),
+    )
+    game = _flagged(db_session, make_event, city, athletics, "Game")
+    unflagged = make_event(city, website=campus, title="Unflagged", start_date=date(2026, 12, 1))
+    _provenance(db_session, unflagged, campus, ["start_datetime:iso"])
+    ids = [good.id, archived.id, timed.id, already.id, edited.id, game.id, unflagged.id,
+           good.id, 999999]
+
+    report = apply_all_day_to_ids(db_session, ids, reviewed_at=REVIEWED, apply=True)
+    assert report.changed_ids == [good.id]
+    assert dict(report.skipped) == {
+        archived.id: SKIP_ARCHIVED,
+        timed.id: SKIP_HAS_TIME,
+        already.id: SKIP_ALREADY_ALL_DAY,
+        edited.id: SKIP_CHANGED,
+        game.id: SKIP_TIME_TBD_SOURCE,
+        unflagged.id: SKIP_NOT_FLAGGED,
+        good.id: SKIP_DUPLICATE_ID,
+        999999: SKIP_NOT_FOUND,
+    }
+    for event in (archived, timed, edited, game, unflagged):
+        db_session.refresh(event)
+        assert event.all_day is False
+
+
+def test_id_apply_guards_the_update_itself(db_session, town, make_event, monkeypatch):
+    """An event that gains a time between the check and its update is left alone."""
+    import app.services.all_day_backfill as backfill
+
+    city, website = town
+    event = _flagged(db_session, make_event, city, website, "Raced", start_time=time(19))
+    monkeypatch.setattr(backfill, "_skip_reason", lambda *args: None)
+    report = apply_all_day_to_ids(db_session, [event.id], reviewed_at=REVIEWED, apply=True)
+    assert report.changed_ids == []
+    assert report.skipped == [(event.id, SKIP_CHANGED_DURING_APPLY)]
+    db_session.refresh(event)
+    assert event.all_day is False
+
+
+def test_parse_event_ids():
+    assert parse_event_ids("# reviewed list\n12, 13\n#14 15") == [12, 13, 14, 15]
+    with pytest.raises(ValueError):
+        parse_event_ids("12, thirteen")
+
+
+def test_admin_id_apply_checks_first_then_applies_and_audits(
+    client, db_session, town, make_event, make_super_admin, login
+):
+    from app.models.audit_log import AuditLog
+
+    city, website = town
+    listed = _flagged(db_session, make_event, city, website, "Listed")
+    unlisted = _flagged(db_session, make_event, city, website, "Unlisted")
+    timed = _flagged(db_session, make_event, city, website, "Timed", start_time=time(9))
+    make_super_admin()
+    login("root@example.com")
+    client.get("/admin/events/all-day-backfill")
+    token = client.cookies.get("csrf_token")
+    form = {"csrf_token": token, "reviewed_at": REVIEWED_AT,
+            "event_ids": f"{listed.id}, {timed.id}"}
+
+    checked = client.post("/admin/events/all-day-backfill", data={**form, "mode": "check"})
+    assert checked.status_code == 200
+    assert "Checked only, nothing changed" in checked.text
+    assert 'name="mode" value="apply"' in checked.text
+    db_session.refresh(listed)
+    assert listed.all_day is False
+
+    applied = client.post("/admin/events/all-day-backfill", data={**form, "mode": "apply"})
+    assert applied.status_code == 200
+    assert "Applied" in applied.text and SKIP_HAS_TIME in applied.text
+    for event in (listed, unlisted, timed):
+        db_session.refresh(event)
+    assert (listed.all_day, unlisted.all_day, timed.all_day) == (True, False, False)
+    audit = (
+        db_session.query(AuditLog).filter_by(action="events_all_day_applied_by_id").one()
+    )
+    after = json.loads(audit.after_state)
+    assert after["changed_ids"] == [listed.id]
+    assert after["skipped"] == [{"event_id": timed.id, "reason": SKIP_HAS_TIME}]
+
+
+def test_admin_id_apply_needs_super_administrator(
+    client, db_session, town, make_event, make_user, login
+):
+    from app.core.permissions import ADMINISTRATOR
+
+    city, website = town
+    event = _flagged(db_session, make_event, city, website, "Listed")
+    make_user(email="editor@example.com", role_name=ADMINISTRATOR)
+    login("editor@example.com")
+    client.get("/admin/events/all-day-backfill")
+    token = client.cookies.get("csrf_token")
+    response = client.post(
+        "/admin/events/all-day-backfill",
+        data={"csrf_token": token, "reviewed_at": REVIEWED_AT, "event_ids": str(event.id),
+              "mode": "apply"},
+    )
+    assert response.status_code == 403
+    db_session.refresh(event)
+    assert event.all_day is False
 
 
 # --- sources whose date-only entries mean "time not announced" -----------------

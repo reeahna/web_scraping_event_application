@@ -17,13 +17,19 @@ What it never does:
   overrides, provenance and content_updated_at are left as they are.
 
 The default is a dry run that changes nothing (see scripts/backfill_all_day.py).
+
+Writing is done only through apply_all_day_to_ids: an administrator reviews the
+preview, then hands over an explicit list of event ids. Each id is checked again
+against the same rules (plus "not archived" and "unchanged since the review")
+immediately before it is updated, and anything that no longer qualifies is
+skipped with a reason instead of being marked.
 """
 
 from __future__ import annotations
 
 from collections import Counter
 from dataclasses import dataclass, field
-from datetime import time
+from datetime import UTC, datetime, time
 
 from sqlalchemy import func, select, update
 from sqlalchemy.orm import Session
@@ -138,4 +144,146 @@ def backfill_all_day(db: Session, *, apply: bool = False) -> AllDayBackfillRepor
                 .execution_options(synchronize_session=False)
             )
         db.commit()
+    return report
+
+
+# --- applying a reviewed list of event ids -------------------------------------
+
+SKIP_NOT_FOUND = "not found"
+SKIP_DUPLICATE_ID = "listed more than once"
+SKIP_ARCHIVED = "archived"
+SKIP_ALREADY_ALL_DAY = "already all-day"
+SKIP_HAS_TIME = "has a start or end time"
+SKIP_NO_DATE = "no start date"
+SKIP_NOT_FLAGGED = "latest extraction does not flag it all-day"
+SKIP_TIME_TBD_SOURCE = 'source is set to "time not announced"'
+SKIP_CHANGED = "details changed after the review"
+SKIP_CHANGED_DURING_APPLY = "changed while applying"
+
+
+@dataclass
+class AllDayIdApplyReport:
+    applied: bool
+    reviewed_at: datetime
+    requested: int = 0
+    # Ids that were (or, on a check, would be) marked all-day.
+    changed_ids: list[int] = field(default_factory=list)
+    # (id, reason) for every id left alone.
+    skipped: list[tuple[int, str]] = field(default_factory=list)
+
+    @property
+    def skipped_by_reason(self) -> Counter:
+        return Counter(reason for _, reason in self.skipped)
+
+
+def parse_event_ids(text: str) -> list[int]:
+    """Event ids from pasted text: digits separated by commas, spaces or new
+    lines; a leading # is allowed (as the preview prints them), and a line
+    starting with "# " is a comment. Anything else is refused rather than
+    guessed at."""
+    ids = []
+    for line in text.splitlines():
+        if line.strip() == "#" or line.lstrip().startswith("# "):
+            continue
+        for token in line.replace(",", " ").split():
+            token = token.lstrip("#")
+            if not token.isdigit():
+                raise ValueError(f"Not an event id: {token!r}")
+            ids.append(int(token))
+    return ids
+
+
+def _aware(value: datetime | None) -> datetime | None:
+    if value is None or value.tzinfo is not None:
+        return value
+    return value.replace(tzinfo=UTC)
+
+
+def _latest_history(db: Session, event_id: int) -> list[str]:
+    history = db.execute(
+        select(EventProvenance.transformation_history)
+        .where(EventProvenance.event_id == event_id)
+        .order_by(EventProvenance.id.desc())
+        .limit(1)
+    ).scalar_one_or_none()
+    return list(history or [])
+
+
+def _skip_reason(
+    db: Session, event: Event | None, reviewed_at: datetime, time_tbd_sites: set[int]
+) -> str | None:
+    """Why this event must not be marked now, or None when it still qualifies
+    exactly as the preview counted it."""
+    if event is None:
+        return SKIP_NOT_FOUND
+    if event.archived_at is not None:
+        return SKIP_ARCHIVED
+    if event.all_day:
+        return SKIP_ALREADY_ALL_DAY
+    if event.start_time is not None or event.end_time is not None:
+        return SKIP_HAS_TIME
+    if event.start_date is None:
+        return SKIP_NO_DATE
+    if ALL_DAY_MARKER not in _latest_history(db, event.id):
+        return SKIP_NOT_FLAGGED
+    if event.website_id in time_tbd_sites:
+        return SKIP_TIME_TBD_SOURCE
+    changed = _aware(event.content_updated_at)
+    if changed is not None and changed > reviewed_at:
+        return SKIP_CHANGED
+    return None
+
+
+def apply_all_day_to_ids(
+    db: Session, event_ids: list[int], *, reviewed_at: datetime, apply: bool = False
+) -> AllDayIdApplyReport:
+    """Marks all-day only the listed events that still qualify. With
+    apply=False it reports what would happen and writes nothing.
+
+    Each event is re-read (locked where the database supports it) and checked
+    immediately before its own update, and the update itself repeats the
+    conditions, so an import that gives the event a time in between leaves it
+    alone. Only events.all_day is written: dates, times, visibility,
+    categories, overrides, duplicate decisions, provenance and
+    content_updated_at are untouched."""
+    reviewed_at = _aware(reviewed_at)
+    report = AllDayIdApplyReport(applied=apply, reviewed_at=reviewed_at)
+    report.requested = len(event_ids)
+    time_tbd_sites = _time_tbd_website_ids(db)
+    seen: set[int] = set()
+    for event_id in event_ids:
+        if event_id in seen:
+            report.skipped.append((event_id, SKIP_DUPLICATE_ID))
+            continue
+        seen.add(event_id)
+        event = db.execute(
+            select(Event).where(Event.id == event_id).with_for_update()
+        ).scalar_one_or_none()
+        reason = _skip_reason(db, event, reviewed_at, time_tbd_sites)
+        if reason is not None:
+            report.skipped.append((event_id, reason))
+            continue
+        if apply:
+            # A plain column update guarded by the same conditions: no ORM
+            # events, so content_updated_at and the AI queue stay as they are.
+            result = db.execute(
+                update(Event)
+                .where(
+                    Event.id == event_id,
+                    Event.all_day.is_(False),
+                    Event.start_time.is_(None),
+                    Event.end_time.is_(None),
+                    Event.archived_at.is_(None),
+                )
+                .values(all_day=True)
+                .execution_options(synchronize_session=False)
+            )
+            if result.rowcount != 1:
+                report.skipped.append((event_id, SKIP_CHANGED_DURING_APPLY))
+                continue
+        report.changed_ids.append(event_id)
+    if apply:
+        db.commit()
+    else:
+        db.rollback()
     return report
