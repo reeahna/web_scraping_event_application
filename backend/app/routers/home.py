@@ -8,6 +8,7 @@ from starlette.datastructures import QueryParams
 from app.config import get_settings
 from app.core.exceptions import NotFoundError
 from app.core.templating import render
+from app.core.us_states import state_name
 from app.dependencies import DbSession, OptionalCurrentUser
 from app.repositories.city import (
     get_city_by_slug,
@@ -26,6 +27,7 @@ from app.repositories.public_events import (
     upcoming_counts_by_city,
 )
 from app.services import seo
+from app.services.cities import group_towns_by_state
 from app.services.event_freshness import local_timestamp, town_listings_checked
 from app.services.rbac import can_access_admin, user_has_permission
 
@@ -255,8 +257,27 @@ def home(request: Request, current_user: OptionalCurrentUser, db: DbSession):
     through a city.
     """
     query = (request.query_params.get("q") or "").strip()
-    cities = search_public_cities(db, query=query)
     counts = upcoming_counts_by_city(db, today=local_today(db))
+    # A live town with nothing coming up is left off the list and out of the
+    # suggestions: a card reading "0 upcoming events" sends a visitor to an empty
+    # page. The town page itself stays reachable by its URL, and the town comes
+    # back here on its own once it has an upcoming event. The filter reuses the
+    # counts above, so it costs no extra query.
+    listed = [c for c in search_public_cities(db) if counts.get(c.id)]
+    states = group_towns_by_state(listed, counts)
+
+    # Without a search the page lists states, and a state shows its towns: one
+    # list of every town had grown too long to scan. A search still looks
+    # across every state.
+    state = None
+    cities = []
+    if query:
+        cities = [c for c in search_public_cities(db, query=query) if counts.get(c.id)]
+    elif request.query_params.get("state"):
+        wanted = (state_name(request.query_params.get("state")) or "").lower()
+        state = next((g for g in states if g.name.lower() == wanted), None)
+        if state is not None:
+            cities = state.towns
 
     # The whole town list travels with the page so the suggestions appear on the
     # keystroke rather than after a round trip. This is a few dozen towns; if it
@@ -269,7 +290,7 @@ def home(request: Request, current_user: OptionalCurrentUser, db: DbSession):
             "slug": city.slug,
             "count": counts.get(city.id, 0),
         }
-        for city in search_public_cities(db)
+        for city in listed
     ]
     return render(
         request,
@@ -280,6 +301,10 @@ def home(request: Request, current_user: OptionalCurrentUser, db: DbSession):
             "registration_enabled": get_settings().registration_enabled,
             "cities": cities,
             "query": query,
+            "states": states,
+            "state": state,
+            # A ?state= that names no listed state gets the "no towns" message.
+            "state_requested": (request.query_params.get("state") or "").strip(),
             "event_counts": counts,
             "city_index": city_index,
             "site_structured_data": seo.site_structured_data(),
