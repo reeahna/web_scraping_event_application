@@ -19,6 +19,12 @@ LiveWhale calendars state an event's venue in their own detail block
 names only the online stream for a hybrid event; that block is read third,
 on pages LiveWhale generated.
 
+Localist calendars leave `location` out of an occurrence's JSON-LD when the
+event names no place and gives only a free-text location ("Clayton University
+Center flag pole, Asa Packer campus"); the page still shows that text in its
+"About this Event" block (`.em-about_location__address`), which is read
+fourth, on pages Localist generated.
+
 Time, for an event whose listing gives a bare 12:00 AM with no offset, or
 only a date when the page is fetched for a description or venue anyway (and
 is not marked all-day):
@@ -213,7 +219,11 @@ def _venue(
             venue = None
         if venue is not None:
             return PageVenue(venue, address, "detail:jsonld.location")
-    found = _microdata_venue(soup, title) or _livewhale_venue(soup, title)
+    found = (
+        _microdata_venue(soup, title)
+        or _livewhale_venue(soup, title)
+        or _localist_venue(soup, title)
+    )
     if found is None and event is not None:
         venue, address = venue_from_location(event.get("location"))
         if address is not None:
@@ -244,6 +254,25 @@ def _livewhale_venue(soup: BeautifulSoup, title: str | None) -> PageVenue | None
         return None
     venue = clean_venue(items[0].get_text(" "), title)
     return PageVenue(venue, None, "detail:livewhale.event_detail_meta") if venue else None
+
+
+def _is_localist(soup: BeautifulSoup) -> bool:
+    if soup.find("meta", attrs={"name": "localist-page"}) is not None:
+        return True
+    tag = soup.find("meta", attrs={"name": "application-name"})
+    return tag is not None and str(tag.get("content", "")).lower().startswith("localist")
+
+
+def _localist_venue(soup: BeautifulSoup, title: str | None) -> PageVenue | None:
+    """The location line of a Localist event page's "About this Event" block.
+    Trusted only when the page shows exactly one."""
+    if not _is_localist(soup):
+        return None
+    lines = soup.select(".em-about_location .em-about_location__address")
+    if len(lines) != 1:
+        return None
+    venue = clean_venue(lines[0].get_text(" "), title)
+    return PageVenue(venue, None, "detail:localist.about_location") if venue else None
 
 
 def venue_from_page(html: str, page_url: str, title: str | None = None) -> PageVenue | None:
