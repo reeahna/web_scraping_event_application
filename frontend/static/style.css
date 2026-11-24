@@ -3842,7 +3842,7 @@ a.wf-danger, button.wf-danger {
 }
 
 /* ==========================================================================
-   Suggest a town or feature (/suggest, /admin/suggestions)
+   Suggest a town, feature or bug fix (/suggest, /feedback, /admin/suggestions)
    ========================================================================== */
 .suggest-page {
   max-width: var(--max-width-narrow);
@@ -3952,6 +3952,10 @@ a.wf-danger, button.wf-danger {
 
 .suggest-mine {
   margin-top: var(--space-6);
+}
+
+.feedback-town-note {
+  margin-top: var(--space-4);
 }
 
 .suggest-list {

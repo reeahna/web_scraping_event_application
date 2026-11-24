@@ -22,6 +22,11 @@ ManageSuggestions = Annotated[User, Depends(require_permission("reports.manage")
 
 ADMIN_PER_PAGE = 25
 
+_FEEDBACK_THANKS = {
+    svc.KIND_FEATURE: "Thanks! Your idea has been sent to the team.",
+    svc.KIND_BUG: "Thanks for letting us know! Your report has been sent to the team.",
+}
+
 
 def _render_suggest(
     request: Request,
@@ -40,6 +45,7 @@ def _render_suggest(
             "errors": form.errors,
             "mine": svc.list_for_user(db, current_user.id),
             "statuses": svc.SUGGESTION_STATUSES,
+            "status_label": svc.status_label,
             "limits": {
                 "title": svc.TITLE_MAX,
                 "region": svc.REGION_MAX,
@@ -51,11 +57,38 @@ def _render_suggest(
     )
 
 
+def _render_feedback(
+    request: Request,
+    current_user: User,
+    db: DbSession,
+    *,
+    form: svc.SuggestionInput,
+    status_code: int = 200,
+) -> HTMLResponse:
+    return render(
+        request,
+        "feedback.html",
+        {
+            "current_user": current_user,
+            "form": form,
+            "errors": form.errors,
+            "mine": svc.list_for_user(db, current_user.id, kinds=svc.FEEDBACK_KINDS),
+            "status_label": svc.status_label,
+            "kind_labels": svc.KIND_LABELS,
+            "limits": {"title": svc.TITLE_MAX, "details": svc.DETAILS_MAX},
+        },
+        status_code=status_code,
+    )
+
+
 @router.get("/suggest", response_class=HTMLResponse)
 def suggest_page(
     request: Request, current_user: CurrentUser, db: DbSession, kind: OptionalText = None
 ):
-    form = svc.SuggestionInput(kind=kind if kind in svc.SUGGESTION_KINDS else svc.KIND_TOWN)
+    # Feature ideas now live on the "New features / bug fixes" page.
+    if kind == svc.KIND_FEATURE:
+        return RedirectResponse(url="/feedback?kind=feature", status_code=303)
+    form = svc.SuggestionInput(kind=svc.KIND_TOWN)
     return _render_suggest(request, current_user, db, form=form)
 
 
@@ -85,11 +118,53 @@ def submit_suggestion(
             "You've sent a lot of suggestions today. Thank you! Please try again tomorrow."
         )
         return _render_suggest(request, current_user, db, form=form, status_code=429)
-    response = RedirectResponse(url=f"/suggest?kind={form.kind}", status_code=303)
     if form.kind == svc.KIND_TOWN:
+        response = RedirectResponse(url="/suggest?kind=town", status_code=303)
         set_flash(response, f"Thanks! We'll look into adding {form.title}.")
     else:
-        set_flash(response, "Thanks! Your idea has been sent to the team.")
+        response = RedirectResponse(url=f"/feedback?kind={form.kind}", status_code=303)
+        set_flash(response, _FEEDBACK_THANKS[form.kind])
+    return response
+
+
+@router.get("/feedback", response_class=HTMLResponse)
+def feedback_page(
+    request: Request, current_user: CurrentUser, db: DbSession, kind: OptionalText = None
+):
+    form = svc.SuggestionInput(
+        kind=kind if kind in svc.FEEDBACK_KINDS else svc.KIND_FEATURE
+    )
+    return _render_feedback(request, current_user, db, form=form)
+
+
+@router.post("/feedback", response_class=HTMLResponse)
+def submit_feedback(
+    request: Request,
+    current_user: CurrentUser,
+    db: DbSession,
+    correlation_id: CorrelationId,
+    kind: str = Form(svc.KIND_FEATURE),
+    title: str = Form(""),
+    details: str = Form(""),
+    csrf_token: str = Form(...),
+):
+    verify_csrf(request, csrf_token)
+    # Only features and bugs are sent from here; anything else is a feature.
+    kind = kind if kind in svc.FEEDBACK_KINDS else svc.KIND_FEATURE
+    form = svc.parse_suggestion(
+        kind=kind, title=title, region="", university="", details=details
+    )
+    if not form.is_valid:
+        return _render_feedback(request, current_user, db, form=form, status_code=422)
+    try:
+        svc.create_suggestion(db, current_user, form, correlation_id=correlation_id)
+    except svc.SuggestionLimitError:
+        form.errors["form"] = (
+            "You've sent a lot of suggestions today. Thank you! Please try again tomorrow."
+        )
+        return _render_feedback(request, current_user, db, form=form, status_code=429)
+    response = RedirectResponse(url=f"/feedback?kind={form.kind}", status_code=303)
+    set_flash(response, _FEEDBACK_THANKS[form.kind])
     return response
 
 
@@ -117,6 +192,8 @@ def admin_suggestions(
             "kind": kind if kind in svc.SUGGESTION_KINDS else "",
             "status": status if status in svc.SUGGESTION_STATUSES else "",
             "statuses": svc.SUGGESTION_STATUSES,
+            "kind_labels": svc.KIND_LABELS,
+            "status_label": svc.status_label,
             "base_url": f"/admin/suggestions?kind={kind or ''}&status={status or ''}",
             "can_manage": user_has_permission(db, current_user, "reports.manage"),
         },

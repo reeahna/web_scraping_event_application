@@ -13,8 +13,9 @@ if TYPE_CHECKING:
 
 class Suggestion(Base):
     """Something a signed-in visitor asked for: a new town (with the
-    university it is home to) or a new feature. Admins triage these in
-    /admin/suggestions; the person sees the status of their own on /suggest.
+    university it is home to), a new feature or a bug fix. Admins triage these
+    in /admin/suggestions; the person sees the status of their own on /suggest
+    (towns) and /feedback (features and bugs).
 
     `kind` is one of app.services.suggestions.SUGGESTION_KINDS and `status` one
     of SUGGESTION_STATUSES — validated there, never an arbitrary string write.
@@ -30,7 +31,7 @@ class Suggestion(Base):
     )
     kind: Mapped[str] = mapped_column(String(16), index=True)
     # Town suggestions: the town and its state/region and university.
-    # Feature suggestions: a one-line summary in `title`.
+    # Feature suggestions and bug reports: a one-line summary in `title`.
     title: Mapped[str] = mapped_column(String(200))
     region: Mapped[str | None] = mapped_column(String(100), default=None)
     university: Mapped[str | None] = mapped_column(String(200), default=None)

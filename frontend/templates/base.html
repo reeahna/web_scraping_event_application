@@ -110,6 +110,7 @@
         {# Suggestions need an account; signed out, go by the sign-in page
            rather than linking every page to a 401. #}
         <a href="{{ '/suggest' if current_user else '/auth/login?next=%2Fsuggest' }}">Suggest a town</a>
+        <a href="{{ '/feedback' if current_user else '/auth/login?next=%2Ffeedback' }}">New features / bug fixes</a>
         <a href="/whats-new">What's new</a>
         <a href="/privacy">Privacy</a>
         <a href="/terms">Terms</a>

@@ -5,13 +5,14 @@
 
 {% block admin_content %}
 <h1>Suggestions</h1>
-<p>Towns and features that signed-in visitors have asked for.</p>
+<p>Towns, features and bug fixes that signed-in visitors have asked for.</p>
 
 <form method="get" action="/admin/suggestions" class="filter-bar">
   <select name="kind" aria-label="Type">
-    <option value="">Towns and features</option>
+    <option value="">All types</option>
     <option value="town" {% if kind == "town" %}selected{% endif %}>Towns</option>
     <option value="feature" {% if kind == "feature" %}selected{% endif %}>Features</option>
+    <option value="bug" {% if kind == "bug" %}selected{% endif %}>Bug reports</option>
   </select>
   <select name="status" aria-label="Status">
     <option value="">All statuses</option>
@@ -35,7 +36,7 @@
   {% for s in suggestions %}
     <tr>
       <td>{{ s.created_at | admin_datetime }}</td>
-      <td>{{ "Town" if s.kind == "town" else "Feature" }}</td>
+      <td>{{ kind_labels.get(s.kind, s.kind) }}</td>
       <td>
         <strong>{{ s.title }}{% if s.region %}, {{ s.region }}{% endif %}</strong>
         {% if s.university %}<br />{{ s.university }}{% endif %}
@@ -49,8 +50,8 @@
           <input type="hidden" name="back" value="{{ request.url.path }}{% if request.url.query %}?{{ request.url.query }}{% endif %}" />
           <label for="status-{{ s.id }}" class="sr-only">Status</label>
           <select id="status-{{ s.id }}" name="status">
-            {% for value, label in statuses.items() %}
-            <option value="{{ value }}" {% if s.status == value %}selected{% endif %}>{{ label }}</option>
+            {% for value in statuses %}
+            <option value="{{ value }}" {% if s.status == value %}selected{% endif %}>{{ status_label(s.kind, value) }}</option>
             {% endfor %}
           </select>
           <label for="notes-{{ s.id }}" class="sr-only">Notes</label>
@@ -58,7 +59,7 @@
           <button type="submit">Save</button>
         </form>
         {% else %}
-        {{ statuses.get(s.status, s.status) }}
+        {{ status_label(s.kind, s.status) }}
         {% if s.admin_notes %}<p class="suggestion-details">{{ s.admin_notes }}</p>{% endif %}
         {% endif %}
       </td>

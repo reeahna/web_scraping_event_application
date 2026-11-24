@@ -1,6 +1,6 @@
 {% extends "base.html" %}
 
-{% block title %}Suggest a town or feature | {{ site_name }}{% endblock %}
+{% block title %}Suggest a town | {{ site_name }}{% endblock %}
 {% block meta_description %}Tell us which college town to add next, or what would make {{ site_name }} better.{% endblock %}
 {% block robots %}noindex, follow{% endblock %}
 
@@ -17,7 +17,7 @@
 
   <nav class="suggest-tabs" aria-label="What would you like to suggest?">
     <a href="/suggest?kind=town" class="suggest-tab"{% if form.kind == "town" %} aria-current="page"{% endif %}>A new town</a>
-    <a href="/suggest?kind=feature" class="suggest-tab"{% if form.kind == "feature" %} aria-current="page"{% endif %}>A new feature</a>
+    <a href="/feedback?kind=feature" class="suggest-tab">A new feature or bug fix</a>
   </nav>
 
   {% if errors.get("form") %}
@@ -75,11 +75,11 @@
       {% for s in mine %}
       <li class="suggest-item">
         <div class="suggest-item-main">
-          <span class="suggest-item-kind">{{ "Town" if s.kind == "town" else "Feature" }}</span>
+          <span class="suggest-item-kind">{{ {"town": "Town", "bug": "Bug"}.get(s.kind, "Feature") }}</span>
           <span class="suggest-item-title">{{ s.title }}{% if s.kind == "town" and s.region %}, {{ s.region }}{% endif %}</span>
           {% if s.kind == "town" and s.university %}<span class="suggest-item-sub">{{ s.university }}</span>{% endif %}
         </div>
-        <span class="suggest-status suggest-status-{{ s.status }}">{{ statuses.get(s.status, s.status) }}</span>
+        <span class="suggest-status suggest-status-{{ s.status }}">{{ status_label(s.kind, s.status) }}</span>
       </li>
       {% endfor %}
     </ul>
