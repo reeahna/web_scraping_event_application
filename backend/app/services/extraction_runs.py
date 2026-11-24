@@ -21,6 +21,7 @@ from __future__ import annotations
 
 import asyncio
 import hashlib
+from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import UTC, datetime
 
@@ -261,6 +262,30 @@ async def follow_advertised_feed(
         notes.append(f"feed {url}: used ({detection.pattern_name}, {entries} entries)")
         return response, detection
     return None
+
+
+def _home_town_filter_applies(config: SiteConfiguration) -> bool:
+    """The home-town check runs where no admin-set geographic filter already
+    says what the source covers."""
+    return get_settings().home_town_filter_enabled and not (
+        config.geographic_filters and config.geographic_filters.has_any_rule()
+    )
+
+
+def _left_out_of_town(
+    config: SiteConfiguration, website: Website
+) -> Callable[[EventCandidate], bool]:
+    """The same geographic and home-town decisions the import acts on after
+    extraction, asked before an event page is fetched, so the page-lookup
+    budget is spent only on events the run will keep."""
+    home_town = _home_town_filter_applies(config)
+
+    def excluded(candidate: EventCandidate) -> bool:
+        if geo_should_drop(candidate):
+            return True
+        return home_town and candidate_outside_home_town(candidate, website.city)
+
+    return excluded
 
 
 def _fallback_timezone(website: Website) -> str | None:
@@ -802,11 +827,14 @@ async def _execute_pipeline(
     described_urls: frozenset[str] | None = None,
     venue_urls: frozenset[str] = frozenset(),
     timed_urls: frozenset[str] = frozenset(),
+    lookup_excluded: Callable[[EventCandidate], bool] | None = None,
 ) -> _PipelineOutcome:
     """`described_urls` turns on the detail-page lookup for events whose
     listing has no description or no venue, skipping URLs already stored with a
     description (`described_urls`) or a venue (`venue_urls`). Left None
-    (preview), no extra pages are fetched."""
+    (preview), no extra pages are fetched. `lookup_excluded` is asked about
+    each listing (normalized and geography-annotated, as the run will see it)
+    before its page is fetched: a listing the run will drop costs no fetch."""
     registration = REGISTRY.get(pattern_name)
     pattern = registration.extractor
     # Patterns that turn a source's UTC instants into local times read
@@ -857,6 +885,15 @@ async def _execute_pipeline(
                 all_candidates, _detail_fetch_strategy(config, fetch), config
             )
         if described_urls is not None:
+            skip = None
+            if lookup_excluded is not None:
+                def skip(raw: EventCandidate) -> bool:
+                    normalized = normalize_candidate(
+                        raw, config, fallback_timezone=config.timezone or fallback_timezone
+                    )
+                    return lookup_excluded(
+                        annotate_candidate_geography(normalized, config.geographic_filters)
+                    )
             all_candidates, lookup_warnings = await fill_from_event_pages(
                 all_candidates,
                 _detail_fetch_strategy(config, fetch),
@@ -866,6 +903,7 @@ async def _execute_pipeline(
                 known_venue_urls=venue_urls,
                 known_timed_urls=timed_urls,
                 timezone=config.timezone,
+                skip=skip,
             )
             warnings.extend(lookup_warnings)
 
@@ -1252,6 +1290,7 @@ async def run_extraction(
         described_urls=described_event_urls(db, website.id),
         venue_urls=event_urls_with_venue(db, website.id),
         timed_urls=event_urls_with_time(db, website.id),
+        lookup_excluded=_left_out_of_town(config, website),
     )
     completed_at = datetime.now(UTC)
 
@@ -1284,10 +1323,7 @@ async def run_extraction(
     # it). Only where no admin-set geographic filter already says what the
     # source covers. Copies imported before this check are taken down too.
     out_of_town = []
-    if (
-        get_settings().home_town_filter_enabled
-        and not (config.geographic_filters and config.geographic_filters.has_any_rule())
-    ):
+    if _home_town_filter_applies(config):
         out_of_town = [c for c in valid if candidate_outside_home_town(c, website.city)]
     if out_of_town:
         warnings.append(f"outside_home_town_excluded:{len(out_of_town)}")

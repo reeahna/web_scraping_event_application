@@ -20,8 +20,9 @@ names only the online stream for a hybrid event; that block is read third,
 on pages LiveWhale generated.
 
 Time, for an event whose listing gives a bare 12:00 AM with no offset, or
-only a date when the page is fetched for a description or venue anyway (and
-is not marked all-day):
+only a date when the page is fetched for a description or venue anyway, or
+only a date on a site whose event pages always state the time (Eventbrite: its
+city listings give `startDate` as a bare date), and is not marked all-day:
 1. the JSON-LD Event's `startDate`/`endDate`, then
 2. the page's `og:start_time` / `og:end_time`.
 Only a value with a clock time on the same local day as the listing's date
@@ -33,6 +34,8 @@ Bounded and conservative:
   carrying a placeholder like "TBA") are looked up, and URLs the caller already
   has that field for are skipped, so repeated runs spend the budget on events
   that still need it;
+* a candidate the caller's `skip` says will be left out of the run anyway (an
+  event outside the source's town) is never looked up, so it costs no budget;
 * at most `max_fetches` distinct pages per run, through the same FetchStrategy
   (SSRF/redirect/byte protections) as the listing; one fetch serves both fields;
 * a meta description shared by several different pages, or identical to the
@@ -51,6 +54,7 @@ import dataclasses
 import json
 import re
 from collections import Counter
+from collections.abc import Callable
 from datetime import date, datetime
 from typing import Any
 from urllib.parse import urljoin, urlsplit
@@ -363,6 +367,20 @@ def _same_occurrence(raw: dict[str, Any], page_time: PageTime, zone: ZoneInfo | 
     return True
 
 
+def _end_open_for(raw: dict[str, Any], page_end: str, zone: ZoneInfo | None) -> bool:
+    """The listing gives no end, or only the end's date (Eventbrite: "endDate":
+    "2026-11-24") and the page's end falls on that same day."""
+    listed = raw.get("end_datetime")
+    if not listed:
+        return True
+    if not isinstance(listed, str) or not _DATE_ONLY_RE.match(listed):
+        return False
+    try:
+        return _local_day(page_end, zone) == date.fromisoformat(listed.strip())
+    except ValueError:
+        return False
+
+
 @dataclasses.dataclass(frozen=True)
 class _PageFindings:
     description: tuple[str, str] | None
@@ -384,6 +402,29 @@ def _lookup_url(candidate: EventCandidate) -> tuple[str | None, str | None]:
 
 
 
+# Sites whose listings give only a date while every event page states its
+# start time in JSON-LD. Eventbrite's city pages ("/d/in--bloomington/all-
+# events/") are the case in point, on any of its country domains.
+#
+# Architectural trade-off: backend/CLAUDE.md asks for site behaviour to be data
+# in SiteConfiguration, not hostname checks. This table is a deliberate
+# exception. Eventbrite's listing format is the same for every town, so the
+# rule belongs to the publisher, not to one source; a per-source setting would
+# have to be switched on by hand for each existing and future Eventbrite
+# source (a production configuration change) and would be missed on new ones.
+# The table only widens which pages the existing, bounded time lookup may read;
+# it never changes how a page is parsed. If more publishers need this, move it
+# to a SiteConfiguration field (defaulting from this table) instead of growing
+# it. See docs/extraction-patterns.md.
+_PAGE_TIMED_HOSTS = re.compile(r"(^|\.)eventbrite\.[a-z]{2,3}(\.[a-z]{2})?$")
+
+
+def page_states_time(page_url: str) -> bool:
+    """True for an event page on a site known to state its start time."""
+    host = (urlsplit(page_url).hostname or "").lower()
+    return bool(_PAGE_TIMED_HOSTS.search(host))
+
+
 def _needs(
     candidate: EventCandidate,
     page: str,
@@ -402,10 +443,15 @@ def _needs(
     gap = time_gap(candidate.raw)
     # A placeholder midnight is worth a page of its own. A date-only listing
     # is often a genuinely date-only event, so its page is only read for a
-    # time when it is being fetched for a description or venue anyway: a
+    # time when it is being fetched for a description or venue anyway, or
+    # when the page is on a site whose event pages always state the time: a
     # source that never gives times doesn't spend the budget every run.
     wants_time = not known(known_timed_urls) and (
-        gap == "placeholder" or (gap == "date_only" and (wants_description or wants_venue))
+        gap == "placeholder"
+        or (
+            gap == "date_only"
+            and (wants_description or wants_venue or page_states_time(page))
+        )
     )
     return wants_description, wants_venue, wants_time
 
@@ -421,11 +467,13 @@ async def fill_from_event_pages(
     known_timed_urls: frozenset[str] = frozenset(),
     timezone: str | None = None,
     max_fetches: int = DEFAULT_MAX_FETCHES,
+    skip: Callable[[EventCandidate], bool] | None = None,
 ) -> tuple[list[EventCandidate], list[str]]:
     """Returns the candidates (those that gained a description, venue or time
     replaced, the rest unchanged, order kept) and run-level warnings.
     `timezone` is the events' zone, used to check that a page's time falls
-    on the listing's own day."""
+    on the listing's own day. `skip` marks candidates the run will leave out
+    anyway (outside the source's town): their pages are never fetched."""
     zone = _zone(timezone)
     site_boilerplate: str | None = None
     if listing_html:
@@ -433,6 +481,7 @@ async def fill_from_event_pages(
 
     found: dict[str, _PageFindings | None] = {}
     skipped = 0
+    left_out = 0
     for candidate in candidates:
         if max_fetches <= 0:
             break
@@ -445,6 +494,9 @@ async def fill_from_event_pages(
                 known_described_urls, known_venue_urls, known_timed_urls,
             )
         ):
+            continue
+        if skip is not None and skip(candidate):
+            left_out += 1
             continue
         if len(found) >= max_fetches:
             skipped += 1
@@ -514,7 +566,7 @@ async def fill_from_event_pages(
         ):
             raw["start_datetime"] = findings.time.start
             paths["start_datetime"] = findings.time.source
-            if findings.time.end is not None and not raw.get("end_datetime"):
+            if findings.time.end is not None and _end_open_for(raw, findings.time.end, zone):
                 raw["end_datetime"] = findings.time.end
                 paths["end_datetime"] = findings.time.source.replace("startDate", "endDate")
                 if paths["end_datetime"].endswith("og:start_time"):
@@ -530,6 +582,8 @@ async def fill_from_event_pages(
         warnings.append(f"venue_lookup:{venued}_filled_of_{len(found)}_pages")
         if timed:
             warnings.append(f"time_lookup:{timed}_filled_of_{len(found)}_pages")
+    if left_out:
+        warnings.append(f"event_page_lookup_skipped_out_of_town:{left_out}")
     if skipped:
         warnings.append(f"event_page_lookup_budget_reached:{skipped}_events_not_looked_up")
     return result, warnings
