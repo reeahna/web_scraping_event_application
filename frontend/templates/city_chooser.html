@@ -54,31 +54,18 @@
   {% if cities %}
   <section class="town-directory" aria-labelledby="town-directory-heading">
     <div class="town-directory-head">
-      <h2 id="town-directory-heading">{% if query %}Towns matching “{{ query }}”{% else %}Every town we cover{% endif %}</h2>
-      <p class="town-directory-count">{{ cities | length }} town{{ "s" if cities | length != 1 }}{% if query %}. <a href="/">Show every town</a>{% endif %}</p>
+      <h2 id="town-directory-heading">{% if query %}Towns matching “{{ query }}”{% else %}Towns in {{ state.name }}{% endif %}</h2>
+      <p class="town-directory-count">{{ cities | length }} town{{ "s" if cities | length != 1 }}. <a href="/">{% if query %}Show every state{% else %}All states{% endif %}</a></p>
     </div>
-    {#
-      With a long list, a row of initial letters jumps down the directory. It
-      only appears past 60 towns, so today's shorter list stays uncluttered.
-    #}
-    {% set long_list = cities | length > 60 and not query %}
-    {% if long_list %}
-    {% set letters = cities | map(attribute="name") | map("first") | map("upper") | unique | list %}
-    <nav class="town-letters" aria-label="Jump to towns by first letter">
-      {% for letter in letters %}<a href="#towns-{{ letter }}">{{ letter }}</a>{% endfor %}
-    </nav>
-    {% endif %}
-    {% set seen = namespace(letter="") %}
     <ul class="city-grid">
       {% for city in cities %}
       {% set count = event_counts.get(city.id, 0) %}
-      {% set letter = city.name[:1] | upper %}
       {#
         Town, state and count only. The schools stay in the search (typed here
-        or in the suggestions) and on the town page itself, so a directory of
-        hundreds of towns still scans as one column of names.
+        or in the suggestions) and on the town page itself, so the list scans
+        as one column of names.
       #}
-      <li{% if long_list and letter != seen.letter %} id="towns-{{ letter }}"{% endif %}>{% set seen.letter = letter %}
+      <li>
         <a class="city-card" href="/city/{{ city.slug }}">
           <span class="city-card-name">{{ city.name }}{% if city.state_or_region %}<span class="city-card-state">, <abbr title="{{ city.state_or_region }}">{{ city.state_or_region | state_abbr }}</abbr></span>{% endif %}</span>
           <span class="city-card-count"><span class="city-card-number">{{ count }}</span> upcoming event{{ "s" if count != 1 }}</span>
@@ -97,9 +84,37 @@
   {% elif query %}
   <div class="empty-state">
     <h2>No college town matches “{{ query }}”</h2>
-    <p>We cover a small number of towns so far. Try a different name, or browse them all.</p>
-    <a href="/" class="filter-clear-link">Show every town</a>
+    <p>We cover a small number of towns so far. Try a different name, or browse them by state.</p>
+    <a href="/" class="filter-clear-link">Show every state</a>
   </div>
+  {% elif state_requested %}
+  <div class="empty-state">
+    <h2>No towns with upcoming events in “{{ state_requested }}”</h2>
+    <p>Try another state, or search for a town or school above.</p>
+    <a href="/" class="filter-clear-link">Show every state</a>
+  </div>
+  {% elif states %}
+  {#
+    The page starts with states rather than every town: a list of every town
+    had grown too long to scan. A state shows only towns with something coming
+    up, and a state with none of those is not listed.
+  #}
+  <section class="town-directory" aria-labelledby="town-directory-heading">
+    <div class="town-directory-head">
+      <h2 id="town-directory-heading">Choose a state</h2>
+      <p class="town-directory-count">{{ states | length }} state{{ "s" if states | length != 1 }}</p>
+    </div>
+    <ul class="city-grid">
+      {% for group in states %}
+      <li>
+        <a class="city-card" href="/?{{ {'state': group.name} | urlencode }}">
+          <span class="city-card-name">{{ group.name }}</span>
+          <span class="city-card-count">{{ group.towns | length }} town{{ "s" if group.towns | length != 1 }}, <span class="city-card-number">{{ group.upcoming }}</span> upcoming event{{ "s" if group.upcoming != 1 }}</span>
+        </a>
+      </li>
+      {% endfor %}
+    </ul>
+  </section>
   {% else %}
   <div class="empty-state">
     <h2>No towns are available yet</h2>
