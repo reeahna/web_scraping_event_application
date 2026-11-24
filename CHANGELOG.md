@@ -72,6 +72,9 @@ lines. Lines may use `**bold**`, `` `code` `` and `[links](https://...)`.
 
 ## [Unreleased]
 
+### For everyone
+- A new **New features / bug fixes** page (linked in the footer) lets you suggest a feature or report something that isn't working, and see the status of what you've sent. (#137)
+
 ## [1.12.1] - 2026-11-23
 
 ### Admin and behind the scenes
