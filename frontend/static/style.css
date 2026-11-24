@@ -736,11 +736,6 @@ textarea:focus-visible,
   font-size: var(--font-sm);
 }
 
-/* A town with nothing on yet stays listed, but recedes. */
-.city-quiet .city-card-number {
-  color: var(--muted);
-}
-
 @media (max-width: 860px) {
   .chooser-inner {
     grid-template-columns: minmax(0, 1fr);

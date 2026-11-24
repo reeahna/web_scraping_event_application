@@ -255,8 +255,13 @@ def home(request: Request, current_user: OptionalCurrentUser, db: DbSession):
     through a city.
     """
     query = (request.query_params.get("q") or "").strip()
-    cities = search_public_cities(db, query=query)
     counts = upcoming_counts_by_city(db, today=local_today(db))
+    # A live town with nothing coming up is left off the list and out of the
+    # suggestions: a card reading "0 upcoming events" sends a visitor to an empty
+    # page. The town page itself stays reachable by its URL, and the town comes
+    # back here on its own once it has an upcoming event. The filter reuses the
+    # counts above, so it costs no extra query.
+    cities = [c for c in search_public_cities(db, query=query) if counts.get(c.id)]
 
     # The whole town list travels with the page so the suggestions appear on the
     # keystroke rather than after a round trip. This is a few dozen towns; if it
@@ -270,6 +275,7 @@ def home(request: Request, current_user: OptionalCurrentUser, db: DbSession):
             "count": counts.get(city.id, 0),
         }
         for city in search_public_cities(db)
+        if counts.get(city.id)
     ]
     return render(
         request,

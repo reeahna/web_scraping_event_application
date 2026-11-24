@@ -13,16 +13,19 @@ import pytest
 
 
 @pytest.fixture
-def towns(db_session, make_city):
-    make_city(
-        name="Bloomington", slug="bloomington-in",
-        state_or_region="Indiana", universities=["Indiana University"],
-    )
-    make_city(
-        name="Bethlehem", slug="bethlehem-pa",
-        state_or_region="Pennsylvania", universities=["Lehigh University"],
-    )
-    make_city(name="Hidden", slug="hidden-town", is_active=False)
+def towns(db_session, make_city, publish_upcoming):
+    for city in (
+        make_city(
+            name="Bloomington", slug="bloomington-in",
+            state_or_region="Indiana", universities=["Indiana University"],
+        ),
+        make_city(
+            name="Bethlehem", slug="bethlehem-pa",
+            state_or_region="Pennsylvania", universities=["Lehigh University"],
+        ),
+        make_city(name="Hidden", slug="hidden-town", is_active=False),
+    ):
+        publish_upcoming(city)
     db_session.commit()
 
 
@@ -92,13 +95,13 @@ def test_the_index_is_json_not_script(client, towns):
     assert '<script src="/static/js/city-search.js"' in html
 
 
-def test_town_names_cannot_inject_markup(client, db_session, make_city):
+def test_town_names_cannot_inject_markup(client, db_session, make_city, publish_upcoming):
     """Names come from the database and are rendered by the script with
     textContent; the transport has to be safe too."""
-    make_city(
+    publish_upcoming(make_city(
         name='<img src=x onerror=alert(1)>', slug="xss-town",
         universities=['"></script><script>alert(2)</script>'],
-    )
+    ))
     db_session.commit()
     html = client.get("/").text
     assert "<img src=x onerror" not in html
@@ -106,3 +109,9 @@ def test_town_names_cannot_inject_markup(client, db_session, make_city):
     # Still valid, parseable JSON carrying the real value.
     names = {entry["name"] for entry in _index(html)}
     assert '<img src=x onerror=alert(1)>' in names
+
+
+def test_a_town_with_nothing_upcoming_is_not_suggested(client, towns, make_city):
+    """An empty town would only lead to an empty page."""
+    make_city(name="Quiet", slug="quiet-town", state_or_region="Indiana")
+    assert "Quiet" not in {e["name"] for e in _index(client.get("/").text)}

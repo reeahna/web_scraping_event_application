@@ -166,3 +166,51 @@ def test_counts_match_what_the_town_page_would_show(client, college_towns):
         r"Bloomington.*?(\d+)(?:</span>)? upcoming event", chooser, re.S
     ).group(1)
     assert card == "1"
+
+
+def test_a_town_with_nothing_upcoming_is_left_off_the_list(
+    client, college_towns, make_city
+):
+    """A card reading "0 upcoming events" only leads to an empty page."""
+    make_city(name="Blacksburg", slug="blacksburg-va", state_or_region="Virginia")
+    directory = _directory(client.get("/").text)
+    assert "Blacksburg" not in directory
+    assert "Bloomington" in directory
+    # Not in a search either, but the town page itself still works.
+    assert "Blacksburg" not in client.get("/?q=blacks").text.split("</form>", 1)[1]
+    assert client.get("/city/blacksburg-va").status_code == 200
+
+
+def test_a_town_comes_back_once_it_has_an_upcoming_event(
+    client, college_towns, make_city, make_website, make_event, db_session
+):
+    town = make_city(name="Blacksburg", slug="blacksburg-va", state_or_region="Virginia")
+    assert "Blacksburg" not in _directory(client.get("/").text)
+    website = make_website(town, name="Blacksburg Source")
+    website.is_active = True
+    website.active_configuration_version = 1
+    db_session.commit()
+    make_event(
+        town,
+        website=website,
+        canonical_url="https://example.org/blacksburg",
+        start_date=current_public_date() + timedelta(days=2),
+    )
+    assert "Blacksburg" in _directory(client.get("/").text)
+
+
+def test_a_town_with_only_past_events_is_left_off(
+    client, college_towns, make_city, make_website, make_event, db_session
+):
+    town = make_city(name="Blacksburg", slug="blacksburg-va", state_or_region="Virginia")
+    website = make_website(town, name="Blacksburg Source")
+    website.is_active = True
+    website.active_configuration_version = 1
+    db_session.commit()
+    make_event(
+        town,
+        website=website,
+        canonical_url="https://example.org/blacksburg-past",
+        start_date=current_public_date() - timedelta(days=5),
+    )
+    assert "Blacksburg" not in _directory(client.get("/").text)

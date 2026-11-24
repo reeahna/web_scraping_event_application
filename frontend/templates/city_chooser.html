@@ -78,7 +78,7 @@
         or in the suggestions) and on the town page itself, so a directory of
         hundreds of towns still scans as one column of names.
       #}
-      <li{% if not count %} class="city-quiet"{% endif %}{% if long_list and letter != seen.letter %} id="towns-{{ letter }}"{% endif %}>{% set seen.letter = letter %}
+      <li{% if long_list and letter != seen.letter %} id="towns-{{ letter }}"{% endif %}>{% set seen.letter = letter %}
         <a class="city-card" href="/city/{{ city.slug }}">
           <span class="city-card-name">{{ city.name }}{% if city.state_or_region %}<span class="city-card-state">, <abbr title="{{ city.state_or_region }}">{{ city.state_or_region | state_abbr }}</abbr></span>{% endif %}</span>
           <span class="city-card-count"><span class="city-card-number">{{ count }}</span> upcoming event{{ "s" if count != 1 }}</span>
