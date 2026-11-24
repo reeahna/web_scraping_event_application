@@ -299,6 +299,66 @@ def test_venue_from_microdata_only_when_the_page_has_one_location():
     assert venue_from_page(two, "https://example.com/e/1") is None
 
 
+# A Localist page (Lehigh's "Pace the Prez", 2026-11-24): every occurrence's
+# JSON-LD leaves `location` out because the event names no place, only a
+# free-text location that the page shows in its "About this Event" block.
+LOCALIST_URL = "https://eventscalendar.lehigh.edu/event/pace_the_prez_7265"
+
+
+def _localist_page(*lines: str, localist: bool = True, location: dict | None = None) -> str:
+    occurrence = {"@type": "Event", "name": "Pace the Prez", "url": LOCALIST_URL,
+                  "startDate": "2026-12-01T06:30:00-05:00"}
+    if location is not None:
+        occurrence["location"] = location
+    meta = (
+        '<meta name="application-name" content="Localist Community Event Platform">'
+        '<meta name="localist-page" content="event-view">'
+        if localist else ""
+    )
+    about = "".join(f'<p class="em-about_location__address">{line}</p>' for line in lines)
+    return (
+        f"<html><head>{meta}{_jsonld(occurrence, occurrence)}</head><body>"
+        f'<div class="em-about_location">{about}</div></body></html>'
+    )
+
+
+def test_venue_from_localist_about_block_when_jsonld_has_no_location():
+    page = _localist_page("Clayton University Center flag pole, Asa Packer campus")
+    assert venue_from_page(page, LOCALIST_URL, "Pace the Prez") == PageVenue(
+        "Clayton University Center flag pole, Asa Packer campus",
+        None,
+        "detail:localist.about_location",
+    )
+
+
+def test_localist_about_block_is_not_trusted_elsewhere_or_twice():
+    line = "Clayton University Center flag pole"
+    assert venue_from_page(_localist_page(line, localist=False), LOCALIST_URL) is None
+    assert venue_from_page(_localist_page(line, "Second place"), LOCALIST_URL) is None
+    assert venue_from_page(_localist_page("TBA"), LOCALIST_URL) is None
+
+
+def test_localist_jsonld_place_still_comes_first():
+    page = _localist_page(
+        "30 Library Dr., Bethlehem, PA 18015",
+        location=_place("Linderman Library", streetAddress="30 Library Dr."),
+    )
+    assert venue_from_page(page, LOCALIST_URL) == PageVenue(
+        "Linderman Library", "30 Library Dr.", "detail:jsonld.location"
+    )
+
+
+@pytest.mark.asyncio
+async def test_localist_location_fills_a_json_ld_listing_without_one():
+    fetch = PageFetch({LOCALIST_URL: _localist_page("Clayton University Center flag pole")})
+    listing = _candidate("pace", canonical_url=LOCALIST_URL, description=LONG)
+    (filled,), warnings = await fill_from_event_pages([listing], fetch, FetchConfig())
+    assert fetch.fetched == [LOCALIST_URL]
+    assert filled.raw["venue"] == "Clayton University Center flag pole"
+    assert filled.field_source_paths["venue"] == "detail:localist.about_location"
+    assert "venue_lookup:1_filled_of_1_pages" in warnings
+
+
 @pytest.mark.asyncio
 async def test_fills_missing_and_placeholder_venues_but_keeps_real_ones():
     page = _page(jsonld=_jsonld({"@type": "Event", "description": LONG, "location": _place(

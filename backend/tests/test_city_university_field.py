@@ -85,12 +85,14 @@ def test_a_town_without_a_school_is_allowed(client, admin, db_session):
     assert city.universities == []
 
 
-def test_the_school_reaches_the_public_chooser(client, admin, make_city, db_session):
+def test_the_school_reaches_the_public_chooser(
+    client, admin, make_city, db_session, publish_upcoming
+):
     """End to end: the point of the field."""
-    make_city(
+    publish_upcoming(make_city(
         name="Bloomington", slug="bloomington-in",
         universities=["Indiana University"],
-    )
+    ))
     db_session.commit()
     assert "Indiana University" in client.get("/").text
 
@@ -183,25 +185,29 @@ def test_the_view_page_shows_the_universities(client, admin, make_city, db_sessi
     assert "Second College" in html
 
 
-def test_searching_finds_a_town_by_any_of_its_schools(client, make_city, db_session):
-    make_city(
+def test_searching_finds_a_town_by_any_of_its_schools(
+    client, make_city, db_session, publish_upcoming
+):
+    publish_upcoming(make_city(
         name="Claremont", slug="claremont-ca",
         universities=["Pomona College", "Harvey Mudd College"],
-    )
+    ))
     db_session.commit()
 
     for term in ("pomona", "harvey", "claremont"):
         assert "Claremont" in client.get(f"/?q={term}").text, term
 
 
-def test_a_town_matching_on_two_schools_appears_once(client, make_city, db_session):
+def test_a_town_matching_on_two_schools_appears_once(
+    client, make_city, db_session, publish_upcoming
+):
     """A join would return the town twice; the query uses EXISTS."""
     import re
 
-    make_city(
+    publish_upcoming(make_city(
         name="Collegeville", slug="collegeville-pa",
         universities=["Ursinus College", "Collegeville College"],
-    )
+    ))
     db_session.commit()
 
     html = client.get("/?q=college").text

@@ -86,3 +86,34 @@ def archive_city_websites(db: Session, city: City) -> int:
         website.archived_at = now
     db.commit()
     return len(websites)
+
+
+@dataclass
+class StateGroup:
+    """One state on the public chooser: its name and the towns listed under it."""
+
+    name: str
+    towns: list[City]
+    upcoming: int
+
+
+def group_towns_by_state(towns: list[City], counts: dict[int, int]) -> list[StateGroup]:
+    """The chooser's towns grouped by state, states in alphabetical order.
+
+    Towns are stored as "IN" or "Indiana", so both land under the full name
+    (app.core.us_states.state_name). A town with no state goes under "Other".
+    Only towns the caller passes are grouped: the chooser already left out
+    towns with nothing coming up, so a state with none of those has no group.
+    """
+    from app.core.us_states import state_name
+
+    groups: dict[str, StateGroup] = {}
+    for town in towns:
+        name = state_name(town.state_or_region) or OTHER_STATE
+        group = groups.setdefault(name, StateGroup(name=name, towns=[], upcoming=0))
+        group.towns.append(town)
+        group.upcoming += counts.get(town.id, 0)
+    return sorted(groups.values(), key=lambda g: (g.name == OTHER_STATE, g.name))
+
+
+OTHER_STATE = "Other"
