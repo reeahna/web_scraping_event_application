@@ -68,7 +68,7 @@
       <li>
         <a class="city-card" href="/city/{{ city.slug }}">
           <span class="city-card-name">{{ city.name }}{% if city.state_or_region %}<span class="city-card-state">, <abbr title="{{ city.state_or_region }}">{{ city.state_or_region | state_abbr }}</abbr></span>{% endif %}</span>
-          <span class="city-card-count"><span class="city-card-number">{{ count }}</span> upcoming event{{ "s" if count != 1 }}</span>
+          <span class="city-card-count"><span class="city-card-number">{{ count | thousands }}</span> upcoming event{{ "s" if count != 1 }}</span>
           {# A search that found the town by its school says which school, so
              "lehigh" finding Bethlehem does not look like a wrong answer. #}
           {% if query and query | lower not in city.name | lower %}
@@ -109,7 +109,7 @@
       <li>
         <a class="city-card" href="/?{{ {'state': group.name} | urlencode }}">
           <span class="city-card-name">{{ group.name }}</span>
-          <span class="city-card-count">{{ group.towns | length }} town{{ "s" if group.towns | length != 1 }}, <span class="city-card-number">{{ group.upcoming }}</span> upcoming event{{ "s" if group.upcoming != 1 }}</span>
+          <span class="city-card-count">{{ group.towns | length }} town{{ "s" if group.towns | length != 1 }}, <span class="city-card-number">{{ group.upcoming | thousands }}</span> upcoming event{{ "s" if group.upcoming != 1 }}</span>
         </a>
       </li>
       {% endfor %}

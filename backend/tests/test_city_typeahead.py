@@ -115,3 +115,21 @@ def test_a_town_with_nothing_upcoming_is_not_suggested(client, towns, make_city)
     """An empty town would only lead to an empty page."""
     make_city(name="Quiet", slug="quiet-town", state_or_region="Indiana")
     assert "Quiet" not in {e["name"] for e in _index(client.get("/").text)}
+
+
+def test_suggestions_cover_every_state_however_it_was_entered(
+    client, towns, make_city, publish_upcoming
+):
+    """The home page lists states first, but typing still finds a town in any
+    state, whether its state was saved as "IN" or "Indiana"."""
+    publish_upcoming(make_city(name="Muncie", slug="muncie-in", state_or_region="IN"))
+    index = {e["name"]: e for e in _index(client.get("/").text)}
+    assert {"Bloomington", "Bethlehem", "Muncie"} <= set(index)
+    assert index["Muncie"]["state"] == "IN"
+    assert index["Bloomington"]["state"] == "Indiana"
+
+
+def test_suggestions_are_the_same_on_a_state_page(client, towns):
+    """Choosing a state narrows the list below, not the search box."""
+    names = {e["name"] for e in _index(client.get("/?state=Indiana").text)}
+    assert names == {"Bloomington", "Bethlehem"}

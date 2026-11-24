@@ -281,3 +281,40 @@ def test_a_town_without_a_state_is_listed_under_other(
     assert home.rstrip().endswith("</li>")
     assert home.index("Other") > home.index("Pennsylvania")
     assert "Nowhere" in _directory(client.get("/?state=Other").text)
+
+
+def test_all_states_leads_back_to_the_state_list(client, college_towns):
+    html = client.get("/?state=Pennsylvania").text
+    assert 'href="/">All states</a>' in html
+    back = client.get("/").text
+    assert "Choose a state" in back
+    assert 'href="/?state=Indiana"' in _directory(back)
+
+
+def test_a_state_page_shows_real_counts_not_a_cap(
+    client, college_towns, make_website, make_event, db_session
+):
+    """The counts are the town page's own count, however large."""
+    bloomington, _ = college_towns
+    website = make_website(bloomington, name="Big Source")
+    website.is_active = True
+    website.active_configuration_version = 1
+    db_session.commit()
+    for i in range(44):
+        make_event(
+            bloomington,
+            website=website,
+            title=f"Show {i}",
+            canonical_url=f"https://example.org/show-{i}",
+            start_date=current_public_date() + timedelta(days=1 + i % 9),
+        )
+    directory = _directory(client.get("/?state=Indiana").text)
+    assert '<span class="city-card-number">45</span> upcoming events' in directory
+    home = _directory(client.get("/").text)
+    assert '<span class="city-card-number">45</span> upcoming events' in home
+
+
+def test_a_town_page_still_works_by_its_url(client, college_towns):
+    bloomington, _ = college_towns
+    assert client.get(f"/city/{bloomington.slug}").status_code == 200
+    assert client.get(f"/city/{bloomington.slug}/this-weekend").status_code == 200
