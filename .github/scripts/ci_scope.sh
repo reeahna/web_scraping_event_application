@@ -27,13 +27,13 @@ DOCS_RE='^(docs/.*|.*\.md)$'
 
 # Files that change what a browser renders: templates, CSS and JS, and the
 # backend code that builds pages, sets headers (CSP, cookies) or formats what
-# pages show. A change here runs the Chromium, Firefox and WebKit layout jobs.
-# Chromium layout checks also run inside the `test` job on every code change,
+# pages show, and the browser tests themselves. A change here runs the Chromium,
+# Firefox and WebKit browser jobs. The Chromium browser tests also run inside the `test` job on every code change,
 # so a backend change outside this list is still checked in a real browser.
-# CHANGELOG.md is left out on purpose: the layout checks don't open
+# CHANGELOG.md is left out on purpose: the browser tests don't open
 # /whats-new, so the browser jobs test nothing a changelog line can change.
 # tests/test_version_history.py (in `test`) checks it parses and renders.
-UI_RE='^(frontend/|backend/app/routers/|backend/app/main\.py$|backend/app/paths\.py$|backend/app/dependencies\.py$|backend/app/schemas/|backend/app/core/(templating|formatting|middleware|security|csrf|flash|permissions)\.py$|backend/tests/test_responsive_layout\.py$)'
+UI_RE='^(frontend/|backend/app/routers/|backend/app/main\.py$|backend/app/paths\.py$|backend/app/dependencies\.py$|backend/app/schemas/|backend/app/core/(templating|formatting|middleware|security|csrf|flash|permissions)\.py$|backend/tests/(test_responsive_layout|test_browser_interactions|browser_support)\.py$)'
 
 # Files that cannot change database behaviour: templates and static files, and
 # the changelog. A change made only of these (plus docs) skips the PostgreSQL

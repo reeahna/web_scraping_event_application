@@ -16,21 +16,17 @@ from __future__ import annotations
 
 import os
 import re
-import socket
-import threading
-import time
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 import pytest
 
 from app.core.permissions import REGISTERED_USER, SUPER_ADMINISTRATOR
-from app.main import app as fastapi_app
 from app.models.user_engagement import SavedEvent
 from app.services.notifications import SEVERITY_INFO, notify
+from tests.browser_support import BROWSERS, launch, session_cookie
 
 playwright_api = pytest.importorskip("playwright.sync_api")
-uvicorn = pytest.importorskip("uvicorn")
 
 # Phones (portrait and landscape), iPads (portrait and landscape, mini/Air
 # and Pro), laptops and a wide monitor. Named so a failure and a screenshot
@@ -49,36 +45,7 @@ VIEWPORTS = {
     "wide-1920": (1920, 1080),
 }
 
-BROWSERS = [
-    name.strip()
-    for name in os.environ.get("LAYOUT_BROWSERS", "chromium").split(",")
-    if name.strip()
-]
-
 LONG_WORD = "Supercalifragilisticexpialidocious-Interdisciplinary-Symposium"
-
-
-def _free_port() -> int:
-    with socket.socket() as s:
-        s.bind(("127.0.0.1", 0))
-        return s.getsockname()[1]
-
-
-@pytest.fixture
-def live_server():
-    port = _free_port()
-    config = uvicorn.Config(fastapi_app, host="127.0.0.1", port=port, log_level="warning")
-    server = uvicorn.Server(config)
-    thread = threading.Thread(target=server.run, daemon=True)
-    thread.start()
-    deadline = time.monotonic() + 20
-    while not server.started:
-        if time.monotonic() > deadline:
-            raise RuntimeError("live server did not start")
-        time.sleep(0.05)
-    yield f"http://127.0.0.1:{port}"
-    server.should_exit = True
-    thread.join(timeout=10)
 
 
 @pytest.fixture
@@ -166,23 +133,6 @@ def layout_data(make_city, make_website, make_event, make_user, db_session):
     return {"city": city, "event": events[1]}
 
 
-def _session_cookie(client, login, email: str) -> dict:
-    client.cookies.clear()
-    login(email)
-    from app.config import get_settings
-
-    name = get_settings().session_cookie_name
-    return {"name": name, "value": client.cookies.get(name)}
-
-
-def _launch(pw, name: str):
-    browser_type = getattr(pw, name)
-    try:
-        return browser_type.launch()
-    except Exception as exc:  # not installed in this environment
-        pytest.skip(f"{name} is not available: {str(exc).splitlines()[0]}")
-
-
 # Reports what pokes past the right edge, so a failure names the element.
 _OVERFLOW_JS = """
 () => {
@@ -242,7 +192,7 @@ def test_pages_fit_every_screen(browser_name, live_server, layout_data, client, 
         + [("admin", "admin@example.com", p) for p in admin_pages]
     )
     cookies = {
-        who: _session_cookie(client, login, email)
+        who: session_cookie(client, login, email)
         for who, email, _ in visits
         if email
     }
@@ -254,7 +204,7 @@ def test_pages_fit_every_screen(browser_name, live_server, layout_data, client, 
 
     problems: list[str] = []
     with playwright_api.sync_playwright() as pw:
-        browser = _launch(pw, browser_name)
+        browser = launch(pw, browser_name)
         try:
             for vp_name, (width, height) in VIEWPORTS.items():
                 for who in ("guest", "member", "admin"):
