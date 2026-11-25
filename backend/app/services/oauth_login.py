@@ -190,6 +190,12 @@ def _grant_superadmin_if_named(
 ) -> None:
     if not _is_named_superadmin(info, settings):
         return
+    grant_superadmin(db, user, detail="Signed in with the verified SUPERADMIN_EMAIL address.")
+
+
+def grant_superadmin(db: Session, user: User, *, detail: str) -> None:
+    """Give `user` the Super Administrator role (once), audited. Callers decide
+    that the person has proved they own SUPERADMIN_EMAIL."""
     role = db.scalar(select(Role).where(Role.name == SUPER_ADMINISTRATOR))
     if role is None:
         return
@@ -204,7 +210,7 @@ def _grant_superadmin_if_named(
             action="superadmin_granted_by_configuration",
             entity_type="user",
             entity_id=user.id,
-            detail="Signed in with the verified SUPERADMIN_EMAIL address.",
+            detail=detail,
         )
         db.commit()
 
@@ -293,7 +299,7 @@ def _resolve_user(
     return user
 
 
-def _evict_unverified_identities(db: Session, user: User) -> None:
+def evict_unverified_identities(db: Session, user: User) -> None:
     """When a provider that has verified the address joins an account, unlink
     any sign-in on it that never proved the address. Otherwise someone could
     open, say, a Facebook account under another person's email, sign in here
@@ -326,7 +332,7 @@ def _link_identity(
     _apply_identity_fields(identity, info, now)
     _note_verified_email(user, info, now)
     if info.email_verified:
-        _evict_unverified_identities(db, user)
+        evict_unverified_identities(db, user)
     db.add(identity)
     if commit:
         db.commit()

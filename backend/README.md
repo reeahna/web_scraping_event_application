@@ -61,16 +61,37 @@ plain-text guide to the site, and each town has an iCalendar feed at
 
 **Accounts.** There are no passwords. People sign in at `/auth/login` with
 Google, Microsoft, Facebook, X or Yahoo (each switches on when its client ID and secret are
-set), and the first sign-in creates the account. A new account gets only the
+set), or with a 6-digit code emailed to them (on when `EMAIL_SIGN_IN_ENABLED` is
+true and an email backend is set up, see "Email" below), and the first sign-in
+creates the account. A new account gets only the
 **Registered User** role, which has no admin permissions. The address in
 `SUPERADMIN_EMAIL` becomes Super Administrator when it signs in through a provider
-that has verified it (Google). Signed-in users can save events
+that has verified it (Google) or with a code sent to it. Signed-in users can save events
 (`/account/saved`), follow towns, set alert preferences (`/account/alerts`), and
 delete their account from `/account`. Signing in lands on the homepage (admins
 land in `/admin`) unless the person was on their way to a particular page.
 Deleting an account really removes it, so the same email address can sign up
 again later and gets a fresh, empty account. Starting a sign-in is limited to 30 per
 address in 15 minutes.
+
+**Email code sign-in.** The person types their address and gets a code that
+works once, for 10 minutes. Asking again invalidates every earlier code, so only
+the newest works. Only a salted hash of each code is stored
+(`email_sign_in_codes`). Limits: 5 codes per address per hour, 10 code requests
+per IP address per hour, 5 wrong guesses per code, 30 code checks per IP address
+in 15 minutes. The answer is the same whether or not the address has an account,
+and nothing is sent to a disabled account or, with `REGISTRATION_ENABLED=false`,
+to an address with no account. Every sign-in (any method), code sent and code
+rejected goes in `sign_in_history`, which is deleted with the account.
+
+**Email.** `EMAIL_BACKEND=smtp` sends through any SMTP server, always over TLS.
+A free option is a Gmail account with 2-step verification and an
+[app password](https://myaccount.google.com/apppasswords): `SMTP_HOST=smtp.gmail.com`,
+`SMTP_PORT=587`, `SMTP_USERNAME` and `EMAIL_FROM` = the Gmail address,
+`SMTP_PASSWORD` = the app password (Gmail allows about 500 messages a day).
+`EMAIL_SIGN_IN_ENABLED` and `EMAIL_ENABLED` (alerts) switch the two uses on
+separately. `EMAIL_BACKEND=console` logs messages, codes included, for local
+development; it is refused for sign-in codes in production.
 
 The privacy policy and terms are at `/privacy` and `/terms`.
 
@@ -164,7 +185,10 @@ without any of it.
 | `GEMINI_API_KEY` | unset | AI categorization with Gemini, when no Groq key is set |
 | `GEMINI_FALLBACK_MODEL` | unset | Second Gemini model to try when the main one answers 503 "overloaded" |
 | `GEOCODING_ENABLED`, `GEOCODING_PROVIDER` | off | Fill in map coordinates from addresses |
-| `EMAIL_ENABLED`, `EMAIL_BACKEND` | off | Alert emails |
+| `EMAIL_ENABLED`, `EMAIL_BACKEND` | off, `noop` | Alert emails; backend `noop`, `console` or `smtp` |
+| `EMAIL_SIGN_IN_ENABLED` | `false` | Sign in with a code sent by email (needs a backend that sends) |
+| `EMAIL_FROM` | `alerts@example.com` | Sender address (with Gmail SMTP, the Gmail address) |
+| `SMTP_HOST`, `SMTP_PORT`, `SMTP_USERNAME`, `SMTP_PASSWORD` | unset, `587` | SMTP server for `EMAIL_BACKEND=smtp` |
 | `CONTACT_EMAIL` | unset | Shown on the privacy policy and terms |
 | `GOOGLE_/MICROSOFT_/FACEBOOK_/X_/YAHOO_CLIENT_ID` and `_SECRET` | unset | Sign-in providers; set at least one (Google for the admin) |
 | `OAUTH_REDIRECT_BASE_URL` | `PUBLIC_BASE_URL` | Base of the provider callback URLs, if different from the site's address |

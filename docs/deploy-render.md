@@ -48,6 +48,22 @@ provider, register its callback URL, and add its ID and secret in Render. Each
 button appears on the sign-in page once both values are set. Only a Google
 sign-in can claim `SUPERADMIN_EMAIL`, because Google confirms the address.
 
+### Sign in with an emailed code
+
+To let people sign in with a 6-digit code sent to their email (free, using a
+Gmail account):
+
+1. On the Gmail account that will send the codes, turn on 2-Step Verification and
+   create an app password at <https://myaccount.google.com/apppasswords>.
+2. In Render → the service → **Environment**, add `EMAIL_SIGN_IN_ENABLED=true`,
+   `EMAIL_BACKEND=smtp`, `SMTP_HOST=smtp.gmail.com`, `SMTP_PORT=587`,
+   `SMTP_USERNAME` and `EMAIL_FROM` (the Gmail address), and `SMTP_PASSWORD` (the
+   app password). Alert emails stay off unless `EMAIL_ENABLED=true` too.
+3. The sign-in page then shows an email box above the provider buttons. A code
+   sent to `SUPERADMIN_EMAIL` also makes that address Super Administrator.
+
+Render's paid instances allow outbound SMTP; the free plan blocks it.
+
 | Provider | Where to create the app | Callback URL to register | Render variables |
 |---|---|---|---|
 | Microsoft | [Microsoft Entra admin center](https://entra.microsoft.com) → **App registrations → New registration**. Supported account types: *Accounts in any organizational directory and personal Microsoft accounts*. Platform: *Web*. Then **Certificates & secrets → New client secret**. | `…/auth/oauth/microsoft/callback` | `MICROSOFT_CLIENT_ID` (the *Application (client) ID*), `MICROSOFT_CLIENT_SECRET` (the secret's *Value*) |

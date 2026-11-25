@@ -16,11 +16,17 @@
   token is minted on every login — session-fixation safe.
 - Cookies: `HttpOnly`, `SameSite=Lax`, `Secure` in production (`COOKIE_SECURE`).
 - CSRF: double-submit token on every state-changing form/POST (`app/core/csrf`).
-- Sign-in is social only (Google, Microsoft, Facebook, X, Yahoo). There is no password
-  login, so no password, reset token or verification token is ever stored.
-- `SUPERADMIN_EMAIL` grants Super Administrator, but only on a sign-in whose
-  provider has verified that address (Google). Microsoft, Facebook, X and Yahoo sign-ins
-  can't claim it.
+- Sign-in is social (Google, Microsoft, Facebook, X, Yahoo) or a one-time code sent
+  by email. There is no password login, so no password or reset token is ever stored.
+- Email codes: 6 random digits (`secrets`), valid 10 minutes, single use, stored only
+  as a salted SHA-256 hash. A new request invalidates every earlier code for the
+  address. 5 wrong guesses end a code; sends are limited per address (5/hour) and per
+  IP (10/hour), checks per IP (30 per 15 minutes). The reply never reveals whether
+  an address has an account. A correct code counts as a verified address: it marks
+  the email verified and unlinks unverified social sign-ins on the account.
+- `SUPERADMIN_EMAIL` grants Super Administrator, but only on a sign-in that proves
+  the address: a provider that verifies it (Google) or an emailed code. Microsoft,
+  Facebook, X and Yahoo sign-ins can't claim it.
 - Registered users hold **zero** administrative permissions by default.
 
 ## OAuth (Phase 14)

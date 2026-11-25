@@ -3441,6 +3441,79 @@ a.wf-danger, button.wf-danger {
   cursor: pointer;
   border-style: dashed;
 }
+/* Sign in with a code sent by email */
+.signin-email {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  text-align: left;
+}
+.signin-email label {
+  font-weight: 500;
+  font-size: var(--font-sm);
+}
+.signin-email input {
+  min-height: 48px;
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--border-input);
+  border-radius: var(--radius-md);
+  font: inherit;
+  width: 100%;
+}
+.signin-email input:focus-visible {
+  outline: 3px solid var(--focus-ring);
+  outline-offset: 2px;
+}
+.signin-email .field-error {
+  margin: 0;
+}
+.signin-code-input {
+  font-size: 1.4rem;
+  letter-spacing: 0.3em;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+}
+.signin-button-primary {
+  width: 100%;
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+  background: var(--text);
+  border-color: var(--text);
+  color: var(--surface);
+}
+.signin-button-primary:hover {
+  background: var(--text);
+  color: var(--surface);
+  opacity: 0.9;
+}
+.signin-divider {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  margin: var(--space-4) 0;
+  color: var(--muted);
+  font-size: var(--font-sm);
+}
+.signin-divider::before,
+.signin-divider::after {
+  content: "";
+  flex: 1;
+  border-top: 1px solid var(--border);
+}
+.signin-resend .link-button {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-decoration: underline;
+  cursor: pointer;
+}
+.signin-resend .link-button:focus-visible {
+  outline: 3px solid var(--focus-ring);
+  outline-offset: 2px;
+}
 .signin-note {
   text-wrap: balance;
   margin: var(--space-5) 0 0;
