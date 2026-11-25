@@ -8,6 +8,7 @@ from app.extraction.locations import has_venue
 from app.extraction.normalize import (
     ALL_DAY_MARKER,
     END_ABSENT_MARKER,
+    HOME_VENUE_MARKER,
     TIME_TBD_MARKER,
     plain_text,
 )
@@ -299,9 +300,15 @@ def update_event(
     elif candidate.start_time is not None and not keep_stored_time:
         # The source now gives a clock time, so the event is no longer all-day.
         event.all_day = False
-    if candidate.venue is not None:
+    # A source's home venue only stands in for a missing venue: a venue the
+    # event itself named earlier (in its listing, or found on its own page)
+    # is kept, with its address.
+    home_default = HOME_VENUE_MARKER in candidate.transformation_history and has_venue(
+        {"venue": event.venue}
+    )
+    if candidate.venue is not None and not home_default:
         event.venue = candidate.venue
-    if candidate.address is not None:
+    if candidate.address is not None and not home_default:
         event.address = candidate.address
     if candidate.image_url is not None:
         event.image_url = candidate.image_url

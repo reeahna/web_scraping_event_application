@@ -96,11 +96,36 @@ Every stored event date and time is the event's **local wall clock**, and
   Before any page is fetched, the run asks the same geographic filter and
   home-town check it applies afterwards: an event it will leave out costs no
   fetch and no budget (`event_page_lookup_skipped_out_of_town:N`).
+  A page read successfully that names no venue is remembered for 7 days
+  (`event_page_checks`, recorded by imports only) and not fetched again for a
+  venue in that time, so the 30-page budget moves on to pages not yet read
+  instead of re-reading the same first pages every day
+  (`venue_lookup_recently_checked:N_events_skipped`). Failed and blocked
+  fetches are never remembered and are counted apart from pages that simply
+  name no venue (`event_page_lookup_fetch_failed:N_pages`,
+  `event_page_lookup_fetch_blocked:N_pages`,
+  `venue_lookup_page_names_no_venue:N_pages`). JSON-LD is parsed leniently, so
+  a raw line break inside a string doesn't hide the whole block.
+- **Detail selectors** (`app/extraction/detail_pages.py`): `detail_<field>`
+  selectors read the card's `detail_link`, or the event's `canonical_url` when
+  the record has no detail link (an RSS or JSON feed), within
+  `max_detail_fetches`.
 - **Locations** (`app/extraction/locations.py`): reads a schema.org `location`
   of any shape. The `json_ld_event` pattern uses it when `location.name` finds
   nothing, and `livewhale_json` falls back to `location_title`, `location_name`,
   `place_title`, `place` or a nested place object when the free-text `location`
   is empty or a placeholder ("TBD", "Location TBA").
+- **Home venue** (`SiteConfiguration.home_venue_name` / `home_venue_address`,
+  "Home venue" on the configure page): for an organizer that holds every event
+  at its own venue and never names it per event (a single theater or museum).
+  An administrator types the name (and optionally the address); it is never set
+  automatically. It fills only an event with no venue of its own, after the
+  listing, any detail selectors and the page lookup have run; a placeholder
+  ("TBA") counts as missing. Its address is used only with it. Provenance
+  records the venue as `source:home_venue` and the history carries
+  `venue:source_home_venue`. A re-import never replaces a stored venue with the
+  home venue, and an administrator's location correction stays the public
+  venue. Like any configuration change it is a draft until approved.
 - **LiveWhale times**: `date_iso`/`date2_iso` (the event's local time with its
   offset) are always preferred, even when a saved json_path names `date_ts`; a
   timestamp that names a different instant is reported as

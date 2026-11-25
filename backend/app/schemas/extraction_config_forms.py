@@ -104,6 +104,8 @@ class ConfigFormInput:
     allow_page_url_as_canonical_fallback: bool = False
     allow_offers_url_as_event_url: bool = False
     date_only_means_time_tbd: bool = False
+    home_venue_name: str = ""
+    home_venue_address: str = ""
     field_selectors: str = ""
     json_paths: str = ""
     transformations: str = ""
@@ -241,6 +243,8 @@ def build_site_configuration(
         "allow_page_url_as_canonical_fallback": form.allow_page_url_as_canonical_fallback,
         "allow_offers_url_as_event_url": form.allow_offers_url_as_event_url,
         "date_only_means_time_tbd": form.date_only_means_time_tbd,
+        "home_venue_name": form.home_venue_name.strip() or None,
+        "home_venue_address": form.home_venue_address.strip() or None,
         **parsed_scoped,
     }
 
@@ -294,6 +298,8 @@ def configuration_to_form(config: SiteConfiguration) -> ConfigFormInput:
         allow_page_url_as_canonical_fallback=bool(data.get("allow_page_url_as_canonical_fallback")),
         allow_offers_url_as_event_url=bool(data.get("allow_offers_url_as_event_url")),
         date_only_means_time_tbd=bool(data.get("date_only_means_time_tbd")),
+        home_venue_name=data.get("home_venue_name") or "",
+        home_venue_address=data.get("home_venue_address") or "",
         field_selectors=json.dumps(data.get("field_selectors") or {}, indent=2),
         json_paths=json.dumps(data.get("json_paths") or {}, indent=2),
         transformations=json.dumps(data.get("transformations") or [], indent=2),
