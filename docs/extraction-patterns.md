@@ -85,6 +85,17 @@ Every stored event date and time is the event's **local wall clock**, and
   with no offset (or date-only, when its page is fetched anyway) takes the
   JSON-LD `startDate`/`endDate` (else `og:start_time`), only when that falls on
   the listing's own day in the town's zone. All-day events are never looked up.
+  Eventbrite listings give only a date while every Eventbrite event page states
+  its time, so a date-only Eventbrite event is always looked up for its time
+  (until it is stored with one). Eventbrite is recognised by the page's
+  domain (`_PAGE_TIMED_HOSTS` in `event_page_fallback.py`): a deliberate
+  exception to keeping site behaviour in `SiteConfiguration`, since the rule
+  holds for every Eventbrite source and a per-source setting would need a
+  configuration change on each one. A date-only end is replaced only by a page end
+  on that same day. A page with no usable time leaves the event "Time TBD".
+  Before any page is fetched, the run asks the same geographic filter and
+  home-town check it applies afterwards: an event it will leave out costs no
+  fetch and no budget (`event_page_lookup_skipped_out_of_town:N`).
 - **Locations** (`app/extraction/locations.py`): reads a schema.org `location`
   of any shape. The `json_ld_event` pattern uses it when `location.name` finds
   nothing, and `livewhale_json` falls back to `location_title`, `location_name`,
