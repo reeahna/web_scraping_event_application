@@ -20,7 +20,16 @@ from app.models.event_category import EventCategory
 from app.models.user import User
 from app.models.website import Website
 from app.repositories.event_provenance import get_latest_provenance_for_event
-from app.services.all_day_backfill import backfill_all_day
+from app.services.all_day_backfill import (
+    CHECK_ACTION,
+    CHECK_ENTITY,
+    CheckRejected,
+    apply_all_day_to_ids,
+    apply_reviewed_check,
+    backfill_all_day,
+    check_audit_payload,
+    parse_event_ids,
+)
 from app.services.audit import record_audit
 from app.services.categorization import apply_categorization, categorize_event
 from app.services.event_freshness import mark_if_changed, visitor_snapshot
@@ -171,14 +180,34 @@ def list_events(
 @router.get("/all-day-backfill", response_class=HTMLResponse)
 def all_day_backfill_preview(request: Request, current_user: ViewEvents, db: DbSession):
     """What marking stored events all-day would change. Read-only: nothing is
-    written until the form below is submitted (see app.services.all_day_backfill)."""
+    written until a reviewed list of event ids is submitted below (see
+    app.services.all_day_backfill)."""
     _require(db, current_user, "events.review")
     report = backfill_all_day(db, apply=False)
     return render(
         request,
         "admin/events/all_day_backfill.html",
-        {"current_user": current_user, "report": report},
+        {
+            "current_user": current_user,
+            "report": report,
+            "reviewed_at": datetime.now(UTC).replace(microsecond=0).isoformat(),
+            "id_report": None,
+            "check_id": None,
+            "event_ids_text": "",
+            "error": None,
+        },
     )
+
+
+def _parse_reviewed_at(value: str) -> datetime:
+    try:
+        parsed = datetime.fromisoformat(value.strip())
+    except ValueError as exc:
+        raise AppError("The review time is missing or not a valid date and time.") from exc
+    parsed = parsed if parsed.tzinfo else parsed.replace(tzinfo=UTC)
+    if parsed > datetime.now(UTC):
+        raise AppError("The review time can't be in the future.")
+    return parsed
 
 
 @router.post("/all-day-backfill", response_class=HTMLResponse)
@@ -189,26 +218,79 @@ def all_day_backfill_apply(
     ip_address: ClientIp,
     current_user: ViewEvents,
     csrf_token: str = Form(...),
+    event_ids: str = Form(""),
+    reviewed_at: str = Form(""),
+    check_id: str = Form(""),
+    mode: str = Form("check"),
 ):
+    """Checks an explicit list of reviewed event ids, or applies an earlier
+    Check. It never marks events that are not on the list.
+
+    Check records its ids, review time and result as an audit entry. Apply
+    takes only that entry's id and uses what the entry says; it ignores any
+    ids or review time posted with it, so it cannot be pointed at anything
+    that was not checked."""
     verify_csrf(request, csrf_token)
+    _require(db, current_user, "events.review")
+    apply = mode == "apply"
     # A bulk change to stored events: Super Administrators only.
-    if not user_has_role(db, current_user, SUPER_ADMINISTRATOR):
+    if apply and not user_has_role(db, current_user, SUPER_ADMINISTRATOR):
         raise AppError("Forbidden: Super Administrator only", status_code=403)
-    report = backfill_all_day(db, apply=True)
-    record_audit(
-        db,
-        actor_id=current_user.id,
-        action="events_all_day_backfilled",
-        entity_type="event",
-        entity_id=None,
-        after={"marked": report.total_to_mark, "event_ids": report.marked_ids},
-        correlation_id=correlation_id,
-        ip_address=ip_address,
-    )
+    error = None
+    id_report = None
+    status = 200
+    if apply:
+        try:
+            if not check_id.strip().isdigit():
+                raise CheckRejected("Apply needs a check. Run Check first.")
+            _, id_report = apply_reviewed_check(
+                db,
+                int(check_id),
+                user_id=current_user.id,
+                correlation_id=correlation_id,
+                ip_address=ip_address,
+            )
+        except CheckRejected as exc:
+            db.rollback()
+            error, status = str(exc), 409
+    else:
+        reviewed = _parse_reviewed_at(reviewed_at)
+        try:
+            ids = parse_event_ids(event_ids)
+        except ValueError as exc:
+            ids, error = [], str(exc)
+        if not ids and error is None:
+            error = "Paste the reviewed event ids first."
+        if error is None:
+            id_report = apply_all_day_to_ids(db, ids, reviewed_at=reviewed, apply=False)
+            entry = record_audit(
+                db,
+                actor_id=current_user.id,
+                action=CHECK_ACTION,
+                entity_type=CHECK_ENTITY,
+                after=check_audit_payload(id_report, ids),
+                correlation_id=correlation_id,
+                ip_address=ip_address,
+            )
+            check_id = str(entry.id)
+        else:
+            status = 422
+    report = backfill_all_day(db, apply=False)
     return render(
         request,
         "admin/events/all_day_backfill.html",
-        {"current_user": current_user, "report": report},
+        {
+            "current_user": current_user,
+            "report": report,
+            "reviewed_at": (
+                id_report.reviewed_at.isoformat() if id_report else reviewed_at
+            ),
+            "id_report": id_report,
+            "check_id": check_id if id_report and not id_report.applied else None,
+            "event_ids_text": event_ids,
+            "error": error,
+        },
+        status_code=status,
     )
 
 
