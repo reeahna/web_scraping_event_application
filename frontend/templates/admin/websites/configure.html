@@ -109,6 +109,13 @@
     A date with no time means the time is not announced yet ("Time TBD", not "All day")
   </label>
 
+  <h3>Home venue (optional)</h3>
+  <p class="audit-meta">Only for an organizer that holds every event at its own venue and never names it per event. Fills events with no venue of their own; an extracted venue or a location correction always wins. Leave blank otherwise.</p>
+  <label for="home_venue_name">Home venue name</label>
+  <input type="text" id="home_venue_name" name="home_venue_name" maxlength="200" value="{{ form.home_venue_name }}" />
+  <label for="home_venue_address">Home venue address</label>
+  <input type="text" id="home_venue_address" name="home_venue_address" maxlength="200" value="{{ form.home_venue_address }}" />
+
   <h3>Field selectors, mappings, and transformations (JSON)</h3>
   <p class="audit-meta">Each section below is validated independently — leave blank for the default.</p>
 

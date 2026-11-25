@@ -19,6 +19,7 @@ from zoneinfo import ZoneInfo
 
 from app.core.timezones import is_unset_zone, resolve_zone_name
 from app.extraction.date_ranges import parse_date_range
+from app.extraction.locations import has_venue
 from app.extraction.sanitize import strip_to_text
 from app.extraction.transform import apply_transformations, parse_date_value, parse_time_value
 from app.extraction.types import EventCandidate
@@ -33,6 +34,10 @@ TIME_TBD_MARKER = "all_day_flag_means_time_tbd"
 # In transformation_history when the source states the event has no end (a
 # feed field present and empty), as opposed to the end simply not being read.
 END_ABSENT_MARKER = "end:absent_in_source"
+# In transformation_history when the venue (and address) came from the
+# source's administrator-set home venue rather than from the event itself.
+HOME_VENUE_MARKER = "venue:source_home_venue"
+HOME_VENUE_SOURCE_PATH = "source:home_venue"
 
 _ISO_DATETIME_SPLIT_RE = re.compile(r"^(\d{4}-\d{2}-\d{2})T(.*)$")
 
@@ -348,6 +353,16 @@ def normalize_candidate(
     if raw.get("end_absent") is True and end_date is None and end_time is None:
         history.append(END_ABSENT_MARKER)
 
+    if config.home_venue_name and not has_venue({"venue": venue}):
+        # A source-level default, used only when the event names no venue.
+        # Its address goes with it only when the event has none of its own.
+        venue = config.home_venue_name
+        paths = {**paths, "venue": HOME_VENUE_SOURCE_PATH}
+        if not address and config.home_venue_address:
+            address = config.home_venue_address
+            paths["address"] = HOME_VENUE_SOURCE_PATH
+        history.append(HOME_VENUE_MARKER)
+
     latitude = _parse_coordinate(raw.get("latitude"), warnings, "latitude")
     longitude = _parse_coordinate(raw.get("longitude"), warnings, "longitude")
 
@@ -368,6 +383,7 @@ def normalize_candidate(
         longitude=longitude,
         source_category=source_category,
         external_source_id=external_source_id,
+        field_source_paths=paths,
         transformation_history=tuple(history),
         warnings=tuple(warnings),
     )
