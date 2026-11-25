@@ -1,7 +1,7 @@
 """all day check uses
 
 Revision ID: c3f7a2d9e1b4
-Revises: b8e2d4a6c1f3
+Revises: c3f7a1d9e2b4
 
 Adds all_day_check_uses: one row per all-day backfill Check that has been
 applied, keyed by the Check's audit entry id. The primary key makes a Check
@@ -15,7 +15,7 @@ import sqlalchemy as sa
 from alembic import op
 
 revision: str = "c3f7a2d9e1b4"
-down_revision: str | None = "b8e2d4a6c1f3"
+down_revision: str | None = "c3f7a1d9e2b4"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
