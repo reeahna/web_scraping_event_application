@@ -20,7 +20,7 @@ from app.models.city import City
 from app.models.event import Event
 from app.models.event_category import EventCategory
 from app.models.website import Website
-from app.repositories.public_events import get_public_event, local_today
+from app.repositories.public_events import get_public_event, local_today, source_is_public
 from app.services import engagement, user_alerts
 from app.services.rbac import can_access_admin
 
@@ -38,8 +38,7 @@ def _followable(db, follow_type: str, target_id: int) -> bool:
     if follow_type == "category":
         category = db.get(EventCategory, target_id)
         return category is not None and category.is_active
-    website = db.get(Website, target_id)
-    return website is not None and website.is_active and website.archived_at is None
+    return source_is_public(db.get(Website, target_id))
 
 
 def _safe_next(value: str | None, default: str) -> str:

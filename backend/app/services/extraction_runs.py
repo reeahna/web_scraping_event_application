@@ -1585,6 +1585,8 @@ def _update_website_health(
                 message=(
                     f"'{website.name}' has failed {website.consecutive_failure_count} "
                     "consecutive persistent extraction runs and moved to FAILING. "
+                    "Automatic imports are paused; its events stay public and are "
+                    "marked as possibly out of date after 24 hours. "
                     + _failure_detail(
                         blocked_reason=blocked_reason, error_summary=error_summary
                     )

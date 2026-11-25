@@ -69,6 +69,20 @@ This is a safety net, not a substitute for running a single instance.
 - **Retries**: each run retries up to `schedule_config.max_retries` with bounded
   exponential backoff. Repeated failure advances the site toward the `FAILING`
   state through the existing extraction-health logic.
+- **Failing sources keep their events public**: three failed persistent runs in
+  a row move an `ACTIVE` source to `FAILING`
+  (`_update_website_health` in `app/services/extraction_runs.py`). That pauses
+  its imports and notifies reviewers, and nothing else: its events are never
+  archived, deactivated or deleted, and they stay public under their own
+  ordinary rules (`public_source_conditions` in
+  `app/repositories/public_events.py`). Source health only changes what
+  visitors are told: the town line names the source, and once a failing or
+  overdue source has gone 24 hours without a successful check its events read
+  "May be out of date" on cards and event pages. An administrator resumes it
+  with "Resume imports" on the website page (back to `ACTIVE`); the next
+  successful import clears the warnings, since they are worked out from run
+  records. Only an administrator's choice (`INACTIVE`, archived, unapproved)
+  hides a source's events.
 - **Structural failures → re-onboarding**: after several runs that fail
   structurally (hard failure or zero events extracted), the scheduler reruns
   detection, refreshes the draft configuration, previews it, and notifies
@@ -149,15 +163,19 @@ read-only, from run records, the scheduler job row and `schedule_config`:
 
 `app/services/event_freshness.py` turns run records into two public timestamps.
 
-- **Town pages** ("Listings checked ..."): the oldest of each public source's
+- **Town pages** ("Listings checked ..."): the oldest of each expected source's
   latest successful persistent run (`manual`/`scheduled`, status `success` or
-  `partial`). Only sources whose events can be public count (active, not
-  archived, approved). A source that has never completed a successful check
+  `partial`). Expected sources are the ones whose events can be public (active
+  or failing, not archived, approved) and that are on automatic imports. A
+  source whose automatic imports are off on purpose is updated by hand, so it
+  is left out of the time (unless it is all the town has) and the page says
+  how many were left out; it can no longer pin a town to its last manual
+  import. A source that has never completed a successful check
   can't date the town, so the page says how many have not completed a first
   check yet; a source whose latest run failed keeps its last good time and is
   mentioned on the page too, and preview or detection runs never count. Page views
   never change it. When the source that sets the time is failing or overdue
-  while the others are current, the page names it ("... could not be checked
+  (even a town's only source), the page names it ("... could not be checked
   on the latest try" or "... has not been checked since then") and says when
   every other source was checked; administrators get a link to that source.
 - **Event pages** ("Event information last updated ..."): `Event.content_updated_at`,

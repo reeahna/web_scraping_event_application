@@ -47,6 +47,10 @@
         <span>{{ event.public_venue or 'Venue TBD' }}</span>{% if event.public_address %}<span class="event-detail-address">{{ event.public_address }}</span>{% endif %}
       </p>
 
+      {% if stale_since is not none %}
+      <p class="event-stale" role="note"><strong>May be out of date.</strong> We could not check this event's source{% if stale_since %} since {{ stale_since }}{% else %} yet{% endif %}, so its details may have changed. Check with the organizer before you go.</p>
+      {% endif %}
+
       <div class="event-detail-actions">
         <a href="{{ event.canonical_url }}" rel="noopener noreferrer" target="_blank" class="button-primary external-link">
           View original listing<span class="sr-only"> (opens in a new tab)</span>

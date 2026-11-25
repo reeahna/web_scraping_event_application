@@ -209,12 +209,39 @@ def test_failing_source_holding_back_the_town_is_named(
 def test_overdue_source_holding_back_the_town_is_named(client, db_session, make_website, town):
     now = datetime.now(UTC)
     good = _source(db_session, make_website, town, "good")
-    off = _source(db_session, make_website, town, "off", schedule=OFF, display="Old Venue")
-    _run(db_session, off, now - timedelta(days=4))
+    late = _source(db_session, make_website, town, "late", display="Old Venue")
+    _run(db_session, late, now - timedelta(days=4))
     _run(db_session, good, now - timedelta(hours=2))
     assert town_listings_checked(db_session, town.id).held_back_by == "overdue"
     text = _text(client.get("/city/bloomington").text)
     assert "Old Venue has not been checked since then" in text
+
+
+def test_paused_source_does_not_pin_the_town_time(client, db_session, make_website, town):
+    """Automatic imports turned off on purpose: the source is updated by hand,
+    so it is left out of the town time (and said to be) instead of holding the
+    town at its last manual import for good."""
+    now = datetime.now(UTC)
+    good = _source(db_session, make_website, town, "good")
+    off = _source(db_session, make_website, town, "off", schedule=OFF, display="Old Venue")
+    _run(db_session, off, now - timedelta(days=4))
+    _run(db_session, good, now - timedelta(hours=2))
+    freshness = town_listings_checked(db_session, town.id)
+    assert freshness.oldest_website_id == good.id
+    assert not freshness.held_back
+    assert freshness.paused == 1
+    text = _text(client.get("/city/bloomington").text)
+    assert "Old Venue" not in text
+    assert "1 source updated by hand is not included in this time" in text
+
+
+def test_town_with_only_paused_sources_still_shows_their_time(db_session, make_website, town):
+    now = datetime.now(UTC)
+    off = _source(db_session, make_website, town, "off", schedule=OFF)
+    _run(db_session, off, now - timedelta(days=4))
+    freshness = town_listings_checked(db_session, town.id)
+    assert freshness is not None and freshness.oldest_website_id == off.id
+    assert freshness.paused == 0
 
 
 def test_oldest_source_that_is_merely_next_in_line_is_not_named(
@@ -272,7 +299,8 @@ def test_websites_list_shows_freshness_columns(
 ):
     now = datetime.now(UTC)
     good = _source(db_session, make_website, town, "good")
-    broken = _source(db_session, make_website, town, "broken", schedule=OFF)
+    broken = _source(db_session, make_website, town, "broken")
+    _source(db_session, make_website, town, "switched-off", schedule=OFF)
     _run(db_session, good, now - timedelta(hours=2))
     _run(db_session, broken, now - timedelta(days=3))
     _run(db_session, broken, now - timedelta(hours=1), status="blocked", error="HTTP 403")
