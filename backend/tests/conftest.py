@@ -205,6 +205,30 @@ def make_event(db_session):
 
 
 @pytest.fixture
+def publish_upcoming(db_session, make_website, make_event):
+    """Give a town one upcoming public event. The home page lists only towns
+    with something coming up, so a test about the chooser needs one."""
+
+    def _publish(city: City) -> Event:
+        from datetime import timedelta
+
+        from app.repositories.public_events import current_public_date
+
+        website = make_website(city, name=f"{city.name} Source")
+        website.is_active = True
+        website.active_configuration_version = 1
+        db_session.commit()
+        return make_event(
+            city,
+            website=website,
+            canonical_url=f"https://example.org/{city.slug}",
+            start_date=current_public_date() + timedelta(days=3),
+        )
+
+    return _publish
+
+
+@pytest.fixture
 def make_category(db_session):
     def _make_category(
         name: str = "Test Category",

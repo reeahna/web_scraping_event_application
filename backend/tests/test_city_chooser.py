@@ -65,11 +65,12 @@ def _directory(html):
 def test_the_directory_lists_town_state_and_count_but_not_schools(client, college_towns):
     """Schools made the directory cluttered; they live in search and on the
     town page instead."""
-    directory = _directory(client.get("/").text)
-    assert "Bloomington" in directory and ">IN</abbr>" in directory
-    assert "Bethlehem" in directory and ">PA</abbr>" in directory
-    assert "Indiana University" not in directory
-    assert "Lehigh University" not in directory
+    indiana = _directory(client.get("/?state=Indiana").text)
+    pennsylvania = _directory(client.get("/?state=Pennsylvania").text)
+    assert "Bloomington" in indiana and ">IN</abbr>" in indiana
+    assert "Bethlehem" in pennsylvania and ">PA</abbr>" in pennsylvania
+    assert "Indiana University" not in indiana
+    assert "Lehigh University" not in pennsylvania
 
 
 def test_schools_are_still_searchable_and_shown_on_the_town_page(client, college_towns):
@@ -166,3 +167,154 @@ def test_counts_match_what_the_town_page_would_show(client, college_towns):
         r"Bloomington.*?(\d+)(?:</span>)? upcoming event", chooser, re.S
     ).group(1)
     assert card == "1"
+
+
+def test_a_town_with_nothing_upcoming_is_left_off_the_list(
+    client, college_towns, make_city
+):
+    """A card reading "0 upcoming events" only leads to an empty page."""
+    make_city(name="Blacksburg", slug="blacksburg-va", state_or_region="Virginia")
+    make_city(name="Muncie", slug="muncie-in", state_or_region="IN")
+    assert "Muncie" not in _directory(client.get("/?state=Indiana").text)
+    # Virginia has no town with anything coming up, so it is not offered.
+    assert "Virginia" not in _directory(client.get("/").text)
+    assert "No towns with upcoming events" in client.get("/?state=Virginia").text
+    # Not in a search either, but the town page itself still works.
+    assert "Blacksburg" not in client.get("/?q=blacks").text.split("</form>", 1)[1]
+    assert client.get("/city/blacksburg-va").status_code == 200
+
+
+def test_a_town_comes_back_once_it_has_an_upcoming_event(
+    client, college_towns, make_city, make_website, make_event, db_session
+):
+    town = make_city(name="Blacksburg", slug="blacksburg-va", state_or_region="Virginia")
+    assert "Virginia" not in _directory(client.get("/").text)
+    website = make_website(town, name="Blacksburg Source")
+    website.is_active = True
+    website.active_configuration_version = 1
+    db_session.commit()
+    make_event(
+        town,
+        website=website,
+        canonical_url="https://example.org/blacksburg",
+        start_date=current_public_date() + timedelta(days=2),
+    )
+    assert "Virginia" in _directory(client.get("/").text)
+    assert "Blacksburg" in _directory(client.get("/?state=Virginia").text)
+
+
+def test_a_town_with_only_past_events_is_left_off(
+    client, college_towns, make_city, make_website, make_event, db_session
+):
+    town = make_city(name="Blacksburg", slug="blacksburg-va", state_or_region="Virginia")
+    website = make_website(town, name="Blacksburg Source")
+    website.is_active = True
+    website.active_configuration_version = 1
+    db_session.commit()
+    make_event(
+        town,
+        website=website,
+        canonical_url="https://example.org/blacksburg-past",
+        start_date=current_public_date() - timedelta(days=5),
+    )
+    assert "Virginia" not in _directory(client.get("/").text)
+
+
+# --- states first ------------------------------------------------------------
+
+
+def test_the_home_page_lists_states_not_every_town(client, college_towns):
+    """One list of every town had grown too long to scan."""
+    directory = _directory(client.get("/").text)
+    assert "Choose a state" in client.get("/").text
+    assert 'href="/?state=Indiana"' in directory
+    assert 'href="/?state=Pennsylvania"' in directory
+    assert "Bloomington" not in directory
+    assert "1 town, " in directory
+
+
+def test_a_state_lists_only_its_own_towns(client, college_towns):
+    html = client.get("/?state=Indiana").text
+    directory = _directory(html)
+    assert "Towns in Indiana" in html
+    assert "Bloomington" in directory
+    assert "Bethlehem" not in directory
+    assert 'href="/">All states</a>' in html
+
+
+def test_towns_entered_as_name_or_abbreviation_share_a_state(
+    client, college_towns, make_city, publish_upcoming
+):
+    """Towns are stored as "IN" or "Indiana"; both are one state on the page."""
+    publish_upcoming(make_city(name="Muncie", slug="muncie-in", state_or_region="IN"))
+    home = _directory(client.get("/").text)
+    assert home.count('href="/?state=Indiana"') == 1
+    assert "2 towns, " in home
+    indiana = _directory(client.get("/?state=in").text)
+    assert "Bloomington" in indiana and "Muncie" in indiana
+
+
+def test_a_state_counts_its_towns_events(client, college_towns, make_city, publish_upcoming):
+    publish_upcoming(make_city(name="Muncie", slug="muncie-in", state_or_region="Indiana"))
+    home = _directory(client.get("/").text)
+    indiana = home.split('href="/?state=Indiana"', 1)[1].split("</li>", 1)[0]
+    assert '<span class="city-card-number">2</span> upcoming events' in indiana
+
+
+def test_a_search_still_looks_across_every_state(client, college_towns):
+    directory = _directory(client.get("/?q=university").text)
+    assert "Bloomington" in directory and "Bethlehem" in directory
+
+
+def test_an_unknown_state_says_so(client, college_towns):
+    html = client.get("/?state=Atlantis").text
+    assert "No towns with upcoming events" in html
+    assert "Atlantis" in html
+    assert 'href="/"' in html
+
+
+def test_a_town_without_a_state_is_listed_under_other(
+    client, college_towns, make_city, publish_upcoming
+):
+    publish_upcoming(make_city(name="Nowhere", slug="nowhere"))
+    home = _directory(client.get("/").text)
+    assert home.rstrip().endswith("</li>")
+    assert home.index("Other") > home.index("Pennsylvania")
+    assert "Nowhere" in _directory(client.get("/?state=Other").text)
+
+
+def test_all_states_leads_back_to_the_state_list(client, college_towns):
+    html = client.get("/?state=Pennsylvania").text
+    assert 'href="/">All states</a>' in html
+    back = client.get("/").text
+    assert "Choose a state" in back
+    assert 'href="/?state=Indiana"' in _directory(back)
+
+
+def test_a_state_page_shows_real_counts_not_a_cap(
+    client, college_towns, make_website, make_event, db_session
+):
+    """The counts are the town page's own count, however large."""
+    bloomington, _ = college_towns
+    website = make_website(bloomington, name="Big Source")
+    website.is_active = True
+    website.active_configuration_version = 1
+    db_session.commit()
+    for i in range(44):
+        make_event(
+            bloomington,
+            website=website,
+            title=f"Show {i}",
+            canonical_url=f"https://example.org/show-{i}",
+            start_date=current_public_date() + timedelta(days=1 + i % 9),
+        )
+    directory = _directory(client.get("/?state=Indiana").text)
+    assert '<span class="city-card-number">45</span> upcoming events' in directory
+    home = _directory(client.get("/").text)
+    assert '<span class="city-card-number">45</span> upcoming events' in home
+
+
+def test_a_town_page_still_works_by_its_url(client, college_towns):
+    bloomington, _ = college_towns
+    assert client.get(f"/city/{bloomington.slug}").status_code == 200
+    assert client.get(f"/city/{bloomington.slug}/this-weekend").status_code == 200
