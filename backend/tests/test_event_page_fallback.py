@@ -234,11 +234,11 @@ async def test_run_extraction_stores_descriptions_from_event_pages(
     events = {e.title: e.description for e in db_session.query(Event)}
     assert events == {"Guest Talk": LONG, "Spring Show": None}
     assert described_event_urls(db_session, website.id) == {"https://example.com/events/talk"}
-    # The second run re-checks both pages: neither has said where the event is,
-    # and "show" still has no description either.
+    # The second run re-reads only "show", which still has no description.
+    # "talk" has its description, and its page was read yesterday without a
+    # venue, so it isn't fetched again for one.
     assert requests == [
         "https://example.com/events",
-        "https://example.com/events/talk",
         "https://example.com/events/show",
     ]
 
