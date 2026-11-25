@@ -57,8 +57,10 @@ Gmail account):
    create an app password at <https://myaccount.google.com/apppasswords>.
 2. In Render → the service → **Environment**, add `EMAIL_SIGN_IN_ENABLED=true`,
    `EMAIL_BACKEND=smtp`, `SMTP_HOST=smtp.gmail.com`, `SMTP_PORT=587`,
-   `SMTP_USERNAME` and `EMAIL_FROM` (the Gmail address), and `SMTP_PASSWORD` (the
-   app password). Alert emails stay off unless `EMAIL_ENABLED=true` too.
+   `SMTP_USERNAME` and `EMAIL_FROM` (the Gmail address), `SMTP_PASSWORD` (the
+   app password), and `EMAIL_CODE_SECRET` (a random string of 32+ characters:
+   `python -c "import secrets; print(secrets.token_urlsafe(48))"`). Alert emails
+   stay off unless `EMAIL_ENABLED=true` too.
 3. The sign-in page then shows an email box above the provider buttons. A code
    sent to `SUPERADMIN_EMAIL` also makes that address Super Administrator.
 

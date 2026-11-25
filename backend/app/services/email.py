@@ -164,8 +164,14 @@ def get_sign_in_email_sender(settings) -> EmailSender:
     return build_email_backend(settings)
 
 
+MIN_CODE_SECRET_LENGTH = 32
+
+
 def email_sign_in_available(settings) -> bool:
     """Whether the sign-in page can offer a code by email: switched on, with a
-    backend that really sends."""
-    return not isinstance(get_sign_in_email_sender(settings), NoopEmailSender)
+    backend that really sends and a secret to hash the codes with."""
+    secret = getattr(settings, "email_code_secret", None) or ""
+    return len(secret) >= MIN_CODE_SECRET_LENGTH and not isinstance(
+        get_sign_in_email_sender(settings), NoopEmailSender
+    )
 

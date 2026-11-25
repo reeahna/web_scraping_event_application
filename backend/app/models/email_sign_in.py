@@ -1,14 +1,16 @@
 """Email-code sign-in and the sign-in history.
 
-`EmailSignInCode` is one 6-digit code sent to an address. Only a salted hash of
-the code is stored. A code works once, for 10 minutes, and only while it is the
-newest code for its address: asking for another code invalidates every earlier
+`EmailSignInCode` is one 6-digit code sent to an address. Only an HMAC of the
+code is stored, keyed with EMAIL_CODE_SECRET, which is never in the database.
+A code works once, for 10 minutes, and only while it is the newest code for its
+address: asking for another code invalidates every earlier
 one. Wrong guesses are counted on the code, and a code that has used up its
 guesses stops working.
 
 `SignInHistory` is the per-person sign-in record ("customer history"): codes
 sent, codes rejected and every successful sign-in, by any method (email code or
-a social provider). It is deleted with the account.
+a social provider). The per-IP email-code limits are counted from it. Rows are
+deleted with the account and after SIGN_IN_HISTORY_RETENTION_DAYS.
 """
 
 from datetime import datetime
@@ -26,7 +28,7 @@ class EmailSignInCode(Base):
     id: Mapped[int] = mapped_column(primary_key=True)
     # Normalized (app.core.email.normalize_email).
     email: Mapped[str] = mapped_column(String(255), index=True)
-    # "<salt>$<sha256 hex>"; never the code itself.
+    # "v1$<HMAC-SHA256 hex>" keyed with EMAIL_CODE_SECRET; never the code.
     code_hash: Mapped[str] = mapped_column(String(128))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
     expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
@@ -53,10 +55,10 @@ class SignInHistory(Base):
     email: Mapped[str | None] = mapped_column(String(255), index=True, default=None)
     # "email_code", or the provider name ("google", "microsoft", ...), or "test".
     method: Mapped[str] = mapped_column(String(32))
-    # "code_sent", "code_send_failed", "code_rejected", "signed_in", "refused".
+    # "code_issued", "code_send_failed", "code_rejected", "signed_in", "refused".
     outcome: Mapped[str] = mapped_column(String(32))
     detail: Mapped[str | None] = mapped_column(String(255), default=None)
-    ip_address: Mapped[str | None] = mapped_column(String(64), default=None)
+    ip_address: Mapped[str | None] = mapped_column(String(64), index=True, default=None)
     user_agent: Mapped[str | None] = mapped_column(String(255), default=None)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=utcnow, index=True

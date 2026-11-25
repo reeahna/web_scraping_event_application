@@ -28,7 +28,8 @@
       {% if next %}<input type="hidden" name="next" value="{{ next }}" />{% endif %}
       <p class="auth-aside">Didn't get it? Check your spam folder, or
         <button type="submit" class="link-button">send a new code</button>
-        (the old one will stop working). <a href="/auth/login{% if next %}?next={{ next|urlencode }}{% endif %}">Use a different email</a>.</p>
+        (the old one will stop working). Each address can get a few codes an hour.
+        <a href="/auth/login{% if next %}?next={{ next|urlencode }}{% endif %}">Use a different email</a>.</p>
     </form>
   </div>
 </section>

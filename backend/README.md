@@ -76,13 +76,18 @@ address in 15 minutes.
 
 **Email code sign-in.** The person types their address and gets a code that
 works once, for 10 minutes. Asking again invalidates every earlier code, so only
-the newest works. Only a salted hash of each code is stored
-(`email_sign_in_codes`). Limits: 5 codes per address per hour, 10 code requests
-per IP address per hour, 5 wrong guesses per code, 30 code checks per IP address
-in 15 minutes. The answer is the same whether or not the address has an account,
-and nothing is sent to a disabled account or, with `REGISTRATION_ENABLED=false`,
-to an address with no account. Every sign-in (any method), code sent and code
-rejected goes in `sign_in_history`, which is deleted with the account.
+the newest works. Only an HMAC-SHA256 of each code is stored
+(`email_sign_in_codes`), keyed with `EMAIL_CODE_SECRET` (32+ characters, never in
+the database; email sign-in stays off without it). A correct code is claimed with
+one conditional database update, so two requests racing with the same code
+cannot both sign in. Limits: 5 codes per address per hour, 10 code requests per
+IP address per hour, 5 wrong guesses per code, 30 wrong codes per IP address in
+15 minutes. They are counted in the database, so they hold across workers,
+instances and restarts without Redis. The page looks the same, and the email is
+sent after the response, whether the address has an account, is disabled, has
+hit its hourly limit or (with `REGISTRATION_ENABLED=false`) is new. Every sign-in
+(any method), code request and code rejected goes in `sign_in_history`, which is
+deleted with the account and after `SIGN_IN_HISTORY_RETENTION_DAYS` (180).
 
 **Email.** `EMAIL_BACKEND=smtp` sends through any SMTP server, always over TLS.
 A free option is a Gmail account with 2-step verification and an
@@ -186,7 +191,9 @@ without any of it.
 | `GEMINI_FALLBACK_MODEL` | unset | Second Gemini model to try when the main one answers 503 "overloaded" |
 | `GEOCODING_ENABLED`, `GEOCODING_PROVIDER` | off | Fill in map coordinates from addresses |
 | `EMAIL_ENABLED`, `EMAIL_BACKEND` | off, `noop` | Alert emails; backend `noop`, `console` or `smtp` |
-| `EMAIL_SIGN_IN_ENABLED` | `false` | Sign in with a code sent by email (needs a backend that sends) |
+| `EMAIL_SIGN_IN_ENABLED` | `false` | Sign in with a code sent by email (needs a backend that sends and `EMAIL_CODE_SECRET`) |
+| `EMAIL_CODE_SECRET` | unset | Key the codes are hashed with, 32+ characters; keep it out of the database and backups |
+| `SIGN_IN_HISTORY_RETENTION_DAYS` | `180` | How long sign-in history rows are kept |
 | `EMAIL_FROM` | `alerts@example.com` | Sender address (with Gmail SMTP, the Gmail address) |
 | `SMTP_HOST`, `SMTP_PORT`, `SMTP_USERNAME`, `SMTP_PASSWORD` | unset, `587` | SMTP server for `EMAIL_BACKEND=smtp` |
 | `CONTACT_EMAIL` | unset | Shown on the privacy policy and terms |

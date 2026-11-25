@@ -286,14 +286,23 @@ class Settings(BaseSettings):
     # from EMAIL_ENABLED, so it can be on while alert emails stay off. Offered
     # only when this is on AND EMAIL_BACKEND is a backend that really sends.
     email_sign_in_enabled: bool = False
+    # Secret key the codes are hashed with (HMAC-SHA256). Kept out of the
+    # database, so a copy of the database alone cannot be used to work out a
+    # code. At least 32 characters; email sign-in stays off without it.
+    # Generate one with: python -c "import secrets; print(secrets.token_urlsafe(48))"
+    email_code_secret: str | None = None
     # Codes one address can be sent per hour, and codes one IP address can ask
     # for (to any addresses) per hour. Each new code invalidates the last.
+    # These limits are counted in the database, so they hold across workers,
+    # instances and restarts without a shared rate-limit store.
     email_codes_per_address_per_hour: int = 5
     email_codes_per_ip_per_hour: int = 10
-    # Wrong guesses allowed on one code before it stops working, and code
-    # checks one IP address may make in 15 minutes.
+    # Wrong guesses allowed on one code before it stops working, and wrong
+    # codes one IP address may enter in 15 minutes.
     email_code_max_attempts: int = 5
-    email_code_checks_per_ip_per_15_minutes: int = 30
+    email_code_failures_per_ip_per_15_minutes: int = 30
+    # Sign-in history rows older than this are deleted.
+    sign_in_history_retention_days: int = 180
 
     # External authentication (Phase 14). Each provider is independently
     # configured and is considered ENABLED only when it has a client id AND

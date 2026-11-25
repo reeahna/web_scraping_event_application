@@ -19,11 +19,19 @@
 - Sign-in is social (Google, Microsoft, Facebook, X, Yahoo) or a one-time code sent
   by email. There is no password login, so no password or reset token is ever stored.
 - Email codes: 6 random digits (`secrets`), valid 10 minutes, single use, stored only
-  as a salted SHA-256 hash. A new request invalidates every earlier code for the
-  address. 5 wrong guesses end a code; sends are limited per address (5/hour) and per
-  IP (10/hour), checks per IP (30 per 15 minutes). The reply never reveals whether
-  an address has an account. A correct code counts as a verified address: it marks
-  the email verified and unlinks unverified social sign-ins on the account.
+  as an HMAC-SHA256 keyed with `EMAIL_CODE_SECRET`, which is not in the database, so
+  a database-only copy cannot be brute-forced back to live codes. A new request
+  invalidates every earlier code for the address. A correct code is claimed with a
+  single conditional UPDATE (unused, not invalidated, unexpired, guesses left) that
+  must change exactly one row; wrong guesses are counted with an atomic increment.
+  5 wrong guesses end a code. Requests are limited per address (5/hour) and per IP
+  (10/hour), wrong codes per IP (30 per 15 minutes); all counted in the database,
+  so they are shared across workers and survive restarts (no dependence on the
+  process-local rate limiter). The reply, and its timing (the email is sent after
+  the response), are the same whether the address has an account, is disabled, is
+  over its hourly limit or is new while registration is closed. A correct code
+  counts as a verified address: it marks the email verified and unlinks unverified
+  social sign-ins on the account.
 - `SUPERADMIN_EMAIL` grants Super Administrator, but only on a sign-in that proves
   the address: a provider that verifies it (Google) or an emailed code. Microsoft,
   Facebook, X and Yahoo sign-ins can't claim it.

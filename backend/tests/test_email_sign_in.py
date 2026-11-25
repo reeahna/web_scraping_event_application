@@ -25,6 +25,8 @@ from app.services.email import (
     get_sign_in_email_sender,
 )
 
+SECRET = "test-secret-" + "x" * 40
+
 
 class FailingSender:
     name = "failing"
@@ -37,6 +39,7 @@ class FailingSender:
 def outbox(monkeypatch):
     """Email sign-in switched on, with codes captured instead of sent."""
     sender = MemoryEmailSender()
+    monkeypatch.setattr(get_settings(), "email_code_secret", SECRET)
     monkeypatch.setattr(auth_router, "email_sign_in_available", lambda settings: True)
     monkeypatch.setattr(auth_router, "get_sign_in_email_sender", lambda settings: sender)
     return sender
@@ -101,8 +104,26 @@ def test_the_code_is_stored_hashed_and_expires_in_ten_minutes(client, outbox, db
     created = row.created_at.replace(tzinfo=None)
     expires = row.expires_at.replace(tzinfo=None)
     assert expires - created == timedelta(minutes=10)
-    assert email_sign_in.code_matches(row.code_hash, "a@example.com", code)
-    assert not email_sign_in.code_matches(row.code_hash, "b@example.com", code)
+    assert row.code_hash.startswith("v1$")
+    assert email_sign_in.code_matches(SECRET, row.code_hash, "a@example.com", code)
+    assert not email_sign_in.code_matches(SECRET, row.code_hash, "b@example.com", code)
+
+
+def test_the_hash_needs_the_server_secret(client, outbox, db_session):
+    """A database-only copy can't test candidate codes: every one of the
+    million codes hashed without the secret (or with another) misses."""
+    _request(client, "a@example.com")
+    code = _code_from(outbox.sent[0])
+    stored = db_session.query(EmailSignInCode).one().code_hash
+    assert SECRET not in stored
+    assert not email_sign_in.code_matches("another-secret-" + "y" * 40, stored,
+                                          "a@example.com", code)
+    import hashlib
+    for unkeyed in (
+        hashlib.sha256(f"a@example.com:{code}".encode()).hexdigest(),
+        hashlib.sha256(code.encode()).hexdigest(),
+    ):
+        assert unkeyed not in stored
 
 
 def test_next_is_carried_through(client, outbox):
@@ -208,14 +229,63 @@ def test_spaces_in_the_code_are_allowed(client, outbox):
 # --- send limits -------------------------------------------------------------------
 
 
-def test_codes_per_address_are_limited(client, outbox, monkeypatch):
+def test_codes_per_address_are_limited_without_saying_so(client, outbox, monkeypatch):
     monkeypatch.setattr(get_settings(), "email_codes_per_address_per_hour", 2)
     assert _request(client, "a@example.com").status_code == 303
     assert _request(client, "a@example.com").status_code == 303
     resp = _request(client, "a@example.com")
-    assert resp.status_code == 429
-    assert "Too many codes" in resp.text
+    # Same answer as a sent code; nothing is sent.
+    assert resp.status_code == 303
+    assert resp.headers["location"] == "/auth/email/verify"
     assert len(outbox.sent) == 2
+
+
+def _answer(client, email):
+    """What a visitor sees for a code request: status, redirect, cookie and the
+    page it leads to."""
+    client.cookies.clear()
+    resp = _request(client, email)
+    page = client.get("/auth/email/verify")
+    return (
+        resp.status_code,
+        resp.headers.get("location"),
+        resp.cookies.get("email_sign_in_address"),
+        page.status_code,
+        # The CSRF token is new for each cleared browser; everything else must match.
+        re.sub(r'name="csrf_token" value="[^"]*"', "", page.text).replace(email, "<email>"),
+    )
+
+
+@pytest.mark.parametrize("registration_enabled", [False, True])
+def test_existing_and_unknown_addresses_look_the_same_past_the_limit(
+    client, outbox, monkeypatch, make_user, registration_enabled
+):
+    """Regression: with an existing account over its hourly limit, the answer
+    must match an address with no account (which never gets a code row when
+    registration is closed)."""
+    monkeypatch.setattr(get_settings(), "registration_enabled", registration_enabled)
+    monkeypatch.setattr(get_settings(), "email_codes_per_address_per_hour", 2)
+    monkeypatch.setattr(get_settings(), "email_codes_per_ip_per_hour", 100)
+    make_user("member@example.com")
+    member = [_answer(client, "member@example.com") for _ in range(4)]
+    stranger = [_answer(client, "nobody@example.com") for _ in range(4)]
+
+    def strip_email(answers, email):
+        return [(s, loc, cookie == email, ps, text) for s, loc, cookie, ps, text in answers]
+
+    assert strip_email(member, "member@example.com") == strip_email(
+        stranger, "nobody@example.com"
+    )
+    assert all(a[0] == 303 for a in member + stranger)
+    sent_to = [m.to for m in outbox.sent]
+    assert sent_to.count("member@example.com") == 2
+
+
+def test_a_disabled_account_looks_like_any_other(client, outbox, make_user):
+    make_user("off@example.com", is_active=False)
+    off = _answer(client, "off@example.com")
+    other = _answer(client, "other@example.com")
+    assert off[:2] == other[:2] and off[3:] == other[3:]
 
 
 def test_codes_per_ip_are_limited(client, outbox, monkeypatch):
@@ -226,8 +296,8 @@ def test_codes_per_ip_are_limited(client, outbox, monkeypatch):
     assert len(outbox.sent) == 2
 
 
-def test_code_checks_per_ip_are_limited(client, outbox, monkeypatch):
-    monkeypatch.setattr(get_settings(), "email_code_checks_per_ip_per_15_minutes", 1)
+def test_wrong_codes_per_ip_are_limited(client, outbox, monkeypatch):
+    monkeypatch.setattr(get_settings(), "email_code_failures_per_ip_per_15_minutes", 1)
     _request(client, "a@example.com")
     code = _code_from(outbox.sent[0])
     _verify(client, f"{(int(code) + 1) % 1_000_000:06d}")
@@ -242,13 +312,148 @@ def test_an_invalid_address_is_refused(client, outbox):
     assert outbox.sent == []
 
 
-def test_a_failed_send_says_so_and_leaves_no_working_code(client, monkeypatch, db_session):
+def test_a_failed_send_leaves_no_working_code(client, monkeypatch, db_session):
+    monkeypatch.setattr(get_settings(), "email_code_secret", SECRET)
     monkeypatch.setattr(auth_router, "email_sign_in_available", lambda settings: True)
     monkeypatch.setattr(auth_router, "get_sign_in_email_sender", lambda s: FailingSender())
     resp = _request(client, "a@example.com")
-    assert resp.status_code == 503
-    assert "send the email just now" in resp.text
+    # The email goes out after the response, so the answer is the usual one.
+    assert resp.status_code == 303
+    db_session.expire_all()
     assert db_session.query(EmailSignInCode).one().invalidated_at is not None
+    outcomes = [r.outcome for r in db_session.query(SignInHistory).order_by(SignInHistory.id)]
+    assert outcomes == ["code_issued", "code_send_failed"]
+
+
+# --- limits do not depend on the process-local rate limiter --------------------------
+
+
+def test_limits_hold_when_each_request_lands_on_a_fresh_worker(
+    client, outbox, monkeypatch
+):
+    """The in-memory limiter is per process and resets on restart. Wiping it
+    before every request (as a different worker or a restart would) must not
+    reset any email-code limit, because those are counted in the database."""
+    from app.services.rate_limit import _attempts_by_ip
+
+    monkeypatch.setattr(get_settings(), "rate_limit_backend", "memory")
+    monkeypatch.setattr(get_settings(), "email_codes_per_ip_per_hour", 2)
+    monkeypatch.setattr(get_settings(), "email_code_failures_per_ip_per_15_minutes", 2)
+    for address in ("a@example.com", "b@example.com"):
+        _attempts_by_ip.clear()
+        assert _request(client, address).status_code == 303
+    _attempts_by_ip.clear()
+    assert _request(client, "c@example.com").status_code == 429
+
+    code = _code_from(outbox.sent[-1])
+    wrong = f"{(int(code) + 1) % 1_000_000:06d}"
+    for _ in range(2):
+        _attempts_by_ip.clear()
+        _verify(client, wrong)
+    _attempts_by_ip.clear()
+    assert _verify(client, code).status_code == 429
+
+
+def test_email_sign_in_does_not_use_the_process_local_limiter():
+    import inspect
+
+    source = inspect.getsource(email_sign_in)
+    assert "rate_limit" not in source
+
+
+# --- one code, one sign-in, even when requests race ----------------------------------
+
+
+def _issue(db_session, email="a@example.com"):
+    from app.config import get_settings as gs
+
+    gs().email_code_secret = gs().email_code_secret or SECRET
+    result = email_sign_in.prepare_code(db_session, gs(), email)
+    return result.pending
+
+
+def test_two_sessions_cannot_both_claim_one_code(db_session, monkeypatch):
+    from app.database import SessionLocal
+
+    monkeypatch.setattr(get_settings(), "email_code_secret", SECRET)
+    pending = _issue(db_session)
+    now = datetime.now(UTC)
+    first, second = SessionLocal(), SessionLocal()
+    try:
+        # Both have read the code as unused, as two simultaneous requests would.
+        for session in (first, second):
+            row = session.get(EmailSignInCode, pending.code_id)
+            assert row.used_at is None
+        assert email_sign_in.claim_code(first, pending.code_id, now, 5) is True
+        assert email_sign_in.claim_code(second, pending.code_id, now, 5) is False
+    finally:
+        first.close()
+        second.close()
+
+
+def test_a_racing_verify_after_the_code_was_claimed_fails(db_session, monkeypatch):
+    """verify_code reads the code, then another request claims it before this
+    one does: the second sign-in is refused, not doubled."""
+    monkeypatch.setattr(get_settings(), "email_code_secret", SECRET)
+    pending = _issue(db_session)
+    real_claim = email_sign_in.claim_code
+    from app.database import SessionLocal
+
+    def claim_after_a_rival(db, code_id, now, max_attempts):
+        rival = SessionLocal()
+        try:
+            assert real_claim(rival, code_id, now, max_attempts) is True
+        finally:
+            rival.close()
+        return real_claim(db, code_id, now, max_attempts)
+
+    monkeypatch.setattr(email_sign_in, "claim_code", claim_after_a_rival)
+    with pytest.raises(email_sign_in.EmailSignInError) as err:
+        email_sign_in.verify_code(db_session, get_settings(), pending.email, pending.code)
+    assert err.value.code == "expired"
+    assert db_session.query(User).filter_by(email=pending.email).count() == 0
+
+
+def test_racing_wrong_guesses_are_all_counted(db_session, monkeypatch):
+    from app.database import SessionLocal
+
+    monkeypatch.setattr(get_settings(), "email_code_secret", SECRET)
+    pending = _issue(db_session)
+    now = datetime.now(UTC)
+    sessions = [SessionLocal() for _ in range(5)]
+    try:
+        for session in sessions:  # all read the row with 0 guesses first
+            assert session.get(EmailSignInCode, pending.code_id).failed_attempts == 0
+        counts = [email_sign_in.count_wrong_guess(s, pending.code_id, now, 5) for s in sessions]
+    finally:
+        for session in sessions:
+            session.close()
+    assert counts == [1, 2, 3, 4, 5]
+    db_session.expire_all()
+    row = db_session.get(EmailSignInCode, pending.code_id)
+    assert row.failed_attempts == 5 and row.invalidated_at is not None
+    # And the right code can no longer be claimed.
+    assert email_sign_in.claim_code(db_session, pending.code_id, now, 5) is False
+
+
+def test_an_expired_code_cannot_be_claimed(db_session, monkeypatch):
+    monkeypatch.setattr(get_settings(), "email_code_secret", SECRET)
+    pending = _issue(db_session)
+    later = datetime.now(UTC) + timedelta(minutes=11)
+    assert email_sign_in.claim_code(db_session, pending.code_id, later, 5) is False
+
+
+def test_old_history_is_deleted_after_the_retention_period(db_session, monkeypatch):
+    monkeypatch.setattr(get_settings(), "email_code_secret", SECRET)
+    old = datetime.now(UTC) - timedelta(days=181)
+    db_session.add(SignInHistory(method="google", outcome="signed_in", created_at=old))
+    db_session.add(SignInHistory(method="google", outcome="signed_in"))
+    db_session.commit()
+    _issue(db_session)
+    db_session.expire_all()
+    assert db_session.query(SignInHistory).filter(
+        SignInHistory.method == "google"
+    ).count() == 1
 
 
 # --- accounts that may not sign in ------------------------------------------------
@@ -309,7 +514,7 @@ def test_history_records_sends_rejections_and_sign_ins(client, outbox, login, db
 
     rows = db_session.query(SignInHistory).order_by(SignInHistory.id).all()
     assert [(r.email, r.method, r.outcome) for r in rows] == [
-        ("a@example.com", "email_code", "code_sent"),
+        ("a@example.com", "email_code", "code_issued"),
         ("a@example.com", "email_code", "code_rejected"),
         ("a@example.com", "email_code", "signed_in"),
         ("g@example.com", "google", "signed_in"),
@@ -369,10 +574,13 @@ def test_switches_choose_the_sender():
 
     smtp = Settings(
         _env_file=None, email_sign_in_enabled=True, email_backend="smtp",
-        smtp_host="smtp.example.com",
+        smtp_host="smtp.example.com", email_code_secret=SECRET,
     )
     assert isinstance(get_sign_in_email_sender(smtp), SmtpEmailSender)
     assert email_sign_in_available(smtp)
+    # No secret, or a short one: not offered.
+    for secret in (None, "too-short"):
+        assert not email_sign_in_available(smtp.model_copy(update={"email_code_secret": secret}))
     # Alert emails stay off unless EMAIL_ENABLED is on too.
     assert isinstance(get_email_sender(smtp), NoopEmailSender)
 
@@ -450,3 +658,25 @@ def test_smtp_failure_returns_false(monkeypatch):
 
     monkeypatch.setattr(email_service.smtplib, "SMTP", boom)
     assert _smtp_sender().send(email_service.EmailMessage("to@example.com", "Hi", "B")) is False
+
+
+# --- readiness and the privacy policy ---------------------------------------------------
+
+
+def test_readiness_warns_when_email_sign_in_is_on_but_not_usable():
+    from app.core.production_checks import production_blockers
+
+    half = Settings(_env_file=None, email_sign_in_enabled=True, email_backend="smtp",
+                    smtp_host="smtp.example.com")
+    codes = {i.code for i in production_blockers(half)}
+    assert "email_sign_in_not_configured" in codes
+    full = half.model_copy(update={"email_code_secret": SECRET})
+    assert "email_sign_in_not_configured" not in {i.code for i in production_blockers(full)}
+
+
+def test_privacy_policy_describes_sign_in_history(client):
+    page = client.get("/privacy").text
+    assert "Sign-in history" in page
+    assert "user agent" in page
+    assert "180 days" in page
+    assert "sign-in history" in page  # in what account deletion removes

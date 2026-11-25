@@ -1,21 +1,30 @@
 """Signing in with a code sent by email.
 
-1. `request_code`: the person types an address. Every earlier code for it is
-   invalidated, a new random 6-digit code is stored (salted hash only, valid
-   for 10 minutes) and emailed. Limits: codes per address per hour and per IP
-   address per hour.
+1. `prepare_code`: the person types an address. Every earlier code for it is
+   invalidated and a new random 6-digit code is stored, valid for 10 minutes.
+   Only an HMAC of the code is stored, keyed with EMAIL_CODE_SECRET, which is
+   not in the database. `deliver_code` then emails it; the router runs that
+   after the response, so the reply takes the same time and looks the same
+   whatever happens to the address.
 2. `verify_code`: the person types the code. Only the newest code for the
-   address can match. A wrong guess is counted on the code; after
-   EMAIL_CODE_MAX_ATTEMPTS it stops working. A right one is used up and
-   signs the person in (creating the account if new accounts are open).
+   address can match. A wrong guess is counted on the code with an atomic
+   UPDATE; after EMAIL_CODE_MAX_ATTEMPTS it stops working. A right one is
+   claimed with one conditional UPDATE (unused, not invalidated, not expired,
+   guesses left) that must change exactly one row, so two requests racing with
+   the same code cannot both sign in.
+
+Limits (codes per address and per IP address per hour, wrong codes per IP
+address per 15 minutes) are counted from the database, so they hold across
+web workers, instances and restarts.
+
+The person sees the same thing whether or not the address has an account,
+whether it is disabled, and whether it has hit its hourly limit, so the form
+cannot be used to find out who has an account.
 
 A correct code proves the person reads that inbox, so it counts as a verified
 address: it marks the account's email verified, unlinks any social sign-in
 that never verified the address (as a verifying provider does), and makes
 SUPERADMIN_EMAIL a Super Administrator.
-
-The person is told the same thing whether or not the address has an account,
-so the form cannot be used to find out who has one.
 """
 
 from __future__ import annotations
@@ -41,7 +50,6 @@ from app.models.user_role import UserRole
 from app.repositories.user import create_user, get_user_by_email
 from app.services.email import EmailMessage, EmailSender
 from app.services.oauth_login import evict_unverified_identities, grant_superadmin
-from app.services.rate_limit import get_rate_limit_backend
 
 logger = logging.getLogger("app.email_sign_in")
 
@@ -50,8 +58,11 @@ CODE_LENGTH = 6
 CODE_TTL = timedelta(minutes=10)
 # Old codes are deleted once they are this old; none can still work.
 CODE_RETENTION = timedelta(days=1)
-HOUR = 3600
-QUARTER_HOUR = 15 * 60
+HOUR = timedelta(hours=1)
+QUARTER_HOUR = timedelta(minutes=15)
+# History outcomes written once per accepted request, whatever happens next;
+# the per-IP request limit counts these.
+REQUEST_OUTCOMES = ("code_issued", "refused")
 
 # Deliberately loose: one @, no spaces, a dot in the domain. The real check is
 # whether the person can read the code we send.
@@ -67,11 +78,21 @@ class EmailSignInError(Exception):
 
 
 @dataclass(frozen=True)
+class PendingCode:
+    """A code stored and waiting to be emailed."""
+
+    code_id: int
+    email: str
+    code: str
+    user_id: int | None
+
+
+@dataclass(frozen=True)
 class RequestResult:
     email: str
-    # False when nothing was sent on purpose (new accounts closed and no
-    # account for the address). The person is told the same either way.
-    sent: bool
+    # None when nothing is to be sent (disabled account, new accounts closed,
+    # hourly limit for the address). The person is told the same either way.
+    pending: PendingCode | None
 
 
 def clean_email(raw: str | None) -> str:
@@ -95,18 +116,15 @@ def generate_code() -> str:
     return f"{secrets.randbelow(10**CODE_LENGTH):0{CODE_LENGTH}d}"
 
 
-def _digest(salt: str, email: str, code: str) -> str:
-    return hashlib.sha256(f"{salt}:{email}:{code}".encode()).hexdigest()
+def hash_code(secret: str, email: str, code: str) -> str:
+    """HMAC-SHA256 of the code, keyed with the server secret. Without the
+    secret, a copy of the database gives no way to test candidate codes."""
+    digest = hmac.new(secret.encode(), f"{email}:{code}".encode(), hashlib.sha256)
+    return f"v1${digest.hexdigest()}"
 
 
-def hash_code(email: str, code: str) -> str:
-    salt = secrets.token_hex(16)
-    return f"{salt}${_digest(salt, email, code)}"
-
-
-def code_matches(stored: str, email: str, code: str) -> bool:
-    salt, _, digest = stored.partition("$")
-    return bool(digest) and hmac.compare_digest(digest, _digest(salt, email, code))
+def code_matches(secret: str, stored: str, email: str, code: str) -> bool:
+    return hmac.compare_digest(stored, hash_code(secret, email, code))
 
 
 def record_history(
@@ -143,14 +161,6 @@ def _registration_allows(settings, email: str, existing: User | None) -> bool:
     return bool(configured and normalize_email(configured) == email)
 
 
-def _within_ip_limit(key: str, ip_address: str | None, *, limit: int, window: int) -> bool:
-    if not ip_address:
-        return True
-    return get_rate_limit_backend().allow(
-        f"{key}:{ip_address}", limit=limit, window_seconds=window
-    )
-
-
 def _email_body(settings, code: str) -> str:
     minutes = int(CODE_TTL.total_seconds() // 60)
     return (
@@ -163,54 +173,77 @@ def _email_body(settings, code: str) -> str:
     )
 
 
-def request_code(
+def _count_history(
+    db: Session, *, ip_address: str, outcomes: tuple[str, ...], since: datetime
+) -> int:
+    return db.scalar(
+        select(func.count(SignInHistory.id)).where(
+            SignInHistory.method == METHOD,
+            SignInHistory.ip_address == ip_address[:64],
+            SignInHistory.outcome.in_(outcomes),
+            SignInHistory.created_at > since,
+        )
+    ) or 0
+
+
+def prepare_code(
     db: Session,
     settings,
-    sender: EmailSender,
     raw_email: str | None,
     *,
     ip_address: str | None = None,
     user_agent: str | None = None,
     now: datetime | None = None,
 ) -> RequestResult:
+    """Store a new code for the address (invalidating older ones) when it may
+    have one. Raises EmailSignInError only for a malformed address or for the
+    per-IP limit, neither of which depends on the address having an account."""
     now = now or datetime.now(UTC)
     email = clean_email(raw_email)
 
-    recent = db.scalar(
-        select(func.count(EmailSignInCode.id)).where(
-            EmailSignInCode.email == email,
-            EmailSignInCode.created_at > now - timedelta(seconds=HOUR),
-        )
-    )
-    if (recent or 0) >= settings.email_codes_per_address_per_hour or not _within_ip_limit(
-        "email-code-send", ip_address,
-        limit=settings.email_codes_per_ip_per_hour, window=HOUR,
-    ):
+    if ip_address and _count_history(
+        db, ip_address=ip_address, outcomes=REQUEST_OUTCOMES, since=now - HOUR
+    ) >= settings.email_codes_per_ip_per_hour:
         raise EmailSignInError(
             "too_many_codes",
             "Too many codes have been requested. Wait a while, then try again.",
             status_code=429,
         )
 
-    # Housekeeping: no code this old can still work.
+    # Housekeeping: no code this old can still work, and history is kept only
+    # for its retention period.
     db.execute(delete(EmailSignInCode).where(EmailSignInCode.created_at < now - CODE_RETENTION))
+    db.execute(
+        delete(SignInHistory).where(
+            SignInHistory.created_at
+            < now - timedelta(days=settings.sign_in_history_retention_days)
+        )
+    )
 
     existing = get_user_by_email(db, email)
+    user_id = existing.id if existing else None
+    refusal = None
     if existing is not None and not existing.is_active:
-        existing_ok = False
+        refusal = "account disabled"
+    elif not _registration_allows(settings, email, existing):
+        refusal = "registration closed"
     else:
-        existing_ok = _registration_allows(settings, email, existing)
-    if not existing_ok:
-        # Disabled account, or new accounts closed: send nothing, say nothing
-        # different.
+        recent = db.scalar(
+            select(func.count(EmailSignInCode.id)).where(
+                EmailSignInCode.email == email,
+                EmailSignInCode.created_at > now - HOUR,
+            )
+        )
+        if (recent or 0) >= settings.email_codes_per_address_per_hour:
+            refusal = "hourly limit for the address"
+    if refusal:
+        # Send nothing, and answer exactly as if a code had gone out.
         record_history(
-            db, method=METHOD, outcome="refused", email=email,
-            user_id=existing.id if existing else None,
-            detail="account disabled" if existing else "registration closed",
-            ip_address=ip_address, user_agent=user_agent,
+            db, method=METHOD, outcome="refused", email=email, user_id=user_id,
+            detail=refusal, ip_address=ip_address, user_agent=user_agent,
         )
         db.commit()
-        return RequestResult(email=email, sent=False)
+        return RequestResult(email=email, pending=None)
 
     # Only the newest code works.
     db.execute(
@@ -221,45 +254,111 @@ def request_code(
             EmailSignInCode.invalidated_at.is_(None),
         )
         .values(invalidated_at=now)
+        .execution_options(synchronize_session=False)
     )
     code = generate_code()
     row = EmailSignInCode(
         email=email,
-        code_hash=hash_code(email, code),
+        code_hash=hash_code(settings.email_code_secret, email, code),
         created_at=now,
         expires_at=now + CODE_TTL,
         failed_attempts=0,
         requested_ip=ip_address[:64] if ip_address else None,
     )
     db.add(row)
-    db.commit()
-
-    sent = sender.send(
-        EmailMessage(
-            to=email,
-            subject=f"{code} is your {settings.app_name} sign-in code",
-            body=_email_body(settings, code),
-        )
-    )
-    user_id = existing.id if existing else None
-    if not sent:
-        row.invalidated_at = now
-        record_history(
-            db, method=METHOD, outcome="code_send_failed", email=email, user_id=user_id,
-            ip_address=ip_address, user_agent=user_agent,
-        )
-        db.commit()
-        raise EmailSignInError(
-            "send_failed",
-            "We couldn't send the email just now. Please try again in a few minutes.",
-            status_code=503,
-        )
     record_history(
-        db, method=METHOD, outcome="code_sent", email=email, user_id=user_id,
+        db, method=METHOD, outcome="code_issued", email=email, user_id=user_id,
         ip_address=ip_address, user_agent=user_agent,
     )
     db.commit()
-    return RequestResult(email=email, sent=True)
+    return RequestResult(
+        email=email,
+        pending=PendingCode(code_id=row.id, email=email, code=code, user_id=user_id),
+    )
+
+
+def deliver_code(
+    db: Session,
+    settings,
+    sender: EmailSender,
+    pending: PendingCode,
+    *,
+    ip_address: str | None = None,
+    user_agent: str | None = None,
+) -> bool:
+    """Email a prepared code. On failure the code is invalidated and the
+    failure recorded; the person can ask for a new one from the code page."""
+    sent = sender.send(
+        EmailMessage(
+            to=pending.email,
+            subject=f"{pending.code} is your {settings.app_name} sign-in code",
+            body=_email_body(settings, pending.code),
+        )
+    )
+    if not sent:
+        db.execute(
+            update(EmailSignInCode)
+            .where(EmailSignInCode.id == pending.code_id)
+            .values(invalidated_at=datetime.now(UTC))
+            .execution_options(synchronize_session=False)
+        )
+        record_history(
+            db, method=METHOD, outcome="code_send_failed", email=pending.email,
+            user_id=pending.user_id, ip_address=ip_address, user_agent=user_agent,
+        )
+        db.commit()
+        logger.warning("Sign-in code email could not be sent (code id %s)", pending.code_id)
+    return sent
+
+
+def claim_code(db: Session, code_id: int, now: datetime, max_attempts: int) -> bool:
+    """Mark a code used, only if it is still unused, valid, unexpired and has
+    guesses left. One conditional UPDATE: of two racing claims exactly one
+    changes the row. Commits."""
+    result = db.execute(
+        update(EmailSignInCode)
+        .where(
+            EmailSignInCode.id == code_id,
+            EmailSignInCode.used_at.is_(None),
+            EmailSignInCode.invalidated_at.is_(None),
+            EmailSignInCode.expires_at > now,
+            EmailSignInCode.failed_attempts < max_attempts,
+        )
+        .values(used_at=now)
+        .execution_options(synchronize_session=False)
+    )
+    db.commit()
+    return result.rowcount == 1
+
+
+def count_wrong_guess(db: Session, code_id: int, now: datetime, max_attempts: int) -> int:
+    """Add one wrong guess to a code atomically (no lost updates when guesses
+    race), invalidate it once it has run out, and return its guess count.
+    Commits."""
+    db.execute(
+        update(EmailSignInCode)
+        .where(
+            EmailSignInCode.id == code_id,
+            EmailSignInCode.used_at.is_(None),
+            EmailSignInCode.invalidated_at.is_(None),
+        )
+        .values(failed_attempts=EmailSignInCode.failed_attempts + 1)
+        .execution_options(synchronize_session=False)
+    )
+    db.execute(
+        update(EmailSignInCode)
+        .where(
+            EmailSignInCode.id == code_id,
+            EmailSignInCode.invalidated_at.is_(None),
+            EmailSignInCode.failed_attempts >= max_attempts,
+        )
+        .values(invalidated_at=now)
+        .execution_options(synchronize_session=False)
+    )
+    db.commit()
+    return db.scalar(
+        select(EmailSignInCode.failed_attempts).where(EmailSignInCode.id == code_id)
+    ) or 0
 
 
 def _reject(
@@ -292,10 +391,9 @@ def verify_code(
     now = now or datetime.now(UTC)
     email = clean_email(raw_email)
     code = clean_code(raw_code)
-    if not _within_ip_limit(
-        "email-code-check", ip_address,
-        limit=settings.email_code_checks_per_ip_per_15_minutes, window=QUARTER_HOUR,
-    ):
+    if ip_address and _count_history(
+        db, ip_address=ip_address, outcomes=("code_rejected",), since=now - QUARTER_HOUR
+    ) >= settings.email_code_failures_per_ip_per_15_minutes:
         raise EmailSignInError(
             "too_many_checks",
             "Too many codes tried. Wait a few minutes, then try again.",
@@ -304,6 +402,7 @@ def verify_code(
 
     existing = get_user_by_email(db, email)
     user_id = existing.id if existing else None
+    max_attempts = settings.email_code_max_attempts
     row = db.scalar(
         select(EmailSignInCode)
         .where(
@@ -317,12 +416,11 @@ def verify_code(
     if row is None or as_aware_utc(row.expires_at) <= now:
         _reject(db, email, user_id, "no valid code", ip_address, user_agent)
         raise EmailSignInError("expired", _EXPIRED)
+    code_id = row.id
 
-    if not code_matches(row.code_hash, email, code):
-        row.failed_attempts = (row.failed_attempts or 0) + 1
-        left = settings.email_code_max_attempts - row.failed_attempts
-        if left <= 0:
-            row.invalidated_at = now
+    if not code_matches(settings.email_code_secret, row.code_hash, email, code):
+        attempts = count_wrong_guess(db, code_id, now, max_attempts)
+        left = max_attempts - attempts
         _reject(db, email, user_id, "wrong code", ip_address, user_agent)
         if left <= 0:
             raise EmailSignInError(
@@ -335,9 +433,11 @@ def verify_code(
             f"That code isn't right. {left} {'try' if left == 1 else 'tries'} left.",
         )
 
-    # Used up before anything else, so it can never sign in twice.
-    row.used_at = now
-    db.commit()
+    # Used up before anything else, atomically, so it can never sign in twice
+    # (another request may have claimed it since it was read above).
+    if not claim_code(db, code_id, now, max_attempts):
+        _reject(db, email, user_id, "code already used", ip_address, user_agent)
+        raise EmailSignInError("expired", _EXPIRED)
 
     if existing is not None and not existing.is_active:
         _reject(db, email, user_id, "account disabled", ip_address, user_agent)

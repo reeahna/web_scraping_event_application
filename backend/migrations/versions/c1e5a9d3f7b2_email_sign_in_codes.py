@@ -4,8 +4,9 @@ Revision ID: c1e5a9d3f7b2
 Revises: b8e2d4a6c1f3
 
 Adds two tables for signing in with a code sent by email:
-email_sign_in_codes (one row per code sent, holding a salted hash of the code,
-its expiry, wrong-guess count and used/invalidated state) and sign_in_history
+email_sign_in_codes (one row per code sent, holding an HMAC of the code keyed
+with a server secret that is not in the database, its expiry, wrong-guess
+count and used/invalidated state) and sign_in_history
 (codes sent and rejected, and every successful sign-in by any method). Both
 start empty; no existing row changes.
 """
@@ -58,9 +59,11 @@ def upgrade() -> None:
     op.create_index("ix_sign_in_history_user_id", "sign_in_history", ["user_id"])
     op.create_index("ix_sign_in_history_email", "sign_in_history", ["email"])
     op.create_index("ix_sign_in_history_created_at", "sign_in_history", ["created_at"])
+    op.create_index("ix_sign_in_history_ip_address", "sign_in_history", ["ip_address"])
 
 
 def downgrade() -> None:
+    op.drop_index("ix_sign_in_history_ip_address", table_name="sign_in_history")
     op.drop_index("ix_sign_in_history_created_at", table_name="sign_in_history")
     op.drop_index("ix_sign_in_history_email", table_name="sign_in_history")
     op.drop_index("ix_sign_in_history_user_id", table_name="sign_in_history")

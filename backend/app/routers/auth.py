@@ -10,13 +10,14 @@ In development or staging it can also offer "Sign in as the test user"
 
 from urllib.parse import quote
 
-from fastapi import APIRouter, Form, Request
+from fastapi import APIRouter, BackgroundTasks, Form, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
 
 from app.config import get_settings
 from app.core.csrf import verify_csrf
 from app.core.exceptions import AppError, NotFoundError
 from app.core.templating import render
+from app.database import SessionLocal
 from app.dependencies import ClientIp, CorrelationId, CurrentUser, DbSession
 from app.routers.oauth import finish_sign_in
 from app.services import email_sign_in
@@ -86,9 +87,22 @@ def _render_code_page(
     )
 
 
+def _deliver_code(pending, *, ip_address, user_agent) -> None:
+    settings = get_settings()
+    db = SessionLocal()
+    try:
+        email_sign_in.deliver_code(
+            db, settings, get_sign_in_email_sender(settings), pending,
+            ip_address=ip_address, user_agent=user_agent,
+        )
+    finally:
+        db.close()
+
+
 @router.post("/email/request", response_class=HTMLResponse)
 def request_email_code(
     request: Request,
+    background_tasks: BackgroundTasks,
     db: DbSession,
     ip_address: ClientIp,
     csrf_token: str = Form(...),
@@ -99,15 +113,21 @@ def request_email_code(
     verify_csrf(request, csrf_token)
     settings = get_settings()
     next_url = safe_next(next) if next else ""
+    user_agent = request.headers.get("user-agent")
     try:
-        result = email_sign_in.request_code(
-            db, settings, get_sign_in_email_sender(settings), email[:320],
-            ip_address=ip_address, user_agent=request.headers.get("user-agent"),
+        result = email_sign_in.prepare_code(
+            db, settings, email[:320], ip_address=ip_address, user_agent=user_agent,
         )
     except email_sign_in.EmailSignInError as exc:
         return _render_login(
             request, next_url, email=email[:320], error=exc.message,
             status_code=exc.status_code,
+        )
+    if result.pending is not None:
+        # Sent after the response, so the reply is the same, and takes the
+        # same time, whether or not a code goes out for this address.
+        background_tasks.add_task(
+            _deliver_code, result.pending, ip_address=ip_address, user_agent=user_agent
         )
     target = "/auth/email/verify" + (f"?next={quote(next_url)}" if next_url else "")
     response = RedirectResponse(url=target, status_code=303)
