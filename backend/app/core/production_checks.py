@@ -83,6 +83,17 @@ def production_blockers(settings) -> list[ReadinessIssue]:
             "secret, so nobody can sign in.",
             "warning",
         ))
+    if getattr(settings, "email_sign_in_enabled", False):
+        from app.services.email import email_sign_in_available
+
+        if not email_sign_in_available(settings):
+            issues.append(ReadinessIssue(
+                "email_sign_in_not_configured",
+                "EMAIL_SIGN_IN_ENABLED is on but email sign-in is not offered: it also "
+                "needs EMAIL_BACKEND=smtp with SMTP_HOST, and EMAIL_CODE_SECRET (32+ "
+                "characters).",
+                "warning",
+            ))
     if not settings.superadmin_email:
         issues.append(ReadinessIssue(
             "no_superadmin_email",

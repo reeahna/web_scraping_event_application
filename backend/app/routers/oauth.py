@@ -21,6 +21,7 @@ from app.dependencies import ClientIp, CorrelationId, DbSession
 from app.services import oauth_login
 from app.services.audit import record_audit
 from app.services.auth import create_session
+from app.services.email_sign_in import record_history
 from app.services.rate_limit import sign_in_start_allowed
 from app.services.rbac import can_access_admin
 
@@ -68,17 +69,24 @@ def callback(
         detail=f"OAuth login via {provider}",
         correlation_id=correlation_id,
         ip_address=ip_address,
+        method=provider,
     )
 
 
 def finish_sign_in(
-    db, request: Request, user, next_url: str, *, detail: str, correlation_id, ip_address
+    db, request: Request, user, next_url: str, *, detail: str, correlation_id, ip_address,
+    method: str,
 ) -> RedirectResponse:
     """Start a brand-new session for `user` (session-fixation prevention),
-    audit the login, and send them on to `next_url`."""
+    audit the login, add it to the sign-in history, and send them on to
+    `next_url`. `method` is "email_code", the provider name, or "test"."""
     settings = get_settings()
     raw_token = create_session(db, user, request)
     user.last_login_at = datetime.now(UTC)
+    record_history(
+        db, method=method, outcome="signed_in", email=user.email, user_id=user.id,
+        ip_address=ip_address, user_agent=request.headers.get("user-agent"),
+    )
     db.commit()
     record_audit(
         db,

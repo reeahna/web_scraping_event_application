@@ -1,0 +1,36 @@
+{% extends "base.html" %}
+
+{% block title %}Enter your code | {{ site_name }}{% endblock %}
+{% block robots %}noindex, nofollow{% endblock %}
+
+{% block content %}
+<section class="signin">
+  <div class="signin-card">
+    <h1>Check your email</h1>
+    <p class="signin-lede">We sent a {{ code_length }}-digit code to <strong>{{ email }}</strong>.
+    It works for {{ code_minutes }} minutes. If you asked more than once, use the newest one.</p>
+
+    <form class="signin-email" method="post" action="/auth/email/verify" novalidate>
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}" />
+      {% if next %}<input type="hidden" name="next" value="{{ next }}" />{% endif %}
+      <label for="signin-code">Sign-in code</label>
+      <input id="signin-code" class="signin-code-input" name="code" type="text"
+             inputmode="numeric" autocomplete="one-time-code" pattern="[0-9]*"
+             maxlength="{{ code_length + 2 }}" required autofocus
+             {% if error %}aria-invalid="true" aria-describedby="signin-code-error"{% endif %} />
+      {% if error %}<p class="field-error" id="signin-code-error" role="alert">{{ error }}</p>{% endif %}
+      <button type="submit" class="signin-button signin-button-primary">Sign in</button>
+    </form>
+
+    <form class="signin-resend" method="post" action="/auth/email/request">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}" />
+      <input type="hidden" name="email" value="{{ email }}" />
+      {% if next %}<input type="hidden" name="next" value="{{ next }}" />{% endif %}
+      <p class="auth-aside">Didn't get it? Check your spam folder, or
+        <button type="submit" class="link-button">send a new code</button>
+        (the old one will stop working). Each address can get a few codes an hour.
+        <a href="/auth/login{% if next %}?next={{ next|urlencode }}{% endif %}">Use a different email</a>.</p>
+    </form>
+  </div>
+</section>
+{% endblock %}

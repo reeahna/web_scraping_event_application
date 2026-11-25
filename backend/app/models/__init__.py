@@ -13,6 +13,7 @@ from app.models.categorization_rule import CategorizationRule
 from app.models.category_photo import CategoryPhoto
 from app.models.city import City
 from app.models.city_university import CityUniversity
+from app.models.email_sign_in import EmailSignInCode, SignInHistory
 from app.models.event import Event
 from app.models.event_category import EventCategory
 from app.models.event_page_check import EventPageCheck
@@ -59,8 +60,10 @@ __all__ = [
     "City",
     "Event",
     "EventCategory",
+    "EmailSignInCode",
     "EventPageCheck",
     "EventProvenance",
+    "SignInHistory",
     "ExternalIdentity",
     "OAuthLoginState",
     "ExtractionError",

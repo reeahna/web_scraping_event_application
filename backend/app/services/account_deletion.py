@@ -2,7 +2,8 @@
 
 The user row is really deleted: every table that points at a user either
 removes its rows with it (sessions, roles, saved events, follows, alert
-preferences, linked sign-ins, notifications) or blanks the reference (the audit
+preferences, linked sign-ins, notifications, sign-in codes and sign-in
+history) or blanks the reference (the audit
 log, and the admin records of who approved or corrected what). The audit log
 also carries the email address as text in some entries (a failed sign-in records
 the address typed), so it is replaced there too.
@@ -14,6 +15,7 @@ from sqlalchemy.orm import Session
 from app.models.audit_log import AuditLog
 from app.models.user import User
 from app.services.audit import record_audit
+from app.services.email_sign_in import delete_for_account
 from app.services.rbac import assert_not_last_super_admin
 
 REDACTED = "[deleted account]"
@@ -38,6 +40,9 @@ def delete_account(
             .values({column.key: func.replace(column, email, REDACTED)})
         )
 
+    # Sign-in codes and history: deleted by address too, since rows from
+    # before the account existed (a first code) carry no user id.
+    delete_for_account(db, user_id, email)
     db.delete(user)
     db.commit()
 

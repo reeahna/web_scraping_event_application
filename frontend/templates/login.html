@@ -1,13 +1,27 @@
 {% extends "base.html" %}
 
 {% block title %}Sign in | {{ site_name }}{% endblock %}
-{% block meta_description %}Sign in to {{ site_name }} with Google, Microsoft, Facebook, X or Yahoo to save events, follow towns and get alerts.{% endblock %}
+{% block meta_description %}Sign in to {{ site_name }} with your email or a Google, Microsoft, Facebook, X or Yahoo account to save events, follow towns and get alerts.{% endblock %}
 
 {% block content %}
 <section class="signin">
   <div class="signin-card">
     <h1>Welcome to {{ site_name }}</h1>
     <p class="signin-lede">Sign in to save events, follow towns and get alerts.</p>
+
+    {% if email_sign_in_enabled %}
+    <form class="signin-email" method="post" action="/auth/email/request" novalidate>
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}" />
+      {% if next %}<input type="hidden" name="next" value="{{ next }}" />{% endif %}
+      <label for="signin-email">Email address</label>
+      <input id="signin-email" name="email" type="email" autocomplete="email" inputmode="email"
+             required maxlength="254" value="{{ email }}"
+             {% if email_error %}aria-invalid="true" aria-describedby="signin-email-error"{% endif %} />
+      {% if email_error %}<p class="field-error" id="signin-email-error" role="alert">{{ email_error }}</p>{% endif %}
+      <button type="submit" class="signin-button signin-button-primary">Email me a sign-in code</button>
+    </form>
+    {% if oauth_providers %}<p class="signin-divider"><span>or</span></p>{% endif %}
+    {% endif %}
 
     {% if oauth_providers %}
     <div class="signin-options" role="group" aria-label="Sign in with an existing account">
@@ -30,10 +44,11 @@
       </a>
       {% endfor %}
     </div>
-    {% if not registration_enabled %}
+    {% endif %}
+    {% if (oauth_providers or email_sign_in_enabled) and not registration_enabled %}
     <p class="auth-aside">New accounts aren't being accepted right now; existing accounts can still sign in.</p>
     {% endif %}
-    {% elif not test_login_enabled %}
+    {% if not oauth_providers and not email_sign_in_enabled and not test_login_enabled %}
     <p class="banner banner-warning">Sign-in isn't set up on this site yet.</p>
     {% endif %}
 

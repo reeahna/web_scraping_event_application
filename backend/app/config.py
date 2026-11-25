@@ -35,8 +35,9 @@ class Settings(BaseSettings):
     database_url: str = f"sqlite:///{(BASE_DIR / 'app.db').as_posix()}"
     log_level: str = "INFO"
 
-    # Auth / sessions. Sign-in is only through Google, Microsoft, Facebook, X or Yahoo
-    # (app.services.oauth); the app stores no passwords.
+    # Auth / sessions. Sign-in is through Google, Microsoft, Facebook, X or Yahoo
+    # (app.services.oauth) or a code sent by email (app.services.email_sign_in);
+    # the app stores no passwords.
     session_cookie_name: str = "session_token"
     session_ttl_seconds: int = 43200  # 12 hours
     csrf_cookie_name: str = "csrf_token"
@@ -270,6 +271,38 @@ class Settings(BaseSettings):
     email_enabled: bool = False
     email_backend: str = "noop"
     email_from: str = "alerts@example.com"
+    # The "smtp" backend (app.services.email.SmtpEmailSender). Any SMTP server
+    # works, for example a Gmail account with an app password
+    # (smtp.gmail.com, port 587, SMTP_USERNAME = the address, SMTP_PASSWORD =
+    # the app password, EMAIL_FROM = the same address). Port 465 uses TLS from
+    # the start; any other port must offer STARTTLS.
+    smtp_host: str | None = None
+    smtp_port: int = 587
+    smtp_username: str | None = None
+    smtp_password: str | None = None
+    smtp_timeout_seconds: float = 15.0
+
+    # Sign in with a code sent by email (app.services.email_sign_in). Separate
+    # from EMAIL_ENABLED, so it can be on while alert emails stay off. Offered
+    # only when this is on AND EMAIL_BACKEND is a backend that really sends.
+    email_sign_in_enabled: bool = False
+    # Secret key the codes are hashed with (HMAC-SHA256). Kept out of the
+    # database, so a copy of the database alone cannot be used to work out a
+    # code. At least 32 characters; email sign-in stays off without it.
+    # Generate one with: python -c "import secrets; print(secrets.token_urlsafe(48))"
+    email_code_secret: str | None = None
+    # Codes one address can be sent per hour, and codes one IP address can ask
+    # for (to any addresses) per hour. Each new code invalidates the last.
+    # These limits are counted in the database, so they hold across workers,
+    # instances and restarts without a shared rate-limit store.
+    email_codes_per_address_per_hour: int = 5
+    email_codes_per_ip_per_hour: int = 10
+    # Wrong guesses allowed on one code before it stops working, and wrong
+    # codes one IP address may enter in 15 minutes.
+    email_code_max_attempts: int = 5
+    email_code_failures_per_ip_per_15_minutes: int = 30
+    # Sign-in history rows older than this are deleted.
+    sign_in_history_retention_days: int = 180
 
     # External authentication (Phase 14). Each provider is independently
     # configured and is considered ENABLED only when it has a client id AND
@@ -344,6 +377,19 @@ class Settings(BaseSettings):
             raise ValueError(
                 "TEST_LOGIN_ENABLED lets anyone sign in without a password and "
                 "cannot be used with APP_ENV=production."
+            )
+        return self
+
+    @model_validator(mode="after")
+    def _no_logged_sign_in_codes_in_production(self) -> "Settings":
+        if (
+            self.email_sign_in_enabled
+            and self.email_backend == "console"
+            and self.app_env == "production"
+        ):
+            raise ValueError(
+                "EMAIL_BACKEND=console writes sign-in codes to the log and cannot be "
+                "used with EMAIL_SIGN_IN_ENABLED in APP_ENV=production."
             )
         return self
 
