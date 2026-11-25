@@ -1,7 +1,7 @@
-from datetime import datetime
+from datetime import date, datetime
 from typing import TYPE_CHECKING
 
-from sqlalchemy import DateTime, ForeignKey, String, Text
+from sqlalchemy import Date, DateTime, ForeignKey, Integer, String, Text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.database import Base
@@ -45,3 +45,20 @@ class Suggestion(Base):
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 
     user: Mapped["User | None"] = relationship()
+
+
+class AnonymousFeedbackDay(Base):
+    """How many feature ideas and bug reports visitors who were not signed in
+    sent on one UTC day: the counter behind the daily ceiling on anonymous
+    feedback (app.services.suggestions.ANONYMOUS_DAILY_LIMIT).
+
+    One row per day. A message claims a slot with a single conditional UPDATE
+    (count = count + 1 WHERE count < limit) in the same transaction as the
+    message itself, so concurrent requests on any worker can never push the
+    count past the limit, and a message that fails to save gives its slot back.
+    """
+
+    __tablename__ = "anonymous_feedback_days"
+
+    day: Mapped[date] = mapped_column(Date, primary_key=True)
+    count: Mapped[int] = mapped_column(Integer, default=0, server_default="0", nullable=False)

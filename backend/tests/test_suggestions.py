@@ -315,25 +315,38 @@ def test_honeypot_is_thanked_but_dropped(client, make_user, db_session):
 
 
 def test_anonymous_per_address_limit(client, db_session, monkeypatch):
+    from app.dependencies import get_client_ip
+    from app.main import app
+
     monkeypatch.setattr(svc, "ANONYMOUS_PER_IP_PER_HOUR", 2)
-    client.get("/feedback")
-    token = client.cookies.get("csrf_token")
+    address = {"ip": "203.0.113.9"}
+    app.dependency_overrides[get_client_ip] = lambda: address["ip"]
+    try:
+        client.get("/feedback")
+        token = client.cookies.get("csrf_token")
 
-    def send(addr="203.0.113.9"):
-        return client.post(
-            "/feedback",
-            data={"csrf_token": token, "kind": "bug", "title": "t", "details": "d"},
-            headers={"x-forwarded-for": addr},
-            follow_redirects=False,
-        )
+        def send(forged=None):
+            headers = {"x-forwarded-for": forged} if forged else {}
+            return client.post(
+                "/feedback",
+                data={"csrf_token": token, "kind": "bug", "title": "t", "details": "d"},
+                headers=headers,
+                follow_redirects=False,
+            )
 
-    assert send().status_code == 303
-    assert send().status_code == 303
-    blocked = send()
-    assert blocked.status_code == 429
-    assert "in the last hour" in blocked.text
-    # Another address is not held back by the first one.
-    assert send("198.51.100.4").status_code == 303
+        assert send().status_code == 303
+        assert send().status_code == 303
+        blocked = send()
+        assert blocked.status_code == 429
+        assert "in the last hour" in blocked.text
+        # A made-up X-Forwarded-For does not buy a fresh allowance: the limit
+        # follows the trusted client address, not a header the sender writes.
+        assert send(forged="198.51.100.77").status_code == 429
+        # Another real address is not held back by the first one.
+        address["ip"] = "198.51.100.4"
+        assert send().status_code == 303
+    finally:
+        app.dependency_overrides.pop(get_client_ip, None)
     assert db_session.query(Suggestion).count() == 3
 
 
@@ -344,6 +357,71 @@ def test_anonymous_daily_ceiling(client, db_session, monkeypatch):
     assert second.status_code == 429
     assert "try again tomorrow" in second.text
     assert db_session.query(Suggestion).count() == 1
+
+
+def test_daily_ceiling_holds_under_concurrent_requests(db_session):
+    """Many anonymous messages at once, each in its own session and connection
+    (as on separate workers), never get past the ceiling. Runs on SQLite
+    locally and on PostgreSQL in CI (TEST_DATABASE_URL)."""
+    import threading
+
+    from app.database import SessionLocal
+    from app.models.suggestion import AnonymousFeedbackDay
+
+    limit, senders = 5, 16
+    original = svc.ANONYMOUS_DAILY_LIMIT
+    svc.ANONYMOUS_DAILY_LIMIT = limit
+    start = threading.Barrier(senders)
+    outcomes: list[str] = []
+    lock = threading.Lock()
+
+    def send(n: int) -> None:
+        session = SessionLocal()
+        try:
+            form = svc.parse_suggestion(
+                kind="bug", title=f"race {n}", region="", university="", details="d"
+            )
+            start.wait()
+            try:
+                svc.create_suggestion(session, None, form)
+                result = "saved"
+            except svc.SuggestionLimitError:
+                result = "limited"
+            except Exception as exc:  # surfaced by the assertion below
+                result = f"error: {exc!r}"
+        finally:
+            session.close()
+        with lock:
+            outcomes.append(result)
+
+    try:
+        threads = [threading.Thread(target=send, args=(n,)) for n in range(senders)]
+        for thread in threads:
+            thread.start()
+        for thread in threads:
+            thread.join(timeout=60)
+    finally:
+        svc.ANONYMOUS_DAILY_LIMIT = original
+
+    assert sorted(set(outcomes)) == ["limited", "saved"], outcomes
+    assert outcomes.count("saved") == limit
+    assert outcomes.count("limited") == senders - limit
+    db_session.expire_all()
+    assert db_session.query(Suggestion).count() == limit
+    assert db_session.query(AnonymousFeedbackDay).one().count == limit
+
+
+def test_claim_is_given_back_when_the_message_is_not_saved(db_session):
+    from app.models.suggestion import AnonymousFeedbackDay
+
+    assert svc.claim_anonymous_slot(db_session, limit=1)
+    db_session.rollback()  # the message failed to save
+    assert db_session.query(AnonymousFeedbackDay).count() == 0
+    assert svc.claim_anonymous_slot(db_session, limit=1)
+    db_session.commit()
+    assert not svc.claim_anonymous_slot(db_session, limit=1)
+    db_session.rollback()
+    assert db_session.query(AnonymousFeedbackDay).one().count == 1
 
 
 def test_anonymous_post_requires_csrf(client, db_session):

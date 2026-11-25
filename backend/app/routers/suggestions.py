@@ -75,18 +75,6 @@ _ANON_IP_LIMIT_MESSAGE = (
 )
 
 
-def _limit_address(request: Request) -> str | None:
-    """The sender's address for the per-address limit. Render's proxy puts the
-    visitor's address first in X-Forwarded-For; a sender can forge that, which
-    is why the database also caps every anonymous message together
-    (svc.ANONYMOUS_DAILY_LIMIT)."""
-    forwarded = request.headers.get("x-forwarded-for", "")
-    first = forwarded.split(",")[0].strip()
-    if first:
-        return first
-    return request.client.host if request.client else None
-
-
 def _render_feedback(
     request: Request,
     current_user: User | None,
@@ -180,6 +168,7 @@ def submit_feedback(
     current_user: OptionalCurrentUser,
     db: DbSession,
     correlation_id: CorrelationId,
+    ip_address: ClientIp,
     kind: str = Form(svc.KIND_FEATURE),
     title: str = Form(""),
     details: str = Form(""),
@@ -210,15 +199,20 @@ def submit_feedback(
     if not form.is_valid:
         return _render_feedback(request, current_user, db, form=form, status_code=422)
 
-    if current_user is None:
-        address = _limit_address(request)
-        if address and not get_rate_limit_backend().allow(
-            f"feedback:{address}",
+    # Per address for visitors without an account: the connection's address as
+    # the rest of the app sees it (ClientIp), never a raw X-Forwarded-For value
+    # a sender can write themselves.
+    if (
+        current_user is None
+        and ip_address
+        and not get_rate_limit_backend().allow(
+            f"feedback:{ip_address}",
             limit=svc.ANONYMOUS_PER_IP_PER_HOUR,
             window_seconds=60 * 60,
-        ):
-            form.errors["form"] = _ANON_IP_LIMIT_MESSAGE
-            return _render_feedback(request, current_user, db, form=form, status_code=429)
+        )
+    ):
+        form.errors["form"] = _ANON_IP_LIMIT_MESSAGE
+        return _render_feedback(request, current_user, db, form=form, status_code=429)
     try:
         svc.create_suggestion(db, current_user, form, correlation_id=correlation_id)
     except svc.SuggestionLimitError:

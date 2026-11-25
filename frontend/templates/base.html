@@ -57,7 +57,7 @@
       <nav class="site-nav" aria-label="Primary">
         {% block header_nav %}
         {# The town chooser is the home page, so it needs no link to itself. #}
-        {% if request.url.path != "/" %}<a href="/">Find a town</a>{% endif %}
+        {% if request.url.path != "/" %}<a href="/">Find a location</a>{% endif %}
         {% if current_user %}
           {% if can_access_admin %}<a href="/admin">Admin</a>{% endif %}
           {% set alert_unread = unread_alert_count(current_user.id) %}
