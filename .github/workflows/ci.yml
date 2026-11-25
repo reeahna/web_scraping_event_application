@@ -2,8 +2,8 @@ name: CI
 
 # Lint, dependency audit, migrations and the full test suite for backend/
 # (which also covers the frontend/ templates) on SQLite and PostgreSQL, plus
-# layout checks in Chromium, Firefox and WebKit. This is CI only: it never
-# deploys (Render deploys from render.yaml).
+# browser checks (layout and interactions) in Chromium, Firefox and WebKit.
+# This is CI only: it never deploys (Render deploys from render.yaml).
 #
 # To save Actions minutes without dropping checks a change needs:
 # - A newer push to the same PR cancels that PR's older, unfinished run.
@@ -168,10 +168,12 @@ jobs:
           TEST_DATABASE_URL: postgresql+psycopg://events:events@localhost:5432/events_test
         run: python -m pytest -q
 
-  # Opens every main page at phone, tablet and desktop sizes in Chromium,
-  # Firefox and WebKit (Safari's engine) and fails if any page scrolls
-  # sideways (tests/test_responsive_layout.py). Screenshots of every page are
-  # kept as a build artifact for a person to look over.
+  # In Chromium, Firefox and WebKit (Safari's engine): opens every main page
+  # at phone, tablet and desktop sizes and fails if any page scrolls sideways
+  # (tests/test_responsive_layout.py), then clicks through the menus, filters,
+  # town search, share buttons, sign-in, sign-out and forms on a phone and a
+  # desktop screen (tests/test_browser_interactions.py). Screenshots of every
+  # page are kept as a build artifact for a person to look over.
   #
   # Three separate jobs rather than a matrix on purpose: when a matrix job is
   # skipped, GitHub reports it under the bare job name instead of
@@ -182,8 +184,8 @@ jobs:
     needs: scope
     if: ${{ !cancelled() && (needs.scope.result != 'success' || needs.scope.outputs.browsers == 'true') }}
     runs-on: ubuntu-latest
-    # Usually 1 to 3 minutes.
-    timeout-minutes: 10
+    # Usually 2 to 4 minutes.
+    timeout-minutes: 12
     env:
       BROWSER: chromium
     defaults:
@@ -208,11 +210,11 @@ jobs:
           key: playwright-${{ runner.os }}-${{ env.PLAYWRIGHT_VERSION }}-${{ env.BROWSER }}
       - name: Install ${{ env.BROWSER }}
         run: python -m playwright install --with-deps "$BROWSER"
-      - name: Layout check in ${{ env.BROWSER }}
+      - name: Browser checks in ${{ env.BROWSER }}
         env:
           LAYOUT_BROWSERS: ${{ env.BROWSER }}
           LAYOUT_SCREENSHOT_DIR: ${{ runner.temp }}/layout-screenshots
-        run: python -m pytest tests/test_responsive_layout.py -q -rs
+        run: python -m pytest tests/test_responsive_layout.py tests/test_browser_interactions.py -q -rs
       - name: Keep the screenshots
         if: always()
         uses: actions/upload-artifact@v4
@@ -227,8 +229,8 @@ jobs:
     needs: scope
     if: ${{ !cancelled() && (needs.scope.result != 'success' || needs.scope.outputs.browsers == 'true') }}
     runs-on: ubuntu-latest
-    # Usually 2 to 3 minutes.
-    timeout-minutes: 10
+    # Usually 3 to 4 minutes.
+    timeout-minutes: 12
     env:
       BROWSER: firefox
     defaults:
@@ -253,11 +255,11 @@ jobs:
           key: playwright-${{ runner.os }}-${{ env.PLAYWRIGHT_VERSION }}-${{ env.BROWSER }}
       - name: Install ${{ env.BROWSER }}
         run: python -m playwright install --with-deps "$BROWSER"
-      - name: Layout check in ${{ env.BROWSER }}
+      - name: Browser checks in ${{ env.BROWSER }}
         env:
           LAYOUT_BROWSERS: ${{ env.BROWSER }}
           LAYOUT_SCREENSHOT_DIR: ${{ runner.temp }}/layout-screenshots
-        run: python -m pytest tests/test_responsive_layout.py -q -rs
+        run: python -m pytest tests/test_responsive_layout.py tests/test_browser_interactions.py -q -rs
       - name: Keep the screenshots
         if: always()
         uses: actions/upload-artifact@v4
@@ -272,8 +274,8 @@ jobs:
     needs: scope
     if: ${{ !cancelled() && (needs.scope.result != 'success' || needs.scope.outputs.browsers == 'true') }}
     runs-on: ubuntu-latest
-    # Usually 2 to 3 minutes. One stuck install ran 37 minutes; this stops that.
-    timeout-minutes: 10
+    # Usually 3 to 4 minutes. One stuck install ran 37 minutes; this stops that.
+    timeout-minutes: 12
     env:
       BROWSER: webkit
     defaults:
@@ -298,11 +300,11 @@ jobs:
           key: playwright-${{ runner.os }}-${{ env.PLAYWRIGHT_VERSION }}-${{ env.BROWSER }}
       - name: Install ${{ env.BROWSER }}
         run: python -m playwright install --with-deps "$BROWSER"
-      - name: Layout check in ${{ env.BROWSER }}
+      - name: Browser checks in ${{ env.BROWSER }}
         env:
           LAYOUT_BROWSERS: ${{ env.BROWSER }}
           LAYOUT_SCREENSHOT_DIR: ${{ runner.temp }}/layout-screenshots
-        run: python -m pytest tests/test_responsive_layout.py -q -rs
+        run: python -m pytest tests/test_responsive_layout.py tests/test_browser_interactions.py -q -rs
       - name: Keep the screenshots
         if: always()
         uses: actions/upload-artifact@v4

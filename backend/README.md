@@ -32,6 +32,23 @@ button for a Registered User account (`TEST_USER_EMAIL`), created on first use.
 It is for development and staging; the app refuses to start with it on when
 `APP_ENV=production`.
 
+### Browser tests
+
+`tests/test_responsive_layout.py` (every page fits phone, tablet and desktop
+screens) and `tests/test_browser_interactions.py` (menus, filters, town search,
+share buttons, sign-in, sign-out and forms) drive real browsers against the app
+on a local port with seeded test data. They run in Chromium by default:
+
+```bash
+python -m pytest tests/test_responsive_layout.py tests/test_browser_interactions.py -q
+LAYOUT_BROWSERS=chromium,firefox,webkit python -m pytest tests/test_browser_interactions.py -q
+```
+
+Firefox and WebKit need `python -m playwright install firefox webkit`; a
+browser that is not installed is skipped. Where Playwright cannot download a
+browser, `PLAYWRIGHT_CHROMIUM_EXECUTABLE=/path/to/chrome` uses one already on
+the machine. CI runs each engine in its own `browsers (...)` job.
+
 Scraping runs in a separate process, never inside the web server. To have
 imports run on their schedule locally, start it in a second terminal:
 

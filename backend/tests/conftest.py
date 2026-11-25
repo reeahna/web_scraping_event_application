@@ -101,6 +101,16 @@ def client():
         yield c
 
 
+@pytest.fixture
+def live_server():
+    """The app on a real local port, for the tests that drive a browser
+    (tests/browser_support.py). Yields its base URL."""
+    from tests.browser_support import running_server
+
+    with running_server(fastapi_app) as url:
+        yield url
+
+
 def _assign_role(db_session, user: User, role_name: str) -> None:
     role = db_session.query(Role).filter(Role.name == role_name).one()
     db_session.add(UserRole(user_id=user.id, role_id=role.id))

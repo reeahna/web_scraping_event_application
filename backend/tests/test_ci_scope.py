@@ -64,6 +64,8 @@ def classify(*paths: str) -> dict[str, bool]:
         (["backend/app/core/templating.py"], ALL),
         (["backend/app/main.py"], ALL),
         (["backend/tests/test_responsive_layout.py"], ALL),
+        (["backend/tests/test_browser_interactions.py"], ALL),
+        (["backend/tests/browser_support.py"], ALL),
         # Templates, CSS and JS: browsers, no PostgreSQL.
         (["frontend/templates/base.html"], FRONTEND),
         (["frontend/static/css/site.css", "docs/notes.md"], FRONTEND),
