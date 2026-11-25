@@ -3,17 +3,16 @@
 A dry run by default: it prints how many events would change and why, and
 changes nothing. See app/services/all_day_backfill.py for the rules.
 
-Writing needs an explicit, reviewed list of event ids. Every id is checked
-again just before it changes; ids that no longer qualify are skipped and
-listed with the reason.
+This script never writes. Marking events is done only on the admin page
+(/admin/events/all-day-backfill): a Super Administrator checks a reviewed list
+of event ids, and Apply then uses exactly that saved check. Here you can check
+a list the same way, which changes nothing.
 
 Usage (from backend/, with its venv active):
 
     python scripts/backfill_all_day.py --ids      # dry run, the impact report + ids
     python scripts/backfill_all_day.py --ids-file reviewed.txt \
         --reviewed-at 2026-11-24T23:20:00+00:00   # check the list, change nothing
-    python scripts/backfill_all_day.py --ids-file reviewed.txt \
-        --reviewed-at 2026-11-24T23:20:00+00:00 --apply   # set events.all_day
 """
 
 import argparse
@@ -35,7 +34,7 @@ def _by_source(counter) -> str:
     return "".join(f"\n    {n:>6}  {source}" for source, n in counter.most_common()) or "\n    none"
 
 
-def _apply_ids(args) -> None:
+def _check_ids(args) -> None:
     reviewed_at = datetime.fromisoformat(args.reviewed_at)
     if reviewed_at.tzinfo is None:
         reviewed_at = reviewed_at.replace(tzinfo=UTC)
@@ -43,36 +42,32 @@ def _apply_ids(args) -> None:
         ids = parse_event_ids(handle.read())
     db = SessionLocal()
     try:
-        report = apply_all_day_to_ids(db, ids, reviewed_at=reviewed_at, apply=args.apply)
+        report = apply_all_day_to_ids(db, ids, reviewed_at=reviewed_at, apply=False)
     finally:
         db.close()
-    verb = "Marked" if report.applied else "Would mark"
-    print(f"{verb} {len(report.changed_ids)} of {report.requested} listed event(s) all-day.")
+    print(f"Would mark {len(report.changed_ids)} of {report.requested} listed event(s) all-day.")
     if report.changed_ids:
         print("    ids: " + ", ".join(map(str, report.changed_ids)))
     print(f"Skipped: {len(report.skipped)}.")
     for event_id, reason in report.skipped:
         print(f"    {event_id}: {reason}")
-    if report.changed_ids and not report.applied:
-        print("Re-run with --apply to set them.")
+    if report.changed_ids:
+        print("Nothing changed. To apply, check the list on the admin page, then Apply.")
 
 
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--ids", action="store_true", help="also list the event ids")
-    parser.add_argument("--ids-file", help="a reviewed list of event ids to check or apply")
+    parser.add_argument("--ids-file", help="reviewed event ids to check (changes nothing)")
     parser.add_argument(
         "--reviewed-at", help="when the list was reviewed (ISO 8601); later edits are skipped"
     )
-    parser.add_argument(
-        "--apply", action="store_true", help="with --ids-file: set all_day on the listed events"
-    )
     args = parser.parse_args()
 
-    if args.ids_file or args.apply:
-        if not (args.ids_file and args.reviewed_at):
-            parser.error("--apply needs --ids-file and --reviewed-at: only reviewed ids change")
-        _apply_ids(args)
+    if args.ids_file:
+        if not args.reviewed_at:
+            parser.error("--ids-file needs --reviewed-at")
+        _check_ids(args)
         return
 
     db = SessionLocal()
@@ -110,7 +105,7 @@ def main() -> None:
             "history but holding a clock time: " + ", ".join(map(str, report.marker_with_time))
         )
     if report.total_to_mark:
-        print("To apply, review the ids and pass them with --ids-file and --reviewed-at.")
+        print("To apply, review the ids, then check and apply them on the admin page.")
 
 
 if __name__ == "__main__":

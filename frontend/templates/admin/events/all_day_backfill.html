@@ -35,7 +35,7 @@
 </table>
 
 <h2>Apply to a reviewed list of event ids</h2>
-<p class="audit-meta">Only the ids pasted here are ever marked. Each one is checked again immediately before it changes, and it is skipped (with the reason) if it is archived, already all-day, now has a time, is no longer flagged all-day by its latest extraction, comes from a source set to "time not announced", or had its details changed after the review time below.</p>
+<p class="audit-meta">Only the ids pasted here are ever marked. Each one is checked again immediately before it changes, and it is skipped (with the reason) if it is archived, already all-day, now has a time, is no longer flagged all-day by its latest extraction, comes from a source set to "time not announced", or had its details changed after the review time below. An event with no recorded change date is marked only if nothing has been written to it since the review time. Apply uses only the ids and review time saved by your Check, within an hour, once.</p>
 
 {% if error %}<p class="form-error" role="alert">{{ error }}</p>{% endif %}
 
@@ -66,13 +66,12 @@
   <p class="audit-meta">{% for id in id_report.changed_ids %}<a href="/admin/events/{{ id }}">#{{ id }}</a>{% if not loop.last %}, {% endif %}{% endfor %}</p>
 </details>
 {% endif %}
-{% if not id_report.applied and id_report.changed_ids %}
+{% if not id_report.applied and id_report.changed_ids and check_id %}
 <form method="post" action="/admin/events/all-day-backfill" class="inline-form"
       data-confirm="Mark {{ id_report.changed_ids | length }} listed event(s) as all-day? Ids that no longer qualify are skipped.">
   <input type="hidden" name="csrf_token" value="{{ csrf_token }}" />
   <input type="hidden" name="mode" value="apply" />
-  <input type="hidden" name="reviewed_at" value="{{ id_report.reviewed_at.isoformat() }}" />
-  <input type="hidden" name="event_ids" value="{{ event_ids_text }}" />
+  <input type="hidden" name="check_id" value="{{ check_id }}" />
   <button type="submit" class="wf-secondary">Apply to these {{ id_report.changed_ids | length }} events (Super Administrators)</button>
 </form>
 {% endif %}

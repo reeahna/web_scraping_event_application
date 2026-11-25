@@ -21,8 +21,14 @@ from app.models.user import User
 from app.models.website import Website
 from app.repositories.event_provenance import get_latest_provenance_for_event
 from app.services.all_day_backfill import (
+    APPLY_ACTION,
+    CHECK_ACTION,
+    CHECK_ENTITY,
+    CheckRejected,
     apply_all_day_to_ids,
     backfill_all_day,
+    check_audit_payload,
+    load_check_for_apply,
     parse_event_ids,
 )
 from app.services.audit import record_audit
@@ -187,6 +193,7 @@ def all_day_backfill_preview(request: Request, current_user: ViewEvents, db: DbS
             "report": report,
             "reviewed_at": datetime.now(UTC).replace(microsecond=0).isoformat(),
             "id_report": None,
+            "check_id": None,
             "event_ids_text": "",
             "error": None,
         },
@@ -198,7 +205,10 @@ def _parse_reviewed_at(value: str) -> datetime:
         parsed = datetime.fromisoformat(value.strip())
     except ValueError as exc:
         raise AppError("The review time is missing or not a valid date and time.") from exc
-    return parsed if parsed.tzinfo else parsed.replace(tzinfo=UTC)
+    parsed = parsed if parsed.tzinfo else parsed.replace(tzinfo=UTC)
+    if parsed > datetime.now(UTC):
+        raise AppError("The review time can't be in the future.")
+    return parsed
 
 
 @router.post("/all-day-backfill", response_class=HTMLResponse)
@@ -211,36 +221,48 @@ def all_day_backfill_apply(
     csrf_token: str = Form(...),
     event_ids: str = Form(""),
     reviewed_at: str = Form(""),
+    check_id: str = Form(""),
     mode: str = Form("check"),
 ):
-    """Checks, or applies, an explicit list of reviewed event ids. It never
-    marks events that are not on the list."""
+    """Checks an explicit list of reviewed event ids, or applies an earlier
+    Check. It never marks events that are not on the list.
+
+    Check records its ids, review time and result as an audit entry. Apply
+    takes only that entry's id and uses what the entry says; it ignores any
+    ids or review time posted with it, so it cannot be pointed at anything
+    that was not checked."""
     verify_csrf(request, csrf_token)
     _require(db, current_user, "events.review")
     apply = mode == "apply"
     # A bulk change to stored events: Super Administrators only.
     if apply and not user_has_role(db, current_user, SUPER_ADMINISTRATOR):
         raise AppError("Forbidden: Super Administrator only", status_code=403)
-    reviewed = _parse_reviewed_at(reviewed_at)
     error = None
     id_report = None
-    try:
-        ids = parse_event_ids(event_ids)
-    except ValueError as exc:
-        ids, error = [], str(exc)
-    if not ids and error is None:
-        error = "Paste the reviewed event ids first."
-    if error is None:
-        id_report = apply_all_day_to_ids(db, ids, reviewed_at=reviewed, apply=apply)
-        if apply:
+    check = None
+    status = 200
+    if apply:
+        try:
+            if not check_id.strip().isdigit():
+                raise CheckRejected("Apply needs a check. Run Check first.")
+            check = load_check_for_apply(db, int(check_id), user_id=current_user.id)
+        except CheckRejected as exc:
+            db.rollback()
+            error, status = str(exc), 409
+        if check is not None:
+            id_report = apply_all_day_to_ids(
+                db, check.event_ids, reviewed_at=check.reviewed_at, apply=True, commit=False
+            )
+            # Committed together with the changes it describes.
             record_audit(
                 db,
                 actor_id=current_user.id,
-                action="events_all_day_applied_by_id",
-                entity_type="event",
-                entity_id=None,
+                action=APPLY_ACTION,
+                entity_type=CHECK_ENTITY,
+                entity_id=check.check_id,
                 after={
-                    "reviewed_at": reviewed.isoformat(),
+                    "check_id": check.check_id,
+                    "reviewed_at": check.reviewed_at.isoformat(),
                     "requested": id_report.requested,
                     "changed": len(id_report.changed_ids),
                     "changed_ids": id_report.changed_ids,
@@ -252,6 +274,28 @@ def all_day_backfill_apply(
                 correlation_id=correlation_id,
                 ip_address=ip_address,
             )
+    else:
+        reviewed = _parse_reviewed_at(reviewed_at)
+        try:
+            ids = parse_event_ids(event_ids)
+        except ValueError as exc:
+            ids, error = [], str(exc)
+        if not ids and error is None:
+            error = "Paste the reviewed event ids first."
+        if error is None:
+            id_report = apply_all_day_to_ids(db, ids, reviewed_at=reviewed, apply=False)
+            entry = record_audit(
+                db,
+                actor_id=current_user.id,
+                action=CHECK_ACTION,
+                entity_type=CHECK_ENTITY,
+                after=check_audit_payload(id_report, ids),
+                correlation_id=correlation_id,
+                ip_address=ip_address,
+            )
+            check_id = str(entry.id)
+        else:
+            status = 422
     report = backfill_all_day(db, apply=False)
     return render(
         request,
@@ -259,12 +303,15 @@ def all_day_backfill_apply(
         {
             "current_user": current_user,
             "report": report,
-            "reviewed_at": reviewed.isoformat(),
+            "reviewed_at": (
+                id_report.reviewed_at.isoformat() if id_report else reviewed_at
+            ),
             "id_report": id_report,
+            "check_id": check_id if id_report and not id_report.applied else None,
             "event_ids_text": event_ids,
             "error": error,
         },
-        status_code=422 if error else 200,
+        status_code=status,
     )
 
 

@@ -27,14 +27,16 @@ skipped with a reason instead of being marked.
 
 from __future__ import annotations
 
+import json
 from collections import Counter
 from dataclasses import dataclass, field
-from datetime import UTC, datetime, time
+from datetime import UTC, datetime, time, timedelta
 
-from sqlalchemy import func, select, update
+from sqlalchemy import Text, and_, cast, exists, func, or_, select, update
 from sqlalchemy.orm import Session
 
 from app.extraction.normalize import ALL_DAY_MARKER
+from app.models.audit_log import AuditLog
 from app.models.event import Event
 from app.models.event_provenance import EventProvenance
 from app.models.website import Website
@@ -83,12 +85,16 @@ def _latest_histories(db: Session) -> dict[int, list[str]]:
 def _time_tbd_website_ids(db: Session) -> set[int]:
     """Websites whose approved configuration (what imports run on) sets
     date_only_means_time_tbd."""
-    ids = set()
-    for website_id, approved in db.execute(select(Website.id, Website.approved_pattern)):
-        config = approved.get("configuration", approved) if isinstance(approved, dict) else {}
-        if isinstance(config, dict) and config.get("date_only_means_time_tbd"):
-            ids.add(website_id)
-    return ids
+    return {
+        website_id
+        for website_id, approved in db.execute(select(Website.id, Website.approved_pattern))
+        if _means_time_tbd(approved)
+    }
+
+
+def _means_time_tbd(approved) -> bool:
+    config = approved.get("configuration", approved) if isinstance(approved, dict) else {}
+    return isinstance(config, dict) and bool(config.get("date_only_means_time_tbd"))
 
 
 def backfill_all_day(db: Session, *, apply: bool = False) -> AllDayBackfillReport:
@@ -158,6 +164,7 @@ SKIP_NO_DATE = "no start date"
 SKIP_NOT_FLAGGED = "latest extraction does not flag it all-day"
 SKIP_TIME_TBD_SOURCE = 'source is set to "time not announced"'
 SKIP_CHANGED = "details changed after the review"
+SKIP_UNVERIFIED = "can't confirm it is unchanged since the review"
 SKIP_CHANGED_DURING_APPLY = "changed while applying"
 
 
@@ -193,63 +200,155 @@ def parse_event_ids(text: str) -> list[int]:
     return ids
 
 
-def _aware(value: datetime | None) -> datetime | None:
-    if value is None or value.tzinfo is not None:
-        return value
-    return value.replace(tzinfo=UTC)
+def _utc(value: datetime | None) -> datetime | None:
+    """Aware UTC (SQLite hands datetimes back naive; they are stored as UTC)."""
+    if value is None:
+        return None
+    return value.replace(tzinfo=UTC) if value.tzinfo is None else value.astimezone(UTC)
 
 
-def _latest_history(db: Session, event_id: int) -> list[str]:
-    history = db.execute(
-        select(EventProvenance.transformation_history)
+@dataclass(frozen=True)
+class _Verified:
+    """What an event was checked against, so the update can insist on it."""
+
+    provenance_id: int
+    website_id: int | None
+    # The website's approved configuration exactly as stored (JSON text).
+    approved_text: str | None
+
+
+def _latest_provenance(db: Session, event_id: int) -> tuple[int, list[str]] | None:
+    row = db.execute(
+        select(EventProvenance.id, EventProvenance.transformation_history)
         .where(EventProvenance.event_id == event_id)
         .order_by(EventProvenance.id.desc())
         .limit(1)
+    ).first()
+    return None if row is None else (row.id, list(row.transformation_history or []))
+
+
+def _approved_text(db: Session, website_id: int | None) -> str | None:
+    if website_id is None:
+        return None
+    return db.execute(
+        select(cast(Website.approved_pattern, Text)).where(Website.id == website_id)
     ).scalar_one_or_none()
-    return list(history or [])
 
 
-def _skip_reason(
-    db: Session, event: Event | None, reviewed_at: datetime, time_tbd_sites: set[int]
-) -> str | None:
-    """Why this event must not be marked now, or None when it still qualifies
-    exactly as the preview counted it."""
-    if event is None:
-        return SKIP_NOT_FOUND
-    if event.archived_at is not None:
-        return SKIP_ARCHIVED
-    if event.all_day:
-        return SKIP_ALREADY_ALL_DAY
-    if event.start_time is not None or event.end_time is not None:
-        return SKIP_HAS_TIME
-    if event.start_date is None:
-        return SKIP_NO_DATE
-    if ALL_DAY_MARKER not in _latest_history(db, event.id):
-        return SKIP_NOT_FLAGGED
-    if event.website_id in time_tbd_sites:
-        return SKIP_TIME_TBD_SOURCE
-    changed = _aware(event.content_updated_at)
-    if changed is not None and changed > reviewed_at:
-        return SKIP_CHANGED
+def _unchanged_since(event: Event, reviewed_at: datetime) -> str | None:
+    """None when the event provably has not changed since the review.
+
+    content_updated_at is when visitor-facing details last changed. Events
+    listed before it was tracked have none; for those only updated_at, which
+    every write to the row moves, can prove nothing happened since. Without
+    either proof the event is skipped, never assumed unchanged."""
+    changed = _utc(event.content_updated_at)
+    if changed is not None:
+        return SKIP_CHANGED if changed > reviewed_at else None
+    written = _utc(event.updated_at)
+    if written is None or written > reviewed_at:
+        return SKIP_UNVERIFIED
     return None
 
 
+def _skip_reason(
+    db: Session, event: Event | None, reviewed_at: datetime
+) -> tuple[str | None, _Verified | None]:
+    """Why this event must not be marked now (or None), and, when it still
+    qualifies exactly as the preview counted it, what it was checked against."""
+    if event is None:
+        return SKIP_NOT_FOUND, None
+    if event.archived_at is not None:
+        return SKIP_ARCHIVED, None
+    if event.all_day:
+        return SKIP_ALREADY_ALL_DAY, None
+    if event.start_time is not None or event.end_time is not None:
+        return SKIP_HAS_TIME, None
+    if event.start_date is None:
+        return SKIP_NO_DATE, None
+    latest = _latest_provenance(db, event.id)
+    if latest is None or ALL_DAY_MARKER not in latest[1]:
+        return SKIP_NOT_FLAGGED, None
+    approved_text = _approved_text(db, event.website_id)
+    if approved_text is not None and _means_time_tbd(json.loads(approved_text)):
+        return SKIP_TIME_TBD_SOURCE, None
+    reason = _unchanged_since(event, reviewed_at)
+    if reason is not None:
+        return reason, None
+    return None, _Verified(latest[0], event.website_id, approved_text)
+
+
+def _still_eligible(event_id: int, verified: _Verified, reviewed_at: datetime):
+    """Every eligibility rule as SQL, for the update's WHERE: the event row as
+    checked, its newest provenance row still the one that carried the marker,
+    and its source's approved configuration byte for byte the one that was
+    read. If anything moved after the check, the update matches no row."""
+    newest_provenance = (
+        select(func.max(EventProvenance.id))
+        .where(EventProvenance.event_id == Event.id)
+        .scalar_subquery()
+    )
+    conditions = [
+        Event.id == event_id,
+        Event.archived_at.is_(None),
+        Event.all_day.is_(False),
+        Event.start_time.is_(None),
+        Event.end_time.is_(None),
+        Event.start_date.is_not(None),
+        or_(
+            and_(
+                Event.content_updated_at.is_not(None),
+                Event.content_updated_at <= reviewed_at,
+            ),
+            and_(Event.content_updated_at.is_(None), Event.updated_at <= reviewed_at),
+        ),
+        newest_provenance == verified.provenance_id,
+        exists().where(
+            EventProvenance.id == verified.provenance_id,
+            EventProvenance.event_id == event_id,
+            cast(EventProvenance.transformation_history, Text).contains(
+                json.dumps(ALL_DAY_MARKER), autoescape=True
+            ),
+        ),
+    ]
+    if verified.website_id is None:
+        conditions.append(Event.website_id.is_(None))
+    else:
+        approved = cast(Website.approved_pattern, Text)
+        conditions += [
+            Event.website_id == verified.website_id,
+            exists().where(
+                Website.id == verified.website_id,
+                approved.is_(None) if verified.approved_text is None
+                else approved == verified.approved_text,
+            ),
+        ]
+    return conditions
+
+
 def apply_all_day_to_ids(
-    db: Session, event_ids: list[int], *, reviewed_at: datetime, apply: bool = False
+    db: Session,
+    event_ids: list[int],
+    *,
+    reviewed_at: datetime,
+    apply: bool = False,
+    commit: bool = True,
 ) -> AllDayIdApplyReport:
     """Marks all-day only the listed events that still qualify. With
     apply=False it reports what would happen and writes nothing.
 
     Each event is re-read (locked where the database supports it) and checked
-    immediately before its own update, and the update itself repeats the
-    conditions, so an import that gives the event a time in between leaves it
-    alone. Only events.all_day is written: dates, times, visibility,
-    categories, overrides, duplicate decisions, provenance and
-    content_updated_at are untouched."""
-    reviewed_at = _aware(reviewed_at)
+    immediately before its own update, and the update's WHERE repeats every
+    rule (see _still_eligible), so a change made in between leaves the event
+    alone and reports it. Only events.all_day is written: dates, times,
+    visibility, categories, overrides, duplicate decisions, provenance and
+    content_updated_at are untouched.
+
+    commit=False leaves an apply uncommitted so the caller can commit it
+    together with its audit entry."""
+    reviewed_at = _utc(reviewed_at)
     report = AllDayIdApplyReport(applied=apply, reviewed_at=reviewed_at)
     report.requested = len(event_ids)
-    time_tbd_sites = _time_tbd_website_ids(db)
     seen: set[int] = set()
     for event_id in event_ids:
         if event_id in seen:
@@ -259,22 +358,16 @@ def apply_all_day_to_ids(
         event = db.execute(
             select(Event).where(Event.id == event_id).with_for_update()
         ).scalar_one_or_none()
-        reason = _skip_reason(db, event, reviewed_at, time_tbd_sites)
+        reason, verified = _skip_reason(db, event, reviewed_at)
         if reason is not None:
             report.skipped.append((event_id, reason))
             continue
         if apply:
-            # A plain column update guarded by the same conditions: no ORM
-            # events, so content_updated_at and the AI queue stay as they are.
+            # A plain column update: no ORM events, so content_updated_at and
+            # the AI queue stay as they are.
             result = db.execute(
                 update(Event)
-                .where(
-                    Event.id == event_id,
-                    Event.all_day.is_(False),
-                    Event.start_time.is_(None),
-                    Event.end_time.is_(None),
-                    Event.archived_at.is_(None),
-                )
+                .where(*_still_eligible(event_id, verified, reviewed_at))
                 .values(all_day=True)
                 .execution_options(synchronize_session=False)
             )
@@ -282,8 +375,73 @@ def apply_all_day_to_ids(
                 report.skipped.append((event_id, SKIP_CHANGED_DURING_APPLY))
                 continue
         report.changed_ids.append(event_id)
-    if apply:
-        db.commit()
-    else:
+    if not apply:
         db.rollback()
+    elif commit:
+        db.commit()
     return report
+
+
+# --- binding Apply to an earlier Check -----------------------------------------
+
+CHECK_ACTION = "events_all_day_checked_by_id"
+APPLY_ACTION = "events_all_day_applied_by_id"
+# The Apply audit entry points at the Check it used (entity_id = its audit id).
+CHECK_ENTITY = "all_day_check"
+CHECK_VALID_FOR = timedelta(hours=1)
+
+
+class CheckRejected(ValueError):
+    """Apply refused: no usable earlier Check. Nothing was changed."""
+
+
+@dataclass(frozen=True)
+class ReviewedCheck:
+    check_id: int
+    reviewed_at: datetime
+    # Exactly the ids that Check found would change; Apply touches no others.
+    event_ids: list[int]
+
+
+def check_audit_payload(report: AllDayIdApplyReport, listed_ids: list[int]) -> dict:
+    """What a Check records server-side, and all that a later Apply may use."""
+    return {
+        "reviewed_at": report.reviewed_at.isoformat(),
+        "listed_ids": listed_ids,
+        "would_change_ids": report.changed_ids,
+        "skipped": [{"event_id": i, "reason": reason} for i, reason in report.skipped],
+    }
+
+
+def load_check_for_apply(
+    db: Session, check_id: int, *, user_id: int, now: datetime | None = None
+) -> ReviewedCheck:
+    """The earlier Check an Apply must match: recorded by this server (an audit
+    entry, which nobody can edit), by the same person, within the last hour,
+    not used yet, and with something to change. Locks the entry so two
+    Applies of one Check cannot both run."""
+    now = _utc(now or datetime.now(UTC))
+    entry = db.execute(
+        select(AuditLog).where(AuditLog.id == check_id).with_for_update()
+    ).scalar_one_or_none()
+    if entry is None or entry.action != CHECK_ACTION or entry.after_state is None:
+        raise CheckRejected("No matching check was found. Run Check first.")
+    if entry.user_id != user_id:
+        raise CheckRejected("That check was run by someone else. Run Check yourself first.")
+    checked_at = _utc(entry.created_at)
+    if checked_at > now or now - checked_at > CHECK_VALID_FOR:
+        raise CheckRejected("That check is more than an hour old. Run Check again.")
+    used = db.execute(
+        select(AuditLog.id).where(
+            AuditLog.action == APPLY_ACTION,
+            AuditLog.entity_type == CHECK_ENTITY,
+            AuditLog.entity_id == check_id,
+        )
+    ).first()
+    if used is not None:
+        raise CheckRejected("That check has already been applied. Run Check again.")
+    payload = json.loads(entry.after_state)
+    ids = [int(i) for i in payload.get("would_change_ids") or []]
+    if not ids:
+        raise CheckRejected("That check found nothing to change.")
+    return ReviewedCheck(check_id, _utc(datetime.fromisoformat(payload["reviewed_at"])), ids)

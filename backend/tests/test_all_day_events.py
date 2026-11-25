@@ -20,10 +20,13 @@ import re
 from datetime import UTC, date, datetime, time, timedelta
 
 import pytest
+from sqlalchemy import update
 
 from app.extraction.normalize import ALL_DAY_MARKER, normalize_candidate
 from app.extraction.patterns.simpleview_events import NAME, SimpleviewEventsPattern
+from app.models.event import Event
 from app.models.event_provenance import EventProvenance
+from app.models.website import Website
 from app.repositories.event import create_event_from_candidate, update_event
 from app.repositories.public_events import current_public_date
 from app.schemas.extraction import SiteConfiguration, TransformationRuleConfig
@@ -38,8 +41,11 @@ from app.services.all_day_backfill import (
     SKIP_NOT_FLAGGED,
     SKIP_NOT_FOUND,
     SKIP_TIME_TBD_SOURCE,
+    SKIP_UNVERIFIED,
+    CheckRejected,
     apply_all_day_to_ids,
     backfill_all_day,
+    load_check_for_apply,
     parse_event_ids,
 )
 from app.services.calendar_feed import town_calendar
@@ -573,12 +579,13 @@ def test_admin_backfill_preview_is_read_only_and_apply_needs_csrf(
 
     assert 'action="/admin/events/all-day-backfill"' in page.text
     token = client.cookies.get("csrf_token")
-    # Without a reviewed id list nothing is marked, even by a Super Administrator.
+    # Without a reviewed id list and a Check nothing is marked, even by a
+    # Super Administrator.
     bare = client.post(
         "/admin/events/all-day-backfill",
         data={"csrf_token": token, "mode": "apply", "reviewed_at": REVIEWED_AT},
     )
-    assert bare.status_code == 422
+    assert bare.status_code == 409
     db_session.refresh(event)
     assert event.all_day is False
 
@@ -689,24 +696,152 @@ def test_id_apply_rechecks_and_skips_with_reasons(
         assert event.all_day is False
 
 
-def test_id_apply_guards_the_update_itself(db_session, town, make_event, monkeypatch):
-    """An event that gains a time between the check and its update is left alone."""
+def test_id_apply_fails_closed_without_a_change_date(db_session, town, make_event):
+    """An event with no content_updated_at is marked only when updated_at
+    proves nothing was written to it since the review."""
+    city, website = town
+    quiet = _flagged(
+        db_session, make_event, city, website, "Quiet", content_updated_at=None,
+        updated_at=datetime(2026, 11, 1, tzinfo=UTC),
+    )
+    touched = _flagged(
+        db_session, make_event, city, website, "Touched", content_updated_at=None,
+        updated_at=datetime(2026, 11, 25, tzinfo=UTC),
+    )
+    report = apply_all_day_to_ids(
+        db_session, [quiet.id, touched.id], reviewed_at=REVIEWED, apply=True
+    )
+    assert report.changed_ids == [quiet.id]
+    assert report.skipped == [(touched.id, SKIP_UNVERIFIED)]
+    db_session.refresh(touched)
+    assert touched.all_day is False
+
+
+def _gain_time(db_session, event, website):
+    db_session.execute(update(Event).where(Event.id == event.id).values(start_time=time(19)))
+
+
+def _remove_marker(db_session, event, website):
+    # A newer extraction that no longer flags the event all-day.
+    db_session.add(EventProvenance(
+        event_id=event.id, website_id=website.id, source_page="https://e.org/feed",
+        extraction_pattern="ics_calendar", pattern_version="1", raw_record_hash="r2",
+        source_response_hash="s2", transformation_history=["start_datetime:iso"],
+    ))
+    db_session.flush()
+
+
+def _marker_edited_in_place(db_session, event, website):
+    # Provenance is append-only, but the update does not rely on that.
+    db_session.execute(
+        update(EventProvenance).where(EventProvenance.event_id == event.id)
+        .values(transformation_history=["start_datetime:iso"])
+    )
+
+
+def _source_turns_time_tbd(db_session, event, website):
+    db_session.execute(
+        update(Website).where(Website.id == website.id)
+        .values(approved_pattern={"configuration": {"date_only_means_time_tbd": True}})
+    )
+
+
+def _source_config_changes(db_session, event, website):
+    db_session.execute(
+        update(Website).where(Website.id == website.id)
+        .values(approved_pattern={"configuration": {"pattern_name": "other"}})
+    )
+
+
+def _edited_after_review(db_session, event, website):
+    db_session.execute(
+        update(Event).where(Event.id == event.id)
+        .values(content_updated_at=datetime(2026, 11, 25, tzinfo=UTC))
+    )
+
+
+def _archived(db_session, event, website):
+    db_session.execute(
+        update(Event).where(Event.id == event.id).values(archived_at=datetime.now(UTC))
+    )
+
+
+def _written_without_change_date(db_session, event, website):
+    db_session.execute(
+        update(Event).where(Event.id == event.id)
+        .values(content_updated_at=None, title="Retitled")
+    )
+
+
+@pytest.mark.parametrize(
+    "change",
+    [_gain_time, _remove_marker, _marker_edited_in_place, _source_turns_time_tbd,
+     _source_config_changes, _edited_after_review, _archived, _written_without_change_date],
+)
+def test_id_apply_update_repeats_every_rule(db_session, town, make_event, monkeypatch, change):
+    """Whatever changes between an event's check and its update, the update
+    itself matches nothing and the event is reported, not marked."""
     import app.services.all_day_backfill as backfill
 
     city, website = town
-    event = _flagged(db_session, make_event, city, website, "Raced", start_time=time(19))
-    monkeypatch.setattr(backfill, "_skip_reason", lambda *args: None)
+    db_session.execute(
+        update(Website).where(Website.id == website.id)
+        .values(approved_pattern={"configuration": {}})
+    )
+    db_session.commit()
+    event = _flagged(db_session, make_event, city, website, "Raced")
+    real = backfill._skip_reason
+
+    def check_then_race(db, checked, reviewed_at):
+        result = real(db, checked, reviewed_at)
+        assert result[0] is None
+        change(db, checked, website)
+        return result
+
+    monkeypatch.setattr(backfill, "_skip_reason", check_then_race)
     report = apply_all_day_to_ids(db_session, [event.id], reviewed_at=REVIEWED, apply=True)
     assert report.changed_ids == []
     assert report.skipped == [(event.id, SKIP_CHANGED_DURING_APPLY)]
-    db_session.refresh(event)
-    assert event.all_day is False
+    db_session.expire_all()
+    assert db_session.get(Event, event.id).all_day is False
+
+
+def test_id_apply_update_goes_through_when_nothing_changed(
+    db_session, town, make_event, monkeypatch
+):
+    import app.services.all_day_backfill as backfill
+
+    city, website = town
+    event = _flagged(db_session, make_event, city, website, "Steady")
+    real = backfill._skip_reason
+    monkeypatch.setattr(backfill, "_skip_reason", lambda *args: real(*args))
+    report = apply_all_day_to_ids(db_session, [event.id], reviewed_at=REVIEWED, apply=True)
+    assert report.changed_ids == [event.id]
 
 
 def test_parse_event_ids():
     assert parse_event_ids("# reviewed list\n12, 13\n#14 15") == [12, 13, 14, 15]
     with pytest.raises(ValueError):
         parse_event_ids("12, thirteen")
+
+
+def _open_backfill_page(client):
+    client.get("/admin/events/all-day-backfill")
+    return client.cookies.get("csrf_token")
+
+
+def _check(client, token, ids, reviewed_at=REVIEWED_AT):
+    return client.post(
+        "/admin/events/all-day-backfill",
+        data={"csrf_token": token, "mode": "check", "reviewed_at": reviewed_at,
+              "event_ids": ids},
+    )
+
+
+def _check_id(response) -> str:
+    found = re.search(r'name="check_id" value="(\d+)"', response.text)
+    assert found, "the Check result offers no Apply"
+    return found.group(1)
 
 
 def test_admin_id_apply_checks_first_then_applies_and_audits(
@@ -720,30 +855,148 @@ def test_admin_id_apply_checks_first_then_applies_and_audits(
     timed = _flagged(db_session, make_event, city, website, "Timed", start_time=time(9))
     make_super_admin()
     login("root@example.com")
-    client.get("/admin/events/all-day-backfill")
-    token = client.cookies.get("csrf_token")
-    form = {"csrf_token": token, "reviewed_at": REVIEWED_AT,
-            "event_ids": f"{listed.id}, {timed.id}"}
+    token = _open_backfill_page(client)
 
-    checked = client.post("/admin/events/all-day-backfill", data={**form, "mode": "check"})
+    checked = _check(client, token, f"{listed.id}, {timed.id}")
     assert checked.status_code == 200
     assert "Checked only, nothing changed" in checked.text
     assert 'name="mode" value="apply"' in checked.text
+    # Apply carries only the check's id: no editable ids or review time.
+    assert 'name="event_ids" value=' not in checked.text
+    check_id = _check_id(checked)
     db_session.refresh(listed)
     assert listed.all_day is False
+    check = db_session.get(AuditLog, int(check_id))
+    assert check.action == "events_all_day_checked_by_id"
+    assert json.loads(check.after_state)["would_change_ids"] == [listed.id]
 
-    applied = client.post("/admin/events/all-day-backfill", data={**form, "mode": "apply"})
+    # Ids and a review time posted with Apply are ignored; the check decides.
+    applied = client.post(
+        "/admin/events/all-day-backfill",
+        data={"csrf_token": token, "mode": "apply", "check_id": check_id,
+              "event_ids": str(unlisted.id), "reviewed_at": "2026-11-30T00:00:00+00:00"},
+    )
     assert applied.status_code == 200
-    assert "Applied" in applied.text and SKIP_HAS_TIME in applied.text
+    assert "Applied" in applied.text
     for event in (listed, unlisted, timed):
         db_session.refresh(event)
     assert (listed.all_day, unlisted.all_day, timed.all_day) == (True, False, False)
     audit = (
         db_session.query(AuditLog).filter_by(action="events_all_day_applied_by_id").one()
     )
+    assert (audit.entity_type, audit.entity_id) == ("all_day_check", int(check_id))
     after = json.loads(audit.after_state)
+    assert after["check_id"] == int(check_id)
+    assert after["reviewed_at"] == REVIEWED_AT
     assert after["changed_ids"] == [listed.id]
-    assert after["skipped"] == [{"event_id": timed.id, "reason": SKIP_HAS_TIME}]
+    assert after["skipped"] == []
+
+    # A check is used once.
+    again = client.post(
+        "/admin/events/all-day-backfill",
+        data={"csrf_token": token, "mode": "apply", "check_id": check_id},
+    )
+    assert again.status_code == 409
+    assert "already been applied" in again.text
+
+
+@pytest.mark.parametrize("check_id", ["", "abc", "999999"])
+def test_admin_direct_apply_without_a_check_changes_nothing(
+    client, db_session, town, make_event, make_super_admin, login, check_id
+):
+    from app.models.audit_log import AuditLog
+
+    city, website = town
+    event = _flagged(db_session, make_event, city, website, "Listed")
+    make_super_admin()
+    login("root@example.com")
+    token = _open_backfill_page(client)
+    response = client.post(
+        "/admin/events/all-day-backfill",
+        data={"csrf_token": token, "mode": "apply", "check_id": check_id,
+              "event_ids": str(event.id), "reviewed_at": REVIEWED_AT},
+    )
+    assert response.status_code == 409
+    db_session.refresh(event)
+    assert event.all_day is False
+    assert db_session.query(AuditLog).filter_by(
+        action="events_all_day_applied_by_id").count() == 0
+
+
+def test_admin_apply_rejects_an_audit_entry_that_is_not_a_check(
+    client, db_session, town, make_event, make_super_admin, login
+):
+    from app.services.audit import record_audit
+
+    city, website = town
+    event = _flagged(db_session, make_event, city, website, "Listed")
+    admin = make_super_admin()
+    other = record_audit(
+        db_session, actor_id=admin.id, action="something_else",
+        after={"reviewed_at": REVIEWED_AT, "would_change_ids": [event.id]},
+    )
+    login("root@example.com")
+    token = _open_backfill_page(client)
+    response = client.post(
+        "/admin/events/all-day-backfill",
+        data={"csrf_token": token, "mode": "apply", "check_id": str(other.id)},
+    )
+    assert response.status_code == 409
+    db_session.refresh(event)
+    assert event.all_day is False
+
+
+def _recorded_check(db_session, user, ids, *, created_at=None):
+    from app.services.audit import record_audit
+
+    entry = record_audit(
+        db_session, actor_id=user.id, action="events_all_day_checked_by_id",
+        entity_type="all_day_check",
+        after={"reviewed_at": REVIEWED_AT, "listed_ids": ids, "would_change_ids": ids,
+               "skipped": []},
+    )
+    if created_at is not None:
+        entry.created_at = created_at
+        db_session.commit()
+    return entry
+
+
+def test_check_record_must_be_recent_and_your_own(db_session, make_super_admin, make_user):
+    from app.core.permissions import SUPER_ADMINISTRATOR
+
+    mine = make_super_admin()
+    theirs = make_user(email="other-root@example.com", role_name=SUPER_ADMINISTRATOR)
+    now = datetime.now(UTC)
+    fresh = _recorded_check(db_session, mine, [1, 2])
+    loaded = load_check_for_apply(db_session, fresh.id, user_id=mine.id)
+    assert loaded.event_ids == [1, 2] and loaded.reviewed_at == REVIEWED
+
+    with pytest.raises(CheckRejected, match="someone else"):
+        load_check_for_apply(db_session, fresh.id, user_id=theirs.id)
+    old = _recorded_check(db_session, mine, [1], created_at=now - timedelta(hours=2))
+    with pytest.raises(CheckRejected, match="more than an hour"):
+        load_check_for_apply(db_session, old.id, user_id=mine.id)
+    empty = _recorded_check(db_session, mine, [])
+    with pytest.raises(CheckRejected, match="nothing to change"):
+        load_check_for_apply(db_session, empty.id, user_id=mine.id)
+
+
+def test_admin_check_refuses_a_future_review_time(
+    client, db_session, town, make_event, make_super_admin, login
+):
+    from app.models.audit_log import AuditLog
+
+    city, website = town
+    event = _flagged(db_session, make_event, city, website, "Listed")
+    make_super_admin()
+    login("root@example.com")
+    token = _open_backfill_page(client)
+    future = (datetime.now(UTC) + timedelta(days=1)).isoformat()
+    response = _check(client, token, str(event.id), reviewed_at=future)
+    assert response.status_code >= 400
+    assert 'name="check_id"' not in response.text
+    assert db_session.query(AuditLog).filter_by(
+        action="events_all_day_checked_by_id").count() == 0
 
 
 def test_admin_id_apply_needs_super_administrator(
@@ -753,14 +1006,13 @@ def test_admin_id_apply_needs_super_administrator(
 
     city, website = town
     event = _flagged(db_session, make_event, city, website, "Listed")
-    make_user(email="editor@example.com", role_name=ADMINISTRATOR)
+    editor = make_user(email="editor@example.com", role_name=ADMINISTRATOR)
+    check = _recorded_check(db_session, editor, [event.id])
     login("editor@example.com")
-    client.get("/admin/events/all-day-backfill")
-    token = client.cookies.get("csrf_token")
+    token = _open_backfill_page(client)
     response = client.post(
         "/admin/events/all-day-backfill",
-        data={"csrf_token": token, "reviewed_at": REVIEWED_AT, "event_ids": str(event.id),
-              "mode": "apply"},
+        data={"csrf_token": token, "mode": "apply", "check_id": str(check.id)},
     )
     assert response.status_code == 403
     db_session.refresh(event)
