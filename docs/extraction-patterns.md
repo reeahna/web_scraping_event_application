@@ -18,7 +18,7 @@ output).
 | `livewhale_json` | LiveWhale JSON feed |
 | `simpleview_events` | Simpleview DMO event API (`docs.docs` records) |
 | `ics_calendar` | iCalendar/ICS feed (UID identity; RRULE preserved) |
-| `rss_atom_events` | RSS/Atom (never uses pubDate as the event date) |
+| `rss_atom_events` | RSS/Atom (never uses pubDate as the event date; venue from `ev:location`, `event:location`, `<venue>` or `<location>`, coordinates from `event:coordinates`, `georss:point` or `geo:lat`/`geo:long`) |
 | `embedded_json` | JSON embedded in a `<script>` |
 | `next_data` | Next.js `__NEXT_DATA__` |
 | `nuxt_payload` | Nuxt `__NUXT_DATA__` |
