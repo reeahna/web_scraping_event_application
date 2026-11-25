@@ -72,6 +72,8 @@ lines. Lines may use `**bold**`, `` `code` `` and `[links](https://...)`.
 
 ## [Unreleased]
 
+## [1.13.0] - 2026-11-25
+
 ### For everyone
 - A new **New features / bug fixes** page (linked in the footer) lets you suggest a feature or report something that isn't working, and see the status of what you've sent. (#137)
 - The home page now starts with a list of states. Pick one to see its college towns and how many upcoming events each has, or search for any town or school as before. Towns with nothing coming up stay off the list until they have events again. (#138)
