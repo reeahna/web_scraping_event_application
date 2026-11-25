@@ -12,6 +12,14 @@ default. The event's start comes only from a configured element via
 the source lands in review, which is the correct outcome for a generic news
 feed. Identity is the entry's `guid`/`id`, so a feed whose entries have no
 usable link still deduplicates.
+
+Venue: event feeds commonly name the place in an element of their own: the
+RSS event module's `ev:location`, NYC Parks' `event:location`, or a plain
+`<venue>`/`<location>`. Only that element is read (placeholders such as "TBA"
+or "See Event Description" are dropped); a venue is never taken from the
+title or description. `json_paths` can name another element for `venue` or
+`address`. Coordinates come from a "lat, lon" element (`event:coordinates`,
+`georss:point`) or W3C `geo:lat`/`geo:long`, and only when both are in range.
 """
 
 from __future__ import annotations
@@ -23,6 +31,7 @@ from xml.etree.ElementTree import Element
 
 from defusedxml.ElementTree import ParseError, fromstring
 
+from app.extraction.locations import clean_venue
 from app.extraction.types import EventCandidate, FetchResponse
 from app.schemas.extraction import SiteConfiguration
 
@@ -57,7 +66,14 @@ _DEFAULT_ELEMENTS: dict[str, tuple[str, ...]] = {
     "description": ("description", "summary", "content"),
     "external_source_id": ("guid", "id"),
     "source_category": ("category",),
+    "venue": ("location", "venue"),
+    # No common element; read only when `json_paths["address"]` names one.
+    "address": (),
 }
+
+# A "lat, lon" (or "lat lon") pair in one element.
+_PAIR_ELEMENTS = ("coordinates", "point")
+_PAIR_RE = re.compile(r"^\s*(-?\d+(?:\.\d+)?)\s*[, ]\s*(-?\d+(?:\.\d+)?)\s*$")
 
 
 def _localname(tag: str) -> str:
@@ -70,6 +86,33 @@ def _child_text(item: Element, names: tuple[str, ...]) -> str | None:
             text = (child.text or "").strip()
             if text:
                 return text
+    return None
+
+
+def _coordinate(value: str | None, limit: float) -> float | None:
+    if value is None:
+        return None
+    try:
+        number = float(value)
+    except ValueError:
+        return None
+    return number if -limit <= number <= limit else None
+
+
+def _coordinates(item: Element) -> tuple[float, float, str] | None:
+    """(latitude, longitude, source element) the entry states, or None."""
+    pair = _child_text(item, _PAIR_ELEMENTS)
+    if pair is not None:
+        match = _PAIR_RE.match(pair)
+        if match:
+            lat, lon = _coordinate(match[1], 90), _coordinate(match[2], 180)
+            if lat is not None and lon is not None:
+                return lat, lon, "coordinates|point"
+        return None
+    lat = _coordinate(_child_text(item, ("lat",)), 90)
+    lon = _coordinate(_child_text(item, ("long", "lon")), 180)
+    if lat is not None and lon is not None:
+        return lat, lon, "lat,long"
     return None
 
 
@@ -128,12 +171,23 @@ class RssAtomEventsPattern:
                 _child_text(item, (start_element,)) if start_element else None
             )
             raw["end_datetime"] = _child_text(item, (end_element,)) if end_element else None
+            raw["venue"] = clean_venue(raw.get("venue"), raw.get("title"))
+            coordinates = _coordinates(item)
+            if coordinates is not None:
+                raw["latitude"], raw["longitude"], coordinate_source = coordinates
 
             field_source_paths = {
                 "title": f"item[{index}].title",
                 "canonical_url": f"item[{index}].link",
                 "external_source_id": f"item[{index}].guid|id",
             }
+            if raw["venue"] is not None:
+                field_source_paths["venue"] = f"item[{index}]." + "|".join(elements["venue"])
+            if raw.get("address") is not None:
+                field_source_paths["address"] = f"item[{index}]." + "|".join(elements["address"])
+            if coordinates is not None:
+                field_source_paths["latitude"] = f"item[{index}].{coordinate_source}"
+                field_source_paths["longitude"] = f"item[{index}].{coordinate_source}"
 
             raw_record_hash = hashlib.sha256(
                 (raw.get("external_source_id") or raw.get("canonical_url") or str(index)).encode(
