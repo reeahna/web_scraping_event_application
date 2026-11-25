@@ -1,7 +1,7 @@
 """email sign-in codes and sign-in history
 
 Revision ID: c1e5a9d3f7b2
-Revises: b8e2d4a6c1f3
+Revises: c3f7a1d9e2b4
 
 Adds two tables for signing in with a code sent by email:
 email_sign_in_codes (one row per code sent, holding an HMAC of the code keyed
@@ -17,7 +17,7 @@ import sqlalchemy as sa
 from alembic import op
 
 revision: str = "c1e5a9d3f7b2"
-down_revision: str | None = "b8e2d4a6c1f3"
+down_revision: str | None = "c3f7a1d9e2b4"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
