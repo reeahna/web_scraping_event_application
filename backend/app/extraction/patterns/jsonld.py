@@ -48,6 +48,19 @@ _DEFAULT_PATHS: dict[str, str] = {
 _RAW_FIELDS = tuple(_DEFAULT_PATHS.keys())
 
 
+def _is_cancelled_status(value: Any) -> bool:
+    """schema.org's eventStatus for a called-off event: "EventCancelled", written
+    bare or as a schema.org URL (http or https). A postponed or rescheduled
+    event is not cancelled and stays listed."""
+    if isinstance(value, list):
+        return any(_is_cancelled_status(v) for v in value)
+    if isinstance(value, dict):
+        value = value.get("@id") or value.get("name")
+    if not isinstance(value, str):
+        return False
+    return value.strip().rstrip("/").rsplit("/", 1)[-1].lower() == "eventcancelled"
+
+
 def _flatten_node(node: Any) -> list[dict[str, Any]]:
     if isinstance(node, list):
         result: list[dict[str, Any]] = []
@@ -237,6 +250,10 @@ class JsonLdEventPattern:
                     extraction_pattern=NAME,
                     warnings=tuple(warnings),
                     raw_record_hash=raw_record_hash,
+                    # Read from the node itself, not the eventStatus path that
+                    # feeds source_category, so a site config that maps
+                    # source_category elsewhere still sees cancellations.
+                    is_cancelled=_is_cancelled_status(node.get("eventStatus")),
                 )
             )
         return candidates

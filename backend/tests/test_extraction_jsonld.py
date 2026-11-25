@@ -1,4 +1,7 @@
+import json
 from datetime import date, time
+
+import pytest
 
 from app.extraction.normalize import normalize_candidate
 from app.extraction.patterns.jsonld import JsonLdEventPattern
@@ -216,3 +219,46 @@ def test_location_list_skips_virtual_location():
 
 def test_placeholder_location_string_is_not_a_venue():
     assert _venue_and_address("TBA") == (None, None)
+
+
+def _extract_status(status):
+    node = {"@context": "https://schema.org", "@type": "Event", "name": "Jazz Night",
+            "startDate": "2026-12-01T19:00:00", "url": "https://example.com/events/jazz"}
+    if status is not None:
+        node["eventStatus"] = status
+    script = f'<script type="application/ld+json">{json.dumps(node)}</script>'
+    page = f"<html><head>{script}</head></html>"
+    candidate = JsonLdEventPattern().extract(make_response(page), CONFIG)[0]
+    return normalize_candidate(candidate, CONFIG)
+
+
+@pytest.mark.parametrize(
+    "status",
+    [
+        "https://schema.org/EventCancelled",
+        "http://schema.org/EventCancelled",
+        "EventCancelled",
+        "https://schema.org/EventCancelled/",
+        ["https://schema.org/EventCancelled"],
+        {"@id": "https://schema.org/EventCancelled"},
+    ],
+)
+def test_a_cancelled_event_status_marks_the_event_cancelled(status):
+    assert _extract_status(status).is_cancelled
+
+
+@pytest.mark.parametrize(
+    "status",
+    [
+        None,
+        "https://schema.org/EventScheduled",
+        "https://schema.org/EventPostponed",
+        "https://schema.org/EventRescheduled",
+        "https://schema.org/EventMovedOnline",
+        "",
+        42,
+        "Not cancelled",
+    ],
+)
+def test_any_other_event_status_leaves_the_event_listed(status):
+    assert not _extract_status(status).is_cancelled
