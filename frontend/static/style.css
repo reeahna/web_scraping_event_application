@@ -1654,6 +1654,15 @@ a.metric-tile-link:hover .metric-label {
   border: 0;
 }
 
+/* A spam-trap field: kept in the form for bots, off screen for people. */
+.form-trap {
+  position: absolute;
+  left: -10000px;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+}
+
 /* Collapsed "add a new X" form above a list. */
 .create-panel {
   margin-bottom: var(--space-5);
@@ -3880,6 +3889,7 @@ a.wf-danger, button.wf-danger {
 }
 
 .suggest-required,
+.suggest-optional,
 .suggest-hint {
   color: var(--muted);
   font-size: var(--font-sm);

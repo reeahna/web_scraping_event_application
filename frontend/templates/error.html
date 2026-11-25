@@ -10,7 +10,7 @@
     <h1>{{ title }}</h1>
     {% if explanation %}<p>{{ explanation }}</p>{% endif %}
     <p class="error-page-actions">
-      <a href="/" class="button-link">Find a town</a>
+      <a href="/" class="button-link">Find a location</a>
       {% if status_code == 403 or status_code == 429 %}<a href="/account" class="filter-clear-link">My account</a>{% endif %}
     </p>
   </div>

@@ -45,8 +45,8 @@ def test_signed_out_visitors_get_no_menu(client):
 
 
 def test_home_page_does_not_link_to_itself(client):
-    assert ">Find a town</a>" not in _header(client.get("/").text)
+    assert ">Find a location</a>" not in _header(client.get("/").text)
 
 
 def test_other_pages_keep_the_find_a_town_link(client):
-    assert '<a href="/">Find a town</a>' in _header(client.get("/privacy").text)
+    assert '<a href="/">Find a location</a>' in _header(client.get("/privacy").text)

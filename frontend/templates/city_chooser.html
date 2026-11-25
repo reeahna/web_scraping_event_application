@@ -23,7 +23,7 @@
       is deliberately no view that mixes every city's events together.
     #}
     <form method="get" action="/" class="chooser-form" role="search">
-      <label for="city-search" class="chooser-label">What college town?</label>
+      <label for="city-search" class="chooser-label">Find your college or city</label>
       <div class="chooser-row">
         {#
           A combobox over the form's own input. Submitting still works with no
@@ -34,12 +34,12 @@
         #}
         <div class="chooser-field">
           <input type="search" id="city-search" name="q" value="{{ query }}"
-                 placeholder="Town or school"
+                 placeholder="Search colleges and cities"
                  autocomplete="off" autofocus
                  role="combobox" aria-expanded="false" aria-autocomplete="list"
                  aria-controls="city-suggestions" />
           <ul id="city-suggestions" class="suggestions" role="listbox"
-              aria-label="Matching towns" hidden></ul>
+              aria-label="Matching locations" hidden></ul>
           {# Filled by city-search.js so a screen reader hears how many towns
              match as the reader types (WCAG 4.1.3). #}
           <p id="city-suggestions-status" class="visually-hidden" role="status" aria-live="polite"></p>
@@ -54,8 +54,8 @@
   {% if cities %}
   <section class="town-directory" aria-labelledby="town-directory-heading">
     <div class="town-directory-head">
-      <h2 id="town-directory-heading">{% if query %}Towns matching “{{ query }}”{% else %}Towns in {{ state.name }}{% endif %}</h2>
-      <p class="town-directory-count">{{ cities | length }} town{{ "s" if cities | length != 1 }}. <a href="/">{% if query %}Show every state{% else %}All states{% endif %}</a></p>
+      <h2 id="town-directory-heading">{% if query %}Locations matching “{{ query }}”{% else %}Locations in {{ state.name }}{% endif %}</h2>
+      <p class="town-directory-count">{{ cities | length }} location{{ "s" if cities | length != 1 }}. <a href="/">{% if query %}Show every state{% else %}All states{% endif %}</a></p>
     </div>
     <ul class="city-grid">
       {% for city in cities %}
@@ -83,14 +83,14 @@
   </section>
   {% elif query %}
   <div class="empty-state">
-    <h2>No college town matches “{{ query }}”</h2>
-    <p>We cover a small number of towns so far. Try a different name, or browse them by state.</p>
+    <h2>Nothing matches “{{ query }}”</h2>
+    <p>We cover a small number of locations so far. Try a different name, or browse them by state.</p>
     <a href="/" class="filter-clear-link">Show every state</a>
   </div>
   {% elif state_requested %}
   <div class="empty-state">
-    <h2>No towns with upcoming events in “{{ state_requested }}”</h2>
-    <p>Try another state, or search for a town or school above.</p>
+    <h2>No locations with upcoming events in “{{ state_requested }}”</h2>
+    <p>Try another state, or search for a college or city above.</p>
     <a href="/" class="filter-clear-link">Show every state</a>
   </div>
   {% elif states %}
@@ -109,7 +109,7 @@
       <li>
         <a class="city-card" href="/?{{ {'state': group.name} | urlencode }}">
           <span class="city-card-name">{{ group.name }}</span>
-          <span class="city-card-count">{{ group.towns | length }} town{{ "s" if group.towns | length != 1 }}, <span class="city-card-number">{{ group.upcoming | thousands }}</span> upcoming event{{ "s" if group.upcoming != 1 }}</span>
+          <span class="city-card-count">{{ group.towns | length }} location{{ "s" if group.towns | length != 1 }}, <span class="city-card-number">{{ group.upcoming | thousands }}</span> upcoming event{{ "s" if group.upcoming != 1 }}</span>
         </a>
       </li>
       {% endfor %}

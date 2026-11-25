@@ -29,6 +29,13 @@
   <form method="post" action="/feedback" class="suggest-form">
     <input type="hidden" name="csrf_token" value="{{ csrf_token }}" />
     <input type="hidden" name="kind" value="{{ form.kind }}" />
+    {# A field people never see: it is off screen, skipped by Tab and hidden
+       from screen readers. Bots that fill every field fill it, and their
+       message is dropped (see HONEYPOT_FIELD in the router). #}
+    <div class="form-trap" aria-hidden="true">
+      <label for="{{ honeypot_field }}">Leave this empty</label>
+      <input type="text" id="{{ honeypot_field }}" name="{{ honeypot_field }}" value="" tabindex="-1" autocomplete="off" />
+    </div>
 
     {% if form.kind == "bug" %}
     <div class="suggest-field">
@@ -42,6 +49,14 @@
       <textarea id="details" name="details" rows="6" maxlength="{{ limits.details }}" required{{ described("details", "details-hint") }}>{{ form.details }}</textarea>
       {{ field_error("details") }}
     </div>
+    {% if not current_user %}
+    <div class="suggest-field">
+      <label for="contact_email">Your email <span class="suggest-optional">(optional)</span></label>
+      <p class="suggest-hint" id="contact_email-hint">Only if you'd like a reply. We won't add you to any list.</p>
+      <input type="email" id="contact_email" name="contact_email" value="{{ form.contact_email }}" maxlength="{{ limits.email }}" autocomplete="email"{{ described("contact_email", "contact_email-hint") }} />
+      {{ field_error("contact_email") }}
+    </div>
+    {% endif %}
     <button type="submit">Send bug report</button>
     {% else %}
     <div class="suggest-field">
@@ -54,6 +69,14 @@
       <textarea id="details" name="details" rows="5" maxlength="{{ limits.details }}" required{{ described("details") }}>{{ form.details }}</textarea>
       {{ field_error("details") }}
     </div>
+    {% if not current_user %}
+    <div class="suggest-field">
+      <label for="contact_email">Your email <span class="suggest-optional">(optional)</span></label>
+      <p class="suggest-hint" id="contact_email-hint">Only if you'd like a reply. We won't add you to any list.</p>
+      <input type="email" id="contact_email" name="contact_email" value="{{ form.contact_email }}" maxlength="{{ limits.email }}" autocomplete="email"{{ described("contact_email", "contact_email-hint") }} />
+      {{ field_error("contact_email") }}
+    </div>
+    {% endif %}
     <button type="submit">Send idea</button>
     {% endif %}
   </form>

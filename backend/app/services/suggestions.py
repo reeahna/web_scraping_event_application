@@ -1,19 +1,23 @@
 """Visitor suggestions: new towns (with their university), new features and
 bug reports.
 
-Signed-in visitors suggest towns from /suggest and send feature ideas and bug
-reports from /feedback ("New features / bug fixes"); admins holding reports.view see
+Signed-in visitors suggest towns from /suggest. Anyone, signed in or not, can
+send feature ideas and bug reports from /feedback ("New features / bug fixes");
+admins holding reports.view see
 them in /admin/suggestions and those holding reports.manage change their status.
 """
 
+import re
 from dataclasses import dataclass, field
 from datetime import timedelta
 
-from sqlalchemy import func
+from sqlalchemy import func, update
+from sqlalchemy.dialects.postgresql import insert as pg_insert
+from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 from sqlalchemy.orm import Session
 
 from app.models.base import utcnow
-from app.models.suggestion import Suggestion
+from app.models.suggestion import AnonymousFeedbackDay, Suggestion
 from app.models.user import User
 from app.services.notifications import build_dedup_fingerprint, notify
 from app.services.rbac import users_with_permission
@@ -51,10 +55,23 @@ REGION_MAX = 100
 UNIVERSITY_MAX = 200
 DETAILS_MAX = 2000
 NOTES_MAX = 2000
+EMAIL_MAX = 320
 
 # Per person, per rolling day. Counted in the database so it holds across
 # every web worker, unlike the in-process rate limiter.
 DAILY_LIMIT = 10
+# Every message from visitors who are not signed in, together, per UTC day.
+# Claimed atomically in the database (claim_anonymous_slot), so it holds across
+# every worker and concurrent request: the per-address limit in the router is a
+# first line, this is the ceiling however many addresses a sender uses.
+ANONYMOUS_DAILY_LIMIT = 50
+# Per address, per hour, for visitors who are not signed in.
+ANONYMOUS_PER_IP_PER_HOUR = 5
+
+# Deliberately loose: something@something.something with no spaces. The
+# address is only shown to admins so they can reply; it is never mailed to
+# automatically, so a typo costs nothing but a reply.
+_EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
 
 
 class SuggestionLimitError(Exception):
@@ -68,6 +85,7 @@ class SuggestionInput:
     region: str = ""
     university: str = ""
     details: str = ""
+    contact_email: str = ""
     errors: dict[str, str] = field(default_factory=dict)
 
     @property
@@ -80,7 +98,13 @@ def _clean(value: str | None) -> str:
 
 
 def parse_suggestion(
-    *, kind: str, title: str, region: str, university: str, details: str
+    *,
+    kind: str,
+    title: str,
+    region: str,
+    university: str,
+    details: str,
+    contact_email: str = "",
 ) -> SuggestionInput:
     kind = kind if kind in SUGGESTION_KINDS else KIND_TOWN
     data = SuggestionInput(
@@ -90,8 +114,13 @@ def parse_suggestion(
         university=_clean(university),
         # Keep the person's line breaks in free text; only trim the ends.
         details=(details or "").strip(),
+        contact_email=(contact_email or "").strip().lower(),
     )
     errors = data.errors
+    if data.contact_email and (
+        len(data.contact_email) > EMAIL_MAX or not _EMAIL_RE.match(data.contact_email)
+    ):
+        errors["contact_email"] = "Enter an email address like name@example.com, or leave it blank."
     if kind == KIND_TOWN:
         if not data.title:
             errors["title"] = "Enter the town or city."
@@ -123,6 +152,7 @@ def parse_suggestion(
 
 
 def submitted_today(db: Session, user_id: int) -> int:
+    """This person's messages in the last day."""
     since = utcnow() - timedelta(days=1)
     return (
         db.query(func.count(Suggestion.id))
@@ -132,18 +162,70 @@ def submitted_today(db: Session, user_id: int) -> int:
     )
 
 
+def claim_anonymous_slot(db: Session, *, limit: int | None = None) -> bool:
+    """Take one of today's anonymous-feedback slots, or say there are none
+    left. Runs inside the caller's transaction and does not commit: the slot is
+    kept only if the caller commits, so a message that fails to save gives it
+    back.
+
+    Two statements, each atomic on its own:
+    1. Make sure today's row exists (INSERT ... ON CONFLICT DO NOTHING), so
+       concurrent first messages of the day never collide on the key.
+    2. UPDATE ... SET count = count + 1 WHERE count < limit. The database locks
+       the row for the update and checks the condition against the latest
+       committed count (PostgreSQL re-reads it after waiting for the lock;
+       SQLite lets one writer in at a time), so however many requests race,
+       at most `limit` of them see a row updated.
+    """
+    limit = ANONYMOUS_DAILY_LIMIT if limit is None else limit
+    if limit <= 0:
+        return False
+    day = utcnow().date()
+    dialect = db.get_bind().dialect.name
+    insert = pg_insert if dialect == "postgresql" else sqlite_insert
+    if dialect not in ("postgresql", "sqlite"):
+        raise RuntimeError(f"claim_anonymous_slot does not support {dialect}")
+    db.execute(
+        insert(AnonymousFeedbackDay)
+        .values(day=day, count=0)
+        .on_conflict_do_nothing(index_elements=["day"])
+    )
+    claimed = db.execute(
+        update(AnonymousFeedbackDay)
+        .where(AnonymousFeedbackDay.day == day, AnonymousFeedbackDay.count < limit)
+        .values(count=AnonymousFeedbackDay.count + 1)
+        .execution_options(synchronize_session=False)
+    )
+    return claimed.rowcount == 1
+
+
 def create_suggestion(
-    db: Session, user: User, data: SuggestionInput, *, correlation_id: str | None = None
+    db: Session,
+    user: User | None,
+    data: SuggestionInput,
+    *,
+    correlation_id: str | None = None,
 ) -> Suggestion:
-    if submitted_today(db, user.id) >= DAILY_LIMIT:
+    """Save a suggestion. `user` is None only for a feature idea or bug report
+    from someone who is not signed in; town suggestions need an account."""
+    if user is None and data.kind == KIND_TOWN:
+        raise ValueError("town suggestions need a signed-in user")
+    if user is None:
+        # The slot and the message commit together below.
+        if not claim_anonymous_slot(db):
+            db.rollback()
+            raise SuggestionLimitError
+    elif submitted_today(db, user.id) >= DAILY_LIMIT:
         raise SuggestionLimitError
     suggestion = Suggestion(
-        user_id=user.id,
+        user_id=user.id if user else None,
         kind=data.kind,
         title=data.title,
         region=data.region or None,
         university=data.university or None,
         details=data.details or None,
+        # Only kept for visitors without an account; an account has its own.
+        contact_email=(data.contact_email or None) if user is None else None,
     )
     db.add(suggestion)
     db.commit()
