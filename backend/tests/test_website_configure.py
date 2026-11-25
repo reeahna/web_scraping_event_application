@@ -286,3 +286,52 @@ def test_an_unsafe_transformation_regex_is_rejected_on_save(
     assert "high-risk" in resp.text
     db_session.refresh(website)
     assert website.configuration_version == 1
+
+
+def test_configure_form_saves_and_clears_a_home_venue(
+    client, make_super_admin, make_city, make_website, login, db_session
+):
+    make_super_admin(email="configure-home@example.com", password="root-pass-1234")
+    city = make_city(name="Configure City Home", slug="configure-city-home")
+    website = make_website(city, name="Configure Site Home")
+    login("configure-home@example.com", "root-pass-1234")
+
+    data = _structured_form(
+        home_venue_name="  Durham Performing Arts Center ",
+        home_venue_address="123 Vivian St, Durham, NC 27701",
+        required_fields=["title", "start_date", "canonical_url"],
+    )
+    data["csrf_token"] = _csrf(client)
+    resp = client.post(f"/admin/websites/{website.id}/configure", data=data, follow_redirects=False)
+    assert resp.status_code == 303
+    db_session.refresh(website)
+    assert website.configuration["home_venue_name"] == "Durham Performing Arts Center"
+    assert website.configuration["home_venue_address"] == "123 Vivian St, Durham, NC 27701"
+    # Saving a draft never approves it: the approved snapshot is untouched.
+    assert website.approved_pattern is None
+
+    page = client.get(f"/admin/websites/{website.id}/configure")
+    assert 'value="Durham Performing Arts Center"' in page.text
+
+    data = _structured_form(required_fields=["title", "start_date", "canonical_url"])
+    data["csrf_token"] = _csrf(client)
+    client.post(f"/admin/websites/{website.id}/configure", data=data, follow_redirects=False)
+    db_session.refresh(website)
+    assert website.configuration["home_venue_name"] is None
+    assert website.configuration["home_venue_address"] is None
+
+
+def test_configure_form_rejects_a_home_address_without_a_name(
+    client, make_super_admin, make_city, make_website, login, db_session
+):
+    make_super_admin(email="configure-home2@example.com", password="root-pass-1234")
+    city = make_city(name="Configure City Home 2", slug="configure-city-home-2")
+    website = make_website(city, name="Configure Site Home 2")
+    login("configure-home2@example.com", "root-pass-1234")
+
+    data = _structured_form(home_venue_address="123 Vivian St")
+    data["csrf_token"] = _csrf(client)
+    resp = client.post(f"/admin/websites/{website.id}/configure", data=data, follow_redirects=False)
+    assert resp.status_code == 422
+    db_session.refresh(website)
+    assert website.configuration is None

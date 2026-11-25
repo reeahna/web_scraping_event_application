@@ -257,6 +257,14 @@ class SiteConfiguration(BaseModel):
     # iCalendar all-day date). Such events read "Time TBD", not "All day".
     # Explicit "All day" wording from the source is still read as all-day.
     date_only_means_time_tbd: bool = False
+    # An organizer that holds every event at its own venue (a theater, a
+    # museum) often never names it per event. An administrator may state that
+    # home venue here; it fills only an event that has no venue of its own
+    # (an extracted venue, a page lookup's venue and an administrator's
+    # correction all come first) and is recorded as a source-level default.
+    # Never set automatically.
+    home_venue_name: str | None = None
+    home_venue_address: str | None = None
     # Optional captured request recipe for structured endpoints that need the
     # full request (nested JSON query params, public token, Referer, dynamic
     # date window, pagination). When present, preview and import render and send
@@ -272,6 +280,22 @@ class SiteConfiguration(BaseModel):
             return validate_public_url(v)
         except UnsafeURLError as exc:
             raise ValueError(str(exc)) from exc
+
+    @field_validator("home_venue_name", "home_venue_address", mode="before")
+    @classmethod
+    def _clean_home_venue(cls, v: object) -> str | None:
+        if v is None:
+            return None
+        text = " ".join(str(v).split())
+        if len(text) > 200:
+            raise ValueError("must be 200 characters or fewer")
+        return text or None
+
+    @model_validator(mode="after")
+    def _home_address_needs_a_name(self) -> "SiteConfiguration":
+        if self.home_venue_address and not self.home_venue_name:
+            raise ValueError("A home venue address needs a home venue name")
+        return self
 
     @field_validator("max_detail_fetches")
     @classmethod
