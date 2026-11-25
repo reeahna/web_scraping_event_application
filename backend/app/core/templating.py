@@ -136,6 +136,41 @@ def _category_photo(event: Any):
 templates.env.globals["category_photo"] = _category_photo
 
 
+def _add_nav_user(request: Request, context: dict[str, Any]) -> None:
+    """Fill in who is signed in and whether they may open the admin, for the
+    page header, when the route did not pass them. The header shows the Admin
+    link from `can_access_admin`, and only some routes worked it out, so an
+    admin saw the link on some pages and not others. Pages that pass their own
+    values (for instance to say no one is signed in) keep them."""
+    if "current_user" in context and "can_access_admin" in context:
+        return
+    from app.config import get_settings
+    from app.core.exceptions import AppError
+    from app.database import SessionLocal
+    from app.services.auth import resolve_current_user
+    from app.services.rbac import can_access_admin
+
+    db = SessionLocal()
+    try:
+        if "current_user" not in context:
+            try:
+                context["current_user"] = resolve_current_user(
+                    request, db, get_settings().session_cookie_name
+                )
+            except AppError:  # not signed in, expired session or bad API key
+                context["current_user"] = None
+        user = context["current_user"]
+        if user is None:
+            context["can_access_admin"] = False
+        else:
+            # The user may belong to the route's session; look it up again
+            # in this one so the permission query never touches theirs.
+            own = db.get(type(user), user.id)
+            context["can_access_admin"] = can_access_admin(db, own)
+    finally:
+        db.close()
+
+
 def render(
     request: Request,
     template_name: str,
@@ -156,6 +191,7 @@ def render(
             flash = None
 
     full_context = {**(context or {}), "csrf_token": token, "flash": flash}
+    _add_nav_user(request, full_context)
     response = templates.TemplateResponse(
         request, template_name, full_context, status_code=status_code
     )

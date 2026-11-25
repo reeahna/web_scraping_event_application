@@ -1,11 +1,13 @@
 """Visitor suggestions: new towns (with their university), new features and
 bug reports.
 
-Signed-in visitors suggest towns from /suggest and send feature ideas and bug
-reports from /feedback ("New features / bug fixes"); admins holding reports.view see
+Signed-in visitors suggest towns from /suggest. Anyone, signed in or not, can
+send feature ideas and bug reports from /feedback ("New features / bug fixes");
+admins holding reports.view see
 them in /admin/suggestions and those holding reports.manage change their status.
 """
 
+import re
 from dataclasses import dataclass, field
 from datetime import timedelta
 
@@ -51,10 +53,22 @@ REGION_MAX = 100
 UNIVERSITY_MAX = 200
 DETAILS_MAX = 2000
 NOTES_MAX = 2000
+EMAIL_MAX = 320
 
 # Per person, per rolling day. Counted in the database so it holds across
 # every web worker, unlike the in-process rate limiter.
 DAILY_LIMIT = 10
+# Every message from visitors who are not signed in, together, per rolling
+# day. Also counted in the database: the per-address limit in the router is a
+# first line, this is the ceiling however many addresses a sender uses.
+ANONYMOUS_DAILY_LIMIT = 50
+# Per address, per hour, for visitors who are not signed in.
+ANONYMOUS_PER_IP_PER_HOUR = 5
+
+# Deliberately loose: something@something.something with no spaces. The
+# address is only shown to admins so they can reply; it is never mailed to
+# automatically, so a typo costs nothing but a reply.
+_EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
 
 
 class SuggestionLimitError(Exception):
@@ -68,6 +82,7 @@ class SuggestionInput:
     region: str = ""
     university: str = ""
     details: str = ""
+    contact_email: str = ""
     errors: dict[str, str] = field(default_factory=dict)
 
     @property
@@ -80,7 +95,13 @@ def _clean(value: str | None) -> str:
 
 
 def parse_suggestion(
-    *, kind: str, title: str, region: str, university: str, details: str
+    *,
+    kind: str,
+    title: str,
+    region: str,
+    university: str,
+    details: str,
+    contact_email: str = "",
 ) -> SuggestionInput:
     kind = kind if kind in SUGGESTION_KINDS else KIND_TOWN
     data = SuggestionInput(
@@ -90,8 +111,13 @@ def parse_suggestion(
         university=_clean(university),
         # Keep the person's line breaks in free text; only trim the ends.
         details=(details or "").strip(),
+        contact_email=(contact_email or "").strip().lower(),
     )
     errors = data.errors
+    if data.contact_email and (
+        len(data.contact_email) > EMAIL_MAX or not _EMAIL_RE.match(data.contact_email)
+    ):
+        errors["contact_email"] = "Enter an email address like name@example.com, or leave it blank."
     if kind == KIND_TOWN:
         if not data.title:
             errors["title"] = "Enter the town or city."
@@ -122,28 +148,44 @@ def parse_suggestion(
     return data
 
 
-def submitted_today(db: Session, user_id: int) -> int:
+def submitted_today(db: Session, user_id: int | None) -> int:
+    """Messages in the last day from this person, or with no person, from
+    every visitor who was not signed in."""
     since = utcnow() - timedelta(days=1)
+    owner = Suggestion.user_id.is_(None) if user_id is None else Suggestion.user_id == user_id
     return (
         db.query(func.count(Suggestion.id))
-        .filter(Suggestion.user_id == user_id, Suggestion.created_at >= since)
+        .filter(owner, Suggestion.created_at >= since)
         .scalar()
         or 0
     )
 
 
 def create_suggestion(
-    db: Session, user: User, data: SuggestionInput, *, correlation_id: str | None = None
+    db: Session,
+    user: User | None,
+    data: SuggestionInput,
+    *,
+    correlation_id: str | None = None,
 ) -> Suggestion:
-    if submitted_today(db, user.id) >= DAILY_LIMIT:
+    """Save a suggestion. `user` is None only for a feature idea or bug report
+    from someone who is not signed in; town suggestions need an account."""
+    if user is None and data.kind == KIND_TOWN:
+        raise ValueError("town suggestions need a signed-in user")
+    if user is None:
+        if submitted_today(db, None) >= ANONYMOUS_DAILY_LIMIT:
+            raise SuggestionLimitError
+    elif submitted_today(db, user.id) >= DAILY_LIMIT:
         raise SuggestionLimitError
     suggestion = Suggestion(
-        user_id=user.id,
+        user_id=user.id if user else None,
         kind=data.kind,
         title=data.title,
         region=data.region or None,
         university=data.university or None,
         details=data.details or None,
+        # Only kept for visitors without an account; an account has its own.
+        contact_email=(data.contact_email or None) if user is None else None,
     )
     db.add(suggestion)
     db.commit()

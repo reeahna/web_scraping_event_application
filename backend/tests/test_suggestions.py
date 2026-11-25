@@ -231,22 +231,141 @@ def _post_feedback(client, **fields):
     return client.post("/feedback", data=data, follow_redirects=False)
 
 
-def test_feedback_requires_sign_in(client):
-    response = client.get(
-        "/feedback", headers={"accept": "text/html"}, follow_redirects=False
-    )
-    assert response.status_code == 303
-    assert response.headers["location"].startswith("/auth/login?next=%2Ffeedback")
+def test_feedback_is_open_without_sign_in(client):
+    response = client.get("/feedback", headers={"accept": "text/html"})
+    assert response.status_code == 200
+    assert "<h1>New features / bug fixes</h1>" in response.text
+    # Visitors without an account may leave an address for a reply.
+    assert 'name="contact_email"' in response.text
+    assert 'name="website"' in response.text  # the honeypot
 
 
 def test_footer_links_to_feedback(client, make_user, login):
     html = client.get("/").text
-    assert 'href="/auth/login?next=%2Ffeedback">New features / bug fixes' in html
+    assert 'href="/feedback">New features / bug fixes' in html
     make_user(email="foot@example.com", role_name=REGISTERED_USER)
     login("foot@example.com")
     html = client.get("/account/saved").text
     footer = html[html.index('class="site-footer"'):]
     assert 'href="/feedback">New features / bug fixes' in footer
+
+
+def _anonymous_feedback(client, **fields):
+    client.get("/feedback")  # sets the CSRF cookie
+    return _post_feedback(client, **fields)
+
+
+def test_anonymous_bug_report_is_saved_with_email(client, make_user, db_session):
+    make_user(email="boss-anon@example.com", role_name=ADMINISTRATOR)
+    response = _anonymous_feedback(
+        client,
+        kind="bug",
+        title="Search is slow",
+        details="Typing lags.",
+        contact_email="  Visitor@Example.com ",
+    )
+    assert response.status_code == 303
+    assert response.headers["location"] == "/feedback?kind=bug"
+    row = db_session.query(Suggestion).one()
+    assert (row.kind, row.user_id, row.contact_email) == (
+        "bug", None, "visitor@example.com"
+    )
+    note = (
+        db_session.query(Notification)
+        .filter_by(notification_type="suggestion_submitted")
+        .one()
+    )
+    assert note.title == "New bug reported"
+    # Without an account there is no "What you've sent" list to show.
+    assert "Search is slow" not in client.get("/feedback").text
+
+
+def test_anonymous_email_is_optional_but_checked(client, db_session):
+    assert _anonymous_feedback(
+        client, kind="feature", title="Dark mode", details="Night."
+    ).status_code == 303
+    assert db_session.query(Suggestion).one().contact_email is None
+    bad = _post_feedback(
+        client, kind="feature", title="x", details="y", contact_email="not an email"
+    )
+    assert bad.status_code == 422
+    assert "name@example.com" in bad.text
+    assert db_session.query(Suggestion).count() == 1
+
+
+def test_signed_in_feedback_has_no_email_field(client, make_user, login, db_session):
+    make_user(email="fb-signed@example.com", role_name=REGISTERED_USER)
+    login("fb-signed@example.com")
+    assert 'name="contact_email"' not in client.get("/feedback").text
+    _post_feedback(
+        client, kind="feature", title="t", details="d", contact_email="other@example.com"
+    )
+    assert db_session.query(Suggestion).one().contact_email is None
+
+
+def test_honeypot_is_thanked_but_dropped(client, make_user, db_session):
+    make_user(email="boss-hp@example.com", role_name=ADMINISTRATOR)
+    response = _anonymous_feedback(
+        client, kind="bug", title="Buy now", details="spam", website="http://spam.example"
+    )
+    assert response.status_code == 303
+    assert response.headers["location"] == "/feedback?kind=bug"
+    assert db_session.query(Suggestion).count() == 0
+    assert db_session.query(Notification).count() == 0
+
+
+def test_anonymous_per_address_limit(client, db_session, monkeypatch):
+    monkeypatch.setattr(svc, "ANONYMOUS_PER_IP_PER_HOUR", 2)
+    client.get("/feedback")
+    token = client.cookies.get("csrf_token")
+
+    def send(addr="203.0.113.9"):
+        return client.post(
+            "/feedback",
+            data={"csrf_token": token, "kind": "bug", "title": "t", "details": "d"},
+            headers={"x-forwarded-for": addr},
+            follow_redirects=False,
+        )
+
+    assert send().status_code == 303
+    assert send().status_code == 303
+    blocked = send()
+    assert blocked.status_code == 429
+    assert "in the last hour" in blocked.text
+    # Another address is not held back by the first one.
+    assert send("198.51.100.4").status_code == 303
+    assert db_session.query(Suggestion).count() == 3
+
+
+def test_anonymous_daily_ceiling(client, db_session, monkeypatch):
+    monkeypatch.setattr(svc, "ANONYMOUS_DAILY_LIMIT", 1)
+    assert _anonymous_feedback(client, kind="bug", title="a", details="b").status_code == 303
+    second = _post_feedback(client, kind="bug", title="c", details="d")
+    assert second.status_code == 429
+    assert "try again tomorrow" in second.text
+    assert db_session.query(Suggestion).count() == 1
+
+
+def test_anonymous_post_requires_csrf(client, db_session):
+    client.get("/feedback")
+    response = client.post(
+        "/feedback",
+        data={"kind": "bug", "title": "t", "details": "d", "csrf_token": "wrong"},
+        follow_redirects=False,
+    )
+    assert response.status_code in (400, 403)
+    assert db_session.query(Suggestion).count() == 0
+
+
+def test_admin_list_shows_anonymous_sender(client, make_user, login, db_session):
+    _anonymous_feedback(
+        client, kind="bug", title="Anon bug", details="d", contact_email="anon@example.com"
+    )
+    make_user(email="boss-list@example.com", role_name=ADMINISTRATOR)
+    login("boss-list@example.com")
+    html = client.get("/admin/suggestions?kind=bug").text
+    assert 'href="mailto:anon@example.com"' in html
+    assert "Not signed in" in html
 
 
 def test_feedback_page_has_feature_and_bug_forms(client, make_user, login):

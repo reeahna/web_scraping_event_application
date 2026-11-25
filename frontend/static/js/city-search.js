@@ -131,11 +131,11 @@
     if (matches.length) {
       render();
       announce(
-        `${matches.length} town${matches.length === 1 ? "" : "s"} found. Use the up and down arrows to choose.`
+        `${matches.length} location${matches.length === 1 ? "" : "s"} found. Use the up and down arrows to choose.`
       );
     } else {
       close();
-      announce(input.value.trim() ? "No towns found. Press Enter to search." : "");
+      announce(input.value.trim() ? "No locations found. Press Enter to search." : "");
     }
   });
 

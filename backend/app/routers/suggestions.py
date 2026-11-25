@@ -8,11 +8,18 @@ from app.core.exceptions import AppError, NotFoundError
 from app.core.flash import set_flash
 from app.core.forms import OptionalText
 from app.core.templating import render
-from app.dependencies import ClientIp, CorrelationId, CurrentUser, DbSession
+from app.dependencies import (
+    ClientIp,
+    CorrelationId,
+    CurrentUser,
+    DbSession,
+    OptionalCurrentUser,
+)
 from app.models.suggestion import Suggestion
 from app.models.user import User
 from app.services import suggestions as svc
 from app.services.audit import record_audit
+from app.services.rate_limit import get_rate_limit_backend
 from app.services.rbac import require_permission, user_has_permission
 
 router = APIRouter(tags=["suggestions"])
@@ -57,9 +64,32 @@ def _render_suggest(
     )
 
 
+# The hidden "website" field on /feedback. People never see or fill it; form
+# bots that fill every field do, and their message is dropped.
+HONEYPOT_FIELD = "website"
+
+_LIMIT_MESSAGE = "You've sent a lot of suggestions today. Thank you! Please try again tomorrow."
+_ANON_IP_LIMIT_MESSAGE = (
+    "You've sent a lot of messages in the last hour. Thank you! Please try again a "
+    "little later, or sign in to send more."
+)
+
+
+def _limit_address(request: Request) -> str | None:
+    """The sender's address for the per-address limit. Render's proxy puts the
+    visitor's address first in X-Forwarded-For; a sender can forge that, which
+    is why the database also caps every anonymous message together
+    (svc.ANONYMOUS_DAILY_LIMIT)."""
+    forwarded = request.headers.get("x-forwarded-for", "")
+    first = forwarded.split(",")[0].strip()
+    if first:
+        return first
+    return request.client.host if request.client else None
+
+
 def _render_feedback(
     request: Request,
-    current_user: User,
+    current_user: User | None,
     db: DbSession,
     *,
     form: svc.SuggestionInput,
@@ -72,10 +102,19 @@ def _render_feedback(
             "current_user": current_user,
             "form": form,
             "errors": form.errors,
-            "mine": svc.list_for_user(db, current_user.id, kinds=svc.FEEDBACK_KINDS),
+            "mine": (
+                svc.list_for_user(db, current_user.id, kinds=svc.FEEDBACK_KINDS)
+                if current_user
+                else []
+            ),
             "status_label": svc.status_label,
             "kind_labels": svc.KIND_LABELS,
-            "limits": {"title": svc.TITLE_MAX, "details": svc.DETAILS_MAX},
+            "honeypot_field": HONEYPOT_FIELD,
+            "limits": {
+                "title": svc.TITLE_MAX,
+                "details": svc.DETAILS_MAX,
+                "email": svc.EMAIL_MAX,
+            },
         },
         status_code=status_code,
     )
@@ -114,9 +153,7 @@ def submit_suggestion(
     try:
         svc.create_suggestion(db, current_user, form, correlation_id=correlation_id)
     except svc.SuggestionLimitError:
-        form.errors["form"] = (
-            "You've sent a lot of suggestions today. Thank you! Please try again tomorrow."
-        )
+        form.errors["form"] = _LIMIT_MESSAGE
         return _render_suggest(request, current_user, db, form=form, status_code=429)
     if form.kind == svc.KIND_TOWN:
         response = RedirectResponse(url="/suggest?kind=town", status_code=303)
@@ -129,7 +166,7 @@ def submit_suggestion(
 
 @router.get("/feedback", response_class=HTMLResponse)
 def feedback_page(
-    request: Request, current_user: CurrentUser, db: DbSession, kind: OptionalText = None
+    request: Request, current_user: OptionalCurrentUser, db: DbSession, kind: OptionalText = None
 ):
     form = svc.SuggestionInput(
         kind=kind if kind in svc.FEEDBACK_KINDS else svc.KIND_FEATURE
@@ -140,32 +177,54 @@ def feedback_page(
 @router.post("/feedback", response_class=HTMLResponse)
 def submit_feedback(
     request: Request,
-    current_user: CurrentUser,
+    current_user: OptionalCurrentUser,
     db: DbSession,
     correlation_id: CorrelationId,
     kind: str = Form(svc.KIND_FEATURE),
     title: str = Form(""),
     details: str = Form(""),
+    contact_email: str = Form(""),
+    website: str = Form(""),  # the honeypot, see HONEYPOT_FIELD
     csrf_token: str = Form(...),
 ):
     verify_csrf(request, csrf_token)
     # Only features and bugs are sent from here; anything else is a feature.
     kind = kind if kind in svc.FEEDBACK_KINDS else svc.KIND_FEATURE
+    thanks = RedirectResponse(url=f"/feedback?kind={kind}", status_code=303)
+    set_flash(thanks, _FEEDBACK_THANKS[kind])
+
+    # A bot that filled the hidden field gets the same thanks a person does,
+    # so it learns nothing, and nothing is saved or sent to the team.
+    if website:
+        return thanks
+
     form = svc.parse_suggestion(
-        kind=kind, title=title, region="", university="", details=details
+        kind=kind,
+        title=title,
+        region="",
+        university="",
+        details=details,
+        # A signed-in visitor already has an address on their account.
+        contact_email="" if current_user else contact_email,
     )
     if not form.is_valid:
         return _render_feedback(request, current_user, db, form=form, status_code=422)
+
+    if current_user is None:
+        address = _limit_address(request)
+        if address and not get_rate_limit_backend().allow(
+            f"feedback:{address}",
+            limit=svc.ANONYMOUS_PER_IP_PER_HOUR,
+            window_seconds=60 * 60,
+        ):
+            form.errors["form"] = _ANON_IP_LIMIT_MESSAGE
+            return _render_feedback(request, current_user, db, form=form, status_code=429)
     try:
         svc.create_suggestion(db, current_user, form, correlation_id=correlation_id)
     except svc.SuggestionLimitError:
-        form.errors["form"] = (
-            "You've sent a lot of suggestions today. Thank you! Please try again tomorrow."
-        )
+        form.errors["form"] = _LIMIT_MESSAGE
         return _render_feedback(request, current_user, db, form=form, status_code=429)
-    response = RedirectResponse(url=f"/feedback?kind={form.kind}", status_code=303)
-    set_flash(response, _FEEDBACK_THANKS[form.kind])
-    return response
+    return thanks
 
 
 @router.get("/admin/suggestions", response_class=HTMLResponse)

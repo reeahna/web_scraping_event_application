@@ -42,7 +42,7 @@
         {% if s.university %}<br />{{ s.university }}{% endif %}
         {% if s.details %}<p class="suggestion-details">{{ s.details }}</p>{% endif %}
       </td>
-      <td>{% if s.user %}{{ s.user.full_name or s.user.email }}{% else %}<em>Deleted account</em>{% endif %}</td>
+      <td>{% if s.user %}{{ s.user.full_name or s.user.email }}{% elif s.contact_email %}<a href="mailto:{{ s.contact_email }}">{{ s.contact_email }}</a><br /><em>Not signed in</em>{% else %}<em>No account</em>{% endif %}</td>
       <td>
         {% if can_manage %}
         <form method="post" action="/admin/suggestions/{{ s.id }}" class="suggestion-status-form">

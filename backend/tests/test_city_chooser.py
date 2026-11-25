@@ -45,7 +45,7 @@ def college_towns(db_session, make_city, make_website, make_event):
 def test_the_home_page_asks_for_a_town(client, college_towns):
     html = client.get("/").text
     assert "Find something worth going to." in html
-    assert "What college town?" in html
+    assert "Find your college or city" in html
     assert 'name="q"' in html
 
 
@@ -116,7 +116,7 @@ def test_search_matches_town_school_and_state(client, college_towns, term, expec
 
 def test_an_unmatched_search_says_so_and_offers_a_way_back(client, college_towns):
     html = client.get("/?q=nowhere").text
-    assert "No college town matches" in html
+    assert "Nothing matches" in html
     assert 'href="/"' in html
 
 
@@ -178,7 +178,7 @@ def test_a_town_with_nothing_upcoming_is_left_off_the_list(
     assert "Muncie" not in _directory(client.get("/?state=Indiana").text)
     # Virginia has no town with anything coming up, so it is not offered.
     assert "Virginia" not in _directory(client.get("/").text)
-    assert "No towns with upcoming events" in client.get("/?state=Virginia").text
+    assert "No locations with upcoming events" in client.get("/?state=Virginia").text
     # Not in a search either, but the town page itself still works.
     assert "Blacksburg" not in client.get("/?q=blacks").text.split("</form>", 1)[1]
     assert client.get("/city/blacksburg-va").status_code == 200
@@ -230,13 +230,13 @@ def test_the_home_page_lists_states_not_every_town(client, college_towns):
     assert 'href="/?state=Indiana"' in directory
     assert 'href="/?state=Pennsylvania"' in directory
     assert "Bloomington" not in directory
-    assert "1 town, " in directory
+    assert "1 location, " in directory
 
 
 def test_a_state_lists_only_its_own_towns(client, college_towns):
     html = client.get("/?state=Indiana").text
     directory = _directory(html)
-    assert "Towns in Indiana" in html
+    assert "Locations in Indiana" in html
     assert "Bloomington" in directory
     assert "Bethlehem" not in directory
     assert 'href="/">All states</a>' in html
@@ -249,7 +249,7 @@ def test_towns_entered_as_name_or_abbreviation_share_a_state(
     publish_upcoming(make_city(name="Muncie", slug="muncie-in", state_or_region="IN"))
     home = _directory(client.get("/").text)
     assert home.count('href="/?state=Indiana"') == 1
-    assert "2 towns, " in home
+    assert "2 locations, " in home
     indiana = _directory(client.get("/?state=in").text)
     assert "Bloomington" in indiana and "Muncie" in indiana
 
@@ -268,7 +268,7 @@ def test_a_search_still_looks_across_every_state(client, college_towns):
 
 def test_an_unknown_state_says_so(client, college_towns):
     html = client.get("/?state=Atlantis").text
-    assert "No towns with upcoming events" in html
+    assert "No locations with upcoming events" in html
     assert "Atlantis" in html
     assert 'href="/"' in html
 
