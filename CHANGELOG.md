@@ -76,6 +76,9 @@ lines. Lines may use `**bold**`, `` `code` `` and `[links](https://...)`.
 - A new **New features / bug fixes** page (linked in the footer) lets you suggest a feature or report something that isn't working, and see the status of what you've sent. (#137)
 - The home page now starts with a list of states. Pick one to see its college towns and how many upcoming events each has, or search for any town or school as before. Towns with nothing coming up stay off the list until they have events again. (#138)
 
+### Admin and behind the scenes
+- A source's configure page has an optional **Home venue** (name and address) for organizers whose events are all at their own place. It fills in the venue only for events that don't name one; venues read from the listing and administrator corrections always win. (#143)
+
 ## [1.12.1] - 2026-11-23
 
 ### Admin and behind the scenes
