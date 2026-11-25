@@ -9,6 +9,7 @@ silently dropped.
 from __future__ import annotations
 
 from app.core.url_safety import UnsafeURLError, validate_public_url
+from app.extraction.normalize import EXTERNAL_ID_MAX, URL_MAX
 from app.extraction.types import EventCandidate, ValidationResult
 from app.schemas.extraction import SiteConfiguration
 
@@ -46,11 +47,16 @@ def validate_candidate(candidate: EventCandidate, config: SiteConfiguration) -> 
     if not candidate.canonical_url and not candidate.external_source_id:
         errors.append("an event link or a source ID is required")
 
-    if candidate.canonical_url:
+    if candidate.canonical_url and len(candidate.canonical_url) > URL_MAX:
+        errors.append(f"canonical_url is longer than {URL_MAX} characters")
+    elif candidate.canonical_url:
         try:
             validate_public_url(candidate.canonical_url)
         except UnsafeURLError as exc:
             errors.append(f"invalid canonical_url: {exc}")
+
+    if candidate.external_source_id and len(candidate.external_source_id) > EXTERNAL_ID_MAX:
+        errors.append(f"external_source_id is longer than {EXTERNAL_ID_MAX} characters")
 
     if candidate.start_date is not None and candidate.end_date is not None:
         if candidate.end_date < candidate.start_date:

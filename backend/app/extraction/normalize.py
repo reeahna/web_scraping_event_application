@@ -368,25 +368,64 @@ def normalize_candidate(
 
     return dataclasses.replace(
         candidate,
-        title=title,
-        canonical_url=canonical_url,
-        description=description,
+        title=_fit_text(title, TITLE_MAX, warnings, "title"),
+        canonical_url=_without_nul(canonical_url),
+        description=_without_nul(description),
         start_date=start_date,
         start_time=start_time,
         end_date=end_date,
         end_time=end_time,
         timezone=timezone,
-        venue=venue,
-        address=address,
-        image_url=image_url,
+        venue=_fit_text(venue, VENUE_MAX, warnings, "venue"),
+        address=_fit_text(address, ADDRESS_MAX, warnings, "address"),
+        image_url=_fit_url(image_url, URL_MAX, warnings),
         latitude=latitude,
         longitude=longitude,
-        source_category=source_category,
-        external_source_id=external_source_id,
+        source_category=_fit_text(source_category, SOURCE_CATEGORY_MAX, warnings,
+                                  "source category"),
+        external_source_id=_without_nul(external_source_id),
         field_source_paths=paths,
         transformation_history=tuple(history),
         warnings=tuple(warnings),
     )
+
+
+# The longest text each stored event column holds (app.models.event.Event).
+# PostgreSQL refuses a longer value, and one such event used to fail the whole
+# import; SQLite stored it regardless. An over-long canonical_url or source ID
+# is left as it is: shortening it would change the event's identity, and the
+# validator rejects that one event instead.
+TITLE_MAX = 500
+VENUE_MAX = 500
+ADDRESS_MAX = 1000
+SOURCE_CATEGORY_MAX = 255
+URL_MAX = 2000
+EXTERNAL_ID_MAX = 255
+
+
+def _without_nul(value: str | None) -> str | None:
+    """A NUL byte is never meaningful in event text, and PostgreSQL text
+    columns cannot hold one."""
+    if value is None:
+        return None
+    return value.replace("\x00", "") or None
+
+
+def _fit_text(value: str | None, limit: int, warnings: list[str], label: str) -> str | None:
+    value = _without_nul(value)
+    if value is None or len(value) <= limit:
+        return value
+    warnings.append(f"{label} was {len(value)} characters; shortened to {limit}")
+    return value[: limit - 3].rstrip() + "..."
+
+
+def _fit_url(value: str | None, limit: int, warnings: list[str]) -> str | None:
+    """An image link cut short would point nowhere, so an over-long one is dropped."""
+    value = _without_nul(value)
+    if value is None or len(value) <= limit:
+        return value
+    warnings.append(f"image link was {len(value)} characters; left out")
+    return None
 
 
 def _parse_coordinate(value: object, warnings: list[str], label: str) -> float | None:

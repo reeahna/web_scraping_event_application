@@ -12,7 +12,7 @@ output).
 | Pattern | Source shape |
 |---------|--------------|
 | `wordpress_rest` | WordPress REST events API |
-| `json_ld_event` | schema.org `Event` JSON-LD |
+| `json_ld_event` | schema.org `Event` JSON-LD (`eventStatus: EventCancelled` marks the event cancelled: it leaves the listing, is never deleted, and saved-event alerts go out) |
 | `generic_html_cards` | inferred repeated HTML cards (higher approval bar) |
 | `the_events_calendar` | The Events Calendar (Tribe) REST |
 | `livewhale_json` | LiveWhale JSON feed |
