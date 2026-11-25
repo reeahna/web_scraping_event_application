@@ -29,8 +29,10 @@ These hold at every stage. When a stage below seems to say otherwise, these win.
    routine, for search and for opening candidate listing pages. It is never used
    to import events, never to get past a site that refuses Bulletin (403,
    Cloudflare, a bot wall), and never added to a source's configuration.
-3. **Never bypass a block.** A source that refuses Render goes to Blocked with
-   its reason kept. One normal, read-only visit in a person's browser is the
+3. **Never bypass a block.** A new source whose first fetch is refused goes to
+   Blocked with its reason kept. An existing source that fails three runs in a
+   row becomes Failing (Inactive today), not Blocked; changing its status is a
+   separate approval (see stage 8). One normal, read-only visit in a person's browser is the
    furthest a check goes, and only when the owner approves it.
 4. **Browser extraction stays off.** Production runs with
    `BROWSER_EXTRACTION_ENABLED=false` on a 512 MB instance; Chromium launches
@@ -148,9 +150,18 @@ Only after the package is approved.
 push; the owner's rule since Nov 24):
 
 1. Memory has room: the web instance is well under 512 MB (record the number).
+   Onboarding runs as soon as the new scheduler leader takes over, with no
+   delay and before the sweeps, so the first minute after takeover is the
+   moment of highest risk.
 2. No out-of-memory restarts recently (none since the last deploy settled).
-3. Exactly one healthy scheduler leader (`/health/ready` returns 200).
-4. Both delayed startup sweeps of the last deploy have finished.
+3. Exactly one healthy scheduler leader. `/health/ready` returning 200 only
+   shows that a leader is present and fresh, so also check that Admin >
+   Scheduler's "Held by" line names a single holder and that the Render logs
+   show one "took over as leader".
+4. Both delayed startup sweeps of the last deploy have finished. A sweep that
+   hides 0 events logs nothing, so confirm this from timing (about 2 and 7
+   minutes after leader takeover) and from the memory steps, not from log
+   lines.
 5. No other deploy is running or queued, and the coordinator confirms the
    deploy slot is free.
 
