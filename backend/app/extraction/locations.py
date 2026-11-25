@@ -23,7 +23,7 @@ from app.extraction.sanitize import strip_to_text
 # "no venue", so an event carrying one is still looked up on its own page.
 _PLACEHOLDER_RE = re.compile(
     r"^\s*(tba|tbd|tbc|n/?a|none|to be (announced|determined|confirmed)|location tbd|"
-    r"venue tbd|venue tba|location tba)\.?\s*$",
+    r"venue tbd|venue tba|location tba|see (the )?(event )?descriptions?)\.?\s*$",
     re.IGNORECASE,
 )
 

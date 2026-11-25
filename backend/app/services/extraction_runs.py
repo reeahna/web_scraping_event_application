@@ -86,6 +86,7 @@ from app.repositories.event import (
     find_existing_event_for_candidate,
     update_event,
 )
+from app.repositories.event_page_checks import recent_no_venue_urls, record_no_venue_pages
 from app.repositories.event_provenance import create_event_provenance
 from app.repositories.extraction_run import create_extraction_run
 from app.repositories.unsupported_site_report import (
@@ -589,6 +590,8 @@ class _PipelineOutcome:
     first_response: FetchResponse | None
     last_response: FetchResponse | None
     response_hash_by_page: dict[str, str]
+    # Event pages read this run that named no venue an event still needed.
+    pages_without_venue: frozenset[str] = frozenset()
 
 
 def _total_from_response(response: FetchResponse, total_path: str | None) -> int | None:
@@ -827,6 +830,7 @@ async def _execute_pipeline(
     described_urls: frozenset[str] | None = None,
     venue_urls: frozenset[str] = frozenset(),
     timed_urls: frozenset[str] = frozenset(),
+    recently_checked_venue_urls: frozenset[str] = frozenset(),
     lookup_excluded: Callable[[EventCandidate], bool] | None = None,
 ) -> _PipelineOutcome:
     """`described_urls` turns on the detail-page lookup for events whose
@@ -834,7 +838,9 @@ async def _execute_pipeline(
     description (`described_urls`) or a venue (`venue_urls`). Left None
     (preview), no extra pages are fetched. `lookup_excluded` is asked about
     each listing (normalized and geography-annotated, as the run will see it)
-    before its page is fetched: a listing the run will drop costs no fetch."""
+    before its page is fetched: a listing the run will drop costs no fetch.
+    `recently_checked_venue_urls` are pages read recently without a venue,
+    not fetched again for one."""
     registration = REGISTRY.get(pattern_name)
     pattern = registration.extractor
     # Patterns that turn a source's UTC instants into local times read
@@ -848,6 +854,7 @@ async def _execute_pipeline(
     warnings: list[str] = []
     all_candidates: list[EventCandidate] = []
     response_hash_by_page: dict[str, str] = {}
+    pages_without_venue: set[str] = set()
 
     # A captured request recipe drives the request when present; otherwise the
     # legacy endpoint/fetch config does. Both feed the same normalize/validate
@@ -902,6 +909,8 @@ async def _execute_pipeline(
                 known_described_urls=described_urls,
                 known_venue_urls=venue_urls,
                 known_timed_urls=timed_urls,
+                recently_checked_venue_urls=recently_checked_venue_urls,
+                checked_without_venue=pages_without_venue,
                 timezone=config.timezone,
                 skip=skip,
             )
@@ -933,6 +942,7 @@ async def _execute_pipeline(
         first_response=first_response,
         last_response=response,
         response_hash_by_page=response_hash_by_page,
+        pages_without_venue=frozenset(pages_without_venue),
     )
 
 
@@ -1290,6 +1300,7 @@ async def run_extraction(
         described_urls=described_event_urls(db, website.id),
         venue_urls=event_urls_with_venue(db, website.id),
         timed_urls=event_urls_with_time(db, website.id),
+        recently_checked_venue_urls=recent_no_venue_urls(db, website.id),
         lookup_excluded=_left_out_of_town(config, website),
     )
     completed_at = datetime.now(UTC)
@@ -1490,6 +1501,9 @@ async def run_extraction(
             ),
             correlation_id=correlation_id,
         )
+    # Remembered for about a week so the next runs' page budget reaches
+    # events not yet looked up (a failed or blocked fetch is not recorded).
+    record_no_venue_pages(db, website.id, outcome.pages_without_venue)
     db.commit()
 
     _update_website_health(
