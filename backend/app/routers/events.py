@@ -21,14 +21,13 @@ from app.models.user import User
 from app.models.website import Website
 from app.repositories.event_provenance import get_latest_provenance_for_event
 from app.services.all_day_backfill import (
-    APPLY_ACTION,
     CHECK_ACTION,
     CHECK_ENTITY,
     CheckRejected,
     apply_all_day_to_ids,
+    apply_reviewed_check,
     backfill_all_day,
     check_audit_payload,
-    load_check_for_apply,
     parse_event_ids,
 )
 from app.services.audit import record_audit
@@ -239,41 +238,21 @@ def all_day_backfill_apply(
         raise AppError("Forbidden: Super Administrator only", status_code=403)
     error = None
     id_report = None
-    check = None
     status = 200
     if apply:
         try:
             if not check_id.strip().isdigit():
                 raise CheckRejected("Apply needs a check. Run Check first.")
-            check = load_check_for_apply(db, int(check_id), user_id=current_user.id)
-        except CheckRejected as exc:
-            db.rollback()
-            error, status = str(exc), 409
-        if check is not None:
-            id_report = apply_all_day_to_ids(
-                db, check.event_ids, reviewed_at=check.reviewed_at, apply=True, commit=False
-            )
-            # Committed together with the changes it describes.
-            record_audit(
+            _, id_report = apply_reviewed_check(
                 db,
-                actor_id=current_user.id,
-                action=APPLY_ACTION,
-                entity_type=CHECK_ENTITY,
-                entity_id=check.check_id,
-                after={
-                    "check_id": check.check_id,
-                    "reviewed_at": check.reviewed_at.isoformat(),
-                    "requested": id_report.requested,
-                    "changed": len(id_report.changed_ids),
-                    "changed_ids": id_report.changed_ids,
-                    "skipped": [
-                        {"event_id": event_id, "reason": reason}
-                        for event_id, reason in id_report.skipped
-                    ],
-                },
+                int(check_id),
+                user_id=current_user.id,
                 correlation_id=correlation_id,
                 ip_address=ip_address,
             )
+        except CheckRejected as exc:
+            db.rollback()
+            error, status = str(exc), 409
     else:
         reviewed = _parse_reviewed_at(reviewed_at)
         try:

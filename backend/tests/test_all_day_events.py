@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import json
 import re
+import threading
 from datetime import UTC, date, datetime, time, timedelta
 
 import pytest
@@ -44,6 +45,7 @@ from app.services.all_day_backfill import (
     SKIP_UNVERIFIED,
     CheckRejected,
     apply_all_day_to_ids,
+    apply_reviewed_check,
     backfill_all_day,
     load_check_for_apply,
     parse_event_ids,
@@ -792,8 +794,8 @@ def test_id_apply_update_repeats_every_rule(db_session, town, make_event, monkey
     event = _flagged(db_session, make_event, city, website, "Raced")
     real = backfill._skip_reason
 
-    def check_then_race(db, checked, reviewed_at):
-        result = real(db, checked, reviewed_at)
+    def check_then_race(db, checked, reviewed_at, **kwargs):
+        result = real(db, checked, reviewed_at, **kwargs)
         assert result[0] is None
         change(db, checked, website)
         return result
@@ -814,7 +816,7 @@ def test_id_apply_update_goes_through_when_nothing_changed(
     city, website = town
     event = _flagged(db_session, make_event, city, website, "Steady")
     real = backfill._skip_reason
-    monkeypatch.setattr(backfill, "_skip_reason", lambda *args: real(*args))
+    monkeypatch.setattr(backfill, "_skip_reason", lambda *args, **kwargs: real(*args, **kwargs))
     report = apply_all_day_to_ids(db_session, [event.id], reviewed_at=REVIEWED, apply=True)
     assert report.changed_ids == [event.id]
 
@@ -979,6 +981,188 @@ def test_check_record_must_be_recent_and_your_own(db_session, make_super_admin, 
     empty = _recorded_check(db_session, mine, [])
     with pytest.raises(CheckRejected, match="nothing to change"):
         load_check_for_apply(db_session, empty.id, user_id=mine.id)
+
+
+# --- two sessions at once ---------------------------------------------------------
+# These use a second database session on another thread, against the real
+# test database (SQLite by default, PostgreSQL with TEST_DATABASE_URL), to show
+# what the database itself allows while an Apply is in progress.
+
+
+def test_a_source_approval_cannot_land_between_check_and_update(
+    db_session, town, make_event, monkeypatch
+):
+    """Another session approves a "time not announced" configuration for the
+    event's source while the Apply sits between that event's check and its
+    update. The approval must wait until the Apply has committed: it cannot
+    slip in and leave a stale check behind."""
+    import app.services.all_day_backfill as backfill
+    from app.database import SessionLocal
+
+    city, website = town
+    db_session.execute(
+        update(Website).where(Website.id == website.id)
+        .values(approved_pattern={"configuration": {}})
+    )
+    db_session.commit()
+    event = _flagged(db_session, make_event, city, website, "Raced")
+    real = backfill._skip_reason
+    outcome = {}
+
+    def approve_in_another_session():
+        other = SessionLocal()
+        try:
+            other.execute(
+                update(Website).where(Website.id == website.id)
+                .values(approved_pattern={"configuration": {"date_only_means_time_tbd": True}})
+            )
+            other.commit()
+            outcome["approved"] = True
+        except Exception as exc:  # pragma: no cover - reported below
+            other.rollback()
+            outcome["error"] = exc
+        finally:
+            other.close()
+
+    def check_then_wait_for_the_other_session(db, checked, reviewed_at, **kwargs):
+        result = real(db, checked, reviewed_at, **kwargs)
+        thread = threading.Thread(target=approve_in_another_session)
+        thread.start()
+        thread.join(timeout=1.5)
+        outcome["landed_mid_apply"] = not thread.is_alive()
+        outcome["thread"] = thread
+        return result
+
+    monkeypatch.setattr(backfill, "_skip_reason", check_then_wait_for_the_other_session)
+    report = apply_all_day_to_ids(db_session, [event.id], reviewed_at=REVIEWED, apply=True)
+    outcome["thread"].join(timeout=30)
+
+    assert outcome["landed_mid_apply"] is False
+    assert "error" not in outcome and outcome.get("approved") is True
+    # Checked and marked under the old configuration; the approval came after.
+    assert report.changed_ids == [event.id]
+    db_session.expire_all()
+    assert db_session.get(Event, event.id).all_day is True
+    assert db_session.get(Website, website.id).approved_pattern == {
+        "configuration": {"date_only_means_time_tbd": True}
+    }
+
+
+def test_two_applies_of_one_check_only_one_runs(
+    db_session, town, make_event, make_super_admin, monkeypatch
+):
+    """Two Apply requests for the same Check at the same moment: the second
+    waits for the first, then is refused, and nothing is applied twice."""
+    import app.services.all_day_backfill as backfill
+    from app.database import SessionLocal
+    from app.models.all_day_check_use import AllDayCheckUse
+    from app.models.audit_log import AuditLog
+
+    city, website = town
+    event = _flagged(db_session, make_event, city, website, "Listed")
+    admin = make_super_admin()
+    check = _recorded_check(db_session, admin, [event.id])
+    first_holds_the_check = threading.Event()
+    let_first_finish = threading.Event()
+    real_apply = backfill.apply_all_day_to_ids
+    calls = []
+
+    def paused_apply(*args, **kwargs):
+        calls.append(threading.current_thread().name)
+        first_holds_the_check.set()
+        let_first_finish.wait(timeout=10)
+        return real_apply(*args, **kwargs)
+
+    monkeypatch.setattr(backfill, "apply_all_day_to_ids", paused_apply)
+    results = {}
+
+    def run(name):
+        session = SessionLocal()
+        try:
+            results[name] = apply_reviewed_check(session, check.id, user_id=admin.id)
+        except CheckRejected as exc:
+            results[name] = exc
+        finally:
+            session.close()
+
+    first = threading.Thread(target=run, args=("first",), name="first")
+    first.start()
+    assert first_holds_the_check.wait(timeout=10)
+    second = threading.Thread(target=run, args=("second",), name="second")
+    second.start()
+    second.join(timeout=1.5)
+    second_finished_early = not second.is_alive()
+    let_first_finish.set()
+    first.join(timeout=30)
+    second.join(timeout=30)
+
+    assert isinstance(results["first"], tuple)
+    assert results["first"][1].changed_ids == [event.id]
+    assert isinstance(results["second"], CheckRejected)
+    assert calls == ["first"]
+    db_session.expire_all()
+    assert db_session.query(AllDayCheckUse).filter_by(check_id=check.id).count() == 1
+    assert db_session.query(AuditLog).filter_by(
+        action="events_all_day_applied_by_id").count() == 1
+    assert db_session.get(Event, event.id).all_day is True
+    # The second never got as far as the events while the first held the Check
+    # (if it was refused at once, it was refused for the right reason).
+    if second_finished_early:
+        assert "already been applied" in str(results["second"])
+
+
+def test_a_failed_apply_leaves_the_check_unused(
+    db_session, town, make_event, make_super_admin, monkeypatch
+):
+    import app.services.all_day_backfill as backfill
+    from app.models.all_day_check_use import AllDayCheckUse
+
+    city, website = town
+    event = _flagged(db_session, make_event, city, website, "Listed")
+    admin = make_super_admin()
+    check = _recorded_check(db_session, admin, [event.id])
+
+    def broken_audit(*args, **kwargs):
+        raise RuntimeError("audit store down")
+
+    monkeypatch.setattr(backfill, "record_audit", broken_audit)
+    with pytest.raises(RuntimeError):
+        apply_reviewed_check(db_session, check.id, user_id=admin.id)
+    db_session.expire_all()
+    assert db_session.get(Event, event.id).all_day is False
+    assert db_session.query(AllDayCheckUse).count() == 0
+
+    monkeypatch.undo()
+    _, report = apply_reviewed_check(db_session, check.id, user_id=admin.id)
+    assert report.changed_ids == [event.id]
+
+
+def test_a_used_check_is_refused_by_the_database_itself(
+    db_session, town, make_event, make_super_admin, monkeypatch
+):
+    """Even if the "already used" lookup were skipped, the check's key in
+    all_day_check_uses refuses a second Apply and nothing changes."""
+    import app.services.all_day_backfill as backfill
+    from app.models.audit_log import AuditLog
+
+    city, website = town
+    event = _flagged(db_session, make_event, city, website, "Listed")
+    admin = make_super_admin()
+    check = _recorded_check(db_session, admin, [event.id])
+    apply_reviewed_check(db_session, check.id, user_id=admin.id)
+    db_session.execute(update(Event).where(Event.id == event.id).values(all_day=False))
+    db_session.commit()
+
+    def load_without_the_lookup(db, check_id, **kwargs):
+        return backfill.ReviewedCheck(check.id, REVIEWED, [event.id])
+
+    monkeypatch.setattr(backfill, "load_check_for_apply", load_without_the_lookup)
+    with pytest.raises(CheckRejected, match="already been applied"):
+        apply_reviewed_check(db_session, check.id, user_id=admin.id)
+    db_session.expire_all()
+    assert db_session.get(Event, event.id).all_day is False
+    assert db_session.query(AuditLog).filter_by(
+        action="events_all_day_applied_by_id").count() == 1
 
 
 def test_admin_check_refuses_a_future_review_time(

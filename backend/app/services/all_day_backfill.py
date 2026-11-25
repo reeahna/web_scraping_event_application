@@ -32,14 +32,17 @@ from collections import Counter
 from dataclasses import dataclass, field
 from datetime import UTC, datetime, time, timedelta
 
-from sqlalchemy import Text, and_, cast, exists, func, or_, select, update
+from sqlalchemy import Text, and_, cast, exists, func, or_, select, text, update
+from sqlalchemy.exc import IntegrityError, OperationalError
 from sqlalchemy.orm import Session
 
 from app.extraction.normalize import ALL_DAY_MARKER
+from app.models.all_day_check_use import AllDayCheckUse
 from app.models.audit_log import AuditLog
 from app.models.event import Event
 from app.models.event_provenance import EventProvenance
 from app.models.website import Website
+from app.services.audit import record_audit
 
 DAY_END_TIMES = (time(23, 59), time(23, 59, 59))
 
@@ -227,12 +230,30 @@ def _latest_provenance(db: Session, event_id: int) -> tuple[int, list[str]] | No
     return None if row is None else (row.id, list(row.transformation_history or []))
 
 
-def _approved_text(db: Session, website_id: int | None) -> str | None:
+def _approved_text(db: Session, website_id: int | None, *, lock: bool = False) -> str | None:
+    """The website's approved configuration as stored. With lock=True the row
+    is share-locked (PostgreSQL) until the transaction ends, so no approval
+    can change it between this read and the event's update."""
     if website_id is None:
         return None
-    return db.execute(
-        select(cast(Website.approved_pattern, Text)).where(Website.id == website_id)
-    ).scalar_one_or_none()
+    query = select(cast(Website.approved_pattern, Text)).where(Website.id == website_id)
+    if lock:
+        query = query.with_for_update(read=True)
+    return db.execute(query).scalar_one_or_none()
+
+
+def _hold_writes(db: Session) -> None:
+    """Make this transaction the database's only writer until it commits.
+
+    SQLite has no row locks (it ignores FOR UPDATE and FOR SHARE), but it
+    allows one writer at a time: the first write of a transaction takes the
+    database's write lock and keeps it until commit or rollback. This write
+    changes no row; it only takes that lock, before anything is checked, so
+    no import, edit or approval can commit between an event's check and its
+    update. PostgreSQL gets the same guarantee from the row locks taken on
+    each event and its website."""
+    if db.get_bind().dialect.name == "sqlite":
+        db.execute(text("UPDATE events SET all_day = all_day WHERE 0"))
 
 
 def _unchanged_since(event: Event, reviewed_at: datetime) -> str | None:
@@ -252,7 +273,7 @@ def _unchanged_since(event: Event, reviewed_at: datetime) -> str | None:
 
 
 def _skip_reason(
-    db: Session, event: Event | None, reviewed_at: datetime
+    db: Session, event: Event | None, reviewed_at: datetime, *, lock: bool = False
 ) -> tuple[str | None, _Verified | None]:
     """Why this event must not be marked now (or None), and, when it still
     qualifies exactly as the preview counted it, what it was checked against."""
@@ -269,7 +290,7 @@ def _skip_reason(
     latest = _latest_provenance(db, event.id)
     if latest is None or ALL_DAY_MARKER not in latest[1]:
         return SKIP_NOT_FLAGGED, None
-    approved_text = _approved_text(db, event.website_id)
+    approved_text = _approved_text(db, event.website_id, lock=lock)
     if approved_text is not None and _means_time_tbd(json.loads(approved_text)):
         return SKIP_TIME_TBD_SOURCE, None
     reason = _unchanged_since(event, reviewed_at)
@@ -337,10 +358,12 @@ def apply_all_day_to_ids(
     """Marks all-day only the listed events that still qualify. With
     apply=False it reports what would happen and writes nothing.
 
-    Each event is re-read (locked where the database supports it) and checked
-    immediately before its own update, and the update's WHERE repeats every
-    rule (see _still_eligible), so a change made in between leaves the event
-    alone and reports it. Only events.all_day is written: dates, times,
+    When applying, nothing else can commit a change to what is checked until
+    this transaction ends: on SQLite it holds the database's single write lock
+    from the start (_hold_writes); on PostgreSQL each event row is locked for
+    update and its website row for share. Each event is checked immediately
+    before its own update, and the update's WHERE repeats every rule (see
+    _still_eligible) as a second line of defence. Only events.all_day is written: dates, times,
     visibility, categories, overrides, duplicate decisions, provenance and
     content_updated_at are untouched.
 
@@ -349,6 +372,8 @@ def apply_all_day_to_ids(
     reviewed_at = _utc(reviewed_at)
     report = AllDayIdApplyReport(applied=apply, reviewed_at=reviewed_at)
     report.requested = len(event_ids)
+    if apply:
+        _hold_writes(db)
     seen: set[int] = set()
     for event_id in event_ids:
         if event_id in seen:
@@ -358,7 +383,7 @@ def apply_all_day_to_ids(
         event = db.execute(
             select(Event).where(Event.id == event_id).with_for_update()
         ).scalar_one_or_none()
-        reason, verified = _skip_reason(db, event, reviewed_at)
+        reason, verified = _skip_reason(db, event, reviewed_at, lock=apply)
         if reason is not None:
             report.skipped.append((event_id, reason))
             continue
@@ -391,6 +416,9 @@ CHECK_ENTITY = "all_day_check"
 CHECK_VALID_FOR = timedelta(hours=1)
 
 
+ALREADY_APPLIED = "That check has already been applied. Run Check again."
+
+
 class CheckRejected(ValueError):
     """Apply refused: no usable earlier Check. Nothing was changed."""
 
@@ -418,12 +446,10 @@ def load_check_for_apply(
 ) -> ReviewedCheck:
     """The earlier Check an Apply must match: recorded by this server (an audit
     entry, which nobody can edit), by the same person, within the last hour,
-    not used yet, and with something to change. Locks the entry so two
-    Applies of one Check cannot both run."""
+    not used yet, and with something to change. "Not used yet" is only a
+    courtesy here; apply_reviewed_check makes it certain."""
     now = _utc(now or datetime.now(UTC))
-    entry = db.execute(
-        select(AuditLog).where(AuditLog.id == check_id).with_for_update()
-    ).scalar_one_or_none()
+    entry = db.get(AuditLog, check_id)
     if entry is None or entry.action != CHECK_ACTION or entry.after_state is None:
         raise CheckRejected("No matching check was found. Run Check first.")
     if entry.user_id != user_id:
@@ -431,17 +457,69 @@ def load_check_for_apply(
     checked_at = _utc(entry.created_at)
     if checked_at > now or now - checked_at > CHECK_VALID_FOR:
         raise CheckRejected("That check is more than an hour old. Run Check again.")
-    used = db.execute(
-        select(AuditLog.id).where(
-            AuditLog.action == APPLY_ACTION,
-            AuditLog.entity_type == CHECK_ENTITY,
-            AuditLog.entity_id == check_id,
-        )
-    ).first()
-    if used is not None:
-        raise CheckRejected("That check has already been applied. Run Check again.")
+    if db.get(AllDayCheckUse, check_id) is not None:
+        raise CheckRejected(ALREADY_APPLIED)
     payload = json.loads(entry.after_state)
     ids = [int(i) for i in payload.get("would_change_ids") or []]
     if not ids:
         raise CheckRejected("That check found nothing to change.")
     return ReviewedCheck(check_id, _utc(datetime.fromisoformat(payload["reviewed_at"])), ids)
+
+
+def apply_reviewed_check(
+    db: Session,
+    check_id: int,
+    *,
+    user_id: int,
+    correlation_id: str | None = None,
+    ip_address: str | None = None,
+) -> tuple[ReviewedCheck, AllDayIdApplyReport]:
+    """Applies an earlier Check, once.
+
+    One transaction: it first records the Check as used (all_day_check_uses,
+    keyed by the Check's id), then marks the events, then writes the Apply
+    audit entry, and commits all three together. A second Apply of the same
+    Check, even one running at the same moment, fails on that key and changes
+    nothing: PostgreSQL makes it wait for the first and then rejects it;
+    SQLite lets only one writer in at a time, and the second finds the key
+    taken. If anything fails, everything is rolled back, including the use."""
+    check = load_check_for_apply(db, check_id, user_id=user_id)
+    db.add(AllDayCheckUse(check_id=check.check_id, user_id=user_id))
+    try:
+        db.flush()
+    except IntegrityError as exc:
+        db.rollback()
+        raise CheckRejected(ALREADY_APPLIED) from exc
+    except OperationalError as exc:
+        # SQLite: another write kept the database busy past its timeout.
+        db.rollback()
+        raise CheckRejected("The database is busy. Nothing changed; try again.") from exc
+    try:
+        report = apply_all_day_to_ids(
+            db, check.event_ids, reviewed_at=check.reviewed_at, apply=True, commit=False
+        )
+        # record_audit commits: the use, the changes and this entry together.
+        record_audit(
+            db,
+            actor_id=user_id,
+            action=APPLY_ACTION,
+            entity_type=CHECK_ENTITY,
+            entity_id=check.check_id,
+            after={
+                "check_id": check.check_id,
+                "reviewed_at": check.reviewed_at.isoformat(),
+                "requested": report.requested,
+                "changed": len(report.changed_ids),
+                "changed_ids": report.changed_ids,
+                "skipped": [
+                    {"event_id": event_id, "reason": reason}
+                    for event_id, reason in report.skipped
+                ],
+            },
+            correlation_id=correlation_id,
+            ip_address=ip_address,
+        )
+    except BaseException:
+        db.rollback()
+        raise
+    return check, report
