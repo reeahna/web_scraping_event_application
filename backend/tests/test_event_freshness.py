@@ -497,7 +497,12 @@ def test_town_page_mentions_a_source_that_failed(client, db_session, make_websit
     _run(db_session, site, T0 + timedelta(hours=1), status="failed")
     text = _text(client.get("/city/bloomington").text)
     assert "Listings checked November 19, 2026 at 8:45 PM EST" in text
-    assert "1 source could not be checked on the latest try" in text
+    # A town's only source is named too, so it never reads as current.
+    assert (
+        ". a could not be checked on the latest try, so this is the time of its "
+        "last successful check" in text
+    )
+    assert "Every other source" not in text
 
 
 def test_town_page_without_checks_shows_nothing_and_views_change_nothing(
@@ -560,5 +565,5 @@ def test_town_page_lists_every_note(client, db_session, make_website, town):
     _source(make_website, town, "new-1")
     _source(make_website, town, "new-2")
     text = _text(client.get("/city/bloomington").text)
-    assert "1 source could not be checked on the latest try" in text
+    assert "could not be checked on the latest try" in text
     assert "2 sources have not completed a first check yet" in text

@@ -380,6 +380,23 @@ def build_website_workflow(
                 "blocking reasons below."
             )
             primary = action("Review preview results", "onboarding", method="get", style="primary")
+    elif approved and status == "failing":
+        # Source health, not visibility: imports are paused, events stay public.
+        current_step = "run"
+        headline = "Failing: imports paused"
+        explanation = (
+            f"The last {website.consecutive_failure_count} imports failed, so automatic "
+            "imports are paused. Its events are still public, and visitors see them marked "
+            "as possibly out of date once a day passes without a successful check. Resume "
+            "imports once the site can be reached; the warning clears after the next "
+            "successful import."
+        )
+        if "active" in next_states:
+            primary = action(
+                "Resume imports", "status", style="primary", status_target="active",
+                confirmation_text=f"Resume imports for {website.name}?",
+            )
+            primary_status_target = "active"
     elif approved and not website.is_active:
         current_step = "run"
         headline = "Approved — not active"

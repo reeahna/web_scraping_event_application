@@ -28,7 +28,11 @@ from app.repositories.public_events import (
 )
 from app.services import seo
 from app.services.cities import group_towns_by_state
-from app.services.event_freshness import local_timestamp, town_listings_checked
+from app.services.event_freshness import (
+    local_timestamp,
+    stale_source_ids,
+    town_listings_checked,
+)
 from app.services.rbac import can_access_admin, user_has_permission
 
 router = APIRouter()
@@ -201,6 +205,9 @@ def _render_events(
             "can_access_admin": can_access_admin(db, current_user) if current_user else False,
             "registration_enabled": settings.registration_enabled,
             "events": events,
+            # Sources that are failing or overdue and have gone a day without a
+            # successful check: their events are labelled "May be out of date".
+            "stale_sources": stale_source_ids(db, {event.website_id for event in events}),
             # So the list can show a long-running event by when it ends.
             "today": today if isinstance(today, date) else today.default,
             "total": total,
@@ -425,12 +432,17 @@ def _listings_checked(db, city, current_user=None) -> dict:
             )
         else:
             rest = "has not been checked since then"
-        others = local_timestamp(freshness.others_checked_at, city.timezone)
+        others = ""
+        if freshness.others_checked_at is not None:
+            others = (
+                "Every other source was checked by "
+                + local_timestamp(freshness.others_checked_at, city.timezone)
+            )
         can_view = bool(current_user) and user_has_permission(db, current_user, "sites.view")
         holder = {
             "name": freshness.oldest_source_name,
             "rest": rest,
-            "others": f"Every other source was checked by {others}",
+            "others": others,
             "admin_url": (
                 f"/admin/websites/{freshness.oldest_website_id}" if can_view else ""
             ),
@@ -440,15 +452,30 @@ def _listings_checked(db, city, current_user=None) -> dict:
         notes.append(
             f"{_sources(other_failing, other)} could not be checked on the latest try"
         )
+    if freshness.overdue:
+        other = " other" if holder else ""
+        notes.append(
+            f"{_sources(freshness.overdue, other)} {_is_are(freshness.overdue)} overdue "
+            "for a check"
+        )
     if freshness.pending:
         has = "has" if freshness.pending == 1 else "have"
         notes.append(f"{_sources(freshness.pending)} {has} not completed a first check yet")
+    if freshness.paused:
+        notes.append(
+            f"{_sources(freshness.paused)} updated by hand {_is_are(freshness.paused)} "
+            "not included in this time"
+        )
     return {
         "checked": local_timestamp(freshness.checked_at, city.timezone),
         "checked_iso": freshness.checked_at.isoformat(timespec="seconds"),
         "checked_notes": notes,
         "checked_holder": holder,
     }
+
+
+def _is_are(count: int) -> str:
+    return "is" if count == 1 else "are"
 
 
 def _sources(count: int, adjective: str = "") -> str:

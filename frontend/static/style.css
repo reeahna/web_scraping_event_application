@@ -2638,6 +2638,12 @@ a.metric-tile-link:hover .metric-label {
   min-width: 0;
 }
 
+/* Its source could not be checked for a day: still listed, flagged. */
+.event-card-stale {
+  color: var(--warning-text);
+  font-weight: var(--weight-medium);
+}
+
 .event-card-image {
   display: block;
   position: relative;
@@ -3092,6 +3098,17 @@ button.toggle-on:focus-visible .toggle-label-off { display: inline; }
   padding-top: var(--space-3);
   border-top: 1px solid var(--border);
   color: var(--muted);
+  font-size: var(--font-sm);
+  line-height: 1.5;
+}
+
+/* Its source could not be checked for a day, so the details may be stale. */
+.event-stale {
+  margin-bottom: var(--space-3);
+  padding: var(--space-2) var(--space-3);
+  border-left: 3px solid var(--warning);
+  background: var(--warning-soft);
+  color: var(--warning-text);
   font-size: var(--font-sm);
   line-height: 1.5;
 }

@@ -11,6 +11,8 @@ from __future__ import annotations
 from datetime import UTC, datetime
 from types import SimpleNamespace as NS
 
+import pytest
+
 from app.config import get_settings
 from app.services.website_workflow import build_website_workflow
 
@@ -185,17 +187,20 @@ def test_approved_active_primary_is_run():
     assert wf.current_step == "run"
 
 
-def test_failing_state_explains_and_offers_retry():
+@pytest.mark.parametrize("is_active", [False, True])
+def test_failing_state_explains_paused_imports_and_offers_resume(is_active):
     w = _website(
         onboarding_status="failing",
-        is_active=True,
+        is_active=is_active,
         approved_pattern={"pattern_name": "x"},
         configuration={"pattern_name": "x"},
         consecutive_failure_count=3,
     )
     wf = _wf(w, next_states=["active", "inactive", "archived"])
-    assert _primary(wf) == "Run event import"
-    assert "3 consecutive" in wf.explanation
+    assert _primary(wf) == "Resume imports"
+    assert wf.headline == "Failing: imports paused"
+    assert "last 3 imports failed" in wf.explanation
+    assert "events are still public" in wf.explanation
 
 
 def test_archived_has_no_primary_workflow_action():

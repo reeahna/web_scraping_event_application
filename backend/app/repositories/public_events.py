@@ -47,6 +47,7 @@ from sqlalchemy import Date, Time, and_, case, exists, func, literal, not_, or_,
 from sqlalchemy.orm import Session, aliased
 
 from app.config import get_settings
+from app.core.onboarding import FAILING
 from app.core.search import LIKE_ESCAPE, contains_pattern
 from app.core.timezones import is_unset_zone, local_date, zone_info
 from app.models.city import City
@@ -323,6 +324,43 @@ def this_weekend(today: DateBound) -> tuple[DateBound, DateBound]:
     return saturday, saturday + timedelta(days=1)
 
 
+def public_source_conditions(website) -> list:
+    """The conditions for a source's events to be public at all.
+
+    Source health is not one of them. A source that failed three checks in a
+    row moves to FAILING, which pauses its imports and alerts administrators,
+    but its events stay public (each still subject to its own rules in
+    _visible); visitors see them marked as possibly out of date instead (see
+    app.services.event_freshness.stale_source_ids). Only an administrator's
+    choice hides a source's events: deactivating it (INACTIVE), archiving it,
+    or never approving it.
+
+    Shared by the listing, the town freshness line and source follows, so
+    they can never disagree about which sources are public."""
+    return [
+        or_(website.is_active.is_(True), website.onboarding_status == FAILING),
+        website.archived_at.is_(None),
+        # `approved_pattern` is a JSON column: SQLAlchemy/SQLite store a
+        # Python None there as the JSON literal 'null', not SQL NULL, so
+        # `.isnot(None)` would never actually exclude an unapproved row.
+        # `active_configuration_version` is a plain Integer set only at
+        # approval time (see app.services.website_configuration.approve_configuration)
+        # and stays NULL until then, so it's the SQL-safe proxy for "has
+        # an approved configuration".
+        website.active_configuration_version.isnot(None),
+    ]
+
+
+def source_is_public(website) -> bool:
+    """public_source_conditions for one loaded Website row."""
+    return (
+        website is not None
+        and (bool(website.is_active) or website.onboarding_status == FAILING)
+        and website.archived_at is None
+        and website.active_configuration_version is not None
+    )
+
+
 def _visible(event, website, *, today: DateBound) -> list:
     """The conditions for an event row (and its source row) to be public."""
     return [
@@ -332,15 +370,7 @@ def _visible(event, website, *, today: DateBound) -> list:
         # Occurrence-aware: a recurrence parent is internal; the public sees
         # only concrete occurrences and single events.
         event.is_recurrence_parent.is_(False),
-        website.is_active.is_(True),
-        # `approved_pattern` is a JSON column: SQLAlchemy/SQLite store a
-        # Python None there as the JSON literal 'null', not SQL NULL, so
-        # `.isnot(None)` would never actually exclude an unapproved row.
-        # `active_configuration_version` is a plain Integer set only at
-        # approval time (see app.services.website_configuration.approve_configuration)
-        # and stays NULL until then, so it's the SQL-safe proxy for "has
-        # an approved configuration".
-        website.active_configuration_version.isnot(None),
+        *public_source_conditions(website),
         _not_ended(event, today=today),
     ]
 

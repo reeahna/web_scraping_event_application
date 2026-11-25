@@ -16,7 +16,7 @@ from app.repositories.public_events import (
 )
 from app.routers.home import _Filters
 from app.services import seo
-from app.services.event_freshness import event_zone_name, local_timestamp
+from app.services.event_freshness import event_zone_name, local_timestamp, source_health
 from app.services.rbac import can_access_admin
 
 router = APIRouter(prefix="/events", tags=["public-events"])
@@ -69,6 +69,12 @@ def event_detail(event_id: int, request: Request, current_user: OptionalCurrentU
                 db, user_id=current_user.id, follow_type="city", target_id=event.city_id
             )
 
+    stale_since = None
+    if event.website is not None:
+        health = source_health(db, [event.website]).get(event.website.id)
+        if health is not None and health.stale:
+            stale_since = local_timestamp(health.last_success_at, event_zone_name(event)) or ""
+
     return render(
         request,
         "public_event_detail.html",
@@ -85,6 +91,9 @@ def event_detail(event_id: int, request: Request, current_user: OptionalCurrentU
                 if event.content_updated_at
                 else ""
             ),
+            # None when the source is healthy; "" when it has never completed
+            # a check; else when it last did, in the event's zone.
+            "stale_since": stale_since,
             "fallback_image_url": get_settings().public_fallback_image_url,
             "is_saved": is_saved,
             "is_following_city": is_following_city,

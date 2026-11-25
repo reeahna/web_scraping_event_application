@@ -186,7 +186,7 @@
       When one failing or overdue source sets the time, it is named, with the
       time every other source was checked by. -#}
   {% if town.checked %}
-  <p class="listings-checked">Listings checked <time datetime="{{ town.checked_iso }}">{{ town.checked }}</time>{% if town.checked_holder %}{% set holder = town.checked_holder %}<span class="listings-checked-note listings-checked-holder">. {% if holder.admin_url %}<a href="{{ holder.admin_url }}">{{ holder.name }}</a>{% else %}{{ holder.name }}{% endif %} {{ holder.rest }}. {{ holder.others }}</span>{% endif %}{% for note in town.checked_notes %}<span class="listings-checked-note">. {{ note }}</span>{% endfor %}</p>
+  <p class="listings-checked">Listings checked <time datetime="{{ town.checked_iso }}">{{ town.checked }}</time>{% if town.checked_holder %}{% set holder = town.checked_holder %}<span class="listings-checked-note listings-checked-holder">. {% if holder.admin_url %}<a href="{{ holder.admin_url }}">{{ holder.name }}</a>{% else %}{{ holder.name }}{% endif %} {{ holder.rest }}{% if holder.others %}. {{ holder.others }}{% endif %}</span>{% endif %}{% for note in town.checked_notes %}<span class="listings-checked-note">. {{ note }}</span>{% endfor %}</p>
   {% endif %}
   {% if events %}
   {#- Events already running (shown as "Until" a date) sort ahead of the rest.
@@ -240,6 +240,7 @@
           {% if event.effective_category %}<span class="event-card-category">{{ event.effective_category.name }}</span>{% endif %}
           {% if event.recurrence_parent_id %}<span class="event-card-recurring">Repeats</span>{% endif %}
           <span class="event-card-source">From {{ event.source }}</span>
+          {% if stale_sources and event.website_id in stale_sources %}<span class="event-card-stale">May be out of date</span>{% endif %}
         </span>
       </span>
       {% if event.image_url %}
