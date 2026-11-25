@@ -42,6 +42,10 @@ Bounded and conservative:
   that still need it;
 * a candidate the caller's `skip` says will be left out of the run anyway (an
   event outside the source's town) is never looked up, so it costs no budget;
+* a page read recently that named no venue (`recently_checked_venue_urls`,
+  kept for about a week by the caller) is not fetched again for its venue,
+  so the budget moves on to pages not yet read instead of re-reading the
+  same first pages every day; a failed or blocked fetch is not remembered;
 * at most `max_fetches` distinct pages per run, through the same FetchStrategy
   (SSRF/redirect/byte protections) as the listing; one fetch serves both fields;
 * a meta description shared by several different pages, or identical to the
@@ -51,7 +55,11 @@ Bounded and conservative:
   free text.
 
 A failed or empty lookup leaves the candidate untouched apart from a warning;
-it never blocks the event.
+it never blocks the event. The run's warnings count pages that were read
+but named no venue apart from fetches that failed or were blocked.
+
+JSON-LD is parsed leniently: a raw line break inside a string (common in
+hand-edited `description` fields) doesn't make the whole block unreadable.
 """
 
 from __future__ import annotations
@@ -141,7 +149,7 @@ def _page_event(soup: BeautifulSoup, page_url: str) -> dict[str, Any] | None:
         if not text or not text.strip():
             continue
         try:
-            data = json.loads(text)
+            data = json.loads(text, strict=False)
         except json.JSONDecodeError:
             continue
         events.extend(node for node in _flatten(data) if _is_event(node))
@@ -461,6 +469,7 @@ def _needs(
     known_described_urls: frozenset[str],
     known_venue_urls: frozenset[str],
     known_timed_urls: frozenset[str] = frozenset(),
+    recently_checked_venue_urls: frozenset[str] = frozenset(),
 ) -> tuple[bool, bool, bool]:
     """(needs a description, needs a venue, needs a time) for this page."""
 
@@ -468,7 +477,11 @@ def _needs(
         return canonical_url in urls or page in urls
 
     wants_description = not has_description(candidate.raw) and not known(known_described_urls)
-    wants_venue = not has_venue(candidate.raw) and not known(known_venue_urls)
+    wants_venue = (
+        not has_venue(candidate.raw)
+        and not known(known_venue_urls)
+        and not known(recently_checked_venue_urls)
+    )
     gap = time_gap(candidate.raw)
     # A placeholder midnight is worth a page of its own. A date-only listing
     # is often a genuinely date-only event, so its page is only read for a
@@ -494,6 +507,8 @@ async def fill_from_event_pages(
     known_described_urls: frozenset[str] = frozenset(),
     known_venue_urls: frozenset[str] = frozenset(),
     known_timed_urls: frozenset[str] = frozenset(),
+    recently_checked_venue_urls: frozenset[str] = frozenset(),
+    checked_without_venue: set[str] | None = None,
     timezone: str | None = None,
     max_fetches: int = DEFAULT_MAX_FETCHES,
     skip: Callable[[EventCandidate], bool] | None = None,
@@ -502,7 +517,11 @@ async def fill_from_event_pages(
     replaced, the rest unchanged, order kept) and run-level warnings.
     `timezone` is the events' zone, used to check that a page's time falls
     on the listing's own day. `skip` marks candidates the run will leave out
-    anyway (outside the source's town): their pages are never fetched."""
+    anyway (outside the source's town): their pages are never fetched.
+    `recently_checked_venue_urls` are pages read recently without a venue,
+    not fetched again for one; each page read successfully this run that
+    still gave a wanted venue nothing is added to `checked_without_venue`
+    (its canonical URL when the event has one), for the caller to remember."""
     zone = _zone(timezone)
     site_boilerplate: str | None = None
     if listing_html:
@@ -511,6 +530,9 @@ async def fill_from_event_pages(
     found: dict[str, _PageFindings | None] = {}
     skipped = 0
     left_out = 0
+    remembered = 0
+    failed = 0
+    blocked = 0
     for candidate in candidates:
         if max_fetches <= 0:
             break
@@ -521,8 +543,16 @@ async def fill_from_event_pages(
             _needs(
                 candidate, page, canonical_url,
                 known_described_urls, known_venue_urls, known_timed_urls,
+                recently_checked_venue_urls,
             )
         ):
+            if any(
+                _needs(
+                    candidate, page, canonical_url,
+                    known_described_urls, known_venue_urls, known_timed_urls,
+                )
+            ):
+                remembered += 1
             continue
         if skip is not None and skip(candidate):
             left_out += 1
@@ -531,7 +561,12 @@ async def fill_from_event_pages(
             skipped += 1
             continue
         response = await fetch.fetch(FetchRequest(url=page), fetch_config)
-        if response.blocked_reason is not None or response.status_code != 200:
+        if response.blocked_reason is not None:
+            blocked += 1
+            found[page] = None
+            continue
+        if response.status_code != 200:
+            failed += 1
             found[page] = None
             continue
         title = candidate.raw.get("title")
@@ -554,6 +589,7 @@ async def fill_from_event_pages(
     )
 
     described = venued = timed = 0
+    no_venue_pages: set[str] = set()
     result: list[EventCandidate] = []
     for candidate in candidates:
         page, canonical_url = _lookup_url(candidate)
@@ -564,6 +600,7 @@ async def fill_from_event_pages(
         wants_description, wants_venue, wants_time = _needs(
             candidate, page, canonical_url,
             known_described_urls, known_venue_urls, known_timed_urls,
+            recently_checked_venue_urls,
         )
         raw = dict(candidate.raw)
         paths = dict(candidate.field_source_paths)
@@ -588,6 +625,10 @@ async def fill_from_event_pages(
                 paths["address"] = page_venue.source
                 changed = True
             venued += changed
+        if wants_venue and (findings.venue is None or findings.venue.venue is None):
+            no_venue_pages.add(page)
+            if checked_without_venue is not None:
+                checked_without_venue.add(canonical_url or page)
         if (
             wants_time
             and findings.time is not None
@@ -611,6 +652,14 @@ async def fill_from_event_pages(
         warnings.append(f"venue_lookup:{venued}_filled_of_{len(found)}_pages")
         if timed:
             warnings.append(f"time_lookup:{timed}_filled_of_{len(found)}_pages")
+        if no_venue_pages:
+            warnings.append(f"venue_lookup_page_names_no_venue:{len(no_venue_pages)}_pages")
+        if failed:
+            warnings.append(f"event_page_lookup_fetch_failed:{failed}_pages")
+        if blocked:
+            warnings.append(f"event_page_lookup_fetch_blocked:{blocked}_pages")
+    if remembered:
+        warnings.append(f"venue_lookup_recently_checked:{remembered}_events_skipped")
     if left_out:
         warnings.append(f"event_page_lookup_skipped_out_of_town:{left_out}")
     if skipped:

@@ -11,11 +11,16 @@ is resolved against the detail page and merges into the *base* field name
 (`description`) on the candidate's `raw` dict — enriching/overwriting the
 listing page's shorter value with the detail page's fuller one, not adding
 a separate `detail_description` field.
+
+The page read is the card's `detail_link`; a record without one (an RSS or
+JSON feed, which has no card to select a link from) falls back to its
+`canonical_url`, the event's own page, when that is an http(s) URL.
 """
 
 from __future__ import annotations
 
 import dataclasses
+from urllib.parse import urljoin, urlsplit
 
 from bs4 import BeautifulSoup
 
@@ -25,6 +30,14 @@ from app.extraction.types import EventCandidate, FetchRequest
 from app.schemas.extraction import SiteConfiguration
 
 _DETAIL_FIELD_PREFIX = "detail_"
+
+
+def _detail_url(candidate: EventCandidate) -> str | None:
+    link = candidate.raw.get("detail_link") or candidate.raw.get("canonical_url")
+    if not link:
+        return None
+    url = urljoin(candidate.source_page or "", str(link))
+    return url if urlsplit(url).scheme in ("http", "https") else None
 
 
 async def enrich_with_detail_pages(
@@ -51,11 +64,10 @@ async def enrich_with_detail_pages(
 
     enriched: list[EventCandidate] = []
     for candidate in candidates:
-        detail_link = candidate.raw.get("detail_link")
+        detail_link = _detail_url(candidate)
         if not detail_link:
             enriched.append(candidate)
             continue
-        detail_link = str(detail_link)
         extra_warning: str | None = None
 
         if detail_link in visited:
