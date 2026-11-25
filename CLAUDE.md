@@ -10,7 +10,7 @@ managing towns, sources and events.
 |---|---|
 | `backend/` | The Python app (FastAPI, SQLAlchemy, Alembic): routes, models, scraping engine, scheduler, tests. See `backend/CLAUDE.md`. |
 | `frontend/` | Jinja2 templates and static CSS/JS. Rendered and served by the backend; there is no separate build step. See `frontend/CLAUDE.md`. |
-| `docs/` | Architecture, extraction patterns, onboarding, scheduler, security, operations, deploying to Render, search (SEO). |
+| `docs/` | Architecture, extraction patterns, onboarding, the town onboarding runbook, scheduler, security, operations, deploying to Render, search (SEO). |
 | `CHANGELOG.md` | Release notes and the app's version; source of `/whats-new` and `/admin/version-history`. |
 | `render.yaml` | Render Blueprint: one Docker service built from the repo root with `backend/Dockerfile`. |
 | `.github/workflows/ci.yml` | Ruff, migration round trip, and the test suite on SQLite and PostgreSQL. |

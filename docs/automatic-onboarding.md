@@ -4,6 +4,10 @@ Onboarding takes a source URL to a running, approved extraction configuration.
 Every step is deterministic and auditable; full automation is policy-gated and
 conservative by default.
 
+For the step-by-step process of adding a new college town (research, approval
+packages, deployment gate, schedules and first-run checks), see
+`docs/town-onboarding.md`.
+
 ## Pipeline
 
 1. **Detect** — fetch the listing and run `PatternRegistry` detection (no

@@ -12,3 +12,6 @@ Towns and event sources the scheduler loads on its own when
 On each scheduler start (so after every deploy) and then daily, missing towns are
 created and each file not imported before is queued for onboarding, once. Results
 show up under Onboarding in the admin like an uploaded CSV.
+
+The full process around these files, including the approvals and the
+deployment gate before a push, is in `docs/town-onboarding.md`.
