@@ -212,6 +212,27 @@ def test_plain_date_list_is_expanded():
     assert [e.start_date.isoformat() for e in events] == ["2026-11-02", "2026-11-09"]
 
 
+def test_bare_array_of_records_is_read_with_each_date_its_own_event():
+    body = [
+        {"id": "498A", "name": "A Christmas Carol",
+         "availableInstanceDates": ["2026-12-05T14:00:00", "2026-12-06T19:30:00"]},
+        {"id": "499B", "name": "Die Hard", "availableInstanceDates": ["2026-12-11T20:00:00"]},
+        "not a record",
+    ]
+    config = SiteConfiguration(
+        pattern_name=NAME, api_endpoint=API, timezone=TZ,
+        json_paths={"external_source_id": "id", "title": "name",
+                    "start_datetime": "availableInstanceDates.0"},
+    )
+    events = _normalized(body, config)
+    assert [(e.title, e.start_date.isoformat(), e.start_time.isoformat()) for e in events] == [
+        ("A Christmas Carol", "2026-12-05", "14:00:00"),
+        ("A Christmas Carol", "2026-12-06", "19:30:00"),
+        ("Die Hard", "2026-12-11", "20:00:00"),
+    ]
+    assert [e.external_source_id for e in events] == ["498A", "498A#1", "499B"]
+
+
 def test_machine_timestamps_become_local_wall_clock():
     # 2026-10-20T23:00:00Z in epoch milliseconds and seconds.
     assert local_datetime_string(1792537200000, TZ) == "2026-10-20T18:00:00"
