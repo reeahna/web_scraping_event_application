@@ -411,8 +411,16 @@ class PagedJsonEventsPattern:
             payload = json.loads(response.text)
         except (json.JSONDecodeError, ValueError):
             return []
-        root = config.json_paths.get("events_root") or record_root(payload) or EVENTS_ROOT_DEFAULT
-        records = records_at(payload, root)
+        if isinstance(payload, list):
+            # Some event APIs answer with a bare array of records and no page
+            # wrapper at all; the payload itself is the record list.
+            root = "$"
+            records = [r for r in payload if isinstance(r, dict)]
+        else:
+            root = (
+                config.json_paths.get("events_root") or record_root(payload) or EVENTS_ROOT_DEFAULT
+            )
+            records = records_at(payload, root)
         if not records:
             return []
 
